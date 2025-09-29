@@ -46,16 +46,20 @@ export default function Login() {
             }
 
             // Store user data in cookies with secure options
-            setCookie('token', data.token, {
-                maxAge: 60 * 60 * 24 * 7, // 7 days
-                secure: process.env.NODE_ENV === 'production', // Only send over HTTPS in production
-                sameSite: 'strict', // CSRF protection
-                path: '/' // Available across the site
-            });
+            if (data.token) {
+                setCookie('token', data.token, {
+                    maxAge: 60 * 60 * 24 * 7, // 7 days
+                    secure: process.env.NODE_ENV === 'production', // Only send over HTTPS in production
+                    sameSite: 'strict', // CSRF protection
+                    path: '/' // Available across the site
+                });
+            } else {
+                throw new Error('No authentication token received from server');
+            }
 
             // Log the user data from the API response for debugging
             console.log("API Response User Data:", data.user);
-            console.log("Token received:", data.token.substring(0, 20) + '...');
+            console.log("Token received:", data.token ? data.token.substring(0, 20) + '...' : 'No token received');
 
             // Ensure all fields are properly captured
             const userData = {
