@@ -59,11 +59,17 @@ export async function PUT(
         const { id } = await params;
         const body = await request.json();
 
+        console.log('PUT request received for field ID:', id);
+        console.log('Request body:', body);
+
         // Get the token from cookies
         const cookieStore = await cookies();
         const token = cookieStore.get('token')?.value;
 
+        console.log('Token found:', !!token);
+
         if (!token) {
+            console.log('No token found, returning 401');
             return NextResponse.json(
                 { success: false, message: 'Authentication required' },
                 { status: 401 }
@@ -72,7 +78,15 @@ export async function PUT(
 
         // Make a request to your backend API
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-        const response = await fetch(`${apiUrl}/api/custom-fields/${id}`, {
+        const backendUrl = `${apiUrl}/api/custom-fields/${id}`;
+        
+        console.log('Making request to backend:', backendUrl);
+        console.log('Request headers:', {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        });
+
+        const response = await fetch(backendUrl, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
@@ -81,7 +95,11 @@ export async function PUT(
             body: JSON.stringify(body)
         });
 
+        console.log('Backend response status:', response.status);
+        console.log('Backend response headers:', Object.fromEntries(response.headers.entries()));
+
         const data = await response.json();
+        console.log('Backend response data:', data);
 
         if (!response.ok) {
             return NextResponse.json(

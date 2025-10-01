@@ -8,8 +8,7 @@ import { getUser, logout } from '@/lib/auth';
 import {
     FiHome, FiSearch, FiPlus, FiUsers, FiTarget, FiUserCheck,
     FiCalendar, FiCheckSquare, FiBarChart2, FiDollarSign,
-    FiFile, FiSettings, FiBriefcase, FiGrid, FiX,
-    FiMenu, FiChevronDown, FiChevronRight
+    FiFile, FiSettings, FiBriefcase, FiGrid, FiX
 } from 'react-icons/fi';
 import { HiOutlineOfficeBuilding } from 'react-icons/hi';
 import { FaRegUserCircle } from 'react-icons/fa';
@@ -28,7 +27,6 @@ export default function DashboardNav() {
     const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [isFileUploadOpen, setIsFileUploadOpen] = useState<boolean>(false);
-    const [isSidebarExpanded, setIsSidebarExpanded] = useState<boolean>(false);
     const [isAddMenuOpen, setIsAddMenuOpen] = useState<boolean>(false);
     const pathname = usePathname();
     const router = useRouter();
@@ -125,9 +123,6 @@ export default function DashboardNav() {
         setIsFileUploadOpen(true);
     };
 
-    const toggleSidebar = () => {
-        setIsSidebarExpanded(!isSidebarExpanded);
-    };
 
     // Navigation to add menu item
     const navigateToAddItem = (path: string) => {
@@ -246,29 +241,8 @@ export default function DashboardNav() {
                     </div>
                 )}
 
-                {/* Menu Toggle Button */}
-                <button
-                    onClick={toggleSidebar}
-                    className="flex items-center py-2 px-4 text-gray-300 hover:bg-slate-700"
-                >
-                    <div className="w-6 h-6 mr-3 flex-shrink-0 flex items-center justify-center">
-                        <FiMenu size={20} />
-                    </div>
-                    Menu
-                    <div className="ml-auto">
-                        {isSidebarExpanded ? (
-                            <FiChevronDown size={16} />
-                        ) : (
-                            <FiChevronRight size={16} />
-                        )}
-                    </div>
-                </button>
-
-                {/* Navigation links with animation */}
-                <div
-                    className={`overflow-y-auto transition-all duration-300 ease-in-out ${isSidebarExpanded ? 'max-h-screen opacity-100' : 'max-h-0 opacity-0 overflow-hidden'
-                        }`}
-                >
+                {/* Navigation links - always visible */}
+                <div className="overflow-y-auto">
                     {navItems.map((item) => (
                         <Link
                             key={item.path}
