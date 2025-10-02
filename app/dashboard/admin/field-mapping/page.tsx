@@ -747,13 +747,13 @@ const FieldMapping = () => {
                                                 >
                                                     <FiEdit2 size={14} />
                                                 </button>
-                                                <button
+                                                {/* <button
                                                     onClick={() => handleDeleteField(field.id)}
                                                     className="text-red-500 hover:text-red-700"
                                                     title="Delete"
                                                 >
                                                     <FiTrash2 size={14} />
-                                                </button>
+                                                </button> */}
                                                 <button
                                                     onClick={() => handleShowHistory(field)}
                                                     className="text-green-500 hover:text-green-700"

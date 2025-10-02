@@ -14,16 +14,16 @@ interface Section {
 export default function FieldManagement() {
     const router = useRouter();
     const [sections] = useState<Section[]>([
-        { id: 'job-seekers', name: 'Job Seekers' },
         { id: 'organizations', name: 'Organizations' },
-        { id: 'hiring-managers', name: 'Hiring Managers' },
         { id: 'jobs', name: 'Jobs' },
-        { id: 'placements', name: 'Placements' },
-        { id: 'tasks', name: 'Tasks' },
-        { id: 'planner', name: 'Planner' },
+        { id: 'job-seekers', name: 'Job Seekers' },
         { id: 'leads', name: 'Leads' },
-        { id: 'tearsheets', name: 'Tearsheets' },
+        { id: 'hiring-managers', name: 'Hiring Managers' },
+        { id: 'planner', name: 'Planner' },
+        { id: 'tasks', name: 'Tasks' },
+        { id: 'placements', name: 'Placements' },
         { id: 'goals-quotas', name: 'Goals and Quotas' },
+        { id: 'tearsheets', name: 'Tearsheets' },
     ]);
 
     const handleSectionClick = (sectionId: string) => {
