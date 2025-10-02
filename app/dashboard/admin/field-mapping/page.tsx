@@ -692,6 +692,7 @@ const FieldMapping = () => {
                                                     onChange={(e) => setNameSearchTerm(e.target.value)}
                                                     placeholder="Search..."
                                                 />
+                                            
                                                 <FiSearch size={14} className="absolute right-2 top-2 text-gray-400" />
                                             </div>
                                         </div>
