@@ -30,6 +30,32 @@ export default function CustomFieldRenderer({
 }: CustomFieldRendererProps) {
   if (field.is_hidden) return null;
 
+  // Phone number formatting function
+  const formatPhoneNumber = (input: string) => {
+    // Remove all non-numeric characters
+    const cleaned = input.replace(/\D/g, '');
+    
+    // Limit to 10 digits
+    const limited = cleaned.substring(0, 10);
+    
+    // Format as (000) 000-0000
+    if (limited.length >= 6) {
+      return `(${limited.substring(0, 3)}) ${limited.substring(3, 6)}-${limited.substring(6)}`;
+    } else if (limited.length >= 3) {
+      return `(${limited.substring(0, 3)}) ${limited.substring(3)}`;
+    } else if (limited.length > 0) {
+      return `(${limited}`;
+    }
+    return limited;
+  };
+
+  // Handle phone number input changes
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target.value;
+    const formatted = formatPhoneNumber(input);
+    onChange(field.field_name, formatted);
+  };
+
   const fieldProps = {
     id: field.field_name,
     value: value || "",
@@ -80,7 +106,16 @@ export default function CustomFieldRenderer({
     case "email":
       return <input {...fieldProps} type="email" />;
     case "phone":
-      return <input {...fieldProps} type="tel" />;
+      return (
+        <input 
+          {...fieldProps}
+          type="tel"
+          onChange={handlePhoneChange}
+          maxLength={14} // (000) 000-0000 = 14 characters
+          pattern="[0-9]{10}"
+          title="Please enter a 10-digit phone number"
+        />
+      );
     case "url":
       return <input {...fieldProps} type="url" />;
     case "file":

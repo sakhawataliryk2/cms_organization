@@ -28,6 +28,10 @@ export default function OrganizationList() {
     const [error, setError] = useState<string | null>(null);
     const [isDeleting, setIsDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState<string | null>(null);
+    
+    // Sorting state
+    const [sortField, setSortField] = useState<'id' | 'name' | null>(null);
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
     // Fetch organizations on component mount
     useEffect(() => {
@@ -64,6 +68,40 @@ export default function OrganizationList() {
             (org.contact_phone && org.contact_phone.toLowerCase().includes(searchTerm.toLowerCase())) ||
             (org.address && org.address.toLowerCase().includes(searchTerm.toLowerCase()))
     );
+
+    // Handle sorting
+    const handleSort = (field: 'id' | 'name') => {
+        if (sortField === field) {
+            // Toggle direction if same field
+            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            // Set new field with ascending direction
+            setSortField(field);
+            setSortDirection('asc');
+        }
+    };
+
+    // Sort the filtered organizations
+    const sortedOrganizations = [...filteredOrganizations].sort((a, b) => {
+        if (!sortField) return 0;
+        
+        let aValue = '';
+        let bValue = '';
+        
+        if (sortField === 'id') {
+            aValue = a.id;
+            bValue = b.id;
+        } else if (sortField === 'name') {
+            aValue = a.name.toLowerCase();
+            bValue = b.name.toLowerCase();
+        }
+        
+        if (sortDirection === 'asc') {
+            return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+        } else {
+            return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
+        }
+    });
 
     const handleViewOrganization = (id: string) => {
         router.push(`/dashboard/organizations/view?id=${id}`);
@@ -239,10 +277,52 @@ export default function OrganizationList() {
                                 </div>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                ID
+                                <button
+                                    onClick={() => handleSort('id')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>ID</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'id' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'id' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Company Name
+                                <button
+                                    onClick={() => handleSort('name')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>Company Name</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'name' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'name' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                 Status
@@ -262,8 +342,8 @@ export default function OrganizationList() {
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {filteredOrganizations.length > 0 ? (
-                            filteredOrganizations.map((org) => (
+                        {sortedOrganizations.length > 0 ? (
+                            sortedOrganizations.map((org) => (
                                 <tr
                                     key={org.id}
                                     className="hover:bg-gray-50 cursor-pointer"
@@ -330,11 +410,11 @@ export default function OrganizationList() {
                 <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
                     <div>
                         <p className="text-sm text-gray-700">
-                            Showing <span className="font-medium">1</span> to <span className="font-medium">{filteredOrganizations.length}</span> of{' '}
-                            <span className="font-medium">{filteredOrganizations.length}</span> results
+                            Showing <span className="font-medium">1</span> to <span className="font-medium">{sortedOrganizations.length}</span> of{' '}
+                            <span className="font-medium">{sortedOrganizations.length}</span> results
                         </p>
                     </div>
-                    {filteredOrganizations.length > 0 && (
+                    {sortedOrganizations.length > 0 && (
                         <div>
                             <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
                                 <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
