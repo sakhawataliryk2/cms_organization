@@ -539,28 +539,33 @@ export default function AddJobSeeker() {
                                     </h3>
                                 </div> */}
 
-                                {customFields.map((field) => (
-                                    <div key={field.id} className="flex items-center">
-                                        <label className="w-48 font-medium">
-                                            {field.field_label}:
-                                            {field.is_required && (
-                                                <span className="text-red-500 ml-1">*</span>
-                                            )}
-                                        </label>
-                                        <div className="flex-1 relative">
-                                            <CustomFieldRenderer
-                                                field={field}
-                                                value={customFieldValues[field.field_name]}
-                                                onChange={handleCustomFieldChange}
-                                            />
-                                            {field.is_required && (
-                                                <span className="absolute text-red-500 left-[-10px] top-2">
-                                                    *
-                                                </span>
-                                            )}
+                                {customFields.map((field) => {
+                                    // Don't render hidden fields at all (neither label nor input)
+                                    if (field.is_hidden) return null;
+                                    
+                                    return (
+                                        <div key={field.id} className="flex items-center">
+                                            <label className="w-48 font-medium">
+                                                {field.field_label}:
+                                                {field.is_required && (
+                                                    <span className="text-red-500 ml-1">*</span>
+                                                )}
+                                            </label>
+                                            <div className="flex-1 relative">
+                                                <CustomFieldRenderer
+                                                    field={field}
+                                                    value={customFieldValues[field.field_name]}
+                                                    onChange={handleCustomFieldChange}
+                                                />
+                                                {field.is_required && (
+                                                    <span className="absolute text-red-500 left-[-10px] top-2">
+                                                        *
+                                                    </span>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </>
                         )}
                     </div>
