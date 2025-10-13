@@ -486,11 +486,11 @@ export default function AddJob() {
                                                     value={customFieldValues[field.field_name]}
                                                     onChange={handleCustomFieldChange}
                                                 />
-                                                {field.is_required && (
+                                                {/* {field.is_required && (
                                                     <span className="absolute text-red-500 left-[-10px] top-2">
                                                         *
                                                     </span>
-                                                )}
+                                                )} */}
                                             </div>
                                         </div>
                                     );

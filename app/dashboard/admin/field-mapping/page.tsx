@@ -18,6 +18,7 @@ interface CustomField {
     options?: string[];
     placeholder?: string;
     default_value?: string;
+    lookup_type?: string;
     created_by_name?: string;
     updated_by_name?: string;
     created_at: string;
@@ -73,6 +74,7 @@ const FieldMapping = () => {
         options: [] as string[],
         placeholder: '',
         defaultValue: '',
+        lookupType: 'organizations' as 'organizations' | 'hiring-managers' | 'job-seekers' | 'jobs',
     });
     const [editingSortOrder, setEditingSortOrder] = useState<string | null>(null);
     const [tempSortOrder, setTempSortOrder] = useState<number>(0);
@@ -88,7 +90,8 @@ const FieldMapping = () => {
         'checkbox',
         'radio',
         'url',
-        'file'
+        'file',
+        'lookup'
     ];
 
     // Load custom fields on component mount
@@ -148,6 +151,7 @@ const FieldMapping = () => {
             options: field.options || [],
             placeholder: field.placeholder || '',
             defaultValue: field.default_value || '',
+            lookupType: (field as any).lookup_type || 'organizations',
         });
         setShowEditForm(true);
     };
@@ -173,6 +177,7 @@ const FieldMapping = () => {
             options: [],
             placeholder: '',
             defaultValue: '',
+            lookupType: 'organizations',
         });
         setSelectedField(null);
         setShowAddForm(true);
@@ -227,6 +232,7 @@ const FieldMapping = () => {
                     options: editFormData.options.length > 0 ? editFormData.options : null,
                     placeholder: editFormData.placeholder || null,
                     defaultValue: editFormData.defaultValue || null,
+                    lookupType: editFormData.fieldType === 'lookup' ? editFormData.lookupType : null,
                 };
 
                 console.log('Updating field with data:', apiData);
@@ -250,6 +256,7 @@ const FieldMapping = () => {
                     options: editFormData.options.length > 0 ? editFormData.options : null,
                     placeholder: editFormData.placeholder || null,
                     defaultValue: editFormData.defaultValue || null,
+                    lookupType: editFormData.fieldType === 'lookup' ? editFormData.lookupType : null,
                 };
 
                 console.log('Creating field with data:', apiData);
@@ -1000,6 +1007,29 @@ const FieldMapping = () => {
                                             rows={5}
                                             placeholder="Option 1&#10;Option 2&#10;Option 3"
                                         />
+                                    </div>
+                                )}
+
+                                {editFormData.fieldType === 'lookup' && (
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                                            Lookup Type: <span className="text-red-500">*</span>
+                                        </label>
+                                        <select
+                                            name="lookupType"
+                                            value={editFormData.lookupType}
+                                            onChange={handleEditFormChange}
+                                            className="w-full px-3 py-2 border rounded"
+                                            required
+                                        >
+                                            <option value="organizations">Organizations</option>
+                                            <option value="hiring-managers">Hiring Managers</option>
+                                            <option value="job-seekers">Job Seekers</option>
+                                            <option value="jobs">Jobs</option>
+                                        </select>
+                                        <p className="text-xs text-gray-500 mt-1">
+                                            Select which type of records this field should look up
+                                        </p>
                                     </div>
                                 )}
 

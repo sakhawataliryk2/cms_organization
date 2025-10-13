@@ -223,8 +223,8 @@ export default function DashboardNav() {
             {/* Side Navigation */}
             <div className="fixed top-0 left-0 bottom-0 w-60 bg-slate-800 text-white z-20 flex flex-col">
                 {/* Logo area */}
-                <div className="h-12 flex items-center px-4 border-b border-slate-700">
-                    <span className="text-lg font-semibold">Staffing Solutions</span>
+                <div className="h-12 flex items-center px-4 my-4">
+                    <span className="text-lg font-semibold ">Complete Staffing Solutions</span>
                 </div>
                 {/* User profile and logout */}
                 {user && (

@@ -30,7 +30,7 @@ export default function OrganizationList() {
     const [deleteError, setDeleteError] = useState<string | null>(null);
     
     // Sorting state
-    const [sortField, setSortField] = useState<'id' | 'name' | null>(null);
+    const [sortField, setSortField] = useState<'id' | 'name' | 'status' | 'contact_phone' | 'address' | 'job_orders_count' | 'placements_count' | null>(null);
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
     // Fetch organizations on component mount
@@ -70,7 +70,7 @@ export default function OrganizationList() {
     );
 
     // Handle sorting
-    const handleSort = (field: 'id' | 'name') => {
+    const handleSort = (field: 'id' | 'name' | 'status' | 'contact_phone' | 'address' | 'job_orders_count' | 'placements_count') => {
         if (sortField === field) {
             // Toggle direction if same field
             setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
@@ -85,15 +85,31 @@ export default function OrganizationList() {
     const sortedOrganizations = [...filteredOrganizations].sort((a, b) => {
         if (!sortField) return 0;
         
-        let aValue = '';
-        let bValue = '';
+        let aValue: string | number = '';
+        let bValue: string | number = '';
         
         if (sortField === 'id') {
-            aValue = a.id;
-            bValue = b.id;
+            // Sort numerically by ID
+            aValue = parseInt(a.id) || 0;
+            bValue = parseInt(b.id) || 0;
         } else if (sortField === 'name') {
-            aValue = a.name.toLowerCase();
-            bValue = b.name.toLowerCase();
+            aValue = a.name?.toLowerCase() || '';
+            bValue = b.name?.toLowerCase() || '';
+        } else if (sortField === 'status') {
+            aValue = a.status?.toLowerCase() || '';
+            bValue = b.status?.toLowerCase() || '';
+        } else if (sortField === 'contact_phone') {
+            aValue = a.contact_phone?.toLowerCase() || '';
+            bValue = b.contact_phone?.toLowerCase() || '';
+        } else if (sortField === 'address') {
+            aValue = a.address?.toLowerCase() || '';
+            bValue = b.address?.toLowerCase() || '';
+        } else if (sortField === 'job_orders_count') {
+            aValue = a.job_orders_count || 0;
+            bValue = b.job_orders_count || 0;
+        } else if (sortField === 'placements_count') {
+            aValue = a.placements_count || 0;
+            bValue = b.placements_count || 0;
         }
         
         if (sortDirection === 'asc') {
@@ -325,19 +341,127 @@ export default function OrganizationList() {
                                 </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Status
+                                <button
+                                    onClick={() => handleSort('status')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>Status</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'status' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'status' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Phone Number
+                                <button
+                                    onClick={() => handleSort('contact_phone')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>Phone Number</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'contact_phone' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'contact_phone' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Address
+                                <button
+                                    onClick={() => handleSort('address')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>Address</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'address' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'address' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Job Orders
+                                <button
+                                    onClick={() => handleSort('job_orders_count')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>Job Orders</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'job_orders_count' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'job_orders_count' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Placements
+                                <button
+                                    onClick={() => handleSort('placements_count')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>Placements</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'placements_count' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'placements_count' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
+                            </th>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Actions
                             </th>
                         </tr>
                     </thead>
@@ -384,11 +508,40 @@ export default function OrganizationList() {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         {org.placements_count || 0}
                                     </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm" onClick={(e) => e.stopPropagation()}>
+                                        <button
+                                            onClick={async (e) => {
+                                                e.stopPropagation();
+                                                if (window.confirm('Are you sure you want to delete this organization?')) {
+                                                    setIsDeleting(true);
+                                                    try {
+                                                        const response = await fetch(`/api/organizations/${org.id}`, {
+                                                            method: 'DELETE',
+                                                        });
+                                                        
+                                                        if (!response.ok) {
+                                                            throw new Error('Failed to delete organization');
+                                                        }
+                                                        
+                                                        await fetchOrganizations();
+                                                    } catch (err) {
+                                                        console.error('Error deleting organization:', err);
+                                                        setDeleteError(err instanceof Error ? err.message : 'An error occurred');
+                                                    } finally {
+                                                        setIsDeleting(false);
+                                                    }
+                                                }
+                                            }}
+                                            className="text-red-600 hover:text-red-900 font-medium"
+                                        >
+                                            Delete
+                                        </button>
+                                    </td>
                                 </tr>
                             ))
                         ) : (
                             <tr>
-                                <td colSpan={8} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                                <td colSpan={9} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
                                     {searchTerm ? 'No organizations found matching your search.' : 'No organizations found. Click "Add Organization" to create one.'}
                                 </td>
                             </tr>

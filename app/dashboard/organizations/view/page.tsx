@@ -29,6 +29,16 @@ export default function OrganizationView() {
     const [showAddNote, setShowAddNote] = useState(false);
     const [newNote, setNewNote] = useState('');
 
+    // Documents state
+    const [documents, setDocuments] = useState<Array<any>>([]);
+    const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+    const [documentError, setDocumentError] = useState<string | null>(null);
+    const [showAddDocument, setShowAddDocument] = useState(false);
+    const [newDocumentName, setNewDocumentName] = useState('');
+    const [newDocumentType, setNewDocumentType] = useState('General');
+    const [newDocumentContent, setNewDocumentContent] = useState('');
+    const [selectedDocument, setSelectedDocument] = useState<any>(null);
+
     // Current active tab
     const [activeTab, setActiveTab] = useState('summary');
 
@@ -122,9 +132,10 @@ export default function OrganizationView() {
             console.log("Formatted organization:", formattedOrg);
             setOrganization(formattedOrg);
 
-            // After loading organization data, fetch notes and history
+            // After loading organization data, fetch notes, history, and documents
             fetchNotes(id);
             fetchHistory(id);
+            fetchDocuments(id);
         } catch (err) {
             console.error('Error fetching organization:', err);
             setError(err instanceof Error ? err.message : 'An error occurred while fetching organization details');
@@ -179,6 +190,94 @@ export default function OrganizationView() {
         }
     };
 
+    // Fetch documents for organization
+    const fetchDocuments = async (id: string) => {
+        setIsLoadingDocuments(true);
+        setDocumentError(null);
+
+        try {
+            const response = await fetch(`/api/organizations/${id}/documents`);
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to fetch documents');
+            }
+
+            const data = await response.json();
+            setDocuments(data.documents || []);
+        } catch (err) {
+            console.error('Error fetching documents:', err);
+            setDocumentError(err instanceof Error ? err.message : 'An error occurred while fetching documents');
+        } finally {
+            setIsLoadingDocuments(false);
+        }
+    };
+
+    // Handle adding a new document
+    const handleAddDocument = async () => {
+        if (!newDocumentName.trim() || !organizationId) return;
+
+        try {
+            const response = await fetch(`/api/organizations/${organizationId}/documents`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    document_name: newDocumentName,
+                    document_type: newDocumentType,
+                    content: newDocumentContent
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to add document');
+            }
+
+            const data = await response.json();
+
+            // Add the new document to the list
+            setDocuments([data.document, ...documents]);
+
+            // Clear the form
+            setNewDocumentName('');
+            setNewDocumentType('General');
+            setNewDocumentContent('');
+            setShowAddDocument(false);
+
+            // Show success message
+            alert('Document added successfully');
+        } catch (err) {
+            console.error('Error adding document:', err);
+            alert(err instanceof Error ? err.message : 'An error occurred while adding a document');
+        }
+    };
+
+    // Handle deleting a document
+    const handleDeleteDocument = async (documentId: string) => {
+        if (!confirm('Are you sure you want to delete this document?')) return;
+
+        try {
+            const response = await fetch(`/api/organizations/${organizationId}/documents/${documentId}`, {
+                method: 'DELETE',
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to delete document');
+            }
+
+            // Remove the document from the list
+            setDocuments(documents.filter(doc => doc.id !== documentId));
+
+            alert('Document deleted successfully');
+        } catch (err) {
+            console.error('Error deleting document:', err);
+            alert(err instanceof Error ? err.message : 'An error occurred while deleting the document');
+        }
+    };
+
     const handleGoBack = () => {
         router.push('/dashboard/organizations');
     };
@@ -204,6 +303,12 @@ export default function OrganizationView() {
         } else if (action === 'add-note') {
             setShowAddNote(true);
             setActiveTab('notes');
+        } else if (action === 'add-job') {
+            // Navigate to add job page
+            router.push('/dashboard/jobs/add');
+        } else if (action === 'add-contact') {
+            // Navigate to add contact page (you can adjust this route as needed)
+            console.log('Add contact functionality - implement as needed');
         } else {
             console.log(`Action selected: ${action}`);
         }
@@ -391,7 +496,7 @@ export default function OrganizationView() {
     const actionOptions = [
         { label: 'Delete', action: () => handleActionSelected('delete') },
         { label: 'Add Note', action: () => handleActionSelected('add-note') },
-        { label: 'Add Contact', action: () => handleActionSelected('add-contact') },
+        { label: 'Add Hiring Manager', action: () => handleActionSelected('add-contact') },
         { label: 'Add Job', action: () => handleActionSelected('add-job') },
     ];
 
@@ -826,14 +931,202 @@ export default function OrganizationView() {
                 {activeTab === 'contacts' && (
                     <div className="bg-white p-4 rounded shadow-sm">
                         <h2 className="text-lg font-semibold mb-4">Organization Contacts</h2>
-                        <p className="text-gray-500 italic">No contacts available</p>
+                        {/* <p className="text-gray-500 italic">No contacts available</p> */}
+                        <div className="flex items-center">
+                            <label className="w-48 font-medium">Contact Phone:</label>
+                            <input
+                                type="number"
+                                min="0"
+                                name="numEmployees"
+                                className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                                placeholder="e.g (123) 456-7890"
+                            />
+                        </div>
+                        <div className="flex items-center">
+                            <label className="w-48 font-medium">Address:</label>
+                            <input
+                                type="text"
+                                name=""
+                                className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                                placeholder="Address"
+                            />
+                        </div>
+                        <div className="flex items-center">
+                            <label className="w-48 font-medium">City:</label>
+                            <input
+                                type="text"
+                                name=""
+                                className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                                placeholder="City"
+                            />
+                        </div>
+                        <div className="flex items-center">
+                            <label className="w-48 font-medium">ZIP Code:</label>
+                            <input
+                                type="number"
+                                name=""
+                                className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                                placeholder="ZIP Code"
+                            />
+                        </div>
                     </div>
                 )}
 
                 {activeTab === 'docs' && (
                     <div className="bg-white p-4 rounded shadow-sm">
-                        <h2 className="text-lg font-semibold mb-4">Documents</h2>
-                        <p className="text-gray-500 italic">No documents available</p>
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-lg font-semibold">Documents</h2>
+                            <button
+                                onClick={() => setShowAddDocument(true)}
+                                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                            >
+                                Add Document
+                            </button>
+                        </div>
+
+                        {/* Add Document Form */}
+                        {showAddDocument && (
+                            <div className="mb-6 p-4 bg-gray-50 rounded border">
+                                <h3 className="font-medium mb-2">Add New Document</h3>
+                                <div className="space-y-3">
+                                    <div>
+                                        <label className="block text-sm font-medium mb-1">Document Name *</label>
+                                        <input
+                                            type="text"
+                                            value={newDocumentName}
+                                            onChange={(e) => setNewDocumentName(e.target.value)}
+                                            placeholder="Enter document name"
+                                            className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium mb-1">Document Type</label>
+                                        <select
+                                            value={newDocumentType}
+                                            onChange={(e) => setNewDocumentType(e.target.value)}
+                                            className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        >
+                                            <option value="General">General</option>
+                                            <option value="Contract">Contract</option>
+                                            <option value="Agreement">Agreement</option>
+                                            <option value="Policy">Policy</option>
+                                            <option value="Welcome">Welcome</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium mb-1">Content</label>
+                                        <textarea
+                                            value={newDocumentContent}
+                                            onChange={(e) => setNewDocumentContent(e.target.value)}
+                                            placeholder="Enter document content..."
+                                            className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            rows={6}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="flex justify-end space-x-2 mt-3">
+                                    <button
+                                        onClick={() => setShowAddDocument(false)}
+                                        className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleAddDocument}
+                                        className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                                        disabled={!newDocumentName.trim()}
+                                    >
+                                        Save Document
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Documents List */}
+                        {isLoadingDocuments ? (
+                            <div className="flex justify-center py-4">
+                                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                            </div>
+                        ) : documentError ? (
+                            <div className="text-red-500 py-2">{documentError}</div>
+                        ) : documents.length > 0 ? (
+                            <div className="overflow-x-auto">
+                                <table className="w-full border-collapse">
+                                    <thead>
+                                        <tr className="bg-gray-100 border-b">
+                                            <th className="text-left p-3 font-medium">Document Name</th>
+                                            <th className="text-left p-3 font-medium">Type</th>
+                                            <th className="text-left p-3 font-medium">Auto-Generated</th>
+                                            <th className="text-left p-3 font-medium">Created By</th>
+                                            <th className="text-left p-3 font-medium">Created At</th>
+                                            <th className="text-left p-3 font-medium">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {documents.map((doc) => (
+                                            <tr key={doc.id} className="border-b hover:bg-gray-50">
+                                                <td className="p-3">
+                                                    <button
+                                                        onClick={() => setSelectedDocument(doc)}
+                                                        className="text-blue-600 hover:underline font-medium"
+                                                    >
+                                                        {doc.document_name}
+                                                    </button>
+                                                </td>
+                                                <td className="p-3">{doc.document_type}</td>
+                                                <td className="p-3">
+                                                    <span className={`px-2 py-1 rounded text-xs ${doc.is_auto_generated ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                                                        {doc.is_auto_generated ? 'Yes' : 'No'}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3">{doc.created_by_name || 'System'}</td>
+                                                <td className="p-3">{new Date(doc.created_at).toLocaleString()}</td>
+                                                <td className="p-3">
+                                                    <button
+                                                        onClick={() => handleDeleteDocument(doc.id)}
+                                                        className="text-red-500 hover:text-red-700 text-sm"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ) : (
+                            <p className="text-gray-500 italic">No documents available</p>
+                        )}
+
+                        {/* Document Viewer Modal */}
+                        {selectedDocument && (
+                            <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                                <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+                                    <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                                        <div>
+                                            <h2 className="text-lg font-semibold">{selectedDocument.document_name}</h2>
+                                            <p className="text-sm text-gray-600">Type: {selectedDocument.document_type}</p>
+                                        </div>
+                                        <button
+                                            onClick={() => setSelectedDocument(null)}
+                                            className="p-1 rounded hover:bg-gray-200"
+                                        >
+                                            <span className="text-2xl font-bold">×</span>
+                                        </button>
+                                    </div>
+                                    <div className="p-6">
+                                        <div className="mb-4">
+                                            <p className="text-sm text-gray-600">
+                                                Created by {selectedDocument.created_by_name || 'System'} on {new Date(selectedDocument.created_at).toLocaleString()}
+                                            </p>
+                                        </div>
+                                        <div className="bg-gray-50 p-4 rounded border whitespace-pre-wrap">
+                                            {selectedDocument.content || 'No content available'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 

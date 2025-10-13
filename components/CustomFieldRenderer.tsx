@@ -1,6 +1,7 @@
 'use client'
 
 import React from 'react';
+import LookupField from './LookupField';
 
 interface CustomFieldDefinition {
   id: string;
@@ -13,6 +14,7 @@ interface CustomFieldDefinition {
   placeholder?: string;
   default_value?: string;
   sort_order: number;
+  lookup_type?: 'organizations' | 'hiring-managers' | 'job-seekers' | 'jobs';
 }
 
 interface CustomFieldRendererProps {
@@ -100,7 +102,21 @@ export default function CustomFieldRenderer({
         />
       );
     case "number":
-      return <input {...fieldProps} type="number" />;
+      return (
+        <input 
+          {...fieldProps} 
+          type="number"
+          min="2000"
+          max="2100"
+          maxLength={4}
+          onInput={(e) => {
+            const target = e.target as HTMLInputElement;
+            if (target.value.length > 4) {
+              target.value = target.value.slice(0, 4);
+            }
+          }}
+        />
+      );
     case "date":
       return <input {...fieldProps} type="date" />;
     case "email":
@@ -112,8 +128,7 @@ export default function CustomFieldRenderer({
           type="tel"
           onChange={handlePhoneChange}
           maxLength={14} // (000) 000-0000 = 14 characters
-          pattern="[0-9]{10}"
-          title="Please enter a 10-digit phone number"
+          title="Phone number will be automatically formatted as (000) 000-0000"
         />
       );
     case "url":
@@ -134,6 +149,17 @@ export default function CustomFieldRenderer({
           />
           <p className="text-sm text-gray-500 mt-1">Accepted formats: PDF, DOC, DOCX, TXT</p>
         </div>
+      );
+    case "lookup":
+      return (
+        <LookupField
+          value={value || ""}
+          onChange={(val) => onChange(field.field_name, val)}
+          lookupType={field.lookup_type || 'organizations'}
+          placeholder={field.placeholder || "Select an option"}
+          required={field.is_required}
+          className={className}
+        />
       );
     default:
       return <input {...fieldProps} type="text" />;

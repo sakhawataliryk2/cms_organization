@@ -27,6 +27,10 @@ export default function HiringManagerList() {
     const [hiringManagers, setHiringManagers] = useState<HiringManager[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    
+    // Sorting state
+    const [sortField, setSortField] = useState<'id' | 'full_name' | 'title' | 'organization_name' | 'email' | 'phone' | 'status' | 'created_at' | 'created_by_name' | null>(null);
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
 
     // Fetch hiring managers data when component mounts
     useEffect(() => {
@@ -66,6 +70,62 @@ export default function HiringManagerList() {
             hm.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
             hm.id?.toString().toLowerCase().includes(searchTerm.toLowerCase())
     );
+
+    // Handle sorting
+    const handleSort = (field: 'id' | 'full_name' | 'title' | 'organization_name' | 'email' | 'phone' | 'status' | 'created_at' | 'created_by_name') => {
+        if (sortField === field) {
+            // Toggle direction if same field
+            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            // Set new field with ascending direction
+            setSortField(field);
+            setSortDirection('asc');
+        }
+    };
+
+    // Sort the filtered hiring managers
+    const sortedHiringManagers = [...filteredHiringManagers].sort((a, b) => {
+        if (!sortField) return 0;
+        
+        let aValue: string | number = '';
+        let bValue: string | number = '';
+        
+        if (sortField === 'id') {
+            // Sort numerically by ID
+            aValue = parseInt(a.id) || 0;
+            bValue = parseInt(b.id) || 0;
+        } else if (sortField === 'full_name') {
+            aValue = (a.full_name || `${a.last_name}, ${a.first_name}`)?.toLowerCase() || '';
+            bValue = (b.full_name || `${b.last_name}, ${b.first_name}`)?.toLowerCase() || '';
+        } else if (sortField === 'title') {
+            aValue = a.title?.toLowerCase() || '';
+            bValue = b.title?.toLowerCase() || '';
+        } else if (sortField === 'organization_name') {
+            aValue = a.organization_name?.toLowerCase() || '';
+            bValue = b.organization_name?.toLowerCase() || '';
+        } else if (sortField === 'email') {
+            aValue = a.email?.toLowerCase() || '';
+            bValue = b.email?.toLowerCase() || '';
+        } else if (sortField === 'phone') {
+            aValue = a.phone?.toLowerCase() || '';
+            bValue = b.phone?.toLowerCase() || '';
+        } else if (sortField === 'status') {
+            aValue = a.status?.toLowerCase() || '';
+            bValue = b.status?.toLowerCase() || '';
+        } else if (sortField === 'created_at') {
+            aValue = new Date(a.created_at).getTime() || 0;
+            bValue = new Date(b.created_at).getTime() || 0;
+        } else if (sortField === 'created_by_name') {
+            aValue = a.created_by_name?.toLowerCase() || '';
+            bValue = b.created_by_name?.toLowerCase() || '';
+        }
+        
+        if (sortDirection === 'asc') {
+            return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+        } else {
+            return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
+        }
+    });
 
     const handleViewHiringManager = (id: string) => {
         router.push(`/dashboard/hiring-managers/view?id=${id}`);
@@ -242,37 +302,226 @@ export default function HiringManagerList() {
                                 </div>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                ID
+                                <button
+                                    onClick={() => handleSort('id')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>ID</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'id' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'id' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Name
+                                <button
+                                    onClick={() => handleSort('full_name')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>Name</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'full_name' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'full_name' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Title
+                                <button
+                                    onClick={() => handleSort('title')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>Title</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'title' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'title' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Organization
+                                <button
+                                    onClick={() => handleSort('organization_name')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>Organization</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'organization_name' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'organization_name' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Email
+                                <button
+                                    onClick={() => handleSort('email')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>Email</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'email' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'email' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Phone
+                                <button
+                                    onClick={() => handleSort('phone')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>Phone</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'phone' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'phone' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Status
+                                <button
+                                    onClick={() => handleSort('status')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>Status</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'status' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'status' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Date Added
+                                <button
+                                    onClick={() => handleSort('created_at')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>Date Added</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'created_at' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'created_at' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                Owner
+                                <button
+                                    onClick={() => handleSort('created_by_name')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>Owner</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'created_by_name' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'created_by_name' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
                             </th>
                         </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
-                        {filteredHiringManagers.length > 0 ? (
-                            filteredHiringManagers.map((hm) => (
+                        {sortedHiringManagers.length > 0 ? (
+                            sortedHiringManagers.map((hm) => (
                                 <tr
                                     key={hm.id}
                                     className="hover:bg-gray-50 cursor-pointer"
@@ -346,8 +595,8 @@ export default function HiringManagerList() {
                 <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
                     <div>
                         <p className="text-sm text-gray-700">
-                            Showing <span className="font-medium">1</span> to <span className="font-medium">{filteredHiringManagers.length}</span> of{' '}
-                            <span className="font-medium">{filteredHiringManagers.length}</span> results
+                            Showing <span className="font-medium">1</span> to <span className="font-medium">{sortedHiringManagers.length}</span> of{' '}
+                            <span className="font-medium">{sortedHiringManagers.length}</span> results
                         </p>
                     </div>
                     {filteredHiringManagers.length > 0 && (

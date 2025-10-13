@@ -160,8 +160,8 @@ export default function Dashboard() {
             </div>
 
             {/* Bottom Row */}
-            <div className="grid grid-cols-12 gap-4 mt-4">
-                {/* Date Range Selector */}
+            {/* <div className="grid grid-cols-12 gap-4 mt-4">
+                
                 <div className="col-span-12 md:col-span-6 lg:col-span-4">
                     <div className="bg-gray-50 p-4">
                         <h2 className="font-bold mb-4">Select Date and Time Range</h2>
@@ -192,10 +192,10 @@ export default function Dashboard() {
 
                 </div>
 
-                {/* Empty space in the middle */}
+                
                 <div className="hidden md:block md:col-span-2 lg:col-span-4"></div>
 
-                {/* Next button in bottom right */}
+                
                 <div className="col-span-12 md:col-span-4 lg:col-span-4 flex items-end justify-end">
                     <div className="text-right">
                         <div className="text-lg mb-1">Next</div>
@@ -207,7 +207,7 @@ export default function Dashboard() {
                         </button>
                     </div>
                 </div>
-            </div>
+            </div> */}
         </div>
     );
 }

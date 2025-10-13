@@ -141,46 +141,46 @@ export default function AddOrganization() {
   };
 
 
-  const validateForm = () => {
-    // Validate required standard fields
-    if (!formData.name.trim()) {
-      setError("Organization name is required");
-      return false;
-    }
-    if (!formData.website.trim()) {
-      setError("Website is required");
-      return false;
-    }
-    if (!formData.overview.trim()) {
-      setError("Organization overview is required");
-      return false;
-    }
+  // const validateForm = () => {
+  //   // Validate required standard fields
+  //   if (!formData.name.trim()) {
+  //     setError("Organization name is required");
+  //     return false;
+  //   }
+  //   if (!formData.website.trim()) {
+  //     setError("Website is required");
+  //     return false;
+  //   }
+  //   if (!formData.overview.trim()) {
+  //     setError("Organization overview is required");
+  //     return false;
+  //   }
 
-    // Basic website URL validation
-    if (
-      !formData.website.startsWith("http://") &&
-      !formData.website.startsWith("https://")
-    ) {
-      setError("Website must start with http:// or https://");
-      return false;
-    }
+  //   // Basic website URL validation
+  //   if (
+  //     !formData.website.startsWith("http://") &&
+  //     !formData.website.startsWith("https://")
+  //   ) {
+  //     setError("Website must start with http:// or https://");
+  //     return false;
+  //   }
 
-    // Validate required custom fields
-    const customFieldValidation = validateCustomFields();
-    if (!customFieldValidation.isValid) {
-      setError(customFieldValidation.message);
-      return false;
-    }
+  //   // Validate required custom fields
+  //   const customFieldValidation = validateCustomFields();
+  //   if (!customFieldValidation.isValid) {
+  //     setError(customFieldValidation.message);
+  //     return false;
+  //   }
 
-    return true;
-  };
+  //   return true;
+  // };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!validateForm()) {
-      return;
-    }
+    // if (!validateForm()) {
+    //   return;
+    // }
 
     setIsSubmitting(true);
     setError(null);
@@ -189,24 +189,44 @@ export default function AddOrganization() {
       // Prepare custom fields for submission
       const customFieldsToSend = getCustomFieldsForSubmission();
 
+      // Map custom fields to standard fields if they exist
+      // This allows custom fields to populate the required backend fields
+      const name = customFieldsToSend['Organization Name'] || 
+                   customFieldsToSend['Name'] || 
+                   formData.name || 
+                   'Unnamed Organization';
+      
+      const website = customFieldsToSend['Website'] || 
+                      customFieldsToSend['Organization Website'] || 
+                      formData.website || 
+                      '';
+      
+      const overview = customFieldsToSend['Overview'] || 
+                       customFieldsToSend['Organization Overview'] || 
+                       customFieldsToSend['About'] ||
+                       formData.overview || 
+                       '';
+
       const apiData = {
-        name: formData.name,
-        nicknames: formData.nicknames,
-        parent_organization: formData.parentOrganization,
-        website: formData.website,
-        status: formData.status,
+        name: name,
+        nicknames: customFieldsToSend['Nicknames'] || formData.nicknames,
+        parent_organization: customFieldsToSend['Parent Organization'] || formData.parentOrganization,
+        website: website,
+        status: customFieldsToSend['Status'] || formData.status,
         contract_on_file: formData.contractOnFile,
         contract_signed_by: formData.contractSignedBy,
         date_contract_signed: formData.dateContractSigned || null,
-        year_founded: formData.yearFounded,
-        overview: formData.overview,
-        perm_fee: formData.permFee,
-        num_employees: formData.numEmployees
-          ? parseInt(formData.numEmployees)
-          : null,
-        num_offices: formData.numOffices ? parseInt(formData.numOffices) : null,
-        contact_phone: formData.contactPhone,
-        address: formData.address,
+        year_founded: customFieldsToSend['Year Founded'] || formData.yearFounded,
+        overview: overview,
+        perm_fee: customFieldsToSend['Standard Perm Fee (%)'] || formData.permFee,
+        num_employees: customFieldsToSend['# of Employees']
+          ? parseInt(customFieldsToSend['# of Employees'])
+          : (formData.numEmployees ? parseInt(formData.numEmployees) : null),
+        num_offices: customFieldsToSend['# of Offices']
+          ? parseInt(customFieldsToSend['# of Offices'])
+          : (formData.numOffices ? parseInt(formData.numOffices) : null),
+        contact_phone: customFieldsToSend['Contact Phone'] || formData.contactPhone,
+        address: customFieldsToSend['Address'] || formData.address,
         custom_fields: JSON.stringify(customFieldsToSend),
       };
 
@@ -576,11 +596,11 @@ export default function AddOrganization() {
                           value={customFieldValues[field.field_name]}
                           onChange={handleCustomFieldChange}
                         />
-                        {field.is_required && (
+                        {/* {field.is_required && (
                           <span className="absolute text-red-500 left-[-10px] top-2">
                             *
                           </span>
-                        )}
+                        )} */}
                       </div>
                     </div>
                   );
