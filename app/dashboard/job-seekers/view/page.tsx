@@ -6,6 +6,7 @@ import Image from 'next/image';
 import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
+import { FaLinkedin, FaFacebookSquare } from "react-icons/fa";
 
 export default function JobSeekerView() {
     const router = useRouter();
@@ -531,11 +532,11 @@ export default function JobSeekerView() {
                     </a>
                     {/* LinkedIn icon */}
                     <a href={`https://linkedin.com/search/results/people/?keywords=${encodeURIComponent(jobSeeker.fullName)}`} target="_blank" rel="noopener noreferrer">
-                        <span className="text-3xl text-blue-700">in</span>
+                        <span className="text-3xl text-blue-700"><FaLinkedin /></span>
                     </a>
                     {/* Facebook icon */}
                     <a href={`https://facebook.com/search?q=${encodeURIComponent(jobSeeker.fullName)}`} target="_blank" rel="noopener noreferrer">
-                        <span className="text-3xl text-blue-900">f</span>
+                        <span className="text-3xl text-blue-900"><FaFacebookSquare /></span>
                     </a>
                 </div>
 

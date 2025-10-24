@@ -55,19 +55,19 @@ export default function AddJob() {
     const initializeFields = () => {
         // These are the standard fields
         const standardFields: FormField[] = [
-            { id: 'jobTitle', name: 'jobTitle', label: 'Job Title', type: 'text', required: true, visible: true, value: '' },
+            { id: 'jobTitle', name: 'jobTitle', label: 'Job Title', type: 'text', required: false, visible: true, value: '' },
             {
-                id: 'category', name: 'category', label: 'Category', type: 'select', required: true, visible: true,
+                id: 'category', name: 'category', label: 'Category', type: 'select', required: false, visible: true,
                 options: ['Payroll', 'IT', 'Finance', 'Marketing', 'Human Resources', 'Operations', 'Sales'], value: 'Payroll'
             },
-            { id: 'organization', name: 'organizationId', label: 'Organization', type: 'text', required: true, visible: true, value: '' },
-            { id: 'hiringManager', name: 'hiringManager', label: 'Hiring Manager', type: 'text', required: true, visible: true, value: '' },
+            { id: 'organization', name: 'organizationId', label: 'Organization', type: 'text', required: false, visible: true, value: '' },
+            { id: 'hiringManager', name: 'hiringManager', label: 'Hiring Manager', type: 'text', required: false, visible: true, value: '' },
             {
                 id: 'status',
                 name: 'status',
                 label: 'Status',
                 type: 'select',
-                required: true,
+                required: false,
                 visible: true,
                 options: ['Open', 'On Hold', 'Filled', 'Closed'],
                 value: 'Open'
@@ -77,7 +77,7 @@ export default function AddJob() {
                 name: 'priority',
                 label: 'Priority',
                 type: 'select',
-                required: true,
+                required: false,
                 visible: true,
                 options: ['A', 'B', 'C'],
                 value: 'A'
@@ -87,7 +87,7 @@ export default function AddJob() {
                 name: 'employmentType',
                 label: 'Employment Type',
                 type: 'select',
-                required: true,
+                required: false,
                 visible: true,
                 options: ['Full-time', 'Part-time', 'Contract', 'Temp to Hire', 'Temporary', 'Internship'],
                 value: 'Temp to Hire'
@@ -101,7 +101,7 @@ export default function AddJob() {
                 id: 'remoteOption', name: 'remoteOption', label: 'Remote Option', type: 'select', required: false, visible: true,
                 options: ['On-site', 'Remote', 'Hybrid'], value: 'On-site'
             },
-            { id: 'jobDescription', name: 'jobDescription', label: 'Job Description', type: 'textarea', required: true, visible: true, value: '' },
+            { id: 'jobDescription', name: 'jobDescription', label: 'Job Description', type: 'textarea', required: false, visible: true, value: '' },
             { id: 'jobDescriptionFile', name: 'jobDescriptionFile', label: 'Upload Job Description', type: 'file', required: false, visible: true, value: '' },
             { id: 'minSalary', name: 'minSalary', label: 'Minimum Salary', type: 'number', required: false, visible: true, value: '', placeholder: 'e.g. 50000' },
             { id: 'maxSalary', name: 'maxSalary', label: 'Maximum Salary', type: 'number', required: false, visible: true, value: '', placeholder: 'e.g. 70000' },

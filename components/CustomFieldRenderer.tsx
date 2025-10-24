@@ -238,6 +238,7 @@ export function useCustomFields(entityType: string) {
   return {
     customFields,
     customFieldValues,
+    setCustomFieldValues, // ✅ yeh line zaroor add karo
     isLoading,
     handleCustomFieldChange,
     validateCustomFields,
