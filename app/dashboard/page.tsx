@@ -81,7 +81,7 @@ export default function Dashboard() {
                 <div className="bg-white rounded-md shadow overflow-hidden">
                     <div className="p-2 border-b border-gray-200 flex justify-between items-center">
                         <div>
-                            <h2 className="text-lg font-semibold">Tasks</h2>
+                            <h2 className="text-lg font-semibold">Tasks Overview</h2>
                         </div>
                         <div>
                             {/* Header buttons would go here */}

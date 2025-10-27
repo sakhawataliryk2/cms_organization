@@ -32,6 +32,28 @@ export default function CustomFieldRenderer({
 }: CustomFieldRendererProps) {
   if (field.is_hidden) return null;
 
+  function formatNumberWithCommas(value: string | number) {
+  let num = Number(value);
+  if (isNaN(num)) return "";
+  return num.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+}
+  // Format salary values for display
+  const formatSalaryValue = (val: any) => {
+    if (field.field_name === "minSalary" || field.field_name === "maxSalary") {
+      if (val && !isNaN(parseFloat(val))) {
+        return parseFloat(val).toLocaleString("en-US", {
+          style: "currency",
+          currency: "USD",
+        });
+      }
+      return "";
+    }
+    return val || "";
+  };
+
   // Phone number formatting function
   const formatPhoneNumber = (input: string) => {
     // Remove all non-numeric characters
@@ -50,6 +72,7 @@ export default function CustomFieldRenderer({
     }
     return limited;
   };
+  
 
   // Handle phone number input changes
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -66,6 +89,14 @@ export default function CustomFieldRenderer({
         HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
       >
     ) => onChange(field.field_name, e.target.value),
+    className,
+    placeholder: field.placeholder || "",
+    required: field.is_required,
+  };
+
+  // Special props for salary fields (without onChange)
+  const salaryFieldProps = {
+    id: field.field_name,
     className,
     placeholder: field.placeholder || "",
     required: field.is_required,
@@ -101,22 +132,99 @@ export default function CustomFieldRenderer({
           className="h-4 w-4"
         />
       );
-    case "number":
-      return (
-        <input 
-          {...fieldProps} 
-          type="number"
-          min="2000"
-          max="2100"
-          maxLength={4}
-          onInput={(e) => {
-            const target = e.target as HTMLInputElement;
-            if (target.value.length > 4) {
-              target.value = target.value.slice(0, 4);
+      case "number":
+  // Check if this field is for job salaries
+  if (field.field_name === "minSalary" || field.field_name === "maxSalary") {
+    return (
+      <input
+        {...salaryFieldProps}
+        type="text"  // Text so we can add "$" & commas
+        value={formatSalaryValue(value)}
+        onInput={(e: React.ChangeEvent<HTMLInputElement>) => {
+          let inputValue = e.target.value.replace(/[^0-9.]/g, ""); // Remove non-numeric except decimal
+          
+          // Handle multiple decimal points
+          const decimalCount = (inputValue.match(/\./g) || []).length;
+          if (decimalCount > 1) {
+            inputValue = inputValue.substring(0, inputValue.lastIndexOf('.'));
+          }
+          
+          // Limit decimal places to 2
+          if (inputValue.includes('.')) {
+            const parts = inputValue.split('.');
+            if (parts[1] && parts[1].length > 2) {
+              inputValue = parts[0] + '.' + parts[1].substring(0, 2);
             }
-          }}
-        />
-      );
+          }
+          
+          let number = parseFloat(inputValue);
+          
+          if (!isNaN(number) && inputValue !== "") {
+            // Format as $XX,XXX.XX
+            const formatted = number.toLocaleString("en-US", {
+              style: "currency",
+              currency: "USD",
+            });
+            e.target.value = formatted;
+            // Call onChange with the numeric value for storage
+            onChange(field.field_name, number);
+          } else if (inputValue === "") {
+            e.target.value = "";
+            onChange(field.field_name, "");
+          }
+        }}
+        onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
+          // Ensure proper formatting on blur
+          let inputValue = e.target.value.replace(/[^0-9.]/g, "");
+          let number = parseFloat(inputValue);
+          
+          if (!isNaN(number) && inputValue !== "") {
+            const formatted = number.toLocaleString("en-US", {
+              style: "currency",
+              currency: "USD",
+            });
+            e.target.value = formatted;
+            onChange(field.field_name, number);
+          }
+        }}
+        placeholder="$XX,XXX.XX"
+      />
+    );
+  }
+
+  // ⚠️ All other number fields behave normal (organization, etc.)
+  return (
+    <input 
+      {...fieldProps} 
+      type="number"
+      min="2000"
+      max="2100"
+      maxLength={4}
+      onInput={(e) => {
+        const target = e.target as HTMLInputElement;
+        if (target.value.length > 4) {
+          target.value = target.value.slice(0, 4);
+        }
+      }}
+    />
+  );
+
+    // case "number":
+    //   return (
+    //     <input 
+    //       {...fieldProps} 
+    //       type="number"
+    //       min="2000"
+    //       max="2100"
+    //       maxLength={4}
+    //       onInput={(e) => {
+    //         const target = e.target as HTMLInputElement;
+    //         if (target.value.length > 4) {
+    //           target.value = target.value.slice(0, 4);
+    //         }
+    //       }}
+    //     />
+    //   );
     case "date":
       return <input {...fieldProps} type="date" />;
     case "email":
@@ -161,9 +269,53 @@ export default function CustomFieldRenderer({
           className={className}
         />
       );
-    default:
-      return <input {...fieldProps} type="text" />;
-  }
+      default:
+        return (
+          <div style={{ position: "relative", width: "100%" }}>
+            <input
+              {...fieldProps}
+              type="text"
+              onChange={(e) => {
+                fieldProps.onChange(e); // normal functionality continue rahe
+              }}
+              style={{ paddingRight: "25px" }} // thoda space right pe icon ke liye
+            />
+      
+            {/* Sirf Job Title field ke liye icon show kare */}
+            {field.field_name === "jobTitle" && (
+              value && value.trim() !== "" ? (
+                <span
+                  style={{
+                    color: "green",
+                    position: "absolute",
+                    right: "8px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    fontSize: "16px",
+                    fontWeight: "bold",
+                  }}
+                >
+                  ✔
+                </span>
+              ) : (
+                <span
+                  style={{
+                    color: "red",
+                    position: "absolute",
+                    right: "8px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    fontSize: "18px",
+                    fontWeight: "bold",
+                  }}
+                >
+                  *
+                </span>
+              )
+            )}
+          </div>
+        );
+      }
 }
 
 // Hook for managing custom fields
