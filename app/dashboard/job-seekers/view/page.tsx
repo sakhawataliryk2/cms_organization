@@ -1,909 +1,1097 @@
-'use client'
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
-import Image from 'next/image';
-import ActionDropdown from '@/components/ActionDropdown';
-import LoadingScreen from '@/components/LoadingScreen';
-import PanelWithHeader from '@/components/PanelWithHeader';
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import Image from "next/image";
+import ActionDropdown from "@/components/ActionDropdown";
+import LoadingScreen from "@/components/LoadingScreen";
+import PanelWithHeader from "@/components/PanelWithHeader";
 import { FaLinkedin, FaFacebookSquare } from "react-icons/fa";
 
 export default function JobSeekerView() {
-    const router = useRouter();
-    const searchParams = useSearchParams();
-    const [activeTab, setActiveTab] = useState('summary');
-    const [activeQuickTab, setActiveQuickTab] = useState('prescreen');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState("summary");
+  const [activeQuickTab, setActiveQuickTab] = useState("prescreen");
 
-    // Add states for job seeker data
-    const [jobSeeker, setJobSeeker] = useState<any>(null);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+  // Add states for job seeker data
+  const [jobSeeker, setJobSeeker] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-    // Notes and history state
-    const [notes, setNotes] = useState<Array<any>>([]);
-    const [history, setHistory] = useState<Array<any>>([]);
-    const [isLoadingNotes, setIsLoadingNotes] = useState(false);
-    const [isLoadingHistory, setIsLoadingHistory] = useState(false);
-    const [showAddNote, setShowAddNote] = useState(false);
-    const [newNote, setNewNote] = useState('');
+  // Notes and history state
+  const [notes, setNotes] = useState<Array<any>>([]);
+  const [history, setHistory] = useState<Array<any>>([]);
+  const [isLoadingNotes, setIsLoadingNotes] = useState(false);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [showAddNote, setShowAddNote] = useState(false);
+  const [newNote, setNewNote] = useState("");
 
-    const jobSeekerId = searchParams.get('id');
+  const jobSeekerId = searchParams.get("id");
 
-    // Fetch job seeker when component mounts
-    useEffect(() => {
-        if (jobSeekerId) {
-            fetchJobSeeker(jobSeekerId);
-        }
-    }, [jobSeekerId]);
+  // Fetch job seeker when component mounts
+  useEffect(() => {
+    if (jobSeekerId) {
+      fetchJobSeeker(jobSeekerId);
+    }
+  }, [jobSeekerId]);
 
-    // Function to fetch job seeker data with better error handling
-    const fetchJobSeeker = async (id: string) => {
-        setIsLoading(true);
-        setError(null);
+  // Function to fetch job seeker data with better error handling
+  const fetchJobSeeker = async (id: string) => {
+    setIsLoading(true);
+    setError(null);
 
-        try {
-            console.log(`Fetching job seeker data for ID: ${id}`);
-            const response = await fetch(`/api/job-seekers/${id}`, {
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
-                }
-            });
+    try {
+      console.log(`Fetching job seeker data for ID: ${id}`);
+      const response = await fetch(`/api/job-seekers/${id}`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
 
-            console.log(`API Response status: ${response.status}`);
+      console.log(`API Response status: ${response.status}`);
 
-            // Handle non-JSON responses
-            const responseText = await response.text();
-            let data;
+      // Handle non-JSON responses
+      const responseText = await response.text();
+      let data;
 
-            try {
-                data = JSON.parse(responseText);
-            } catch (error) {
-                // Properly type the error to access the message property
-                const parseError = error as Error;
-                console.error('Error parsing response:', parseError);
-                console.error('Raw response:', responseText.substring(0, 200));
-                throw new Error(`Failed to parse API response: ${parseError.message}`);
-            }
+      try {
+        data = JSON.parse(responseText);
+      } catch (error) {
+        // Properly type the error to access the message property
+        const parseError = error as Error;
+        console.error("Error parsing response:", parseError);
+        console.error("Raw response:", responseText.substring(0, 200));
+        throw new Error(`Failed to parse API response: ${parseError.message}`);
+      }
 
-            if (!response.ok) {
-                throw new Error(data.message || `Failed to fetch job seeker: ${response.status}`);
-            }
+      if (!response.ok) {
+        throw new Error(
+          data.message || `Failed to fetch job seeker: ${response.status}`
+        );
+      }
 
-            console.log('Job seeker data received:', data);
+      console.log("Job seeker data received:", data);
 
-            // Validate job seeker data
-            if (!data.jobSeeker) {
-                throw new Error('No job seeker data received from API');
-            }
+      // Validate job seeker data
+      if (!data.jobSeeker) {
+        throw new Error("No job seeker data received from API");
+      }
 
-            // Process the job seeker data
-            const jobSeekerData = data.jobSeeker;
+      // Process the job seeker data
+      const jobSeekerData = data.jobSeeker;
 
-            // Create a resume object based on the job seeker's data
-            const resume = {
-                profile: jobSeekerData.resume_text || 'No profile information available',
-                experience: [] // Would be populated from a formatted resume if available
-            };
+      // Create a resume object based on the job seeker's data
+      const resume = {
+        profile:
+          jobSeekerData.resume_text || "No profile information available",
+        experience: [], // Would be populated from a formatted resume if available
+      };
 
-            // Format the job seeker data with default values for all fields
-            const formattedJobSeeker = {
-                id: jobSeekerData.id || 'Unknown ID',
-                firstName: jobSeekerData.first_name || '',
-                lastName: jobSeekerData.last_name || '',
-                fullName: jobSeekerData.full_name || `${jobSeekerData.last_name}, ${jobSeekerData.first_name}`,
-                email: jobSeekerData.email || 'No email provided',
-                phone: jobSeekerData.phone || 'No phone provided',
-                mobilePhone: jobSeekerData.mobile_phone || jobSeekerData.phone || 'No phone provided',
-                address: jobSeekerData.address || 'No address provided',
-                city: jobSeekerData.city || '',
-                state: jobSeekerData.state || '',
-                zip: jobSeekerData.zip || '',
-                fullAddress: formatAddress(jobSeekerData),
-                status: jobSeekerData.status || 'New lead',
-                currentOrganization: jobSeekerData.current_organization || 'Not specified',
-                title: jobSeekerData.title || 'Not specified',
-                dateAdded: jobSeekerData.date_added ? formatDate(jobSeekerData.date_added) : 'Unknown',
-                lastContactDate: jobSeekerData.last_contact_date ? formatDate(jobSeekerData.last_contact_date) : 'Never contacted',
-                owner: jobSeekerData.owner || 'Not assigned',
-                skills: jobSeekerData.skills ? jobSeekerData.skills.split(',').map((skill: string) => skill.trim()) : [],
-                desiredSalary: jobSeekerData.desired_salary || 'Not specified',
-                resume: resume,
-                customFields: jobSeekerData.custom_fields || {}
-            };
+      // Format the job seeker data with default values for all fields
+      const formattedJobSeeker = {
+        id: jobSeekerData.id || "Unknown ID",
+        firstName: jobSeekerData.first_name || "",
+        lastName: jobSeekerData.last_name || "",
+        fullName:
+          jobSeekerData.full_name ||
+          `${jobSeekerData.last_name}, ${jobSeekerData.first_name}`,
+        email: jobSeekerData.email || "No email provided",
+        phone: jobSeekerData.phone || "No phone provided",
+        mobilePhone:
+          jobSeekerData.mobile_phone ||
+          jobSeekerData.phone ||
+          "No phone provided",
+        address: jobSeekerData.address || "No address provided",
+        city: jobSeekerData.city || "",
+        state: jobSeekerData.state || "",
+        zip: jobSeekerData.zip || "",
+        fullAddress: formatAddress(jobSeekerData),
+        status: jobSeekerData.status || "New lead",
+        currentOrganization:
+          jobSeekerData.current_organization || "Not specified",
+        title: jobSeekerData.title || "Not specified",
+        dateAdded: jobSeekerData.date_added
+          ? formatDate(jobSeekerData.date_added)
+          : "Unknown",
+        lastContactDate: jobSeekerData.last_contact_date
+          ? formatDate(jobSeekerData.last_contact_date)
+          : "Never contacted",
+        owner: jobSeekerData.owner || "Not assigned",
+        skills: jobSeekerData.skills
+          ? jobSeekerData.skills.split(",").map((skill: string) => skill.trim())
+          : [],
+        desiredSalary: jobSeekerData.desired_salary || "Not specified",
+        resume: resume,
+        customFields: jobSeekerData.custom_fields || {},
+      };
 
-            console.log('Formatted job seeker data:', formattedJobSeeker);
-            setJobSeeker(formattedJobSeeker);
+      console.log("Formatted job seeker data:", formattedJobSeeker);
+      setJobSeeker(formattedJobSeeker);
 
-            // Now fetch notes and history
-            fetchNotes(id);
-            fetchHistory(id);
-        } catch (err) {
-            console.error('Error fetching job seeker:', err);
-            setError(err instanceof Error ? err.message : 'An error occurred while fetching job seeker details');
-        } finally {
-            setIsLoading(false);
-        }
-    };
+      // Now fetch notes and history
+      fetchNotes(id);
+      fetchHistory(id);
+    } catch (err) {
+      console.error("Error fetching job seeker:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while fetching job seeker details"
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    // Helper function to format the complete address
-    function formatAddress(data: any): string {
-        const addressParts = [];
-        if (data.address) addressParts.push(data.address);
+  // Helper function to format the complete address
+  function formatAddress(data: any): string {
+    const addressParts = [];
+    if (data.address) addressParts.push(data.address);
 
-        const cityStateParts = [];
-        if (data.city) cityStateParts.push(data.city);
-        if (data.state) cityStateParts.push(data.state);
-        if (cityStateParts.length > 0) addressParts.push(cityStateParts.join(', '));
+    const cityStateParts = [];
+    if (data.city) cityStateParts.push(data.city);
+    if (data.state) cityStateParts.push(data.state);
+    if (cityStateParts.length > 0) addressParts.push(cityStateParts.join(", "));
 
-        if (data.zip) addressParts.push(data.zip);
+    if (data.zip) addressParts.push(data.zip);
 
-        return addressParts.length > 0 ? addressParts.join(', ') : 'No address provided';
+    return addressParts.length > 0
+      ? addressParts.join(", ")
+      : "No address provided";
+  }
+
+  // Format date function
+  const formatDate = (dateString: string) => {
+    if (!dateString) return "";
+    try {
+      const date = new Date(dateString);
+      return new Intl.DateTimeFormat("en-US", {
+        month: "2-digit",
+        day: "2-digit",
+        year: "numeric",
+      }).format(date);
+    } catch (error) {
+      console.error("Error formatting date:", error);
+      return dateString;
+    }
+  };
+
+  // Fetch notes for the job seeker
+  const fetchNotes = async (id: string) => {
+    setIsLoadingNotes(true);
+
+    try {
+      const response = await fetch(`/api/job-seekers/${id}/notes`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch notes");
+      }
+
+      const data = await response.json();
+      setNotes(data.notes || []);
+    } catch (err) {
+      console.error("Error fetching notes:", err);
+    } finally {
+      setIsLoadingNotes(false);
+    }
+  };
+
+  // Fetch history for the job seeker
+  const fetchHistory = async (id: string) => {
+    setIsLoadingHistory(true);
+
+    try {
+      const response = await fetch(`/api/job-seekers/${id}/history`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch history");
+      }
+
+      const data = await response.json();
+      setHistory(data.history || []);
+    } catch (err) {
+      console.error("Error fetching history:", err);
+    } finally {
+      setIsLoadingHistory(false);
+    }
+  };
+
+  // Handle adding a new note
+  const handleAddNote = async () => {
+    if (!newNote.trim() || !jobSeekerId) return;
+
+    try {
+      const response = await fetch(`/api/job-seekers/${jobSeekerId}/notes`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+        body: JSON.stringify({ text: newNote }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to add note");
+      }
+
+      const data = await response.json();
+
+      // Add the new note to the list
+      setNotes([data.note, ...notes]);
+
+      // Clear the form
+      setNewNote("");
+      setShowAddNote(false);
+
+      // Refresh history
+      fetchHistory(jobSeekerId);
+    } catch (err) {
+      console.error("Error adding note:", err);
+      alert("Failed to add note. Please try again.");
+    }
+  };
+
+  const handleGoBack = () => {
+    router.back();
+  };
+
+  const handleEdit = () => {
+    if (jobSeekerId) {
+      router.push(`/dashboard/job-seekers/add?id=${jobSeekerId}`);
+    }
+  };
+
+  const handleActionSelected = (action: string) => {
+    console.log(`Action selected: ${action}`);
+    if (action === "edit") {
+      handleEdit();
+    } else if (action === "delete" && jobSeekerId) {
+      handleDelete(jobSeekerId);
+    }
+  };
+
+  // Handle job seeker deletion
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this job seeker?")) {
+      return;
     }
 
-    // Format date function
-    const formatDate = (dateString: string) => {
-        if (!dateString) return '';
-        try {
-            const date = new Date(dateString);
-            return new Intl.DateTimeFormat('en-US', {
-                month: '2-digit',
-                day: '2-digit',
-                year: 'numeric'
-            }).format(date);
-        } catch (error) {
-            console.error('Error formatting date:', error);
-            return dateString;
-        }
-    };
+    setIsLoading(true);
 
-    // Fetch notes for the job seeker
-    const fetchNotes = async (id: string) => {
-        setIsLoadingNotes(true);
+    try {
+      const response = await fetch(`/api/job-seekers/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
 
-        try {
-            const response = await fetch(`/api/job-seekers/${id}/notes`, {
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
-                }
-            });
+      if (!response.ok) {
+        throw new Error("Failed to delete job seeker");
+      }
 
-            if (!response.ok) {
-                throw new Error('Failed to fetch notes');
+      // Redirect to the job seekers list
+      router.push("/dashboard/job-seekers");
+    } catch (error) {
+      console.error("Error deleting job seeker:", error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "An error occurred while deleting the job seeker"
+      );
+      setIsLoading(false);
+    }
+  };
+
+  const actionOptions = [
+    { label: "Edit", action: () => handleActionSelected("edit") },
+    { label: "Delete", action: () => handleActionSelected("delete") },
+    { label: "Add Note", action: () => setShowAddNote(true) },
+    { label: "Send Email", action: () => handleActionSelected("email") },
+  ];
+
+  // Tabs from the image
+  const tabs = [
+    { id: "summary", label: "Summary" },
+    { id: "modify", label: "Modify" },
+    { id: "history", label: "History" },
+    { id: "notes", label: "Notes" },
+    { id: "docs", label: "Docs" },
+    { id: "references", label: "References" },
+    { id: "applications", label: "Applications" },
+    { id: "onboarding", label: "Onboarding" },
+  ];
+
+  // Quick action tabs from the image
+  const quickTabs = [
+    { id: "prescreen", label: "Prescreen" },
+    { id: "submissions", label: "Submissions" },
+    { id: "sendouts", label: "Sendouts" },
+    { id: "interviews", label: "Interviews" },
+    { id: "placements", label: "Placements" },
+  ];
+
+  // Render notes tab content
+  const renderNotesTab = () => (
+    <div className="bg-white p-4 rounded shadow-sm">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg font-semibold">Job Seeker Notes</h2>
+        <button
+          onClick={() => setShowAddNote(true)}
+          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+        >
+          Add Note
+        </button>
+      </div>
+
+      {/* Add Note Form */}
+      {showAddNote && (
+        <div className="mb-6 p-4 bg-gray-50 rounded border">
+          <h3 className="font-medium mb-2">Add New Note</h3>
+          <textarea
+            value={newNote}
+            onChange={(e) => setNewNote(e.target.value)}
+            placeholder="Enter your note here..."
+            className="w-full p-2 border rounded mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            rows={4}
+          />
+          <div className="flex justify-end space-x-2">
+            <button
+              onClick={() => setShowAddNote(false)}
+              className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleAddNote}
+              className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+              disabled={!newNote.trim()}
+            >
+              Save Note
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Notes List */}
+      {isLoadingNotes ? (
+        <div className="flex justify-center py-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+        </div>
+      ) : notes.length > 0 ? (
+        <div className="space-y-4">
+          {notes.map((note) => (
+            <div key={note.id} className="p-3 border rounded hover:bg-gray-50">
+              <div className="flex justify-between items-start mb-2">
+                <span className="font-medium text-blue-600">
+                  {note.created_by_name || "Unknown User"}
+                </span>
+                <span className="text-sm text-gray-500">
+                  {new Date(note.created_at).toLocaleString()}
+                </span>
+              </div>
+              <p className="text-gray-700">{note.text}</p>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="text-gray-500 italic">No notes have been added yet.</p>
+      )}
+    </div>
+  );
+
+  // Render history tab content
+  const renderHistoryTab = () => (
+    <div className="bg-white p-4 rounded shadow-sm">
+      <h2 className="text-lg font-semibold mb-4">Job Seeker History</h2>
+
+      {isLoadingHistory ? (
+        <div className="flex justify-center py-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+        </div>
+      ) : history.length > 0 ? (
+        <div className="space-y-4">
+          {history.map((item) => {
+            // Format the history entry based on action type
+            let actionDisplay = "";
+            let detailsDisplay = "";
+
+            try {
+              const details =
+                typeof item.details === "string"
+                  ? JSON.parse(item.details)
+                  : item.details;
+
+              switch (item.action) {
+                case "CREATE":
+                  actionDisplay = "Job Seeker Created";
+                  detailsDisplay = `Created by ${
+                    item.performed_by_name || "Unknown"
+                  }`;
+                  break;
+                case "UPDATE":
+                  actionDisplay = "Job Seeker Updated";
+                  if (details && details.before && details.after) {
+                    // Create a list of changes
+                    const changes = [];
+                    for (const key in details.after) {
+                      if (details.before[key] !== details.after[key]) {
+                        const fieldName = key.replace(/_/g, " ");
+                        changes.push(
+                          `${fieldName}: "${details.before[key] || ""}" → "${
+                            details.after[key] || ""
+                          }"`
+                        );
+                      }
+                    }
+                    if (changes.length > 0) {
+                      detailsDisplay = `Changes: ${changes.join(", ")}`;
+                    } else {
+                      detailsDisplay = "No changes detected";
+                    }
+                  }
+                  break;
+                case "ADD_NOTE":
+                  actionDisplay = "Note Added";
+                  detailsDisplay = details.text || "";
+                  break;
+                default:
+                  actionDisplay = item.action;
+                  detailsDisplay = JSON.stringify(details);
+              }
+            } catch (e) {
+              console.error("Error parsing history details:", e);
+              detailsDisplay = "Error displaying details";
             }
 
-            const data = await response.json();
-            setNotes(data.notes || []);
-        } catch (err) {
-            console.error('Error fetching notes:', err);
-        } finally {
-            setIsLoadingNotes(false);
-        }
-    };
+            return (
+              <div
+                key={item.id}
+                className="p-3 border rounded hover:bg-gray-50"
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="font-medium text-blue-600">
+                    {actionDisplay}
+                  </span>
+                  <span className="text-sm text-gray-500">
+                    {new Date(item.performed_at).toLocaleString()}
+                  </span>
+                </div>
+                <div className="mb-2">{detailsDisplay}</div>
+                <div className="text-sm text-gray-600">
+                  By: {item.performed_by_name || "Unknown"}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-gray-500 italic">No history records available</p>
+      )}
+    </div>
+  );
 
-    // Fetch history for the job seeker
-    const fetchHistory = async (id: string) => {
-        setIsLoadingHistory(true);
+  // Render modify tab to direct to edit form
+  const renderModifyTab = () => (
+    <div className="bg-white p-4 rounded shadow-sm">
+      <h2 className="text-lg font-semibold mb-4">Edit Job Seeker</h2>
+      <p className="text-gray-600 mb-4">
+        Click the button below to edit this job seeker's details.
+      </p>
+      <button
+        onClick={handleEdit}
+        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+      >
+        Edit Job Seeker
+      </button>
+    </div>
+  );
 
-        try {
-            const response = await fetch(`/api/job-seekers/${id}/history`, {
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
-                }
-            });
+  if (isLoading) {
+    return <LoadingScreen message="Loading job seeker details..." />;
+  }
 
-            if (!response.ok) {
-                throw new Error('Failed to fetch history');
-            }
+  if (error) {
+    return (
+      <div className="bg-white p-6 rounded-lg shadow-md">
+        <div className="text-red-500 mb-4">{error}</div>
+        <button
+          onClick={handleGoBack}
+          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          Back to Job Seekers
+        </button>
+      </div>
+    );
+  }
 
-            const data = await response.json();
-            setHistory(data.history || []);
-        } catch (err) {
-            console.error('Error fetching history:', err);
-        } finally {
-            setIsLoadingHistory(false);
-        }
-    };
+  if (!jobSeeker) {
+    return (
+      <div className="bg-white p-6 rounded-lg shadow-md">
+        <div className="text-gray-700 mb-4">Job seeker not found</div>
+        <button
+          onClick={handleGoBack}
+          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          Back to Job Seekers
+        </button>
+      </div>
+    );
+  }
 
-    // Handle adding a new note
-    const handleAddNote = async () => {
-        if (!newNote.trim() || !jobSeekerId) return;
+  return (
+    <div className="bg-gray-200 min-h-screen">
+      {/* Header with name */}
+      <div className="bg-orange-200 p-2 flex items-center">
+        <div className="flex items-center">
+          <Image
+            src="/file.svg"
+            alt="Job Seeker"
+            width={24}
+            height={24}
+            className="mr-2"
+          />
+          <h1 className="text-xl text-gray-700">Job Seekers</h1>
+        </div>
+      </div>
 
-        try {
-            const response = await fetch(`/api/job-seekers/${jobSeekerId}/notes`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
-                },
-                body: JSON.stringify({ text: newNote })
-            });
+      {/* Sub-header with ID and name */}
+      {/* <div className="bg-white border-b border-gray-300 p-2">
+                <div className="text-lg font-semibold">{jobSeeker.id}</div>
+                <div className="text-lg">{jobSeeker.fullName}</div>
+            </div> */}
 
-            if (!response.ok) {
-                throw new Error('Failed to add note');
-            }
+      {/* Social media icons row */}
+      {/* <div className="bg-white border-b border-gray-300 p-3 flex justify-between items-center">
+        <div className="flex space-x-3">
+          
+          <a
+            href={`https://google.com/search?q=${encodeURIComponent(
+              jobSeeker.fullName
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span className="text-3xl text-blue-500 font-bold">G</span>
+          </a>
+          
+          <a
+            href={`https://linkedin.com/search/results/people/?keywords=${encodeURIComponent(
+              jobSeeker.fullName
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span className="text-3xl text-blue-700">
+              <FaLinkedin />
+            </span>
+          </a>
+         
+          <a
+            href={`https://facebook.com/search?q=${encodeURIComponent(
+              jobSeeker.fullName
+            )}`}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            <span className="text-3xl text-blue-900">
+              <FaFacebookSquare />
+            </span>
+          </a>
+        </div>
 
-            const data = await response.json();
+        
+        <div className="flex items-center space-x-2">
+          <ActionDropdown label="ACTIONS" options={actionOptions} />
+          <button className="p-1 hover:bg-gray-200 rounded">
+            <Image src="/print.svg" alt="Print" width={20} height={20} />
+          </button>
+          <button className="p-1 hover:bg-gray-200 rounded">
+            <Image src="/reload.svg" alt="Reload" width={20} height={20} />
+          </button>
+          <button
+            onClick={handleGoBack}
+            className="p-1 hover:bg-gray-200 rounded"
+          >
+            <Image src="/x.svg" alt="Close" width={20} height={20} />
+          </button>
+        </div>
+      </div> */}
 
-            // Add the new note to the list
-            setNotes([data.note, ...notes]);
+      {/* Information row */}
+      <div className="bg-white border-b border-gray-300 p-2 grid grid-cols-6 gap-4">
+        <div>
+          {/* <div className="text-gray-600 text-sm">ID</div> */}
+          <div className="text-lg font-semibold">{jobSeeker.id}</div>
+          <div className="text-lg">{jobSeeker.fullName.toUpperCase()}</div>
+          {/* <div>{jobSeeker.id}</div> */}
+        </div>
+        {/* <div>
+                    <div className="text-gray-600 text-sm">First Name</div>
+                    <div>{jobSeeker.firstName}</div>
+                </div> */}
+        <div>
+          <div className="text-gray-600 text-sm">Primary Phone</div>
+          <div>{jobSeeker.phone}</div>
+        </div>
+        <div>
+          <div className="text-gray-600 text-sm">Primary Email</div>
+          <div className="text-blue-600 truncate">
+            <a href={`mailto:${jobSeeker.email}`}>{jobSeeker.email}</a>
+          </div>
+        </div>
+        <div className="bg-white p-3 flex justify-between items-center">
+          <div className="flex space-x-3">
+            {/* Google icon */}
+            <a
+              href={`https://google.com/search?q=${encodeURIComponent(
+                jobSeeker.fullName
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span className="text-3xl text-blue-500 font-bold">G</span>
+            </a>
+            {/* LinkedIn icon */}
+            <a
+              href={`https://linkedin.com/search/results/people/?keywords=${encodeURIComponent(
+                jobSeeker.fullName
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span className="text-3xl text-blue-700">
+                <FaLinkedin />
+              </span>
+            </a>
+            {/* Facebook icon */}
+            <a
+              href={`https://facebook.com/search?q=${encodeURIComponent(
+                jobSeeker.fullName
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span className="text-3xl text-blue-900">
+                <FaFacebookSquare />
+              </span>
+            </a>
+          </div>
+        </div>
+        {/* Action buttons */}
+        <div className="flex items-center justify-end space-x-2 col-span-2">
+          <ActionDropdown label="ACTIONS" options={actionOptions} />
+          <button className="p-1 hover:bg-gray-200 rounded">
+            <Image src="/print.svg" alt="Print" width={20} height={20} />
+          </button>
+          <button className="p-1 hover:bg-gray-200 rounded">
+            <Image src="/reload.svg" alt="Reload" width={20} height={20} />
+          </button>
+          <button
+            onClick={handleGoBack}
+            className="p-1 hover:bg-gray-200 rounded"
+          >
+            <Image src="/x.svg" alt="Close" width={20} height={20} />
+          </button>
+        </div>
+      </div>
 
-            // Clear the form
-            setNewNote('');
-            setShowAddNote(false);
+      {/* Navigation Tabs */}
+      <div className="flex bg-white border-b border-gray-300 overflow-x-auto">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            className={`px-4 py-2 ${
+              activeTab === tab.id
+                ? "border-b-2 border-blue-500 font-medium text-blue-600"
+                : "text-gray-600 hover:text-gray-800 hover:bg-gray-100"
+            }`}
+            onClick={() => setActiveTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-            // Refresh history
-            fetchHistory(jobSeekerId);
-        } catch (err) {
-            console.error('Error adding note:', err);
-            alert('Failed to add note. Please try again.');
-        }
-    };
+      {/* Quick Action Tabs */}
+      <div className="flex bg-gray-300 p-2 space-x-2">
+        {quickTabs.map((tab) => (
+          <button
+            key={tab.id}
+            className={`${
+              activeQuickTab === tab.id
+                ? "bg-blue-500 text-white"
+                : "bg-white text-gray-700 hover:bg-gray-100"
+            } px-6 py-1 rounded-full shadow`}
+            onClick={() => setActiveQuickTab(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
 
-    const handleGoBack = () => {
-        router.back();
-    };
+      {/* Main Content */}
+      <div className="grid grid-cols-7 gap-4 p-4">
+        {/* Display content based on active tab */}
+        {activeTab === "summary" && (
+          <>
+            {/* Left Column - Resume Section (4/7 width) */}
+            <div className="col-span-4">
+              <div className="bg-white rounded-lg shadow">
+                <div className="border-b border-gray-300 p-2 font-medium">
+                  Resume
+                </div>
+                <div className="p-4">
+                  <div className="text-center mb-4">
+                    <h2 className="text-xl font-bold">
+                      {jobSeeker.fullName.toUpperCase()}
+                    </h2>
+                    <div className="flex justify-center items-center text-gray-600 space-x-2 mt-1 flex-wrap">
+                      <a
+                        href={`mailto:${jobSeeker.email}`}
+                        className="text-blue-600"
+                      >
+                        {jobSeeker.email}
+                      </a>
+                      <span>/</span>
+                      <span>{jobSeeker.phone}</span>
+                      <span>/</span>
+                      <span>{jobSeeker.fullAddress}</span>
+                    </div>
+                  </div>
 
-    const handleEdit = () => {
-        if (jobSeekerId) {
-            router.push(`/dashboard/job-seekers/add?id=${jobSeekerId}`);
-        }
-    };
+                  {/* Profile Section */}
+                  <div className="mb-6">
+                    <h3 className="font-bold border-b border-gray-300 pb-1 mb-2">
+                      PROFILE
+                    </h3>
+                    <p className="text-sm">{jobSeeker.resume.profile}</p>
+                  </div>
 
-    const handleActionSelected = (action: string) => {
-        console.log(`Action selected: ${action}`);
-        if (action === 'edit') {
-            handleEdit();
-        } else if (action === 'delete' && jobSeekerId) {
-            handleDelete(jobSeekerId);
-        }
-    };
+                  {/* Skills Section */}
+                  {jobSeeker.skills && jobSeeker.skills.length > 0 && (
+                    <div className="mb-6">
+                      <h3 className="font-bold border-b border-gray-300 pb-1 mb-2">
+                        SKILLS
+                      </h3>
+                      <div className="flex flex-wrap gap-2 mt-2">
+                        {jobSeeker.skills.map(
+                          (skill: string, index: number) => (
+                            <span
+                              key={index}
+                              className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm"
+                            >
+                              {skill}
+                            </span>
+                          )
+                        )}
+                      </div>
+                    </div>
+                  )}
 
-    // Handle job seeker deletion
-    const handleDelete = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this job seeker?')) {
-            return;
-        }
-
-        setIsLoading(true);
-
-        try {
-            const response = await fetch(`/api/job-seekers/${id}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
-                }
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to delete job seeker');
-            }
-
-            // Redirect to the job seekers list
-            router.push('/dashboard/job-seekers');
-        } catch (error) {
-            console.error('Error deleting job seeker:', error);
-            setError(error instanceof Error ? error.message : 'An error occurred while deleting the job seeker');
-            setIsLoading(false);
-        }
-    };
-
-    const actionOptions = [
-        { label: 'Edit', action: () => handleActionSelected('edit') },
-        { label: 'Delete', action: () => handleActionSelected('delete') },
-        { label: 'Add Note', action: () => setShowAddNote(true) },
-        { label: 'Send Email', action: () => handleActionSelected('email') },
-    ];
-
-    // Tabs from the image
-    const tabs = [
-        { id: 'summary', label: 'Summary' },
-        { id: 'modify', label: 'Modify' },
-        { id: 'history', label: 'History' },
-        { id: 'notes', label: 'Notes' },
-        { id: 'docs', label: 'Docs' },
-        { id: 'references', label: 'References' },
-        { id: 'applications', label: 'Applications' },
-        { id: 'onboarding', label: 'Onboarding' }
-    ];
-
-    // Quick action tabs from the image
-    const quickTabs = [
-        { id: 'prescreen', label: 'Prescreen' },
-        { id: 'submissions', label: 'Submissions' },
-        { id: 'sendouts', label: 'Sendouts' },
-        { id: 'interviews', label: 'Interviews' },
-        { id: 'placements', label: 'Placements' }
-    ];
-
-    // Render notes tab content
-    const renderNotesTab = () => (
-        <div className="bg-white p-4 rounded shadow-sm">
-            <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold">Job Seeker Notes</h2>
-                <button
-                    onClick={() => setShowAddNote(true)}
-                    className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-                >
-                    Add Note
-                </button>
+                  {/* Work Experience Section - only shown if there are experiences */}
+                  {jobSeeker.resume.experience &&
+                    jobSeeker.resume.experience.length > 0 && (
+                      <div className="mb-6">
+                        <h3 className="font-bold border-b border-gray-300 pb-1 mb-2">
+                          WORK EXPERIENCE
+                        </h3>
+                        {jobSeeker.resume.experience.map(
+                          (exp: any, index: number) => (
+                            <div key={index} className="mb-4">
+                              <div className="flex justify-between">
+                                <div className="font-bold text-sm">
+                                  {exp.title} {exp.location}
+                                </div>
+                                <div className="text-sm">{exp.period}</div>
+                              </div>
+                              <ul className="list-disc pl-5 mt-1">
+                                {exp.responsibilities.map(
+                                  (resp: string, respIndex: number) => (
+                                    <li
+                                      key={respIndex}
+                                      className="text-sm mb-1"
+                                    >
+                                      {resp}
+                                    </li>
+                                  )
+                                )}
+                              </ul>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    )}
+                </div>
+              </div>
             </div>
 
-            {/* Add Note Form */}
-            {showAddNote && (
-                <div className="mb-6 p-4 bg-gray-50 rounded border">
-                    <h3 className="font-medium mb-2">Add New Note</h3>
-                    <textarea
+            {/* Right Column - Job Seeker Details */}
+            <div className="col-span-3">
+              <div className="bg-white rounded-lg shadow">
+                <div className="border-b border-gray-300 p-2 font-medium">
+                  Job Seeker Details
+                </div>
+                <div className="p-4">
+                  <div className="space-y-3">
+                    <div className="flex">
+                      <div className="w-32 text-gray-600">Status:</div>
+                      <div className="flex-1">
+                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
+                          {jobSeeker.status}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex">
+                      <div className="w-32 text-gray-600">
+                        Current Organization:
+                      </div>
+                      <div className="flex-1 text-blue-600">
+                        {jobSeeker.currentOrganization}
+                      </div>
+                    </div>
+
+                    <div className="flex">
+                      <div className="w-32 text-gray-600">Title:</div>
+                      <div className="flex-1">{jobSeeker.title}</div>
+                    </div>
+
+                    <div className="flex">
+                      <div className="w-32 text-gray-600">Email:</div>
+                      <div className="flex-1 text-blue-600">
+                        {jobSeeker.email}
+                      </div>
+                    </div>
+
+                    <div className="flex">
+                      <div className="w-32 text-gray-600">Mobile Phone:</div>
+                      <div className="flex-1">{jobSeeker.mobilePhone}</div>
+                    </div>
+
+                    <div className="flex">
+                      <div className="w-32 text-gray-600">Address:</div>
+                      <div className="flex-1">{jobSeeker.fullAddress}</div>
+                    </div>
+
+                    <div className="flex">
+                      <div className="w-32 text-gray-600">Desired Salary:</div>
+                      <div className="flex-1">{jobSeeker.desiredSalary}</div>
+                    </div>
+
+                    <div className="flex">
+                      <div className="w-32 text-gray-600">Date Added:</div>
+                      <div className="flex-1">{jobSeeker.dateAdded}</div>
+                    </div>
+
+                    <div className="flex">
+                      <div className="w-32 text-gray-600">Last Contact:</div>
+                      <div className="flex-1">{jobSeeker.lastContactDate}</div>
+                    </div>
+
+                    <div className="flex">
+                      <div className="w-32 text-gray-600">User Owner:</div>
+                      <div className="flex-1">{jobSeeker.owner}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Skills/Software Section */}
+              <div className="bg-white rounded-lg shadow mt-4">
+                <div className="border-b border-gray-300 p-2 font-medium">
+                  Skills/Software
+                </div>
+                <div className="p-4">
+                  <div className="flex justify-end mb-3">
+                    <button className="text-sm text-blue-600 hover:underline">
+                      Add Skill
+                    </button>
+                  </div>
+
+                  {/* Skills content */}
+                  {jobSeeker.skills && jobSeeker.skills.length > 0 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {jobSeeker.skills.map((skill: string, index: number) => (
+                        <span
+                          key={index}
+                          className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm"
+                        >
+                          {skill}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center text-gray-500 p-4">
+                      No skills or software entries have been added yet.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Recent Notes Section */}
+              <div className="bg-white rounded-lg shadow mt-4">
+                <div className="border-b border-gray-300 p-2 font-medium">
+                  Recent Notes
+                </div>
+                <div className="p-4">
+                  <div className="flex justify-end mb-3">
+                    <button
+                      className="text-sm text-blue-600 hover:underline"
+                      onClick={() => setShowAddNote(true)}
+                    >
+                      Add Note
+                    </button>
+                  </div>
+
+                  {/* Notes preview */}
+                  {notes.length > 0 ? (
+                    <div>
+                      {notes.slice(0, 2).map((note) => (
+                        <div
+                          key={note.id}
+                          className="mb-3 pb-3 border-b last:border-0"
+                        >
+                          <div className="flex justify-between text-sm mb-1">
+                            <span className="font-medium">
+                              {note.created_by_name || "Unknown User"}
+                            </span>
+                            <span className="text-gray-500">
+                              {new Date(note.created_at).toLocaleString()}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-700">
+                            {note.text.length > 100
+                              ? `${note.text.substring(0, 100)}...`
+                              : note.text}
+                          </p>
+                        </div>
+                      ))}
+                      {notes.length > 2 && (
+                        <button
+                          onClick={() => setActiveTab("notes")}
+                          className="text-blue-500 text-sm hover:underline"
+                        >
+                          View all {notes.length} notes
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-center text-gray-500 p-4">
+                      No notes have been added yet.
+                    </div>
+                  )}
+
+                  {/* Show add note form if button was clicked */}
+                  {showAddNote && (
+                    <div className="mt-4 p-3 bg-gray-50 rounded border">
+                      <textarea
                         value={newNote}
                         onChange={(e) => setNewNote(e.target.value)}
                         placeholder="Enter your note here..."
                         className="w-full p-2 border rounded mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        rows={4}
-                    />
-                    <div className="flex justify-end space-x-2">
+                        rows={3}
+                      />
+                      <div className="flex justify-end space-x-2">
                         <button
-                            onClick={() => setShowAddNote(false)}
-                            className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
+                          onClick={() => setShowAddNote(false)}
+                          className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
                         >
-                            Cancel
+                          Cancel
                         </button>
                         <button
-                            onClick={handleAddNote}
-                            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-                            disabled={!newNote.trim()}
+                          onClick={handleAddNote}
+                          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
                         >
-                            Save Note
+                          Save Note
                         </button>
+                      </div>
                     </div>
+                  )}
                 </div>
-            )}
-
-            {/* Notes List */}
-            {isLoadingNotes ? (
-                <div className="flex justify-center py-4">
-                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-                </div>
-            ) : notes.length > 0 ? (
-                <div className="space-y-4">
-                    {notes.map((note) => (
-                        <div key={note.id} className="p-3 border rounded hover:bg-gray-50">
-                            <div className="flex justify-between items-start mb-2">
-                                <span className="font-medium text-blue-600">{note.created_by_name || 'Unknown User'}</span>
-                                <span className="text-sm text-gray-500">
-                                    {new Date(note.created_at).toLocaleString()}
-                                </span>
-                            </div>
-                            <p className="text-gray-700">{note.text}</p>
-                        </div>
-                    ))}
-                </div>
-            ) : (
-                <p className="text-gray-500 italic">No notes have been added yet.</p>
-            )}
-        </div>
-    );
-
-    // Render history tab content
-    const renderHistoryTab = () => (
-        <div className="bg-white p-4 rounded shadow-sm">
-            <h2 className="text-lg font-semibold mb-4">Job Seeker History</h2>
-
-            {isLoadingHistory ? (
-                <div className="flex justify-center py-4">
-                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-                </div>
-            ) : history.length > 0 ? (
-                <div className="space-y-4">
-                    {history.map((item) => {
-                        // Format the history entry based on action type
-                        let actionDisplay = '';
-                        let detailsDisplay = '';
-
-                        try {
-                            const details = typeof item.details === 'string'
-                                ? JSON.parse(item.details)
-                                : item.details;
-
-                            switch (item.action) {
-                                case 'CREATE':
-                                    actionDisplay = 'Job Seeker Created';
-                                    detailsDisplay = `Created by ${item.performed_by_name || 'Unknown'}`;
-                                    break;
-                                case 'UPDATE':
-                                    actionDisplay = 'Job Seeker Updated';
-                                    if (details && details.before && details.after) {
-                                        // Create a list of changes
-                                        const changes = [];
-                                        for (const key in details.after) {
-                                            if (details.before[key] !== details.after[key]) {
-                                                const fieldName = key.replace(/_/g, ' ');
-                                                changes.push(`${fieldName}: "${details.before[key] || ''}" → "${details.after[key] || ''}"`);
-                                            }
-                                        }
-                                        if (changes.length > 0) {
-                                            detailsDisplay = `Changes: ${changes.join(', ')}`;
-                                        } else {
-                                            detailsDisplay = 'No changes detected';
-                                        }
-                                    }
-                                    break;
-                                case 'ADD_NOTE':
-                                    actionDisplay = 'Note Added';
-                                    detailsDisplay = details.text || '';
-                                    break;
-                                default:
-                                    actionDisplay = item.action;
-                                    detailsDisplay = JSON.stringify(details);
-                            }
-                        } catch (e) {
-                            console.error('Error parsing history details:', e);
-                            detailsDisplay = 'Error displaying details';
-                        }
-
-                        return (
-                            <div key={item.id} className="p-3 border rounded hover:bg-gray-50">
-                                <div className="flex justify-between items-start mb-2">
-                                    <span className="font-medium text-blue-600">{actionDisplay}</span>
-                                    <span className="text-sm text-gray-500">
-                                        {new Date(item.performed_at).toLocaleString()}
-                                    </span>
-                                </div>
-                                <div className="mb-2">{detailsDisplay}</div>
-                                <div className="text-sm text-gray-600">
-                                    By: {item.performed_by_name || 'Unknown'}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            ) : (
-                <p className="text-gray-500 italic">No history records available</p>
-            )}
-        </div>
-    );
-
-    // Render modify tab to direct to edit form
-    const renderModifyTab = () => (
-        <div className="bg-white p-4 rounded shadow-sm">
-            <h2 className="text-lg font-semibold mb-4">Edit Job Seeker</h2>
-            <p className="text-gray-600 mb-4">Click the button below to edit this job seeker's details.</p>
-            <button
-                onClick={handleEdit}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            >
-                Edit Job Seeker
-            </button>
-        </div>
-    );
-
-    if (isLoading) {
-        return <LoadingScreen message="Loading job seeker details..." />;
-    }
-
-    if (error) {
-        return (
-            <div className="bg-white p-6 rounded-lg shadow-md">
-                <div className="text-red-500 mb-4">{error}</div>
-                <button
-                    onClick={handleGoBack}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
-                    Back to Job Seekers
-                </button>
+              </div>
             </div>
-        );
-    }
+          </>
+        )}
 
-    if (!jobSeeker) {
-        return (
-            <div className="bg-white p-6 rounded-lg shadow-md">
-                <div className="text-gray-700 mb-4">Job seeker not found</div>
-                <button
-                    onClick={handleGoBack}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
-                    Back to Job Seekers
-                </button>
+        {/* Notes Tab */}
+        {activeTab === "notes" && (
+          <div className="col-span-7">{renderNotesTab()}</div>
+        )}
+
+        {/* History Tab */}
+        {activeTab === "history" && (
+          <div className="col-span-7">{renderHistoryTab()}</div>
+        )}
+
+        {/* Modify Tab */}
+        {activeTab === "modify" && (
+          <div className="col-span-7">{renderModifyTab()}</div>
+        )}
+
+        {/* Placeholder for other tabs */}
+        {activeTab === "docs" && (
+          <div className="col-span-7">
+            <div className="bg-white p-4 rounded shadow-sm">
+              <h2 className="text-lg font-semibold mb-4">Documents</h2>
+              <p className="text-gray-500 italic">No documents available</p>
             </div>
-        );
-    }
+          </div>
+        )}
 
-    return (
-        <div className="bg-gray-200 min-h-screen">
-            {/* Header with name */}
-            <div className="bg-orange-200 p-2 flex items-center">
-                <div className="flex items-center">
-                    <Image src="/file.svg" alt="Job Seeker" width={24} height={24} className="mr-2" />
-                    <h1 className="text-xl text-gray-700">Job Seekers</h1>
-                </div>
+        {activeTab === "references" && (
+          <div className="col-span-7">
+            <div className="bg-white p-4 rounded shadow-sm">
+              <h2 className="text-lg font-semibold mb-4">References</h2>
+              <p className="text-gray-500 italic">No references available</p>
             </div>
+          </div>
+        )}
 
-            {/* Sub-header with ID and name */}
-            <div className="bg-white border-b border-gray-300 p-2">
-                <div className="text-lg font-semibold">{jobSeeker.id}</div>
-                <div className="text-lg">{jobSeeker.fullName}</div>
+        {activeTab === "applications" && (
+          <div className="col-span-7">
+            <div className="bg-white p-4 rounded shadow-sm">
+              <h2 className="text-lg font-semibold mb-4">Applications</h2>
+              <p className="text-gray-500 italic">No applications found</p>
             </div>
+          </div>
+        )}
 
-            {/* Social media icons row */}
-            <div className="bg-white border-b border-gray-300 p-3 flex justify-between items-center">
-                <div className="flex space-x-3">
-                    {/* Google icon */}
-                    <a href={`https://google.com/search?q=${encodeURIComponent(jobSeeker.fullName)}`} target="_blank" rel="noopener noreferrer">
-                        <span className="text-3xl text-blue-500 font-bold">G</span>
-                    </a>
-                    {/* LinkedIn icon */}
-                    <a href={`https://linkedin.com/search/results/people/?keywords=${encodeURIComponent(jobSeeker.fullName)}`} target="_blank" rel="noopener noreferrer">
-                        <span className="text-3xl text-blue-700"><FaLinkedin /></span>
-                    </a>
-                    {/* Facebook icon */}
-                    <a href={`https://facebook.com/search?q=${encodeURIComponent(jobSeeker.fullName)}`} target="_blank" rel="noopener noreferrer">
-                        <span className="text-3xl text-blue-900"><FaFacebookSquare /></span>
-                    </a>
-                </div>
-
-                {/* Action buttons */}
-                <div className="flex items-center space-x-2">
-                    <ActionDropdown
-                        label="ACTIONS"
-                        options={actionOptions}
-                    />
-                    <button className="p-1 hover:bg-gray-200 rounded">
-                        <Image src="/print.svg" alt="Print" width={20} height={20} />
-                    </button>
-                    <button className="p-1 hover:bg-gray-200 rounded">
-                        <Image src="/reload.svg" alt="Reload" width={20} height={20} />
-                    </button>
-                    <button onClick={handleGoBack} className="p-1 hover:bg-gray-200 rounded">
-                        <Image src="/x.svg" alt="Close" width={20} height={20} />
-                    </button>
-                </div>
+        {activeTab === "onboarding" && (
+          <div className="col-span-7">
+            <div className="bg-white p-4 rounded shadow-sm">
+              <h2 className="text-lg font-semibold mb-4">Onboarding</h2>
+              <p className="text-gray-500 italic">
+                No onboarding data available
+              </p>
             </div>
-
-            {/* Information row */}
-            <div className="bg-white border-b border-gray-300 p-2 grid grid-cols-4 gap-4">
-                <div>
-                    <div className="text-gray-600 text-sm">ID</div>
-                    <div>{jobSeeker.id}</div>
-                </div>
-                <div>
-                    <div className="text-gray-600 text-sm">First Name</div>
-                    <div>{jobSeeker.firstName}</div>
-                </div>
-                <div>
-                    <div className="text-gray-600 text-sm">Primary Phone</div>
-                    <div>{jobSeeker.phone}</div>
-                </div>
-                <div>
-                    <div className="text-gray-600 text-sm">Primary Email</div>
-                    <div className="text-blue-600 truncate">
-                        <a href={`mailto:${jobSeeker.email}`}>{jobSeeker.email}</a>
-                    </div>
-                </div>
-            </div>
-
-            {/* Navigation Tabs */}
-            <div className="flex bg-white border-b border-gray-300 overflow-x-auto">
-                {tabs.map(tab => (
-                    <button
-                        key={tab.id}
-                        className={`px-4 py-2 ${activeTab === tab.id
-                            ? 'border-b-2 border-blue-500 font-medium text-blue-600'
-                            : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-                            }`}
-                        onClick={() => setActiveTab(tab.id)}
-                    >
-                        {tab.label}
-                    </button>
-                ))}
-            </div>
-
-            {/* Quick Action Tabs */}
-            <div className="flex bg-gray-300 p-2 space-x-2">
-                {quickTabs.map(tab => (
-                    <button
-                        key={tab.id}
-                        className={`${activeQuickTab === tab.id
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-white text-gray-700 hover:bg-gray-100'
-                            } px-6 py-1 rounded-full shadow`}
-                        onClick={() => setActiveQuickTab(tab.id)}
-                    >
-                        {tab.label}
-                    </button>
-                ))}
-            </div>
-
-            {/* Main Content */}
-            <div className="grid grid-cols-7 gap-4 p-4">
-                {/* Display content based on active tab */}
-                {activeTab === 'summary' && (
-                    <>
-                        {/* Left Column - Resume Section (4/7 width) */}
-                        <div className="col-span-4">
-                            <div className="bg-white rounded-lg shadow">
-                                <div className="border-b border-gray-300 p-2 font-medium">
-                                    Resume
-                                </div>
-                                <div className="p-4">
-                                    <div className="text-center mb-4">
-                                        <h2 className="text-xl font-bold">{jobSeeker.fullName.toUpperCase()}</h2>
-                                        <div className="flex justify-center items-center text-gray-600 space-x-2 mt-1 flex-wrap">
-                                            <a href={`mailto:${jobSeeker.email}`} className="text-blue-600">{jobSeeker.email}</a>
-                                            <span>/</span>
-                                            <span>{jobSeeker.phone}</span>
-                                            <span>/</span>
-                                            <span>{jobSeeker.fullAddress}</span>
-                                        </div>
-                                    </div>
-
-                                    {/* Profile Section */}
-                                    <div className="mb-6">
-                                        <h3 className="font-bold border-b border-gray-300 pb-1 mb-2">PROFILE</h3>
-                                        <p className="text-sm">{jobSeeker.resume.profile}</p>
-                                    </div>
-
-                                    {/* Skills Section */}
-                                    {jobSeeker.skills && jobSeeker.skills.length > 0 && (
-                                        <div className="mb-6">
-                                            <h3 className="font-bold border-b border-gray-300 pb-1 mb-2">SKILLS</h3>
-                                            <div className="flex flex-wrap gap-2 mt-2">
-                                                {jobSeeker.skills.map((skill: string, index: number) => (
-                                                    <span key={index} className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm">
-                                                        {skill}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Work Experience Section - only shown if there are experiences */}
-                                    {jobSeeker.resume.experience && jobSeeker.resume.experience.length > 0 && (
-                                        <div className="mb-6">
-                                            <h3 className="font-bold border-b border-gray-300 pb-1 mb-2">WORK EXPERIENCE</h3>
-                                            {jobSeeker.resume.experience.map((exp: any, index: number) => (
-                                                <div key={index} className="mb-4">
-                                                    <div className="flex justify-between">
-                                                        <div className="font-bold text-sm">{exp.title} {exp.location}</div>
-                                                        <div className="text-sm">{exp.period}</div>
-                                                    </div>
-                                                    <ul className="list-disc pl-5 mt-1">
-                                                        {exp.responsibilities.map((resp: string, respIndex: number) => (
-                                                            <li key={respIndex} className="text-sm mb-1">{resp}</li>
-                                                        ))}
-                                                    </ul>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Right Column - Job Seeker Details */}
-                        <div className="col-span-3">
-                            <div className="bg-white rounded-lg shadow">
-                                <div className="border-b border-gray-300 p-2 font-medium">
-                                    Job Seeker Details
-                                </div>
-                                <div className="p-4">
-                                    <div className="space-y-3">
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Status:</div>
-                                            <div className="flex-1">
-                                                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                                                    {jobSeeker.status}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Current Organization:</div>
-                                            <div className="flex-1 text-blue-600">{jobSeeker.currentOrganization}</div>
-                                        </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Title:</div>
-                                            <div className="flex-1">{jobSeeker.title}</div>
-                                        </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Email:</div>
-                                            <div className="flex-1 text-blue-600">{jobSeeker.email}</div>
-                                        </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Mobile Phone:</div>
-                                            <div className="flex-1">{jobSeeker.mobilePhone}</div>
-                                        </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Address:</div>
-                                            <div className="flex-1">{jobSeeker.fullAddress}</div>
-                                        </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Desired Salary:</div>
-                                            <div className="flex-1">{jobSeeker.desiredSalary}</div>
-                                        </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Date Added:</div>
-                                            <div className="flex-1">{jobSeeker.dateAdded}</div>
-                                        </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Last Contact:</div>
-                                            <div className="flex-1">{jobSeeker.lastContactDate}</div>
-                                        </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">User Owner:</div>
-                                            <div className="flex-1">{jobSeeker.owner}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Skills/Software Section */}
-                            <div className="bg-white rounded-lg shadow mt-4">
-                                <div className="border-b border-gray-300 p-2 font-medium">
-                                    Skills/Software
-                                </div>
-                                <div className="p-4">
-                                    <div className="flex justify-end mb-3">
-                                        <button className="text-sm text-blue-600 hover:underline">Add Skill</button>
-                                    </div>
-
-                                    {/* Skills content */}
-                                    {jobSeeker.skills && jobSeeker.skills.length > 0 ? (
-                                        <div className="flex flex-wrap gap-2">
-                                            {jobSeeker.skills.map((skill: string, index: number) => (
-                                                <span key={index} className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm">
-                                                    {skill}
-                                                </span>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div className="text-center text-gray-500 p-4">
-                                            No skills or software entries have been added yet.
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-
-                            {/* Recent Notes Section */}
-                            <div className="bg-white rounded-lg shadow mt-4">
-                                <div className="border-b border-gray-300 p-2 font-medium">
-                                    Recent Notes
-                                </div>
-                                <div className="p-4">
-                                    <div className="flex justify-end mb-3">
-                                        <button
-                                            className="text-sm text-blue-600 hover:underline"
-                                            onClick={() => setShowAddNote(true)}
-                                        >
-                                            Add Note
-                                        </button>
-                                    </div>
-
-                                    {/* Notes preview */}
-                                    {notes.length > 0 ? (
-                                        <div>
-                                            {notes.slice(0, 2).map(note => (
-                                                <div key={note.id} className="mb-3 pb-3 border-b last:border-0">
-                                                    <div className="flex justify-between text-sm mb-1">
-                                                        <span className="font-medium">{note.created_by_name || 'Unknown User'}</span>
-                                                        <span className="text-gray-500">{new Date(note.created_at).toLocaleString()}</span>
-                                                    </div>
-                                                    <p className="text-sm text-gray-700">
-                                                        {note.text.length > 100 ? `${note.text.substring(0, 100)}...` : note.text}
-                                                    </p>
-                                                </div>
-                                            ))}
-                                            {notes.length > 2 && (
-                                                <button
-                                                    onClick={() => setActiveTab('notes')}
-                                                    className="text-blue-500 text-sm hover:underline"
-                                                >
-                                                    View all {notes.length} notes
-                                                </button>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <div className="text-center text-gray-500 p-4">
-                                            No notes have been added yet.
-                                        </div>
-                                    )}
-
-                                    {/* Show add note form if button was clicked */}
-                                    {showAddNote && (
-                                        <div className="mt-4 p-3 bg-gray-50 rounded border">
-                                            <textarea
-                                                value={newNote}
-                                                onChange={(e) => setNewNote(e.target.value)}
-                                                placeholder="Enter your note here..."
-                                                className="w-full p-2 border rounded mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                rows={3}
-                                            />
-                                            <div className="flex justify-end space-x-2">
-                                                <button
-                                                    onClick={() => setShowAddNote(false)}
-                                                    className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
-                                                >
-                                                    Cancel
-                                                </button>
-                                                <button
-                                                    onClick={handleAddNote}
-                                                    className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-                                                >
-                                                    Save Note
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </>
-                )}
-
-                {/* Notes Tab */}
-                {activeTab === 'notes' && (
-                    <div className="col-span-7">
-                        {renderNotesTab()}
-                    </div>
-                )}
-
-                {/* History Tab */}
-                {activeTab === 'history' && (
-                    <div className="col-span-7">
-                        {renderHistoryTab()}
-                    </div>
-                )}
-
-                {/* Modify Tab */}
-                {activeTab === 'modify' && (
-                    <div className="col-span-7">
-                        {renderModifyTab()}
-                    </div>
-                )}
-
-                {/* Placeholder for other tabs */}
-                {activeTab === 'docs' && (
-                    <div className="col-span-7">
-                        <div className="bg-white p-4 rounded shadow-sm">
-                            <h2 className="text-lg font-semibold mb-4">Documents</h2>
-                            <p className="text-gray-500 italic">No documents available</p>
-                        </div>
-                    </div>
-                )}
-
-                {activeTab === 'references' && (
-                    <div className="col-span-7">
-                        <div className="bg-white p-4 rounded shadow-sm">
-                            <h2 className="text-lg font-semibold mb-4">References</h2>
-                            <p className="text-gray-500 italic">No references available</p>
-                        </div>
-                    </div>
-                )}
-
-                {activeTab === 'applications' && (
-                    <div className="col-span-7">
-                        <div className="bg-white p-4 rounded shadow-sm">
-                            <h2 className="text-lg font-semibold mb-4">Applications</h2>
-                            <p className="text-gray-500 italic">No applications found</p>
-                        </div>
-                    </div>
-                )}
-
-                {activeTab === 'onboarding' && (
-                    <div className="col-span-7">
-                        <div className="bg-white p-4 rounded shadow-sm">
-                            <h2 className="text-lg font-semibold mb-4">Onboarding</h2>
-                            <p className="text-gray-500 italic">No onboarding data available</p>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
