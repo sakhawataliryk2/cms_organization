@@ -426,7 +426,7 @@ export default function AddHiringManager() {
             </h1>
           </div>
           <div className="flex items-center space-x-4">
-            <button
+            {/* <button
               type="button"
               onClick={() =>
                 router.push(
@@ -436,7 +436,7 @@ export default function AddHiringManager() {
               className="px-4 py-2 bg-gray-200 text-gray-800 hover:bg-gray-300 rounded"
             >
               Manage Fields
-            </button>
+            </button> */}
             <button
               onClick={handleGoBack}
               className="text-gray-500 hover:text-gray-700"

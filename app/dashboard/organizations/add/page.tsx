@@ -33,7 +33,7 @@ export default function AddOrganization() {
   const {
     customFields,
     customFieldValues,
-    setCustomFieldValues,   // ✅ Yeh bhi extract karein
+    setCustomFieldValues, // ✅ Yeh bhi extract karein
     isLoading: customFieldsLoading,
     handleCustomFieldChange,
     validateCustomFields,
@@ -58,8 +58,6 @@ export default function AddOrganization() {
     // Dynamic custom fields will be added here
     customFields: {} as Record<string, any>,
   });
-
-  
 
   // If organizationId is present, fetch the organization data
   useEffect(() => {
@@ -86,13 +84,13 @@ export default function AddOrganization() {
       console.log("API Response:", data); // Check if backend ne bheja ya nahi
       const org = data.organization;
 
-  // ✅ Correct field name use karo
-  if (data?.custom_fields) {
-    setCustomFieldValues(data.custom_fields);
-  }
+      // ✅ Correct field name use karo
+      if (data?.custom_fields) {
+        setCustomFieldValues(data.custom_fields);
+      }
 
-  console.log("Custom Field Values Loaded:", data.custom_fields);
-  console.log("Received organization data:", org);
+      console.log("Custom Field Values Loaded:", data.custom_fields);
+      console.log("Received organization data:", org);
 
       // Parse existing custom fields
       let existingCustomFields: Record<string, any> = {};
@@ -128,7 +126,7 @@ export default function AddOrganization() {
         customFields: existingCustomFields,
       });
       // ✅ IMPORTANT: Yeh line yahi add karni hai!
-    setCustomFieldValues(existingCustomFields);
+      setCustomFieldValues(existingCustomFields);
     } catch (err) {
       console.error("Error fetching organization:", err);
       setError(
@@ -192,42 +190,45 @@ export default function AddOrganization() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-  
+
     setIsSubmitting(true);
     setError(null);
-  
+
     try {
       // ✅ CRITICAL: Get custom fields from the hook
       const customFieldsToSend = getCustomFieldsForSubmission();
-  
+
       // 🔍 DEBUG: Log to see what we're getting
       console.log("=== DEBUG START ===");
       console.log("customFieldValues from state:", customFieldValues);
       console.log("customFieldsToSend from hook:", customFieldsToSend);
       console.log("Type of customFieldsToSend:", typeof customFieldsToSend);
-      console.log("Is customFieldsToSend empty?", Object.keys(customFieldsToSend).length === 0);
+      console.log(
+        "Is customFieldsToSend empty?",
+        Object.keys(customFieldsToSend).length === 0
+      );
       console.log("=== DEBUG END ===");
-  
+
       // Map custom fields to standard fields if they exist
       const name =
         customFieldsToSend["Organization Name"] ||
         customFieldsToSend["Name"] ||
         formData.name ||
         "Unnamed Organization";
-  
+
       const website =
         customFieldsToSend["Website"] ||
         customFieldsToSend["Organization Website"] ||
         formData.website ||
         "";
-  
+
       const overview =
         customFieldsToSend["Overview"] ||
         customFieldsToSend["Organization Overview"] ||
         customFieldsToSend["About"] ||
         formData.overview ||
         "";
-  
+
       // ✅ Build the API payload
       const apiData = {
         name: name,
@@ -261,14 +262,17 @@ export default function AddOrganization() {
         // ✅ CRITICAL FIX: Always send custom_fields, even if empty
         custom_fields: customFieldsToSend || {},
       };
-  
+
       // 🔍 DEBUG: Log the final payload
       console.log("=== FINAL PAYLOAD ===");
       console.log("Full apiData:", JSON.stringify(apiData, null, 2));
       console.log("apiData.custom_fields:", apiData.custom_fields);
-      console.log("Type of apiData.custom_fields:", typeof apiData.custom_fields);
+      console.log(
+        "Type of apiData.custom_fields:",
+        typeof apiData.custom_fields
+      );
       console.log("=== END PAYLOAD ===");
-  
+
       let response;
       if (isEditMode && organizationId) {
         response = await fetch(`/api/organizations/${organizationId}`, {
@@ -283,13 +287,13 @@ export default function AddOrganization() {
           body: JSON.stringify(apiData),
         });
       }
-  
+
       const responseText = await response.text();
       console.log(
         `API ${isEditMode ? "update" : "create"} response:`,
         responseText
       );
-  
+
       let data;
       try {
         data = JSON.parse(responseText);
@@ -297,14 +301,14 @@ export default function AddOrganization() {
         console.error("Failed to parse response:", error);
         throw new Error("Invalid response from server");
       }
-  
+
       if (!response.ok) {
         throw new Error(
           data.message ||
             `Failed to ${isEditMode ? "update" : "create"} organization`
         );
       }
-  
+
       const id = isEditMode ? organizationId : data.organization.id;
       router.push(`/dashboard/organizations/view?id=${id}`);
     } catch (err) {
@@ -321,36 +325,36 @@ export default function AddOrganization() {
   };
   // const handleSubmit = async (e: React.FormEvent) => {
   //   e.preventDefault();
-  
+
   //   setIsSubmitting(true);
   //   setError(null);
-  
+
   //   try {
   //     // ✅ Get custom fields from the hook - THIS IS THE KEY FIX
   //     const customFieldsToSend = getCustomFieldsForSubmission();
-  
+
   //     console.log("Custom Fields to Send:", customFieldsToSend);
-  
+
   //     // Map custom fields to standard fields if they exist
   //     const name =
   //       customFieldsToSend["Organization Name"] ||
   //       customFieldsToSend["Name"] ||
   //       formData.name ||
   //       "Unnamed Organization";
-  
+
   //     const website =
   //       customFieldsToSend["Website"] ||
   //       customFieldsToSend["Organization Website"] ||
   //       formData.website ||
   //       "";
-  
+
   //     const overview =
   //       customFieldsToSend["Overview"] ||
   //       customFieldsToSend["Organization Overview"] ||
   //       customFieldsToSend["About"] ||
   //       formData.overview ||
   //       "";
-  
+
   //     const apiData = {
   //       name: name,
   //       nicknames: customFieldsToSend["Nicknames"] || formData.nicknames,
@@ -383,12 +387,12 @@ export default function AddOrganization() {
   //       // ✅ FIX: Send the actual custom fields object, not empty object
   //       custom_fields: customFieldsToSend, // Changed from customFieldsToSend
   //     };
-  
+
   //     console.log(
   //       "Sending organization data to API:",
   //       JSON.stringify(apiData, null, 2)
   //     );
-  
+
   //     let response;
   //     if (isEditMode && organizationId) {
   //       response = await fetch(`/api/organizations/${organizationId}`, {
@@ -403,13 +407,13 @@ export default function AddOrganization() {
   //         body: JSON.stringify(apiData),
   //       });
   //     }
-  
+
   //     const responseText = await response.text();
   //     console.log(
   //       `API ${isEditMode ? "update" : "create"} response:`,
   //       responseText
   //     );
-  
+
   //     let data;
   //     try {
   //       data = JSON.parse(responseText);
@@ -417,14 +421,14 @@ export default function AddOrganization() {
   //       console.error("Failed to parse response:", error);
   //       throw new Error("Invalid response from server");
   //     }
-  
+
   //     if (!response.ok) {
   //       throw new Error(
   //         data.message ||
   //           `Failed to ${isEditMode ? "update" : "create"} organization`
   //       );
   //     }
-  
+
   //     const id = isEditMode ? organizationId : data.organization.id;
   //     router.push(`/dashboard/organizations/view?id=${id}`);
   //   } catch (err) {
@@ -455,8 +459,6 @@ export default function AddOrganization() {
   //     const customFieldsToSend = getCustomFieldsForSubmission();
 
   //     console.log("Custom Fields to Send:", customFieldsToSend);
-      
-
 
   //     // Map custom fields to standard fields if they exist
   //     // This allows custom fields to populate the required backend fields
@@ -586,8 +588,6 @@ export default function AddOrganization() {
     );
   }
 
-
-
   return (
     <div className="mx-auto py-4 px-4 sm:py-8 sm:px-6">
       <div className="bg-white rounded-lg shadow p-4 sm:p-6 relative">
@@ -606,7 +606,7 @@ export default function AddOrganization() {
             </h1>
           </div>
           <div className="flex items-center space-x-4">
-            <button
+            {/* <button
               onClick={() =>
                 router.push(
                   "/dashboard/admin/field-mapping?section=organizations"
@@ -615,7 +615,7 @@ export default function AddOrganization() {
               className="px-4 py-2 bg-gray-200 text-gray-800 hover:bg-gray-300 rounded"
             >
               Manage Fields
-            </button>
+            </button> */}
             <button
               onClick={handleGoBack}
               className="text-gray-500 hover:text-gray-700"

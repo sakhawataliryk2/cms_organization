@@ -27,6 +27,84 @@ export default function JobSeekerView() {
   const [showAddNote, setShowAddNote] = useState(false);
   const [newNote, setNewNote] = useState("");
 
+  // Onboarding send modal state
+  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
+  const [selectedDocs, setSelectedDocs] = useState<Record<string, boolean>>({});
+  const onboardingDocs = [
+    { id: "w4", name: "W-4 (Employee's Withholding Certificate)", url: "/docs/onboarding/W-4.pdf" },
+    { id: "i9", name: "I-9 (Employment Eligibility Verification)", url: "/docs/onboarding/I-9.pdf" },
+    { id: "dd", name: "Direct Deposit Authorization", url: "/docs/onboarding/Direct-Deposit.pdf" },
+    { id: "policy", name: "Company Policies Acknowledgement", url: "/docs/onboarding/Policies.pdf" }
+  ];
+
+  const toggleDoc = (id: string) => {
+    setSelectedDocs(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleSendOnboarding = () => {
+    if (!jobSeeker?.email) {
+      alert("Job seeker email is missing");
+      return;
+    }
+    const chosen = onboardingDocs.filter(d => selectedDocs[d.id]);
+    const subject = encodeURIComponent("Onboarding Documents");
+    const links = chosen.length > 0
+      ? "\n\nDocuments:\n" + chosen.map(d => `- ${d.name}: ${window.location.origin}${d.url}`).join("\n")
+      : "";
+    const body = encodeURIComponent(
+      "Here are your onboarding documents. Please fill these out and return promptly." + links
+    );
+    window.location.href = `mailto:${jobSeeker.email}?subject=${subject}&body=${body}`;
+    setShowOnboardingModal(false);
+  };
+
+  // Reference form send modal state
+  const [showReferenceModal, setShowReferenceModal] = useState(false);
+  const [selectedReferenceDocs, setSelectedReferenceDocs] = useState<Record<string, boolean>>({});
+  const [referenceEmail, setReferenceEmail] = useState("");
+  const referenceDocs = [
+    { id: "reference-form", name: "Reference Request Form", url: "/docs/references/Reference-Form.pdf" },
+    { id: "background-check", name: "Background Check Authorization", url: "/docs/references/Background-Check.pdf" },
+    { id: "employment-verification", name: "Employment Verification Form", url: "/docs/references/Employment-Verification.pdf" }
+  ];
+
+  const toggleReferenceDoc = (id: string) => {
+    setSelectedReferenceDocs(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const handleSendReferenceForm = () => {
+    if (!referenceEmail || !referenceEmail.trim()) {
+      alert("Please enter a reference email address");
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(referenceEmail.trim())) {
+      alert("Please enter a valid email address");
+      return;
+    }
+
+    const chosen = referenceDocs.filter(d => selectedReferenceDocs[d.id]);
+    const subject = encodeURIComponent("Reference Request");
+    const links = chosen.length > 0
+      ? "\n\nPlease review and complete the following documents:\n" + chosen.map(d => `- ${d.name}: ${window.location.origin}${d.url}`).join("\n")
+      : "";
+    const body = encodeURIComponent(
+      `Dear Reference,
+
+We are requesting a reference for ${jobSeeker?.fullName || "a candidate"}. Please review and complete the attached reference documents at your earliest convenience.${links}
+
+Thank you for your time and assistance.
+
+Best regards`
+    );
+    window.location.href = `mailto:${referenceEmail.trim()}?subject=${subject}&body=${body}`;
+    setShowReferenceModal(false);
+    setReferenceEmail("");
+    setSelectedReferenceDocs({});
+  };
+
   const jobSeekerId = searchParams.get("id");
 
   // Fetch job seeker when component mounts
@@ -291,6 +369,20 @@ export default function JobSeekerView() {
     }
   };
 
+  // Print handler: ensure Summary tab (with Job Seeker Details) is active when printing
+  const handlePrint = () => {
+    const prevTab = activeTab;
+    if (prevTab !== "summary") {
+      setActiveTab("summary");
+      setTimeout(() => {
+        window.print();
+        setActiveTab(prevTab);
+      }, 300);
+    } else {
+      window.print();
+    }
+  };
+
   // Handle job seeker deletion
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this job seeker?")) {
@@ -517,18 +609,51 @@ export default function JobSeekerView() {
 
   // Render modify tab to direct to edit form
   const renderModifyTab = () => (
-    <div className="bg-white p-4 rounded shadow-sm">
-      <h2 className="text-lg font-semibold mb-4">Edit Job Seeker</h2>
-      <p className="text-gray-600 mb-4">
-        Click the button below to edit this job seeker's details.
-      </p>
-      <button
-        onClick={handleEdit}
-        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-      >
-        Edit Job Seeker
-      </button>
-    </div>
+    <>
+      {/* <div className="bg-white p-4 rounded shadow-sm">
+        <h2 className="text-lg font-semibold mb-4">Edit Job Seeker</h2>
+        <p className="text-gray-600 mb-4">
+          Click the button below to edit this job seeker's details.
+        </p>
+        <button
+          onClick={handleEdit}
+          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          Edit Job Seeker
+        </button>
+      </div> */}
+      {/* Skills/Software Section */}
+      <div className="bg-white rounded-lg shadow mt-4">
+        <div className="border-b border-gray-300 p-2 font-medium">
+          Skills/Software
+        </div>
+        <div className="p-4">
+          <div className="flex justify-end mb-3">
+            <button className="text-sm text-blue-600 hover:underline">
+              Add Skill
+            </button>
+          </div>
+
+          {/* Skills content */}
+          {jobSeeker.skills && jobSeeker.skills.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {jobSeeker.skills.map((skill: string, index: number) => (
+                <span
+                  key={index}
+                  className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm"
+                >
+                  {skill}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center text-gray-500 p-4">
+              No skills or software entries have been added yet.
+            </div>
+          )}
+        </div>
+      </div>
+    </>
   );
 
   if (isLoading) {
@@ -625,9 +750,9 @@ export default function JobSeekerView() {
         </div>
 
         
-        <div className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 no-print">
           <ActionDropdown label="ACTIONS" options={actionOptions} />
-          <button className="p-1 hover:bg-gray-200 rounded">
+          <button onClick={handlePrint} className="p-1 hover:bg-gray-200 rounded">
             <Image src="/print.svg" alt="Print" width={20} height={20} />
           </button>
           <button className="p-1 hover:bg-gray-200 rounded">
@@ -703,9 +828,12 @@ export default function JobSeekerView() {
           </div>
         </div>
         {/* Action buttons */}
-        <div className="flex items-center justify-end space-x-2 col-span-2">
+        <div className="flex items-center justify-end space-x-2 col-span-2 no-print">
           <ActionDropdown label="ACTIONS" options={actionOptions} />
-          <button className="p-1 hover:bg-gray-200 rounded">
+          <button
+            onClick={handlePrint}
+            className="p-1 hover:bg-gray-200 rounded"
+          >
             <Image src="/print.svg" alt="Print" width={20} height={20} />
           </button>
           <button className="p-1 hover:bg-gray-200 rounded">
@@ -721,7 +849,7 @@ export default function JobSeekerView() {
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex bg-white border-b border-gray-300 overflow-x-auto">
+      <div className="flex bg-white border-b border-gray-300 overflow-x-auto no-print">
         {tabs.map((tab) => (
           <button
             key={tab.id}
@@ -738,7 +866,7 @@ export default function JobSeekerView() {
       </div>
 
       {/* Quick Action Tabs */}
-      <div className="flex bg-gray-300 p-2 space-x-2">
+      <div className="flex bg-gray-300 p-2 space-x-2 no-print">
         {quickTabs.map((tab) => (
           <button
             key={tab.id}
@@ -767,7 +895,7 @@ export default function JobSeekerView() {
                 </div>
                 <div className="p-4">
                   <div className="text-center mb-4">
-                    <h2 className="text-xl font-bold">
+                    {/* <h2 className="text-xl font-bold">
                       {jobSeeker.fullName.toUpperCase()}
                     </h2>
                     <div className="flex justify-center items-center text-gray-600 space-x-2 mt-1 flex-wrap">
@@ -781,7 +909,7 @@ export default function JobSeekerView() {
                       <span>{jobSeeker.phone}</span>
                       <span>/</span>
                       <span>{jobSeeker.fullAddress}</span>
-                    </div>
+                    </div> */}
                   </div>
 
                   {/* Profile Section */}
@@ -921,38 +1049,6 @@ export default function JobSeekerView() {
                 </div>
               </div>
 
-              {/* Skills/Software Section */}
-              <div className="bg-white rounded-lg shadow mt-4">
-                <div className="border-b border-gray-300 p-2 font-medium">
-                  Skills/Software
-                </div>
-                <div className="p-4">
-                  <div className="flex justify-end mb-3">
-                    <button className="text-sm text-blue-600 hover:underline">
-                      Add Skill
-                    </button>
-                  </div>
-
-                  {/* Skills content */}
-                  {jobSeeker.skills && jobSeeker.skills.length > 0 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {jobSeeker.skills.map((skill: string, index: number) => (
-                        <span
-                          key={index}
-                          className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm"
-                        >
-                          {skill}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-center text-gray-500 p-4">
-                      No skills or software entries have been added yet.
-                    </div>
-                  )}
-                </div>
-              </div>
-
               {/* Recent Notes Section */}
               <div className="bg-white rounded-lg shadow mt-4">
                 <div className="border-b border-gray-300 p-2 font-medium">
@@ -1066,8 +1162,18 @@ export default function JobSeekerView() {
         {activeTab === "references" && (
           <div className="col-span-7">
             <div className="bg-white p-4 rounded shadow-sm">
-              <h2 className="text-lg font-semibold mb-4">References</h2>
-              <p className="text-gray-500 italic">No references available</p>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">References</h2>
+                <button
+                  onClick={() => setShowReferenceModal(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Send Reference Form
+                </button>
+              </div>
+              <p className="text-gray-600">
+                Use the button above to send reference documents to a reference contact via email.
+              </p>
             </div>
           </div>
         )}
@@ -1084,14 +1190,121 @@ export default function JobSeekerView() {
         {activeTab === "onboarding" && (
           <div className="col-span-7">
             <div className="bg-white p-4 rounded shadow-sm">
-              <h2 className="text-lg font-semibold mb-4">Onboarding</h2>
-              <p className="text-gray-500 italic">
-                No onboarding data available
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-lg font-semibold">Onboarding</h2>
+                <button
+                  onClick={() => setShowOnboardingModal(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  Send Onboarding
+                </button>
+              </div>
+              <p className="text-gray-600">
+                Use the button above to send onboarding documents to the job seeker via Outlook.
               </p>
             </div>
           </div>
         )}
       </div>
-    </div>
+
+      {/* Onboarding Modal */}
+      {showOnboardingModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded shadow-lg w-full max-w-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold">Send Onboarding Documents</h3>
+              <button className="text-gray-600 hover:text-gray-900" onClick={() => setShowOnboardingModal(false)}>✕</button>
+            </div>
+            <div className="mb-3">
+              <div className="text-sm text-gray-700 mb-2">Select documents to include as links in the email:</div>
+              <div className="space-y-2 max-h-60 overflow-auto">
+                {onboardingDocs.map(doc => (
+                  <label key={doc.id} className="flex items-start space-x-2">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={!!selectedDocs[doc.id]}
+                      onChange={() => toggleDoc(doc.id)}
+                    />
+                    <span>
+                      <span className="font-medium">{doc.name}</span>
+                      <div className="text-xs text-gray-500">{doc.url}</div>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="text-sm text-gray-700 mb-4">
+              Email will be pre-addressed to <span className="font-medium">{jobSeeker?.email}</span> with subject
+              <span className="font-medium"> "Onboarding Documents"</span> and body:
+              <pre className="bg-gray-50 border rounded p-2 mt-1 whitespace-pre-wrap">Here are your onboarding documents. Please fill these out and return promptly.</pre>
+            </div>
+            <div className="flex justify-end space-x-2">
+              <button className="px-3 py-1 border rounded" onClick={() => setShowOnboardingModal(false)}>Cancel</button>
+              <button className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={handleSendOnboarding}>Open in Outlook</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reference Form Modal */}
+      {showReferenceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded shadow-lg w-full max-w-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold">Send Reference Form</h3>
+              <button className="text-gray-600 hover:text-gray-900" onClick={() => {
+                setShowReferenceModal(false);
+                setReferenceEmail("");
+                setSelectedReferenceDocs({});
+              }}>✕</button>
+            </div>
+            <div className="mb-3">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Reference Email Address:
+              </label>
+              <input
+                type="email"
+                value={referenceEmail}
+                onChange={(e) => setReferenceEmail(e.target.value)}
+                placeholder="reference@example.com"
+                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <div className="mb-3">
+              <div className="text-sm text-gray-700 mb-2">Select documents to include as links in the email:</div>
+              <div className="space-y-2 max-h-60 overflow-auto">
+                {referenceDocs.map(doc => (
+                  <label key={doc.id} className="flex items-start space-x-2">
+                    <input
+                      type="checkbox"
+                      className="mt-1"
+                      checked={!!selectedReferenceDocs[doc.id]}
+                      onChange={() => toggleReferenceDoc(doc.id)}
+                    />
+                    <span>
+                      <span className="font-medium">{doc.name}</span>
+                      <div className="text-xs text-gray-500">{doc.url}</div>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="text-sm text-gray-700 mb-4">
+              Email will be pre-addressed to the reference email address with subject
+              <span className="font-medium"> "Reference Request"</span> and a professional message requesting a reference for {jobSeeker?.fullName || "the candidate"}.
+            </div>
+            <div className="flex justify-end space-x-2">
+              <button className="px-3 py-1 border rounded" onClick={() => {
+                setShowReferenceModal(false);
+                setReferenceEmail("");
+                setSelectedReferenceDocs({});
+              }}>Cancel</button>
+              <button className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={handleSendReferenceForm}>Open in Outlook</button>
+            </div>
+          </div>
+        </div>
+      )}
+      </div>
   );
 }
