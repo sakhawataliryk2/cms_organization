@@ -7,6 +7,7 @@ import ActionDropdown from "@/components/ActionDropdown";
 import LoadingScreen from "@/components/LoadingScreen";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import { FaLinkedin, FaFacebookSquare } from "react-icons/fa";
+import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, type EmailMessage } from "@/lib/office365";
 
 export default function JobSeekerView() {
   const router = useRouter();
@@ -26,6 +27,7 @@ export default function JobSeekerView() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
   const [newNote, setNewNote] = useState("");
+  const [isOffice365Connected, setIsOffice365Connected] = useState(false);
 
   // Onboarding send modal state
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
@@ -41,21 +43,47 @@ export default function JobSeekerView() {
     setSelectedDocs(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleSendOnboarding = () => {
+  const handleSendOnboarding = async () => {
     if (!jobSeeker?.email) {
       alert("Job seeker email is missing");
       return;
     }
+    
     const chosen = onboardingDocs.filter(d => selectedDocs[d.id]);
-    const subject = encodeURIComponent("Onboarding Documents");
+    const subject = "Onboarding Documents";
     const links = chosen.length > 0
       ? "\n\nDocuments:\n" + chosen.map(d => `- ${d.name}: ${window.location.origin}${d.url}`).join("\n")
       : "";
-    const body = encodeURIComponent(
-      "Here are your onboarding documents. Please fill these out and return promptly." + links
-    );
-    window.location.href = `mailto:${jobSeeker.email}?subject=${subject}&body=${body}`;
-    setShowOnboardingModal(false);
+    const body = "Here are your onboarding documents. Please fill these out and return promptly." + links;
+
+    // Use Office 365 if connected, otherwise use mailto
+    if (isOffice365Connected) {
+      try {
+        const emailMessage: EmailMessage = {
+          to: [jobSeeker.email],
+          subject: subject,
+          body: body,
+          bodyType: 'text',
+        };
+        await sendEmailViaOffice365(emailMessage);
+        alert('Onboarding documents sent successfully via Office 365!');
+        setShowOnboardingModal(false);
+        setSelectedDocs({});
+      } catch (error: any) {
+        alert(`Failed to send via Office 365: ${error.message}. Falling back to mailto.`);
+        const encodedSubject = encodeURIComponent(subject);
+        const encodedBody = encodeURIComponent(body);
+        window.location.href = `mailto:${jobSeeker.email}?subject=${encodedSubject}&body=${encodedBody}`;
+        setShowOnboardingModal(false);
+        setSelectedDocs({});
+      }
+    } else {
+      const encodedSubject = encodeURIComponent(subject);
+      const encodedBody = encodeURIComponent(body);
+      window.location.href = `mailto:${jobSeeker.email}?subject=${encodedSubject}&body=${encodedBody}`;
+      setShowOnboardingModal(false);
+      setSelectedDocs({});
+    }
   };
 
   // Reference form send modal state
@@ -72,7 +100,7 @@ export default function JobSeekerView() {
     setSelectedReferenceDocs(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleSendReferenceForm = () => {
+  const handleSendReferenceForm = async () => {
     if (!referenceEmail || !referenceEmail.trim()) {
       alert("Please enter a reference email address");
       return;
@@ -86,23 +114,49 @@ export default function JobSeekerView() {
     }
 
     const chosen = referenceDocs.filter(d => selectedReferenceDocs[d.id]);
-    const subject = encodeURIComponent("Reference Request");
+    const subject = "Reference Request";
     const links = chosen.length > 0
       ? "\n\nPlease review and complete the following documents:\n" + chosen.map(d => `- ${d.name}: ${window.location.origin}${d.url}`).join("\n")
       : "";
-    const body = encodeURIComponent(
-      `Dear Reference,
+    const body = `Dear Reference,
 
 We are requesting a reference for ${jobSeeker?.fullName || "a candidate"}. Please review and complete the attached reference documents at your earliest convenience.${links}
 
 Thank you for your time and assistance.
 
-Best regards`
-    );
-    window.location.href = `mailto:${referenceEmail.trim()}?subject=${subject}&body=${body}`;
-    setShowReferenceModal(false);
-    setReferenceEmail("");
-    setSelectedReferenceDocs({});
+Best regards`;
+
+    // Use Office 365 if connected, otherwise use mailto
+    if (isOffice365Connected) {
+      try {
+        const emailMessage: EmailMessage = {
+          to: [referenceEmail.trim()],
+          subject: subject,
+          body: body,
+          bodyType: 'text',
+        };
+        await sendEmailViaOffice365(emailMessage);
+        alert('Reference form sent successfully via Office 365!');
+        setShowReferenceModal(false);
+        setReferenceEmail("");
+        setSelectedReferenceDocs({});
+      } catch (error: any) {
+        alert(`Failed to send via Office 365: ${error.message}. Falling back to mailto.`);
+        const encodedSubject = encodeURIComponent(subject);
+        const encodedBody = encodeURIComponent(body);
+        window.location.href = `mailto:${referenceEmail.trim()}?subject=${encodedSubject}&body=${encodedBody}`;
+        setShowReferenceModal(false);
+        setReferenceEmail("");
+        setSelectedReferenceDocs({});
+      }
+    } else {
+      const encodedSubject = encodeURIComponent(subject);
+      const encodedBody = encodeURIComponent(body);
+      window.location.href = `mailto:${referenceEmail.trim()}?subject=${encodedSubject}&body=${encodedBody}`;
+      setShowReferenceModal(false);
+      setReferenceEmail("");
+      setSelectedReferenceDocs({});
+    }
   };
 
   const jobSeekerId = searchParams.get("id");
@@ -360,12 +414,46 @@ Best regards`
     }
   };
 
-  const handleActionSelected = (action: string) => {
+  // Check Office 365 connection on mount
+  useEffect(() => {
+    const checkConnection = () => {
+      const connected = isOffice365Authenticated();
+      setIsOffice365Connected(connected);
+    };
+    checkConnection();
+    if (typeof window !== 'undefined') {
+      const token = sessionStorage.getItem('msal_access_token');
+      if (token) setIsOffice365Connected(true);
+    }
+  }, []);
+
+  const handleActionSelected = async (action: string) => {
     console.log(`Action selected: ${action}`);
     if (action === "edit") {
       handleEdit();
     } else if (action === "delete" && jobSeekerId) {
       handleDelete(jobSeekerId);
+    } else if (action === "email") {
+      // Handle send email - use Office 365 if connected, otherwise use mailto
+      if (isOffice365Connected && jobSeeker?.email) {
+        try {
+          const emailMessage: EmailMessage = {
+            to: [jobSeeker.email],
+            subject: `Regarding ${jobSeeker.fullName}`,
+            body: `Hello ${jobSeeker.fullName},\n\nI wanted to reach out regarding your application.\n\nBest regards`,
+            bodyType: 'text',
+          };
+          await sendEmailViaOffice365(emailMessage);
+          alert('Email sent successfully via Office 365!');
+        } catch (error: any) {
+          alert(`Failed to send via Office 365: ${error.message}. Falling back to mailto.`);
+          window.location.href = `mailto:${jobSeeker.email}`;
+        }
+      } else if (jobSeeker?.email) {
+        window.location.href = `mailto:${jobSeeker.email}`;
+      } else {
+        alert('Job seeker email not available');
+      }
     }
   };
 
@@ -1241,7 +1329,9 @@ Best regards`
             </div>
             <div className="flex justify-end space-x-2">
               <button className="px-3 py-1 border rounded" onClick={() => setShowOnboardingModal(false)}>Cancel</button>
-              <button className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={handleSendOnboarding}>Open in Outlook</button>
+              <button className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={handleSendOnboarding}>
+                {isOffice365Connected ? 'Send via Office 365' : 'Open in Outlook'}
+              </button>
             </div>
           </div>
         </div>
@@ -1300,7 +1390,9 @@ Best regards`
                 setReferenceEmail("");
                 setSelectedReferenceDocs({});
               }}>Cancel</button>
-              <button className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={handleSendReferenceForm}>Open in Outlook</button>
+              <button className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={handleSendReferenceForm}>
+                {isOffice365Connected ? 'Send via Office 365' : 'Open in Outlook'}
+              </button>
             </div>
           </div>
         </div>
