@@ -90,18 +90,18 @@ export default function Login() {
         path: "/",
       });
 
-      // Get redirect URL from query params or default to dashboard
+      // Get redirect URL from query params or default to home page
       const redirectUrl =
         typeof window !== "undefined"
           ? new URLSearchParams(window.location.search).get("redirect")
           : null;
 
-      // Redirect to the original URL or dashboard
+      // Redirect to the original URL or home page
       if (redirectUrl) {
         const decodedUrl = decodeURIComponent(redirectUrl);
         router.push(decodedUrl);
       } else {
-        router.push("/dashboard");
+        router.push("/home");
       }
     } catch (error: any) {
       setError(error.message || "Login failed. Please check your credentials.");

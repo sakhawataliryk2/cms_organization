@@ -604,7 +604,7 @@ export default function AddJobSeeker() {
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
-            {formFields.map((field, index) => (
+            {/* {formFields.map((field, index) => (
               <div key={field.id} className="flex items-center">
                 <label className="w-48 font-medium">
                   {field.label}:
@@ -732,7 +732,7 @@ export default function AddJobSeeker() {
                   )}
                 </div>
               </div>
-            ))}
+            ))} */}
 
             {/* Custom Fields Section */}
             {customFields.length > 0 && (

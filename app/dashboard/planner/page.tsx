@@ -393,7 +393,7 @@ const Planners = () => {
             </button>
             
             {/* Dropdowns */}
-            <div className="flex items-center space-x-2 text-sm text-gray-600">
+            {/* <div className="flex items-center space-x-2 text-sm text-gray-600">
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
               </svg>
@@ -401,9 +401,9 @@ const Planners = () => {
               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
               </svg>
-            </div>
+            </div> */}
             
-            <div className="flex items-center space-x-2 text-sm text-gray-600">
+            {/* <div className="flex items-center space-x-2 text-sm text-gray-600">
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
               </svg>
@@ -411,7 +411,7 @@ const Planners = () => {
               <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                 <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
               </svg>
-            </div>
+            </div> */}
             
             {/* View Type Selector */}
             <div className="flex bg-gray-100 rounded-lg p-1">
@@ -481,7 +481,7 @@ const Planners = () => {
       {/* Appointment Details Section */}
       <div className="px-6 pb-6">
         {/* Selected Day Header */}
-        <div className="bg-blue-600 text-white px-4 py-3 rounded-t-lg flex items-center justify-between">
+        {/* <div className="bg-blue-600 text-white px-4 py-3 rounded-t-lg flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <span className="text-lg font-bold">
               {selectedDate.getDate()} {dayNames[selectedDate.getDay()]}
@@ -505,7 +505,7 @@ const Planners = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div> */}
         
         {/* Items Per Page */}
         <div className="bg-gray-50 px-4 py-2 border-x border-gray-200">
