@@ -139,7 +139,7 @@ export default function DashboardNav() {
 
     // All navigation items without role-based filtering
     const navItems = [
-        { name: 'Home', path: '/dashboard', icon: <FiHome size={20} /> },
+        { name: 'Home', path: '/home', icon: <FiHome size={20} /> },
         { name: 'Organizations', path: '/dashboard/organizations', icon: <HiOutlineOfficeBuilding size={20} /> },
         { name: 'Jobs', path: '/dashboard/jobs', icon: <FiBriefcase size={20} /> },
         { name: 'Job Seekers', path: '/dashboard/job-seekers', icon: <FiUsers size={20} /> },
