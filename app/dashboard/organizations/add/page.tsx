@@ -896,12 +896,22 @@ export default function AddOrganization() {
 
                   return (
                     <div key={field.id} className="flex items-center">
-                      <label className="w-48 font-medium">
+                      {/* <label className="w-48 font-medium">
                         {field.field_label}:
                         {field.is_required && (
                           <span className="text-red-500 ml-1">*</span>
                         )}
-                      </label>
+                      </label> */}
+                      <label className="w-48 font-medium flex items-center">
+        {field.field_label}:
+        {field.is_required && (
+          fieldValue && fieldValue.toString().trim() !== "" ? (
+            <span className="text-green-500 ml-1">✔</span> // ✅ Green check if filled
+          ) : (
+            <span className="text-red-500 ml-1">*</span> // ❌ Red star if empty
+          )
+        )}
+      </label>
                       <div className="flex-1 relative">
                         <CustomFieldRenderer
                           field={field}

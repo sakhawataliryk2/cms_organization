@@ -340,12 +340,12 @@ export default function AddTask() {
                         <h1 className="text-xl font-bold">{isEditMode ? 'Edit' : 'Add'} Task</h1>
                     </div>
                     <div className="flex items-center space-x-4">
-                        <button
+                        {/* <button
                             onClick={() => router.push('/dashboard/admin/field-mapping?section=tasks')}
                             className="px-4 py-2 bg-gray-200 text-gray-800 hover:bg-gray-300 rounded"
                         >
                             Manage Fields
-                        </button>
+                        </button> */}
                         <button
                             onClick={handleGoBack}
                             className="text-gray-500 hover:text-gray-700"

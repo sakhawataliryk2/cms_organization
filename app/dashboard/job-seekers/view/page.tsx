@@ -510,7 +510,7 @@ Best regards`;
   const actionOptions = [
     { label: "Edit", action: () => handleActionSelected("edit") },
     { label: "Delete", action: () => handleActionSelected("delete") },
-    { label: "Add Note", action: () => setShowAddNote(true) },
+    // { label: "Add Note", action: () => setShowAddNote(true) },
     { label: "Send Email", action: () => handleActionSelected("email") },
   ];
 
@@ -538,7 +538,7 @@ Best regards`;
   // Render notes tab content
   const renderNotesTab = () => (
     <div className="bg-white p-4 rounded shadow-sm">
-      <div className="flex justify-between items-center mb-4">
+      {/* <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold">Job Seeker Notes</h2>
         <button
           onClick={() => setShowAddNote(true)}
@@ -546,7 +546,7 @@ Best regards`;
         >
           Add Note
         </button>
-      </div>
+      </div> */}
 
       {/* Add Note Form */}
       {showAddNote && (
