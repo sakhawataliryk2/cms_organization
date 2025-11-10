@@ -893,39 +893,54 @@ export default function AddOrganization() {
                 {customFields.map((field) => {
                   // Don't render hidden fields at all (neither label nor input)
                   if (field.is_hidden) return null;
-
-                  return (
-                    <div key={field.id} className="flex items-center">
-                      {/* <label className="w-48 font-medium">
-                        {field.field_label}:
-                        {field.is_required && (
-                          <span className="text-red-500 ml-1">*</span>
-                        )}
-                      </label> */}
-                      <label className="w-48 font-medium flex items-center">
+                   // ✅ yahan fieldValue declare karo
+  const fieldValue = customFieldValues[field.field_name] || "";
+  console.log("fieldValue:", fieldValue);
+  return (
+    <div key={field.id} className="flex items-center mb-3">
+      <label className="w-48 font-medium flex items-center">
         {field.field_label}:
         {field.is_required && (
-          fieldValue && fieldValue.toString().trim() !== "" ? (
-            <span className="text-green-500 ml-1">✔</span> // ✅ Green check if filled
+          fieldValue.trim() !== "" ? (
+            <span className="text-green-500 ml-1">*</span> // ✅ Green check if filled
           ) : (
             <span className="text-red-500 ml-1">*</span> // ❌ Red star if empty
           )
         )}
       </label>
-                      <div className="flex-1 relative">
-                        <CustomFieldRenderer
-                          field={field}
-                          value={customFieldValues[field.field_name]}
-                          onChange={handleCustomFieldChange}
-                        />
-                        {/* {field.is_required && (
-                          <span className="absolute text-red-500 left-[-10px] top-2">
-                            *
-                          </span>
-                        )} */}
-                      </div>
-                    </div>
-                  );
+
+      <div className="flex-1 relative">
+        <CustomFieldRenderer
+          field={field}
+          value={fieldValue}
+          onChange={handleCustomFieldChange}
+        />
+      </div>
+    </div>
+  );
+
+                  // return (
+                  //   <div key={field.id} className="flex items-center">
+                  //     <label className="w-48 font-medium">
+                  //       {field.field_label}:
+                  //       {field.is_required && (
+                  //         <span className="text-red-500 ml-1">*</span>
+                  //       )}
+                  //     </label>
+                  //     <div className="flex-1 relative">
+                  //       <CustomFieldRenderer
+                  //         field={field}
+                  //         value={customFieldValues[field.field_name]}
+                  //         onChange={handleCustomFieldChange}
+                  //       />
+                  //       {/* {field.is_required && (
+                  //         <span className="absolute text-red-500 left-[-10px] top-2">
+                  //           *
+                  //         </span>
+                  //       )} */}
+                  //     </div>
+                  //   </div>
+                  // );
                 })}
               </>
             )}
