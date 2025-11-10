@@ -902,9 +902,9 @@ export default function AddOrganization() {
         {field.field_label}:
         {field.is_required && (
           fieldValue.trim() !== "" ? (
-            <span className="text-green-500 ml-1">*</span> // ✅ Green check if filled
+            <span className="text-green-500 ml-1">*</span> 
           ) : (
-            <span className="text-red-500 ml-1">*</span> // ❌ Red star if empty
+            <span className="text-red-500 ml-1">*</span> 
           )
         )}
       </label>
