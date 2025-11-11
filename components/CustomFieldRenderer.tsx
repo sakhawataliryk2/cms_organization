@@ -10,9 +10,9 @@ interface CustomFieldDefinition {
   field_type: string;
   is_required: boolean;
   is_hidden: boolean;
-  options?: string[];
-  placeholder?: string;
-  default_value?: string;
+  options?: string[] | string | Record<string, unknown> | null;
+  placeholder?: string | null;
+  default_value?: string | null;
   sort_order: number;
   lookup_type?: "organizations" | "hiring-managers" | "job-seekers" | "jobs";
 }
@@ -30,6 +30,51 @@ export default function CustomFieldRenderer({
   onChange,
   className = "w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500",
 }: CustomFieldRendererProps) {
+  const normalizedOptions = React.useMemo<string[]>(() => {
+    if (!field.options) {
+      return [];
+    }
+
+    if (Array.isArray(field.options)) {
+      return field.options.filter(
+        (option): option is string =>
+          typeof option === "string" && option.trim().length > 0
+      );
+    }
+
+    if (typeof field.options === "string") {
+      const trimmed = field.options.trim();
+      if (!trimmed) {
+        return [];
+      }
+
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed
+            .filter((option): option is string => typeof option === "string")
+            .map((option) => option.trim())
+            .filter((option) => option.length > 0);
+        }
+      } catch {
+        // Fallback: assume newline-delimited list
+        return trimmed
+          .split(/\r?\n/)
+          .map((option) => option.trim())
+          .filter((option) => option.length > 0);
+      }
+    }
+
+    if (typeof field.options === "object") {
+      return Object.values(field.options)
+        .filter((option): option is string => typeof option === "string")
+        .map((option) => option.trim())
+        .filter((option) => option.length > 0);
+    }
+
+    return [];
+  }, [field.options]);
+
   if (field.is_hidden) return null;
 
   function formatNumberWithCommas(value: string | number) {
@@ -117,12 +162,39 @@ export default function CustomFieldRenderer({
       return (
         <select {...fieldProps}>
           <option value="">Select an option</option>
-          {field.options?.map((option) => (
+          {normalizedOptions.map((option) => (
             <option key={option} value={option}>
               {option}
             </option>
           ))}
         </select>
+      );
+    case "radio":
+      return (
+        <div className="space-y-2">
+          {normalizedOptions.length === 0 ? (
+            <div className="text-sm text-red-500">
+              No options configured for this field.
+            </div>
+          ) : (
+            normalizedOptions.map((option) => (
+              <label
+                key={`${field.field_name}-${option}`}
+                className="flex items-center space-x-2 text-sm"
+              >
+                <input
+                  type="radio"
+                  name={field.field_name}
+                  value={option}
+                  checked={value === option}
+                  onChange={() => onChange(field.field_name, option)}
+                  required={field.is_required}
+                />
+                <span>{option}</span>
+              </label>
+            ))
+          )}
+        </div>
       );
     case "checkbox":
       return (
