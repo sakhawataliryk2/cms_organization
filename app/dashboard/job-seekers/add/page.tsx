@@ -747,25 +747,26 @@ export default function AddJobSeeker() {
                   // Don't render hidden fields at all (neither label nor input)
                   if (field.is_hidden) return null;
 
+                  const fieldValue = customFieldValues[field.field_name] || "";
+
                   return (
-                    <div key={field.id} className="flex items-center">
-                      <label className="w-48 font-medium">
+                    <div key={field.id} className="flex items-center mb-3">
+                      <label className="w-48 font-medium flex items-center">
                         {field.field_label}:
-                        {field.is_required && (
-                          <span className="text-red-500 ml-1">*</span>
-                        )}
+                        {field.is_required &&
+                          (fieldValue.trim() !== "" ? (
+                            <span className="text-green-500 ml-1">✔</span>
+                          ) : (
+                            <span className="text-red-500 ml-1">*</span>
+                          ))}
                       </label>
+
                       <div className="flex-1 relative">
                         <CustomFieldRenderer
                           field={field}
-                          value={customFieldValues[field.field_name]}
+                          value={fieldValue}
                           onChange={handleCustomFieldChange}
                         />
-                        {field.is_required && (
-                          <span className="absolute text-red-500 left-[-10px] top-2">
-                            *
-                          </span>
-                        )}
                       </div>
                     </div>
                   );

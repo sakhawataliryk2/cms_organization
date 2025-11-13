@@ -893,31 +893,30 @@ export default function AddOrganization() {
                 {customFields.map((field) => {
                   // Don't render hidden fields at all (neither label nor input)
                   if (field.is_hidden) return null;
-                   // ✅ yahan fieldValue declare karo
-  const fieldValue = customFieldValues[field.field_name] || "";
-  console.log("fieldValue:", fieldValue);
-  return (
-    <div key={field.id} className="flex items-center mb-3">
-      <label className="w-48 font-medium flex items-center">
-        {field.field_label}:
-        {field.is_required && (
-          fieldValue.trim() !== "" ? (
-            <span className="text-green-500 ml-1">*</span> 
-          ) : (
-            <span className="text-red-500 ml-1">*</span> 
-          )
-        )}
-      </label>
 
-      <div className="flex-1 relative">
-        <CustomFieldRenderer
-          field={field}
-          value={fieldValue}
-          onChange={handleCustomFieldChange}
-        />
-      </div>
-    </div>
-  );
+                  const fieldValue = customFieldValues[field.field_name] || "";
+
+                  return (
+                    <div key={field.id} className="flex items-center mb-3">
+                      <label className="w-48 font-medium flex items-center">
+                        {field.field_label}:
+                        {field.is_required &&
+                          (fieldValue.trim() !== "" ? (
+                            <span className="text-green-500 ml-1">✔</span>
+                          ) : (
+                            <span className="text-red-500 ml-1">*</span>
+                          ))}
+                      </label>
+
+                      <div className="flex-1 relative">
+                        <CustomFieldRenderer
+                          field={field}
+                          value={fieldValue}
+                          onChange={handleCustomFieldChange}
+                        />
+                      </div>
+                    </div>
+                  );
 
                   // return (
                   //   <div key={field.id} className="flex items-center">
