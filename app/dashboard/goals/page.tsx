@@ -1,6 +1,13 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role?: string;
+}
 
 // Mock data for appointments
 const mockAppointments = [
@@ -86,6 +93,10 @@ const GoalsAndQuotas = () => {
   const [viewType, setViewType] = useState("Month");
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
+  const [users, setUsers] = useState<User[]>([]);
+  const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
+  const [isUsersDropdownOpen, setIsUsersDropdownOpen] = useState(false);
+  const usersDropdownRef = useRef<HTMLDivElement>(null);
 
   const calendarData = getCalendarData();
   const selectedDayAppointments = mockAppointments; // In real app, filter by selected date
@@ -127,10 +138,60 @@ const GoalsAndQuotas = () => {
     });
   };
 
-  const totalAppointments = calendarData.reduce(
-    (sum, day) => sum + day.appointmentCount,
-    0
-  );
+  // const totalAppointments = calendarData.reduce(
+  //   (sum, day) => sum + day.appointmentCount,
+  //   0
+  // );
+
+  // Fetch users from API
+  useEffect(() => {
+    const fetchUsers = async () => {
+      try {
+        const response = await fetch("/api/users/active");
+        if (response.ok) {
+          const data = await response.json();
+          setUsers(data.users || []);
+        }
+      } catch (error) {
+        console.error("Error fetching users:", error);
+      }
+    };
+
+    fetchUsers();
+  }, []);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        usersDropdownRef.current &&
+        !usersDropdownRef.current.contains(event.target as Node)
+      ) {
+        setIsUsersDropdownOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  const toggleUserSelection = (userId: string) => {
+    setSelectedUsers((prev) =>
+      prev.includes(userId)
+        ? prev.filter((id) => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
+  const selectAllUsers = () => {
+    if (selectedUsers.length === users.length) {
+      setSelectedUsers([]);
+    } else {
+      setSelectedUsers(users.map((user) => user.id));
+    }
+  };
 
   return (
     <div className="min-h-screen bg-white">
@@ -199,15 +260,15 @@ const GoalsAndQuotas = () => {
             </div>
 
             {/* Total Appointments */}
-            <div className="text-sm text-gray-600">
+            {/* <div className="text-sm text-gray-600">
               {totalAppointments} APPOINTMENTS
-            </div>
+            </div> */}
           </div>
 
           {/* Right Side */}
           <div className="flex items-center space-x-4">
             {/* Add Button */}
-            <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2">
+            {/* <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2">
               <svg
                 className="w-4 h-4"
                 fill="none"
@@ -222,10 +283,10 @@ const GoalsAndQuotas = () => {
                 />
               </svg>
               <span>ADD</span>
-            </button>
+            </button> */}
 
             {/* Dropdowns */}
-            <div className="flex items-center space-x-2 text-sm text-gray-600">
+            {/* <div className="flex items-center space-x-2 text-sm text-gray-600">
               <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
                 <path
                   fillRule="evenodd"
@@ -241,20 +302,80 @@ const GoalsAndQuotas = () => {
                   clipRule="evenodd"
                 />
               </svg>
-            </div>
+            </div> */}
 
-            <div className="flex items-center space-x-2 text-sm text-gray-600">
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
-              </svg>
-              <span>Users (145)</span>
-              <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                <path
-                  fillRule="evenodd"
-                  d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                  clipRule="evenodd"
-                />
-              </svg>
+            <div className="relative" ref={usersDropdownRef}>
+              <button
+                onClick={() => setIsUsersDropdownOpen(!isUsersDropdownOpen)}
+                className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-800 cursor-pointer"
+              >
+                <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M9 6a3 3 0 11-6 0 3 3 0 016 0zM17 6a3 3 0 11-6 0 3 3 0 016 0zM12.93 17c.046-.327.07-.66.07-1a6.97 6.97 0 00-1.5-4.33A5 5 0 0119 16v1h-6.07zM6 11a5 5 0 015 5v1H1v-1a5 5 0 015-5z" />
+                </svg>
+                <span>Users ({users.length})</span>
+                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                  <path
+                    fillRule="evenodd"
+                    d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+              </button>
+
+              {/* Dropdown Menu */}
+              {isUsersDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-300 rounded-lg shadow-lg z-50 max-h-96 overflow-hidden flex flex-col">
+                  {/* Header with Select All */}
+                  <div className="p-3 border-b border-gray-200 bg-gray-50">
+                    <button
+                      onClick={selectAllUsers}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      {selectedUsers.length === users.length
+                        ? "Deselect All"
+                        : "Select All"}
+                    </button>
+                    {selectedUsers.length > 0 && (
+                      <span className="text-xs text-gray-500 ml-2">
+                        ({selectedUsers.length} selected)
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Users List */}
+                  <div className="overflow-y-auto max-h-80">
+                    {users.length === 0 ? (
+                      <div className="p-4 text-sm text-gray-500 text-center">
+                        No users found
+                      </div>
+                    ) : (
+                      users.map((user) => (
+                        <label
+                          key={user.id}
+                          className="flex items-center p-3 hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedUsers.includes(user.id)}
+                            onChange={() => toggleUserSelection(user.id)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <div className="ml-3 flex-1">
+                            <div className="text-sm font-medium text-gray-900">
+                              {user.name}
+                            </div>
+                            {user.email && (
+                              <div className="text-xs text-gray-500">
+                                {user.email}
+                              </div>
+                            )}
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* View Type Selector */}

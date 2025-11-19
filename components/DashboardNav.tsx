@@ -182,11 +182,24 @@ export default function DashboardNav() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    // Implement search functionality here
-    console.log("Searching for:", searchQuery);
-    // Reset search after submission
-    setSearchQuery("");
-    setIsSearchOpen(false);
+    // Search is handled in real-time via filteredNavItems
+    // If a user presses Enter and there's a single match, navigate to it
+    const filtered = navItems.filter((item) => {
+      if (!searchQuery.trim()) {
+        return true;
+      }
+      const query = searchQuery.toLowerCase().trim();
+      return (
+        item.name.toLowerCase().includes(query) ||
+        item.path.toLowerCase().includes(query)
+      );
+    });
+
+    if (filtered.length === 1) {
+      router.push(filtered[0].path);
+      setSearchQuery("");
+      setIsSearchOpen(false);
+    }
   };
 
   const handleParseClick = () => {
@@ -261,6 +274,18 @@ export default function DashboardNav() {
     // { name: 'API', path: '/dashboard/api', icon: <FiGrid size={20} /> },
   ];
 
+  // Filter navigation items based on search query
+  const filteredNavItems = navItems.filter((item) => {
+    if (!searchQuery.trim()) {
+      return true; // Show all items when search is empty
+    }
+    const query = searchQuery.toLowerCase().trim();
+    return (
+      item.name.toLowerCase().includes(query) ||
+      item.path.toLowerCase().includes(query)
+    );
+  });
+
   return (
     <>
       {/* Top Navigation Bar */}
@@ -271,7 +296,7 @@ export default function DashboardNav() {
               <div className="relative flex items-center">
                 <input
                   type="text"
-                  placeholder="Search anything"
+                  placeholder="Search sidebar items..."
                   className="bg-slate-700 text-white pl-8 pr-8 py-1 rounded w-64 focus:outline-none focus:ring-1 focus:ring-blue-500"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
@@ -342,8 +367,12 @@ export default function DashboardNav() {
             {isUserMenuOpen && (
               <div className="absolute top-full right-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-20">
                 <div className="px-4 py-2 border-b border-slate-700">
-                  <div className="font-medium text-white text-sm">{user.name}</div>
-                  <div className="text-xs text-gray-400 capitalize">{user.userType}</div>
+                  <div className="font-medium text-white text-sm">
+                    {user.name}
+                  </div>
+                  <div className="text-xs text-gray-400 capitalize">
+                    {user.userType}
+                  </div>
                 </div>
                 <button
                   className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
@@ -370,29 +399,51 @@ export default function DashboardNav() {
       <div className="fixed top-0 left-0 bottom-0 w-60 bg-slate-800 text-white z-20 flex flex-col">
         {/* Logo area */}
         <div className="h-12 flex items-center px-4 my-4">
-          <span className="text-lg font-semibold ">
+          <span className="text-sm font-semibold ">
             Complete Staffing Solutions
           </span>
         </div>
 
-        {/* Navigation links - always visible */}
+        {/* Navigation links - filtered by search */}
         <div className="overflow-y-auto">
-          {navItems.map((item) => (
-            <Link
-              key={item.path}
-              href={item.path}
-              className={`flex items-center py-2 px-4 ${
-                pathname === item.path
-                  ? "bg-blue-600 text-white"
-                  : "text-gray-300 hover:bg-slate-700"
-              }`}
-            >
-              <div className="w-6 h-6 mr-3 flex-shrink-0 flex items-center justify-center">
-                {item.icon}
+          {filteredNavItems.length > 0 ? (
+            filteredNavItems.map((item) => (
+              <Link
+                key={item.path}
+                href={item.path}
+                onClick={() => {
+                  // Close search when navigating to an item
+                  if (isSearchOpen) {
+                    setSearchQuery("");
+                    setIsSearchOpen(false);
+                  }
+                }}
+                className={`flex items-center py-2 px-4 ${
+                  pathname === item.path
+                    ? "bg-blue-600 text-white"
+                    : "text-gray-300 hover:bg-slate-700"
+                }`}
+              >
+                <div className="w-6 h-6 mr-3 flex-shrink-0 flex items-center justify-center">
+                  {item.icon}
+                </div>
+                {item.name}
+              </Link>
+            ))
+          ) : (
+            <div className="px-4 py-8 text-center">
+              <div className="text-gray-400 text-sm">
+                {searchQuery.trim() ? (
+                  <>
+                    <p>No results found for</p>
+                    <p className="font-medium mt-1">"{searchQuery}"</p>
+                  </>
+                ) : (
+                  <p>No navigation items</p>
+                )}
               </div>
-              {item.name}
-            </Link>
-          ))}
+            </div>
+          )}
         </div>
 
         {/* Flexible spacer */}
