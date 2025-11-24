@@ -46,6 +46,7 @@ export default function DashboardNav() {
   const router = useRouter();
   const addMenuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLDivElement>(null);
 
   // Add menu items
   const addMenuItems = [
@@ -108,6 +109,12 @@ export default function DashboardNav() {
         !userMenuRef.current.contains(event.target as Node)
       ) {
         setIsUserMenuOpen(false);
+      }
+      if (
+        searchRef.current &&
+        !searchRef.current.contains(event.target as Node)
+      ) {
+        // Don't close search on outside click, only clear query if needed
       }
     }
 
@@ -292,26 +299,59 @@ export default function DashboardNav() {
       <div className="fixed top-0 left-0 right-0 h-12 bg-slate-800 flex items-center justify-between z-10 pl-60 pr-4">
         <div className="flex items-center ml-4 space-x-4">
           {isSearchOpen ? (
-            <form onSubmit={handleSearch} className="flex items-center">
-              <div className="relative flex items-center">
-                <input
-                  type="text"
-                  placeholder="Search sidebar items..."
-                  className="bg-slate-700 text-white pl-8 pr-8 py-1 rounded w-64 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  autoFocus
-                />
-                <FiSearch className="absolute left-2 text-gray-400" />
-                <button
-                  type="button"
-                  className="absolute right-2 text-gray-400 hover:text-white"
-                  onClick={toggleSearch}
-                >
-                  <FiX />
-                </button>
-              </div>
-            </form>
+            <div className="relative" ref={searchRef}>
+              <form onSubmit={handleSearch} className="flex items-center">
+                <div className="relative flex items-center">
+                  <input
+                    type="text"
+                    placeholder="Search sidebar items..."
+                    className="bg-slate-700 text-white pl-8 pr-8 py-1 rounded w-64 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    autoFocus
+                  />
+                  <FiSearch className="absolute left-2 text-gray-400" />
+                  <button
+                    type="button"
+                    className="absolute right-2 text-gray-400 hover:text-white"
+                    onClick={toggleSearch}
+                  >
+                    <FiX />
+                  </button>
+                </div>
+              </form>
+              
+              {/* Dropdown suggestions */}
+              {searchQuery.trim() && filteredNavItems.length > 0 && (
+                <div className="absolute top-full left-0 mt-1 w-64 bg-slate-800 rounded shadow-lg py-1 z-30 max-h-80 overflow-y-auto">
+                  {filteredNavItems.map((item) => (
+                    <button
+                      key={item.path}
+                      type="button"
+                      className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                      onClick={() => {
+                        router.push(item.path);
+                        setSearchQuery("");
+                        setIsSearchOpen(false);
+                      }}
+                    >
+                      <span className="mr-3">{item.icon}</span>
+                      <span>{item.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+              
+              {/* No results message */}
+              {searchQuery.trim() && filteredNavItems.length === 0 && (
+                <div className="absolute top-full left-0 mt-1 w-64 bg-slate-800 rounded shadow-lg py-4 z-30">
+                  <div className="text-center text-gray-400 text-sm">
+                    <p>No results found for</p>
+                    <p className="font-medium mt-1">"{searchQuery}"</p>
+                  </div>
+                </div>
+              )}
+            </div>
           ) : (
             <button
               className="flex items-center text-gray-300 hover:text-white"
