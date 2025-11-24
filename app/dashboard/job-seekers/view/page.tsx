@@ -27,6 +27,7 @@ export default function JobSeekerView() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
   const [newNote, setNewNote] = useState("");
+  const [noteType, setNoteType] = useState("General Note");
   const [isOffice365Connected, setIsOffice365Connected] = useState(false);
 
   // Onboarding send modal state
@@ -380,7 +381,10 @@ Best regards`;
             "$1"
           )}`,
         },
-        body: JSON.stringify({ text: newNote }),
+        body: JSON.stringify({ 
+          text: newNote,
+          note_type: noteType 
+        }),
       });
 
       if (!response.ok) {
@@ -394,6 +398,7 @@ Best regards`;
 
       // Clear the form
       setNewNote("");
+      setNoteType("General Note");
       setShowAddNote(false);
 
       // Refresh history
@@ -433,6 +438,13 @@ Best regards`;
       handleEdit();
     } else if (action === "delete" && jobSeekerId) {
       handleDelete(jobSeekerId);
+    } else if (action === "add-task") {
+      // Navigate to add task page with job seeker context
+      if (jobSeekerId) {
+        router.push(
+          `/dashboard/tasks/add?relatedEntity=job_seeker&relatedEntityId=${jobSeekerId}`
+        );
+      }
     } else if (action === "email") {
       // Handle send email - use Office 365 if connected, otherwise use mailto
       if (isOffice365Connected && jobSeeker?.email) {
@@ -510,8 +522,9 @@ Best regards`;
   const actionOptions = [
     { label: "Edit", action: () => handleActionSelected("edit") },
     { label: "Delete", action: () => handleActionSelected("delete") },
-    // { label: "Add Note", action: () => setShowAddNote(true) },
+    { label: "Add Note", action: () => setShowAddNote(true) },
     { label: "Send Email", action: () => handleActionSelected("email") },
+    { label: "Add Task", action: () => handleActionSelected("add-task") },
   ];
 
   // Tabs from the image
@@ -552,6 +565,21 @@ Best regards`;
       {showAddNote && (
         <div className="mb-6 p-4 bg-gray-50 rounded border">
           <h3 className="font-medium mb-2">Add New Note</h3>
+          <div className="mb-3">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Note Type <span className="text-red-500">*</span>
+            </label>
+            <select
+              value={noteType}
+              onChange={(e) => setNoteType(e.target.value)}
+              className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="General Note">General Note</option>
+              <option value="Phone Call">Phone Call</option>
+              <option value="Email">Email</option>
+              <option value="Interview">Interview</option>
+            </select>
+          </div>
           <textarea
             value={newNote}
             onChange={(e) => setNewNote(e.target.value)}
@@ -561,7 +589,11 @@ Best regards`;
           />
           <div className="flex justify-end space-x-2">
             <button
-              onClick={() => setShowAddNote(false)}
+              onClick={() => {
+                setShowAddNote(false);
+                setNewNote("");
+                setNoteType("General Note");
+              }}
               className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
             >
               Cancel
@@ -1193,6 +1225,22 @@ Best regards`;
                   {/* Show add note form if button was clicked */}
                   {showAddNote && (
                     <div className="mt-4 p-3 bg-gray-50 rounded border">
+                      <h3 className="font-medium mb-2">Add New Note</h3>
+                      <div className="mb-3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Note Type <span className="text-red-500">*</span>
+                        </label>
+                        <select
+                          value={noteType}
+                          onChange={(e) => setNoteType(e.target.value)}
+                          className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="General Note">General Note</option>
+                          <option value="Phone Call">Phone Call</option>
+                          <option value="Email">Email</option>
+                          <option value="Interview">Interview</option>
+                        </select>
+                      </div>
                       <textarea
                         value={newNote}
                         onChange={(e) => setNewNote(e.target.value)}
@@ -1202,7 +1250,11 @@ Best regards`;
                       />
                       <div className="flex justify-end space-x-2">
                         <button
-                          onClick={() => setShowAddNote(false)}
+                          onClick={() => {
+                            setShowAddNote(false);
+                            setNewNote("");
+                            setNoteType("General Note");
+                          }}
                           className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
                         >
                           Cancel
@@ -1210,6 +1262,7 @@ Best regards`;
                         <button
                           onClick={handleAddNote}
                           className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                          disabled={!newNote.trim()}
                         >
                           Save Note
                         </button>

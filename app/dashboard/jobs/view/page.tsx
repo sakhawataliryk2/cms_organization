@@ -262,6 +262,13 @@ export default function JobView() {
             handleEdit();
         } else if (action === 'delete' && jobId) {
             handleDelete(jobId);
+        } else if (action === 'add-task') {
+            // Navigate to add task page with job context
+            if (jobId) {
+                router.push(
+                    `/dashboard/tasks/add?relatedEntity=job&relatedEntityId=${jobId}`
+                );
+            }
         }
     };
 
@@ -299,6 +306,7 @@ export default function JobView() {
         { label: 'Delete', action: () => handleActionSelected('delete') },
         { label: 'Clone', action: () => handleActionSelected('clone') },
         { label: 'Publish to Job Board', action: () => handleActionSelected('publish') },
+        { label: 'Add Task', action: () => handleActionSelected('add-task') },
     ];
 
     // Tabs from the image

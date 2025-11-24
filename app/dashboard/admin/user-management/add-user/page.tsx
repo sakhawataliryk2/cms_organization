@@ -36,53 +36,56 @@ export default function UserManagement() {
     const [filterStatus, setFilterStatus] = useState('Enabled');
     const [users, setUsers] = useState<User[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
 
-    // Sample user data for demonstration
-    useEffect(() => {
-        // Simulate API call to fetch users
-        setTimeout(() => {
-            const sampleUsers: User[] = [
-                {
-                    id: '1001',
-                    firstName: 'John',
-                    lastName: 'Doe',
-                    email: 'john.doe@example.com',
-                    phone: '(603) 555-1234',
-                    phone2: '(603) 555-5678',
-                    title: 'Recruiter',
-                    office: 'Main Office',
-                    team: 'Recruitment Team',
-                    idNumber: 'EMP10001',
-                    isAdmin: true
-                },
-                {
-                    id: '1002',
-                    firstName: 'Jane',
-                    lastName: 'Smith',
-                    email: 'jane.smith@example.com',
-                    phone: '(603) 555-8765',
-                    title: 'HR Manager',
-                    office: 'Downtown Branch',
-                    team: 'HR Team',
-                    idNumber: 'EMP10002',
-                    isAdmin: false
-                },
-                {
-                    id: '1003',
-                    firstName: 'Robert',
-                    lastName: 'Johnson',
-                    email: 'robert.johnson@example.com',
-                    phone: '(603) 555-4321',
-                    title: 'Sales Representative',
-                    office: 'West Side Location',
-                    team: 'Sales Team',
-                    idNumber: 'EMP10003',
-                    isAdmin: false
-                }
-            ];
-            setUsers(sampleUsers);
+    // Fetch users from database
+    const fetchUsers = async () => {
+        try {
+            setIsLoading(true);
+            setError(null);
+            const response = await fetch('/api/users');
+            const data = await response.json();
+            console.log(data)
+
+            if (data.success && data.users) {
+                // Map backend user data to frontend User interface
+                const mappedUsers: User[] = data.users.map((user: any) => {
+                    // Split name into firstName and lastName
+                    const nameParts = user.name ? user.name.trim().split(' ') : ['', ''];
+                    const firstName = nameParts[0] || '';
+                    const lastName = nameParts.slice(1).join(' ') || '';
+
+                    return {
+                        id: String(user.id),
+                        firstName: firstName,
+                        lastName: lastName,
+                        email: user.email || '',
+                        phone: user.phone || '',
+                        phone2: user.phone2 || '',
+                        title: user.title || '',
+                        office: user.office_name || '',
+                        team: user.team_name || '',
+                        idNumber: user.id_number || '',
+                        isAdmin: user.is_admin || false
+                    };
+                });
+                setUsers(mappedUsers);
+            } else {
+                setError(data.message || 'Failed to load users');
+                setUsers([]);
+            }
+        } catch (err) {
+            console.error('Error fetching users:', err);
+            setError('Failed to load users');
+            setUsers([]);
+        } finally {
             setIsLoading(false);
-        }, 1000);
+        }
+    };
+
+    // Fetch users on component mount
+    useEffect(() => {
+        fetchUsers();
     }, []);
 
     // Filter users based on search term
@@ -103,6 +106,11 @@ export default function UserManagement() {
 
     const handleAddUser = () => {
         setIsAddUserModalOpen(true);
+    };
+
+    const handleUserAdded = () => {
+        // Refresh users list after adding a new user
+        fetchUsers();
     };
 
     const handleGoBack = () => {
@@ -217,6 +225,18 @@ export default function UserManagement() {
                                         Loading users...
                                     </td>
                                 </tr>
+                            ) : error ? (
+                                <tr>
+                                    <td colSpan={tableHeaders.length} className="px-4 py-4 text-center">
+                                        <div className="text-red-600 mb-2">{error}</div>
+                                        <button
+                                            onClick={fetchUsers}
+                                            className="text-blue-600 hover:text-blue-800 text-sm underline"
+                                        >
+                                            Retry
+                                        </button>
+                                    </td>
+                                </tr>
                             ) : filteredUsers.length > 0 ? (
                                 filteredUsers.map(user => (
                                     <tr key={user.id} className="border-b hover:bg-gray-50">
@@ -246,14 +266,17 @@ export default function UserManagement() {
 
             {/* Add User Modal */}
             {isAddUserModalOpen && (
-                <AddUserModal onClose={() => setIsAddUserModalOpen(false)} />
+                <AddUserModal 
+                    onClose={() => setIsAddUserModalOpen(false)} 
+                    onUserAdded={handleUserAdded}
+                />
             )}
         </div>
     );
 }
 
 // Add User Modal Component
-function AddUserModal({ onClose }: { onClose: () => void }) {
+function AddUserModal({ onClose, onUserAdded }: { onClose: () => void; onUserAdded?: () => void }) {
     const [formData, setFormData] = useState({
         firstName: '',
         lastName: '',
@@ -277,19 +300,34 @@ function AddUserModal({ onClose }: { onClose: () => void }) {
     const [loadingOffices, setLoadingOffices] = useState(true);
     const [loadingTeams, setLoadingTeams] = useState(false);
 
-    // Fetch offices on component mount
+    // Fetch offices and teams on component mount
     useEffect(() => {
         fetchOffices();
         fetchTeams();
     }, []);
 
+    // Debug: Log when teams or officeId changes
+    useEffect(() => {
+        if (formData.officeId) {
+            console.log('Office selected:', formData.officeId);
+            console.log('All teams:', teams);
+            console.log('Filtered teams:', filteredTeams);
+        }
+    }, [formData.officeId, teams, filteredTeams]);
+
     // Filter teams when office changes
     useEffect(() => {
         if (formData.officeId) {
-            const filtered = teams.filter(team => team.office_id === formData.officeId);
+            // Convert both to strings for comparison to handle type mismatches
+            const officeIdStr = String(formData.officeId);
+            const filtered = teams.filter(team => {
+                // Handle both string and number types for office_id
+                const teamOfficeId = team.office_id ? String(team.office_id) : null;
+                return teamOfficeId === officeIdStr;
+            });
             setFilteredTeams(filtered);
             // Reset team selection if current team doesn't belong to selected office
-            if (formData.teamId && !filtered.find(team => team.id === formData.teamId)) {
+            if (formData.teamId && !filtered.find(team => String(team.id) === String(formData.teamId))) {
                 setFormData(prev => ({ ...prev, teamId: '' }));
             }
         } else {
@@ -324,9 +362,13 @@ function AddUserModal({ onClose }: { onClose: () => void }) {
             const data = await response.json();
 
             if (data.success) {
-                setTeams(data.teams || []);
+                const teamsData = data.teams || [];
+                console.log('Fetched teams data:', teamsData);
+                console.log('Teams with office_id:', teamsData.map((t: Team) => ({ id: t.id, name: t.name, office_id: t.office_id })));
+                setTeams(teamsData);
             } else {
                 setError('Failed to load teams');
+                console.error('Failed to load teams:', data);
             }
         } catch (error) {
             console.error('Error fetching teams:', error);
@@ -390,8 +432,13 @@ function AddUserModal({ onClose }: { onClose: () => void }) {
 
             if (data.success) {
                 onClose();
-                // Refresh the page or update the users list
-                window.location.reload();
+                // Call the callback to refresh users list
+                if (onUserAdded) {
+                    onUserAdded();
+                } else {
+                    // Fallback to page reload if callback not provided
+                    window.location.reload();
+                }
             } else {
                 setError(data.message || 'Failed to create user');
             }
@@ -540,7 +587,7 @@ function AddUserModal({ onClose }: { onClose: () => void }) {
                                     <option value="">
                                         {!formData.officeId ? 'Select Office First' :
                                             loadingTeams ? 'Loading teams...' :
-                                                filteredTeams.length === 0 ? 'No teams in selected office' :
+                                                filteredTeams.length === 0 ? 'No teams available for selected office' :
                                                     'Select Team'}
                                     </option>
                                     {filteredTeams.map(team => (
@@ -549,6 +596,11 @@ function AddUserModal({ onClose }: { onClose: () => void }) {
                                         </option>
                                     ))}
                                 </select>
+                                {formData.officeId && filteredTeams.length === 0 && !loadingTeams && (
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        No teams found for this office. Please select a different office or create a team first.
+                                    </p>
+                                )}
                             </div>
 
                             <div>

@@ -31,8 +31,10 @@ export default function Dashboard() {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
     const [tasks, setTasks] = useState<Task[]>([]);
+    const [allTasks, setAllTasks] = useState<Task[]>([]); // Store all tasks for calendar indicators
     const [isLoadingTasks, setIsLoadingTasks] = useState(true);
     const [tasksError, setTasksError] = useState<string | null>(null);
+    const [showGoalsQuotas, setShowGoalsQuotas] = useState(true);
 
     // Navigation handlers
     const handleNextClick = () => {
@@ -109,9 +111,11 @@ export default function Dashboard() {
     };
 
     // Go to today
-    const goToToday = () => {
-        setCurrentDate(new Date());
-        setSelectedDate(new Date());
+    const goToToday = async () => {
+        const today = new Date();
+        setCurrentDate(today);
+        setSelectedDate(today);
+        await fetchTasksForDate(today);
     };
 
     // Check if a date is today
@@ -130,34 +134,99 @@ export default function Dashboard() {
                date.getFullYear() === selectedDate.getFullYear();
     };
 
-    // Handle date click
-    const handleDateClick = (date: Date) => {
+    // Handle date click - fetch tasks for selected date
+    const handleDateClick = async (date: Date) => {
         setSelectedDate(date);
+        await fetchTasksForDate(date);
     };
 
-    // Days with events (example: Saturdays)
-    const hasEvent = (date: Date) => {
-        return date.getDay() === 6; // Saturday
+    // Check if a date has tasks
+    const hasTasks = (date: Date) => {
+        if (allTasks.length === 0) return false;
+        const dateString = formatDateForAPI(date);
+        return allTasks.some((task: Task) => {
+            if (!task.due_date) return false;
+            const taskDate = new Date(task.due_date);
+            return formatDateForAPI(taskDate) === dateString;
+        });
     };
 
-    // Fetch tasks on component mount
-    useEffect(() => {
-        fetchTasks();
-    }, []);
+    // Format date to YYYY-MM-DD for API comparison
+    const formatDateForAPI = (date: Date): string => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
 
-    const fetchTasks = async () => {
+    // Check if a task's due_date matches the selected date
+    const isTaskForDate = (task: Task, date: Date): boolean => {
+        if (!task.due_date) return false;
+        const taskDate = new Date(task.due_date);
+        return formatDateForAPI(taskDate) === formatDateForAPI(date);
+    };
+
+    // Fetch tasks for a specific date
+    const fetchTasksForDate = async (date: Date) => {
         setIsLoadingTasks(true);
         setTasksError(null);
         try {
-            const response = await fetch('/api/tasks');
+            const response = await fetch('/api/tasks', {
+                headers: {
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                }
+            });
             
             if (!response.ok) {
                 throw new Error('Failed to fetch tasks');
             }
 
             const data = await response.json();
-            // Get up to 5 recent tasks for dashboard
-            const recentTasks = (data.tasks || []).slice(0, 5);
+            const allTasks = data.tasks || [];
+            
+            // Filter tasks for the selected date
+            const dateString = formatDateForAPI(date);
+            const tasksForDate = allTasks.filter((task: Task) => {
+                if (!task.due_date) return false;
+                const taskDate = new Date(task.due_date);
+                return formatDateForAPI(taskDate) === dateString;
+            });
+            
+            setTasks(tasksForDate);
+        } catch (err) {
+            console.error('Error fetching tasks:', err);
+            setTasksError(err instanceof Error ? err.message : 'An error occurred while fetching tasks');
+        } finally {
+            setIsLoadingTasks(false);
+        }
+    };
+
+    // Fetch all tasks on component mount (for initial load)
+    useEffect(() => {
+        fetchAllTasks();
+    }, []);
+
+    // Fetch all tasks (for initial load or when no date is selected)
+    const fetchAllTasks = async () => {
+        setIsLoadingTasks(true);
+        setTasksError(null);
+        try {
+            const response = await fetch('/api/tasks', {
+                headers: {
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                }
+            });
+            
+            if (!response.ok) {
+                throw new Error('Failed to fetch tasks');
+            }
+
+            const data = await response.json();
+            const allTasksData = data.tasks || [];
+            setAllTasks(allTasksData); // Store all tasks for calendar indicators
+            
+            // Get up to 5 recent tasks for dashboard when no date is selected
+            const recentTasks = allTasksData.slice(0, 5);
             setTasks(recentTasks);
         } catch (err) {
             console.error('Error fetching tasks:', err);
@@ -247,22 +316,25 @@ export default function Dashboard() {
                                     const { day, isCurrentMonth, date } = dayData;
                                     const isTodayDate = isToday(date);
                                     const isSelectedDate = isSelected(date);
-                                    const hasEventDate = hasEvent(date);
+                                    const hasTasksDate = hasTasks(date);
                                     
                                     return (
                                         <button
                                             key={dayIndex}
                                             onClick={() => handleDateClick(date)}
                                             className={`
-                                                text-center py-2 text-sm rounded transition-colors
+                                                text-center py-2 text-sm rounded transition-colors relative
                                                 ${!isCurrentMonth ? 'text-gray-300' : 'text-gray-700'}
-                                                ${isTodayDate ? 'bg-blue-100 font-semibold' : ''}
-                                                ${isSelectedDate ? 'bg-blue-500 text-white' : ''}
+                                                ${isTodayDate && !isSelectedDate ? 'bg-blue-100 font-semibold' : ''}
+                                                ${isSelectedDate ? 'bg-blue-500 text-white font-semibold' : ''}
                                                 ${!isSelectedDate && !isTodayDate && isCurrentMonth ? 'hover:bg-gray-100' : ''}
-                                                ${hasEventDate && !isSelectedDate ? 'bg-blue-50' : ''}
+                                                ${hasTasksDate && !isSelectedDate && isCurrentMonth ? 'bg-green-50' : ''}
                                             `}
                                         >
                                             {day}
+                                            {hasTasksDate && !isSelectedDate && (
+                                                <span className="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-green-500 rounded-full"></span>
+                                            )}
                                         </button>
                                     );
                                 })}
@@ -295,7 +367,11 @@ export default function Dashboard() {
                 <div className="bg-white rounded-md shadow overflow-hidden flex flex-col">
                     <div className="p-2 border-b border-gray-200 flex justify-between items-center">
                         <div>
-                            <h2 className="text-lg font-semibold">Tasks Overview</h2>
+                            <h2 className="text-lg font-semibold">
+                                {selectedDate 
+                                    ? `Tasks for ${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                                    : 'Tasks Overview'}
+                            </h2>
                         </div>
                         <div className="flex items-center space-x-2">
                             <Link
@@ -334,9 +410,15 @@ export default function Dashboard() {
                                 <div className="bg-gray-200 rounded-full p-4 inline-flex mx-auto mb-4">
                                     <FiCheckSquare size={24} className="text-gray-500" />
                                 </div>
-                                <p className="text-gray-600 text-sm">No tasks found</p>
+                                <p className="text-gray-600 text-sm">
+                                    {selectedDate 
+                                        ? `No tasks found for ${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                                        : 'No tasks found'}
+                                </p>
                                 <p className="text-gray-400 text-xs mt-2">
-                                    Create your first task to get started
+                                    {selectedDate 
+                                        ? 'Click on a different date or create a new task'
+                                        : 'Create your first task to get started'}
                                 </p>
                                 <Link
                                     href="/dashboard/tasks/add"
@@ -404,7 +486,7 @@ export default function Dashboard() {
                                         )}
                                     </div>
                                 ))}
-                                {tasks.length >= 5 && (
+                                {!selectedDate && tasks.length >= 5 && (
                                     <div className="pt-2 border-t border-gray-200">
                                         <Link
                                             href="/dashboard/tasks"
@@ -412,6 +494,19 @@ export default function Dashboard() {
                                         >
                                             View All Tasks →
                                         </Link>
+                                    </div>
+                                )}
+                                {selectedDate && (
+                                    <div className="pt-2 border-t border-gray-200">
+                                        <button
+                                            onClick={async () => {
+                                                setSelectedDate(null);
+                                                await fetchAllTasks();
+                                            }}
+                                            className="text-center block w-full text-blue-600 hover:text-blue-800 text-sm font-medium"
+                                        >
+                                            Show All Tasks →
+                                        </button>
                                     </div>
                                 )}
                             </div>
@@ -422,42 +517,65 @@ export default function Dashboard() {
                 {/* Right Column */}
                 <div className="flex flex-col space-y-4">
                     {/* Goals and Quotas */}
-                    <div className="bg-white rounded-md shadow overflow-hidden">
-                        <div className="p-2 border-b border-gray-200 flex items-center justify-between">
-                            <div className="flex items-center space-x-2">
-                                <h2 className="text-lg font-semibold">Goals and Quotas</h2>
-                                <button className="bg-blue-500 text-white px-2 py-1 rounded text-xs">
-                                    Goal
+                    {showGoalsQuotas && (
+                        <div className="bg-white rounded-md shadow overflow-hidden">
+                            <div className="p-2 border-b border-gray-200 flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                    <h2 className="text-lg font-semibold">Goals and Quotas</h2>
+                                    <Link
+                                        href="/dashboard/goals"
+                                        className="bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600 transition-colors"
+                                    >
+                                        Goal
+                                    </Link>
+                                    <Link
+                                        href="/dashboard/goals"
+                                        className="bg-gray-100 border border-gray-300 px-2 py-1 rounded text-xs hover:bg-gray-200 transition-colors"
+                                    >
+                                        QUOTA
+                                    </Link>
+                                    <div className="flex items-center">
+                                        <button className="bg-gray-100 border border-gray-300 px-2 py-1 rounded-l text-xs hover:bg-gray-200 transition-colors">
+                                            Filters
+                                        </button>
+                                        <button className="bg-gray-100 border border-gray-300 border-l-0 px-2 py-1 rounded-r text-xs hover:bg-gray-200 transition-colors">
+                                            <FiChevronDown size={14} />
+                                        </button>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => setShowGoalsQuotas(false)}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                    aria-label="Close Goals and Quotas"
+                                >
+                                    <FiX size={18} />
                                 </button>
-                                <button className="bg-gray-100 border border-gray-300 px-2 py-1 rounded text-xs">
-                                    QUOTA
-                                </button>
-                                <div className="flex items-center">
-                                    <button className="bg-gray-100 border border-gray-300 px-2 py-1 rounded-l text-xs">
-                                        Filters
-                                    </button>
-                                    <button className="bg-gray-100 border border-gray-300 border-l-0 px-2 py-1 rounded-r text-xs">
-                                        <FiChevronDown size={14} />
-                                    </button>
+                            </div>
+                            <div className="p-4">
+                                <div className="text-center mb-4">
+                                    <p className="text-gray-600 text-sm mb-2">View and manage your goals and quotas</p>
+                                    <Link
+                                        href="/dashboard/goals"
+                                        className="inline-block bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
+                                    >
+                                        Go to Goals & Quotas
+                                    </Link>
+                                </div>
+                                <div className="border-t border-gray-200 pt-4 mt-4">
+                                    <div className="grid grid-cols-2 gap-4 text-center">
+                                        <div>
+                                            <div className="text-2xl font-bold text-blue-600">0</div>
+                                            <div className="text-xs text-gray-500 mt-1">Active Goals</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-2xl font-bold text-green-600">0</div>
+                                            <div className="text-xs text-gray-500 mt-1">Quotas Met</div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
-                            <button className="text-gray-400 hover:text-gray-600">
-                                <FiX size={18} />
-                            </button>
                         </div>
-                        <div className="p-4 flex flex-col items-center justify-center h-full">
-                            {/* Empty state */}
-                            <div className="text-center">
-                                <div className="bg-gray-200 rounded-full p-4 inline-flex mx-auto mb-4">
-                                    <FiSearch size={24} className="text-gray-500" />
-                                </div>
-                                <p className="text-gray-600">Hmm... Your search didn't return any results.</p>
-                                <p className="text-gray-400 text-sm mt-2">
-                                    Make sure everything is spelled correctly or try different keywords.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
+                    )}
 
                     {/* Rules of Engagement */}
                     <div className="bg-white rounded-md shadow overflow-hidden">
@@ -476,6 +594,215 @@ export default function Dashboard() {
                     </div>
                 </div>
             </div>
+            {/* Activity Report Section */}
+      <div className="px-6 pb-6 mt-8">
+        {/* Activity Report Header */}
+        <div className="mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">
+            ACTIVITY REPORT
+          </h2>
+        </div>
+
+        {/* Activity Report Grid */}
+        <div className="bg-white border border-gray-300 rounded-lg overflow-hidden">
+          {/* Header Row */}
+          <div className="flex bg-gray-50 border-b border-gray-300">
+            <div className="w-32 p-3 border-r border-gray-300"></div>
+            <div className="w-24 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              Notes
+            </div>
+            {/* <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              <div>Goals</div>
+              <div className="text-xs font-normal text-gray-500">Quotas</div>
+            </div> */}
+            <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              Added to System
+            </div>
+            {/* <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              <div>Goals</div>
+              <div className="text-xs font-normal text-gray-500">Quotas</div>
+            </div> */}
+            <div className="w-28 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              Inbound emails
+            </div>
+            {/* <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              <div>Goals</div>
+              <div className="text-xs font-normal text-gray-500">Quotas</div>
+            </div> */}
+            <div className="w-28 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              Outbound emails
+            </div>
+            {/* <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              <div>Goals</div>
+              <div className="text-xs font-normal text-gray-500">Quotas</div>
+            </div> */}
+            <div className="w-16 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              Calls
+            </div>
+            {/* <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              <div>Goals</div>
+              <div className="text-xs font-normal text-gray-500">Quotas</div>
+            </div> */}
+            <div className="w-16 p-3 text-sm font-medium text-gray-700">
+              Texts
+            </div>
+          </div>
+
+          {/* Data Rows */}
+          {[
+            { category: "Organization", rowClass: "bg-white" },
+            { category: "Jobs", rowClass: "bg-gray-50" },
+            { category: "Job Seekers", rowClass: "bg-white" },
+            { category: "Hiring Managers", rowClass: "bg-gray-50" },
+            { category: "Placements", rowClass: "bg-white" },
+            { category: "Leads", rowClass: "bg-gray-50" },
+          ].map((row, index) => (
+            <div
+              key={index}
+              className={`flex border-b border-gray-300 last:border-b-0 ${row.rowClass}`}
+            >
+              {/* Category Name */}
+              <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+                {row.category}
+              </div>
+
+              {/* Notes Column */}
+              <div className="w-24 p-3 border-r border-gray-300">
+                <input
+                  type="text"
+                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                  placeholder=""
+                />
+              </div>
+
+              {/* Notes - Goals/Quotas */}
+              {/* <div className="w-20 p-3 border-r border-gray-300">
+                <div className="flex space-x-2">
+                  <input
+                    type="number"
+                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                    placeholder=""
+                  />
+                  <input 
+                    type="number" 
+                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
+                    placeholder=""
+                  />
+                </div>
+              </div> */}
+
+              {/* Added to System Column */}
+              <div className="w-32 p-3 border-r border-gray-300">
+                <input
+                  type="number"
+                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                  placeholder=""
+                />
+              </div>
+
+              {/* Added to System - Goals/Quotas */}
+              {/* <div className="w-20 p-3 border-r border-gray-300">
+                <div className="flex space-x-2">
+                  <input
+                    type="number"
+                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                    placeholder=""
+                  />
+                  <input 
+                    type="number" 
+                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
+                    placeholder="0"
+                  />
+                </div>
+              </div> */}
+
+              {/* Inbound emails Column */}
+              <div className="w-28 p-3 border-r border-gray-300">
+                <input
+                  type="number"
+                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                  placeholder=""
+                />
+              </div>
+
+              {/* Inbound emails - Goals/Quotas */}
+              {/* <div className="w-20 p-3 border-r border-gray-300">
+                <div className="flex space-x-2">
+                  <input
+                    type="number"
+                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                    placeholder=""
+                  />
+                  <input 
+                    type="number" 
+                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
+                    placeholder=""
+                  />
+                </div>
+              </div> */}
+
+              {/* Outbound emails Column */}
+              <div className="w-28 p-3 border-r border-gray-300">
+                <input
+                  type="number"
+                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                  placeholder=""
+                />
+              </div>
+
+              {/* Outbound emails - Goals/Quotas */}
+              {/* <div className="w-20 p-3 border-r border-gray-300">
+                <div className="flex space-x-2">
+                  <input
+                    type="number"
+                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                    placeholder=""
+                  />
+                  <input 
+                    type="number" 
+                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
+                      placeholder=""
+                  />
+                </div>
+              </div> */}
+
+              {/* Calls Column */}
+              <div className="w-16 p-3 border-r border-gray-300">
+                <input
+                  type="number"
+                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                  placeholder=""
+                />
+              </div>
+
+              {/* Calls - Goals/Quotas */}
+              {/* <div className="w-20 p-3 border-r border-gray-300">
+                <div className="flex space-x-2">
+                  <input
+                    type="number"
+                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                    placeholder=""
+                  />
+                  <input 
+                    type="number" 
+                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
+                    placeholder=""
+                  />
+                </div>
+              </div> */}
+
+              {/* Texts Column */}
+              <div className="w-16 p-3">
+                <input
+                  type="number"
+                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                  placeholder=""
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
             {/* Bottom Row */}
             {/* <div className="grid grid-cols-12 gap-4 mt-4">

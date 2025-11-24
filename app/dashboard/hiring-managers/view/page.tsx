@@ -213,6 +213,13 @@ export default function HiringManagerView() {
             handleEdit();
         } else if (action === 'delete' && hiringManagerId) {
             handleDelete(hiringManagerId);
+        } else if (action === 'add-task') {
+            // Navigate to add task page with hiring manager context
+            if (hiringManagerId) {
+                router.push(
+                    `/dashboard/tasks/add?relatedEntity=hiring_manager&relatedEntityId=${hiringManagerId}`
+                );
+            }
         }
     };
 
@@ -250,6 +257,7 @@ export default function HiringManagerView() {
         { label: 'Delete', action: () => handleActionSelected('delete') },
         { label: 'Clone', action: () => handleActionSelected('clone') },
         { label: 'Export', action: () => handleActionSelected('export') },
+        { label: 'Add Task', action: () => handleActionSelected('add-task') },
     ];
 
     // Tabs from the interface

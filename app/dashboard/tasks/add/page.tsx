@@ -457,13 +457,13 @@ export default function AddTask() {
         {/* Header with X button */}
         <div className="flex justify-between items-center border-b pb-4 mb-6">
           <div className="flex items-center">
-            <Image
+            {/* <Image
               src="/checklist.svg"
               alt="Task"
               width={24}
               height={24}
               className="mr-2"
-            />
+            /> */}
             <h1 className="text-xl font-bold">
               {isEditMode ? "Edit" : "Add"} Task
             </h1>
