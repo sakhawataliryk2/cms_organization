@@ -399,7 +399,7 @@ export default function Dashboard() {
                                 <p className="text-red-600 text-sm mb-2">Error loading tasks</p>
                                 <p className="text-gray-400 text-xs">{tasksError}</p>
                                 <button
-                                    onClick={fetchTasks}
+                                    onClick={fetchAllTasks}
                                     className="mt-4 text-blue-600 hover:text-blue-800 text-xs"
                                 >
                                     Retry
