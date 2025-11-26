@@ -52,12 +52,92 @@ export default function OrganizationView() {
   // Editable fields in Modify tab
   const [editableFields, setEditableFields] = useState<any>({});
 
+  // Field management state
+  const [availableFields, setAvailableFields] = useState<any[]>([]);
+  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
+    contactInfo: ['name', 'nickname', 'phone', 'address', 'website'],
+    about: ['about'],
+    recentNotes: ['notes'],
+    websiteJobs: ['jobs'],
+    ourJobs: ['jobs']
+  });
+  const [editingPanel, setEditingPanel] = useState<string | null>(null);
+  const [isLoadingFields, setIsLoadingFields] = useState(false);
+
   // Fetch organization data when component mounts
   useEffect(() => {
     if (organizationId) {
       fetchOrganizationData(organizationId);
     }
   }, [organizationId]);
+
+  // Fetch available fields after organization is loaded
+  useEffect(() => {
+    if (organization && organizationId) {
+      fetchAvailableFields();
+    }
+  }, [organization, organizationId]);
+
+  // Fetch available fields from modify page (custom fields)
+  const fetchAvailableFields = async () => {
+    setIsLoadingFields(true);
+    try {
+      const response = await fetch('/api/admin/field-management/organizations');
+      if (response.ok) {
+        const data = await response.json();
+        const fields = data.fields || [];
+        setAvailableFields(fields);
+        
+        // Add custom fields to visible fields if they have values
+        if (organization && organization.customFields) {
+          const customFieldKeys = Object.keys(organization.customFields);
+          customFieldKeys.forEach(fieldKey => {
+            // Add to appropriate panel based on field name
+            if (fieldKey.toLowerCase().includes('contact') || fieldKey.toLowerCase().includes('phone') || fieldKey.toLowerCase().includes('address')) {
+              if (!visibleFields.contactInfo.includes(fieldKey)) {
+                setVisibleFields(prev => ({
+                  ...prev,
+                  contactInfo: [...prev.contactInfo, fieldKey]
+                }));
+              }
+            }
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching available fields:', err);
+    } finally {
+      setIsLoadingFields(false);
+    }
+  };
+
+  // Toggle field visibility
+  const toggleFieldVisibility = (panelId: string, fieldKey: string) => {
+    setVisibleFields(prev => {
+      const panelFields = prev[panelId] || [];
+      if (panelFields.includes(fieldKey)) {
+        return {
+          ...prev,
+          [panelId]: panelFields.filter(f => f !== fieldKey)
+        };
+      } else {
+        return {
+          ...prev,
+          [panelId]: [...panelFields, fieldKey]
+        };
+      }
+    });
+  };
+
+  // Handle edit panel click
+  const handleEditPanel = (panelId: string) => {
+    setEditingPanel(panelId);
+  };
+
+  // Close edit modal
+  const handleCloseEditModal = () => {
+    setEditingPanel(null);
+  };
 
   // Initialize editable fields when organization data is loaded
   useEffect(() => {
@@ -110,6 +190,20 @@ export default function OrganizationView() {
       const data = await response.json();
       console.log("Organization data received:", data);
 
+      // Parse custom fields
+      let customFieldsObj = {};
+      if (data.organization.custom_fields) {
+        try {
+          if (typeof data.organization.custom_fields === 'string') {
+            customFieldsObj = JSON.parse(data.organization.custom_fields);
+          } else if (typeof data.organization.custom_fields === 'object') {
+            customFieldsObj = data.organization.custom_fields;
+          }
+        } catch (e) {
+          console.error('Error parsing custom fields:', e);
+        }
+      }
+
       // FIXED MAPPING: Map the data correctly to display fields
       const formattedOrg = {
         id: data.organization.id,
@@ -136,6 +230,7 @@ export default function OrganizationView() {
           website: data.organization.website || "https://example.com",
         },
         about: data.organization.overview || "No description provided",
+        customFields: customFieldsObj,
       };
 
       console.log("Formatted organization:", formattedOrg);
@@ -562,6 +657,7 @@ export default function OrganizationView() {
     },
     { label: "Add Job", action: () => handleActionSelected("add-job") },
     { label: "Add Task", action: () => handleActionSelected("add-task") },
+    { label: "Transfer", action: () => handleActionSelected("transfer") },
   ];
 
   const tabs = [
@@ -899,52 +995,85 @@ export default function OrganizationView() {
               {/* Organization Contact Info */}
               <PanelWithHeader
                 title="Organization Contact Info:"
+                onEdit={() => handleEditPanel('contactInfo')}
                 // onRefresh={() => refreshPanel('contact')}
                 // onClose={() => closePanel('contact')}
               >
-                <div className="space-y-2">
-                  <div className="flex">
-                    <div className="w-24 font-medium">Name:</div>
-                    <div className="flex-1 text-blue-600">
-                      {organization.contact.name}
+                <div className="space-y-0 border border-gray-200 rounded">
+                  {visibleFields.contactInfo.includes('name') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">Name:</div>
+                      <div className="flex-1 p-2 text-blue-600">
+                        {organization.contact.name}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-24 font-medium">Nickname:</div>
-                    <div className="flex-1">
-                      {organization.contact.nickname || "-"}
+                  )}
+                  {visibleFields.contactInfo.includes('nickname') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">Nickname:</div>
+                      <div className="flex-1 p-2">
+                        {organization.contact.nickname || "-"}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-24 font-medium">Phone:</div>
-                    <div className="flex-1">{organization.contact.phone}</div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-24 font-medium">Address:</div>
-                    <div className="flex-1">{organization.contact.address}</div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-24 font-medium">Website:</div>
-                    <div className="flex-1 text-blue-600">
-                      <a
-                        href={organization.contact.website}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {organization.contact.website}
-                      </a>
+                  )}
+                  {visibleFields.contactInfo.includes('phone') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">Phone:</div>
+                      <div className="flex-1 p-2">{organization.contact.phone}</div>
                     </div>
-                  </div>
+                  )}
+                  {visibleFields.contactInfo.includes('address') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">Address:</div>
+                      <div className="flex-1 p-2">{organization.contact.address}</div>
+                    </div>
+                  )}
+                  {visibleFields.contactInfo.includes('website') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">Website:</div>
+                      <div className="flex-1 p-2 text-blue-600">
+                        <a
+                          href={organization.contact.website}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {organization.contact.website}
+                        </a>
+                      </div>
+                    </div>
+                  )}
+                  {/* Display custom fields */}
+                  {organization.customFields && Object.keys(organization.customFields).map((fieldKey) => {
+                    if (visibleFields.contactInfo.includes(fieldKey)) {
+                      const field = availableFields.find(f => (f.field_name || f.field_label || f.id) === fieldKey);
+                      const fieldLabel = field?.field_label || field?.field_name || fieldKey;
+                      const fieldValue = organization.customFields[fieldKey];
+                      return (
+                        <div key={fieldKey} className="flex border-b border-gray-200 last:border-b-0">
+                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
+                          <div className="flex-1 p-2">{String(fieldValue || "-")}</div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
                 </div>
               </PanelWithHeader>
 
               {/* About the Organization */}
               <PanelWithHeader
                 title="About the Organization:"
+                onEdit={() => handleEditPanel('about')}
                 // onRefresh={() => refreshPanel('about')}
                 // onClose={() => closePanel('about')}
               >
-                <p className="text-gray-700">{organization.about}</p>
+                <div className="border border-gray-200 rounded">
+                  {visibleFields.about.includes('about') && (
+                    <div className="p-2">
+                      <p className="text-gray-700">{organization.about}</p>
+                    </div>
+                  )}
+                </div>
               </PanelWithHeader>
             </div>
 
@@ -953,61 +1082,82 @@ export default function OrganizationView() {
               {/* Recent Notes */}
               <PanelWithHeader
                 title="Recent Notes:"
+                onEdit={() => handleEditPanel('recentNotes')}
                 // onRefresh={() => refreshPanel('notes')}
                 // onClose={() => closePanel('notes')}
               >
-                {notes.length > 0 ? (
-                  <div>
-                    {notes.slice(0, 3).map((note) => (
-                      <div
-                        key={note.id}
-                        className="mb-3 pb-3 border-b last:border-0"
-                      >
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="font-medium">
-                            {note.created_by_name || "Unknown User"}
-                          </span>
-                          <span className="text-gray-500">
-                            {new Date(note.created_at).toLocaleString()}
-                          </span>
+                <div className="border border-gray-200 rounded">
+                  {visibleFields.recentNotes.includes('notes') && (
+                    <div className="p-2">
+                      {notes.length > 0 ? (
+                        <div>
+                          {notes.slice(0, 3).map((note) => (
+                            <div
+                              key={note.id}
+                              className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
+                            >
+                              <div className="flex justify-between text-sm mb-1">
+                                <span className="font-medium">
+                                  {note.created_by_name || "Unknown User"}
+                                </span>
+                                <span className="text-gray-500">
+                                  {new Date(note.created_at).toLocaleString()}
+                                </span>
+                              </div>
+                              <p className="text-sm text-gray-700">
+                                {note.text.length > 100
+                                  ? `${note.text.substring(0, 100)}...`
+                                  : note.text}
+                              </p>
+                            </div>
+                          ))}
+                          {notes.length > 3 && (
+                            <button
+                              onClick={() => setActiveTab("notes")}
+                              className="text-blue-500 text-sm hover:underline"
+                            >
+                              View all {notes.length} notes
+                            </button>
+                          )}
                         </div>
-                        <p className="text-sm text-gray-700">
-                          {note.text.length > 100
-                            ? `${note.text.substring(0, 100)}...`
-                            : note.text}
-                        </p>
-                      </div>
-                    ))}
-                    {notes.length > 3 && (
-                      <button
-                        onClick={() => setActiveTab("notes")}
-                        className="text-blue-500 text-sm hover:underline"
-                      >
-                        View all {notes.length} notes
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 italic">No recent notes</p>
-                )}
+                      ) : (
+                        <p className="text-gray-500 italic">No recent notes</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </PanelWithHeader>
 
               {/* Open Jobs from Website */}
               <PanelWithHeader
                 title="Open Jobs from Website:"
+                onEdit={() => handleEditPanel('websiteJobs')}
                 // onRefresh={() => refreshPanel('website-jobs')}
                 // onClose={() => closePanel('website-jobs')}
               >
-                <p className="text-gray-500 italic">No open jobs found</p>
+                <div className="border border-gray-200 rounded">
+                  {visibleFields.websiteJobs.includes('jobs') && (
+                    <div className="p-2">
+                      <p className="text-gray-500 italic">No open jobs found</p>
+                    </div>
+                  )}
+                </div>
               </PanelWithHeader>
 
               {/* Our Open Jobs */}
               <PanelWithHeader
                 title="Our Open Jobs:"
+                onEdit={() => handleEditPanel('ourJobs')}
                 // onRefresh={() => refreshPanel('our-jobs')}
                 // onClose={() => closePanel('our-jobs')}
               >
-                <p className="text-gray-500 italic">No open jobs</p>
+                <div className="border border-gray-200 rounded">
+                  {visibleFields.ourJobs.includes('jobs') && (
+                    <div className="p-2">
+                      <p className="text-gray-500 italic">No open jobs</p>
+                    </div>
+                  )}
+                </div>
               </PanelWithHeader>
             </div>
           </div>
@@ -1274,6 +1424,108 @@ export default function OrganizationView() {
           </div>
         )}
       </div>
+
+      {/* Edit Fields Modal */}
+      {editingPanel && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Edit Fields - {editingPanel}</h2>
+              <button
+                onClick={handleCloseEditModal}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="mb-4">
+                <h3 className="font-medium mb-3">Available Fields from Modify Page:</h3>
+                <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                  {isLoadingFields ? (
+                    <div className="text-center py-4 text-gray-500">Loading fields...</div>
+                  ) : availableFields.length > 0 ? (
+                    availableFields.map((field) => {
+                      const fieldKey = field.field_name || field.field_label || field.id;
+                      const isVisible = visibleFields[editingPanel]?.includes(fieldKey) || false;
+                      return (
+                        <div key={field.id || fieldKey} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              checked={isVisible}
+                              onChange={() => toggleFieldVisibility(editingPanel, fieldKey)}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <label className="text-sm text-gray-700">
+                              {field.field_label || field.field_name || fieldKey}
+                            </label>
+                          </div>
+                          <span className="text-xs text-gray-500">{field.field_type || 'text'}</span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-4 text-gray-500">
+                      <p>No custom fields available</p>
+                      <p className="text-xs mt-1">Fields from the modify page will appear here</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <div className="mb-4">
+                <h3 className="font-medium mb-3">Standard Fields:</h3>
+                <div className="space-y-2 border border-gray-200 rounded p-3">
+                  {(() => {
+                    const standardFieldsMap: Record<string, Array<{ key: string; label: string }>> = {
+                      contactInfo: [
+                        { key: 'name', label: 'Name' },
+                        { key: 'nickname', label: 'Nickname' },
+                        { key: 'phone', label: 'Phone' },
+                        { key: 'address', label: 'Address' },
+                        { key: 'website', label: 'Website' }
+                      ],
+                      about: [{ key: 'about', label: 'About' }],
+                      recentNotes: [{ key: 'notes', label: 'Notes' }],
+                      websiteJobs: [{ key: 'jobs', label: 'Jobs' }],
+                      ourJobs: [{ key: 'jobs', label: 'Jobs' }]
+                    };
+                    
+                    const fields = standardFieldsMap[editingPanel] || [];
+                    return fields.map((field) => {
+                      const isVisible = visibleFields[editingPanel]?.includes(field.key) || false;
+                      return (
+                        <div key={field.key} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              checked={isVisible}
+                              onChange={() => toggleFieldVisibility(editingPanel, field.key)}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <label className="text-sm text-gray-700">{field.label}</label>
+                          </div>
+                          <span className="text-xs text-gray-500">standard</span>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-4 border-t">
+                <button
+                  onClick={handleCloseEditModal}
+                  className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

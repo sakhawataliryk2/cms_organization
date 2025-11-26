@@ -525,6 +525,7 @@ Best regards`;
     { label: "Add Note", action: () => setShowAddNote(true) },
     { label: "Send Email", action: () => handleActionSelected("email") },
     { label: "Add Task", action: () => handleActionSelected("add-task") },
+    { label: "Transfer", action: () => handleActionSelected("transfer") },
   ];
 
   // Tabs from the image
@@ -809,159 +810,65 @@ Best regards`;
   }
 
   return (
-    <div className="bg-gray-200 min-h-screen">
-      {/* Header with name */}
-      <div className="bg-orange-200 p-2 flex items-center">
+    <div className="bg-gray-200 min-h-screen p-2">
+      {/* Header with job seeker name and buttons */}
+      <div className="bg-gray-400 p-2 flex items-center">
         <div className="flex items-center">
-          <Image
-            src="/file.svg"
-            alt="Job Seeker"
-            width={24}
-            height={24}
-            className="mr-2"
-          />
-          <h1 className="text-xl text-gray-700">Job Seekers</h1>
+          <div className="bg-blue-200 border border-blue-300 p-1 mr-2">
+            <Image
+              src="/file.svg"
+              alt="Job Seeker"
+              width={24}
+              height={24}
+            />
+          </div>
+          <h1 className="text-xl font-semibold text-gray-700">
+            {jobSeeker.id} {jobSeeker.fullName}
+          </h1>
         </div>
       </div>
 
-      {/* Sub-header with ID and name */}
-      {/* <div className="bg-white border-b border-gray-300 p-2">
-                <div className="text-lg font-semibold">{jobSeeker.id}</div>
-                <div className="text-lg">{jobSeeker.fullName}</div>
-            </div> */}
-
-      {/* Social media icons row */}
-      {/* <div className="bg-white border-b border-gray-300 p-3 flex justify-between items-center">
-        <div className="flex space-x-3">
-          
-          <a
-            href={`https://google.com/search?q=${encodeURIComponent(
-              jobSeeker.fullName
-            )}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <span className="text-3xl text-blue-500 font-bold">G</span>
-          </a>
-          
-          <a
-            href={`https://linkedin.com/search/results/people/?keywords=${encodeURIComponent(
-              jobSeeker.fullName
-            )}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <span className="text-3xl text-blue-700">
-              <FaLinkedin />
-            </span>
-          </a>
-         
-          <a
-            href={`https://facebook.com/search?q=${encodeURIComponent(
-              jobSeeker.fullName
-            )}`}
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <span className="text-3xl text-blue-900">
-              <FaFacebookSquare />
-            </span>
-          </a>
-        </div>
-
-        
-        <div className="flex items-center space-x-2 no-print">
-          <ActionDropdown label="ACTIONS" options={actionOptions} />
-          <button onClick={handlePrint} className="p-1 hover:bg-gray-200 rounded">
-            <Image src="/print.svg" alt="Print" width={20} height={20} />
-          </button>
-          <button className="p-1 hover:bg-gray-200 rounded">
-            <Image src="/reload.svg" alt="Reload" width={20} height={20} />
-          </button>
-          <button
-            onClick={handleGoBack}
-            className="p-1 hover:bg-gray-200 rounded"
-          >
-            <Image src="/x.svg" alt="Close" width={20} height={20} />
-          </button>
-        </div>
-      </div> */}
-
-      {/* Information row */}
-      <div className="bg-white border-b border-gray-300 p-2 grid grid-cols-6 gap-4">
-        <div>
-          {/* <div className="text-gray-600 text-sm">ID</div> */}
-          <div className="text-lg font-semibold">{jobSeeker.id}</div>
-          <div className="text-lg">{jobSeeker.fullName.toUpperCase()}</div>
-          {/* <div>{jobSeeker.id}</div> */}
-        </div>
-        {/* <div>
-                    <div className="text-gray-600 text-sm">First Name</div>
-                    <div>{jobSeeker.firstName}</div>
-                </div> */}
-        <div>
-          <div className="text-gray-600 text-sm">Primary Phone</div>
-          <div>{jobSeeker.phone}</div>
-        </div>
-        <div>
-          <div className="text-gray-600 text-sm">Primary Email</div>
-          <div className="text-blue-600 truncate">
-            <a href={`mailto:${jobSeeker.email}`}>{jobSeeker.email}</a>
+      {/* Phone and Email section */}
+      <div className="bg-white border-b border-gray-300 p-3 flex justify-between items-center">
+        <div className="flex space-x-8">
+          <div>
+            <h2 className="text-gray-600">Phone</h2>
+            <p className="font-medium">{jobSeeker.phone || "Not provided"}</p>
+          </div>
+          <div>
+            <h2 className="text-gray-600">Email</h2>
+            {jobSeeker.email && jobSeeker.email !== "No email provided" ? (
+              <a
+                href={`mailto:${jobSeeker.email}`}
+                className="font-medium text-blue-600 hover:underline"
+              >
+                {jobSeeker.email}
+              </a>
+            ) : (
+              <p className="font-medium">Not provided</p>
+            )}
           </div>
         </div>
-        <div className="bg-white p-3 flex justify-between items-center">
-          <div className="flex space-x-3">
-            {/* Google icon */}
-            <a
-              href={`https://google.com/search?q=${encodeURIComponent(
-                jobSeeker.fullName
-              )}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span className="text-3xl text-blue-500 font-bold">G</span>
-            </a>
-            {/* LinkedIn icon */}
-            <a
-              href={`https://linkedin.com/search/results/people/?keywords=${encodeURIComponent(
-                jobSeeker.fullName
-              )}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span className="text-3xl text-blue-700">
-                <FaLinkedin />
-              </span>
-            </a>
-            {/* Facebook icon */}
-            <a
-              href={`https://facebook.com/search?q=${encodeURIComponent(
-                jobSeeker.fullName
-              )}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span className="text-3xl text-blue-900">
-                <FaFacebookSquare />
-              </span>
-            </a>
-          </div>
-        </div>
-        {/* Action buttons */}
-        <div className="flex items-center justify-end space-x-2 col-span-2 no-print">
-          <ActionDropdown label="ACTIONS" options={actionOptions} />
+        <div className="flex items-center space-x-2">
+          <ActionDropdown label="Actions" options={actionOptions} />
           <button
             onClick={handlePrint}
             className="p-1 hover:bg-gray-200 rounded"
+            aria-label="Print"
           >
             <Image src="/print.svg" alt="Print" width={20} height={20} />
           </button>
-          <button className="p-1 hover:bg-gray-200 rounded">
+          <button
+            className="p-1 hover:bg-gray-200 rounded"
+            aria-label="Reload"
+            onClick={() => jobSeekerId && fetchJobSeeker(jobSeekerId)}
+          >
             <Image src="/reload.svg" alt="Reload" width={20} height={20} />
           </button>
           <button
             onClick={handleGoBack}
             className="p-1 hover:bg-gray-200 rounded"
+            aria-label="Close"
           >
             <Image src="/x.svg" alt="Close" width={20} height={20} />
           </button>
@@ -969,14 +876,14 @@ Best regards`;
       </div>
 
       {/* Navigation Tabs */}
-      <div className="flex bg-white border-b border-gray-300 overflow-x-auto no-print">
+      <div className="flex bg-gray-300 mt-1 border-b border-gray-400 px-2">
         {tabs.map((tab) => (
           <button
             key={tab.id}
             className={`px-4 py-2 ${
               activeTab === tab.id
-                ? "border-b-2 border-blue-500 font-medium text-blue-600"
-                : "text-gray-600 hover:text-gray-800 hover:bg-gray-100"
+                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+                : "text-gray-700 hover:bg-gray-200"
             }`}
             onClick={() => setActiveTab(tab.id)}
           >
@@ -985,25 +892,25 @@ Best regards`;
         ))}
       </div>
 
-      {/* Quick Action Tabs */}
-      <div className="flex bg-gray-300 p-2 space-x-2 no-print">
-        {quickTabs.map((tab) => (
+      {/* Quick Action Buttons */}
+      <div className="flex bg-gray-300 p-2 space-x-2">
+        {quickTabs.map((action) => (
           <button
-            key={tab.id}
-            className={`${
-              activeQuickTab === tab.id
-                ? "bg-blue-500 text-white"
-                : "bg-white text-gray-700 hover:bg-gray-100"
-            } px-6 py-1 rounded-full shadow`}
-            onClick={() => setActiveQuickTab(tab.id)}
+            key={action.id}
+            className={`${activeQuickTab === action.id
+              ? 'bg-white text-blue-600 font-medium'
+              : 'bg-white text-gray-700 hover:bg-gray-100'
+              } px-4 py-1 rounded-full shadow`}
+            onClick={() => setActiveQuickTab(action.id)}
           >
-            {tab.label}
+            {action.label}
           </button>
         ))}
       </div>
 
-      {/* Main Content */}
-      <div className="grid grid-cols-7 gap-4 p-4">
+      {/* Main Content Area */}
+      <div className="p-4">
+        <div className="grid grid-cols-7 gap-4">
         {/* Display content based on active tab */}
         {activeTab === "summary" && (
           <>
@@ -1346,6 +1253,7 @@ Best regards`;
             </div>
           </div>
         )}
+        </div>
       </div>
 
       {/* Onboarding Modal */}

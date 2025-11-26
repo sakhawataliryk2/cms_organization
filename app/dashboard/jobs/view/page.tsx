@@ -109,7 +109,8 @@ export default function JobView() {
                 owner: data.job.owner || 'Not assigned',
                 organization: {
                     name: data.job.organization_name || 'Not specified',
-                    phone: 'Phone not available'
+                    phone: data.job.organization_phone || 'Not provided',
+                    website: data.job.organization_website || 'Not provided'
                 },
                 hiringManager: {
                     name: data.job.hiring_manager || 'Not specified',
@@ -307,6 +308,7 @@ export default function JobView() {
         { label: 'Clone', action: () => handleActionSelected('clone') },
         { label: 'Publish to Job Board', action: () => handleActionSelected('publish') },
         { label: 'Add Task', action: () => handleActionSelected('add-task') },
+        { label: 'Transfer', action: () => handleActionSelected('transfer') },
     ];
 
     // Tabs from the image
@@ -519,78 +521,79 @@ export default function JobView() {
     }
 
     return (
-        <div className="bg-gray-200 min-h-screen">
-            {/* Header with logo and job title */}
-            <div className="bg-green-200 p-2 flex items-center">
+        <div className="bg-gray-200 min-h-screen p-2">
+            {/* Header with job name and buttons */}
+            <div className="bg-gray-400 p-2 flex items-center">
                 <div className="flex items-center">
-                    <Image src="/window.svg" alt="Jobs" width={24} height={24} className="mr-2" />
-                    <h1 className="text-xl text-gray-700">Jobs</h1>
+                    <div className="bg-blue-200 border border-blue-300 p-1 mr-2">
+                        <Image
+                            src="/file.svg"
+                            alt="Job"
+                            width={24}
+                            height={24}
+                        />
+                    </div>
+                    <h1 className="text-xl font-semibold text-gray-700">
+                        {job.id} {job.title}
+                    </h1>
                 </div>
             </div>
 
-            {/* Sub-header with ID and title */}
-            <div className="bg-white border-b border-gray-300 p-2">
-                <div className="text-lg font-semibold">{job.id}</div>
-                <div className="text-lg">{job.title}</div>
-                <div className="text-sm text-gray-500">{job.category}</div>
-            </div>
-
-            {/* Actions row */}
+            {/* Phone and Website section */}
             <div className="bg-white border-b border-gray-300 p-3 flex justify-between items-center">
-                <div className="flex space-x-3">
-                    {/* Job category tag */}
-                    <span className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
-                        {job.category}
-                    </span>
+                <div className="flex space-x-8">
+                    <div>
+                        <h2 className="text-gray-600">Phone</h2>
+                        <p className="font-medium">{job.organization.phone || "Not provided"}</p>
+                    </div>
+                    <div>
+                        <h2 className="text-gray-600">Website</h2>
+                        {job.organization.website && job.organization.website !== 'Not provided' ? (
+                            <a
+                                href={job.organization.website.startsWith('http') ? job.organization.website : `https://${job.organization.website}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="font-medium text-blue-600 hover:underline"
+                            >
+                                {job.organization.website}
+                            </a>
+                        ) : (
+                            <p className="font-medium">Not provided</p>
+                        )}
+                    </div>
                 </div>
-
-                {/* Action buttons */}
                 <div className="flex items-center space-x-2">
-                    <ActionDropdown
-                        label="ACTIONS"
-                        options={actionOptions}
-                    />
-                    <button className="p-1 hover:bg-gray-200 rounded">
+                    <ActionDropdown label="Actions" options={actionOptions} />
+                    <button className="p-1 hover:bg-gray-200 rounded" aria-label="Print">
                         <Image src="/print.svg" alt="Print" width={20} height={20} />
                     </button>
-                    <button className="p-1 hover:bg-gray-200 rounded">
+                    <button
+                        className="p-1 hover:bg-gray-200 rounded"
+                        aria-label="Reload"
+                        onClick={() => jobId && fetchJob(jobId)}
+                    >
                         <Image src="/reload.svg" alt="Reload" width={20} height={20} />
                     </button>
-                    <button onClick={handleGoBack} className="p-1 hover:bg-gray-200 rounded">
+                    <button
+                        onClick={handleGoBack}
+                        className="p-1 hover:bg-gray-200 rounded"
+                        aria-label="Close"
+                    >
                         <Image src="/x.svg" alt="Close" width={20} height={20} />
                     </button>
                 </div>
             </div>
 
-            {/* Information row */}
-            <div className="bg-white border-b border-gray-300 p-2 grid grid-cols-4 gap-4">
-                <div>
-                    <div className="text-gray-600 text-sm">ID</div>
-                    <div>{job.id}</div>
-                </div>
-                <div>
-                    <div className="text-gray-600 text-sm">Job Title</div>
-                    <div>{job.title}</div>
-                </div>
-                <div>
-                    <div className="text-gray-600 text-sm">Category</div>
-                    <div>{job.category}</div>
-                </div>
-                <div>
-                    <div className="text-gray-600 text-sm">Owner</div>
-                    <div>{job.owner}</div>
-                </div>
-            </div>
-
             {/* Navigation Tabs */}
-            <div className="flex bg-white border-b border-gray-300 overflow-x-auto">
-                {tabs.map(tab => (
+            <div className="flex bg-gray-300 mt-1 border-b border-gray-400 px-2">
+                {tabs.map((tab) => (
                     <button
                         key={tab.id}
-                        className={`px-4 py-2 ${activeTab === tab.id
-                            ? 'border-b-2 border-blue-500 font-medium text-blue-600'
-                            : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-                            }`}
+                        className={`px-4 py-2 ${
+                            activeTab === tab.id
+                                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+                                : "text-gray-700 hover:bg-gray-200"
+                        }`}
                         onClick={() => setActiveTab(tab.id)}
                     >
                         {tab.label}
@@ -598,24 +601,25 @@ export default function JobView() {
                 ))}
             </div>
 
-            {/* Quick Action Tabs */}
+            {/* Quick Action Buttons */}
             <div className="flex bg-gray-300 p-2 space-x-2">
-                {quickTabs.map(tab => (
+                {quickTabs.map((action) => (
                     <button
-                        key={tab.id}
-                        className={`${activeQuickTab === tab.id
-                            ? 'bg-blue-500 text-white'
+                        key={action.id}
+                        className={`${activeQuickTab === action.id
+                            ? 'bg-white text-blue-600 font-medium'
                             : 'bg-white text-gray-700 hover:bg-gray-100'
-                            } px-6 py-1 rounded-full shadow`}
-                        onClick={() => setActiveQuickTab(tab.id)}
+                            } px-4 py-1 rounded-full shadow`}
+                        onClick={() => setActiveQuickTab(action.id)}
                     >
-                        {tab.label}
+                        {action.label}
                     </button>
                 ))}
             </div>
 
-            {/* Main Content */}
-            <div className="grid grid-cols-7 gap-4 p-4">
+            {/* Main Content Area */}
+            <div className="p-4">
+                <div className="grid grid-cols-7 gap-4">
                 {/* Display content based on active tab */}
                 {activeTab === 'summary' && (
                     <>
@@ -850,6 +854,7 @@ export default function JobView() {
                         </div>
                     </div>
                 )}
+                </div>
             </div>
         </div>
     );

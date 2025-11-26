@@ -328,7 +328,8 @@ export default function TaskView() {
             action: () => handleActionSelected(task?.isCompleted ? 'incomplete' : 'complete')
         },
         { label: 'Delete', action: () => handleActionSelected('delete') },
-        { label: 'Clone', action: () => handleActionSelected('clone') },
+        { label: 'Clone', action: () => handleActionSelected('clone') },    
+        { label: 'Transfer', action: () => handleActionSelected('transfer') },
     ];
 
     // Tabs from the design
@@ -532,91 +533,68 @@ export default function TaskView() {
     }
 
     return (
-        <div className="bg-gray-200 min-h-screen">
-            {/* Header with logo and task title */}
-            <div className="bg-green-200 p-2 flex items-center">
+        <div className="bg-gray-200 min-h-screen p-2">
+            {/* Header with task name and buttons */}
+            <div className="bg-gray-400 p-2 flex items-center">
                 <div className="flex items-center">
-                    <Image src="/window.svg" alt="Tasks" width={24} height={24} className="mr-2" />
-                    <h1 className="text-xl text-gray-700">Tasks</h1>
+                    <div className="bg-blue-200 border border-blue-300 p-1 mr-2">
+                        <Image
+                            src="/file.svg"
+                            alt="Task"
+                            width={24}
+                            height={24}
+                        />
+                    </div>
+                    <h1 className="text-xl font-semibold text-gray-700">
+                        {task.id} {task.title}
+                    </h1>
                 </div>
             </div>
 
-            {/* Sub-header with ID and title */}
-            <div className="bg-white border-b border-gray-300 p-2">
-                <div className="text-lg font-semibold">{task.id}</div>
-                <div className="text-lg">{task.title}</div>
-                <div className="text-sm text-gray-500">
-                    Status: <span className={`px-2 py-1 rounded text-xs ${task.isCompleted ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                        }`}>
-                        {task.isCompleted ? 'Completed' : task.status}
-                    </span>
-                </div>
-            </div>
-
-            {/* Actions row */}
+            {/* Due Date and Assigned To section */}
             <div className="bg-white border-b border-gray-300 p-3 flex justify-between items-center">
-                <div className="flex space-x-3">
-                    {/* Priority tag */}
-                    <span className={`text-xs px-2 py-1 rounded ${task.priority === 'High' ? 'bg-red-100 text-red-800' :
-                            task.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                                'bg-green-100 text-green-800'
-                        }`}>
-                        {task.priority} Priority
-                    </span>
-                    {/* Completion status */}
-                    <span className={`text-xs px-2 py-1 rounded ${task.isCompleted ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
-                        }`}>
-                        {task.isCompleted ? 'Completed' : 'Pending'}
-                    </span>
+                <div className="flex space-x-8">
+                    <div>
+                        <h2 className="text-gray-600">Due Date</h2>
+                        <p className="font-medium">{task.dueDateTimeFormatted || "Not set"}</p>
+                    </div>
+                    <div>
+                        <h2 className="text-gray-600">Assigned To</h2>
+                        <p className="font-medium">{task.assignedTo || "Not assigned"}</p>
+                    </div>
                 </div>
-
-                {/* Action buttons */}
                 <div className="flex items-center space-x-2">
-                    <ActionDropdown
-                        label="ACTIONS"
-                        options={actionOptions}
-                    />
-                    <button className="p-1 hover:bg-gray-200 rounded">
+                    <ActionDropdown label="Actions" options={actionOptions} />
+                    <button className="p-1 hover:bg-gray-200 rounded" aria-label="Print">
                         <Image src="/print.svg" alt="Print" width={20} height={20} />
                     </button>
-                    <button className="p-1 hover:bg-gray-200 rounded">
+                    <button
+                        className="p-1 hover:bg-gray-200 rounded"
+                        aria-label="Reload"
+                        onClick={() => taskId && fetchTask(taskId)}
+                    >
                         <Image src="/reload.svg" alt="Reload" width={20} height={20} />
                     </button>
-                    <button onClick={handleGoBack} className="p-1 hover:bg-gray-200 rounded">
+                    <button
+                        onClick={handleGoBack}
+                        className="p-1 hover:bg-gray-200 rounded"
+                        aria-label="Close"
+                    >
                         <Image src="/x.svg" alt="Close" width={20} height={20} />
                     </button>
                 </div>
             </div>
 
-            {/* Information row */}
-            <div className="bg-white border-b border-gray-300 p-2 grid grid-cols-4 gap-4">
-                <div>
-                    <div className="text-gray-600 text-sm">ID</div>
-                    <div>{task.id}</div>
-                </div>
-                <div>
-                    <div className="text-gray-600 text-sm">Title</div>
-                    <div>{task.title}</div>
-                </div>
-                <div>
-                    <div className="text-gray-600 text-sm">Due Date</div>
-                    <div>{task.dueDateTimeFormatted}</div>
-                </div>
-                <div>
-                    <div className="text-gray-600 text-sm">Owner</div>
-                    <div>{task.owner}</div>
-                </div>
-            </div>
-
             {/* Navigation Tabs */}
-            <div className="flex bg-white border-b border-gray-300 overflow-x-auto">
-                {tabs.map(tab => (
+            <div className="flex bg-gray-300 mt-1 border-b border-gray-400 px-2">
+                {tabs.map((tab) => (
                     <button
                         key={tab.id}
-                        className={`px-4 py-2 ${activeTab === tab.id
-                            ? 'border-b-2 border-blue-500 font-medium text-blue-600'
-                            : 'text-gray-600 hover:text-gray-800 hover:bg-gray-100'
-                            }`}
+                        className={`px-4 py-2 ${
+                            activeTab === tab.id
+                                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+                                : "text-gray-700 hover:bg-gray-200"
+                        }`}
                         onClick={() => setActiveTab(tab.id)}
                     >
                         {tab.label}
@@ -624,8 +602,9 @@ export default function TaskView() {
                 ))}
             </div>
 
-            {/* Main Content */}
-            <div className="grid grid-cols-7 gap-4 p-4">
+            {/* Main Content Area */}
+            <div className="p-4">
+                <div className="grid grid-cols-7 gap-4">
                 {/* Display content based on active tab */}
                 {activeTab === 'summary' && (
                     <>
@@ -825,6 +804,7 @@ export default function TaskView() {
                         {renderModifyTab()}
                     </div>
                 )}
+                </div>
             </div>
         </div>
     );

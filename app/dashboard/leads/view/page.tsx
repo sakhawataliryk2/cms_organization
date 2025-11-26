@@ -490,6 +490,7 @@ export default function LeadView() {
     { label: "Add Note", action: () => handleActionSelected("add-note") },
     { label: "Send Email", action: () => handleActionSelected("email") },
     { label: "Add Task", action: () => handleActionSelected("add-task") },
+    { label: "Transfer", action: () => handleActionSelected("transfer") },
   ];
 
   const tabs = [
