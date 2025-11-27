@@ -34,11 +34,21 @@ interface User {
   userType: string;
 }
 
+interface SearchResults {
+  jobs: any[];
+  leads: any[];
+  jobSeekers: any[];
+  organizations: any[];
+  tasks: any[];
+}
+
 export default function DashboardNav() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
   const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
+  const [isSearching, setIsSearching] = useState<boolean>(false);
   const [isFileUploadOpen, setIsFileUploadOpen] = useState<boolean>(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState<boolean>(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState<boolean>(false);
@@ -47,6 +57,7 @@ export default function DashboardNav() {
   const addMenuRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Add menu items
   const addMenuItems = [
@@ -94,6 +105,53 @@ export default function DashboardNav() {
       setUser(userData);
     }
   }, []);
+
+  // Global search with debouncing
+  useEffect(() => {
+    // Clear previous timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    // If search query is empty or too short, clear results
+    if (!searchQuery.trim() || searchQuery.trim().length < 2) {
+      setSearchResults(null);
+      setIsSearching(false);
+      return;
+    }
+
+    // Set loading state
+    setIsSearching(true);
+
+    // Debounce search API call
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/search?query=${encodeURIComponent(searchQuery.trim())}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success) {
+            setSearchResults(data.results);
+          } else {
+            setSearchResults(null);
+          }
+        } else {
+          setSearchResults(null);
+        }
+      } catch (error) {
+        console.error('Error performing global search:', error);
+        setSearchResults(null);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300); // 300ms debounce
+
+    // Cleanup function
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchQuery]);
 
   // Close menus when clicking outside
   useEffect(() => {
@@ -153,6 +211,7 @@ export default function DashboardNav() {
     setIsSearchOpen(!isSearchOpen);
     if (isSearchOpen) {
       setSearchQuery("");
+      setSearchResults(null);
     }
     // Close other menus if they're open
     if (isAddMenuOpen) {
@@ -189,24 +248,88 @@ export default function DashboardNav() {
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
-    // Search is handled in real-time via filteredNavItems
-    // If a user presses Enter and there's a single match, navigate to it
-    const filtered = navItems.filter((item) => {
-      if (!searchQuery.trim()) {
-        return true;
+    // Search is handled in real-time via useEffect
+    // If Enter is pressed, navigate to first result if available
+    if (searchResults) {
+      const allResults = [
+        ...searchResults.jobs.map(j => ({ type: 'job', id: j.id, name: j.job_title || j.title })),
+        ...searchResults.leads.map(l => ({ type: 'lead', id: l.id, name: l.first_name && l.last_name ? `${l.first_name} ${l.last_name}` : l.organization_name || l.name })),
+        ...searchResults.jobSeekers.map(js => ({ type: 'jobSeeker', id: js.id, name: js.first_name && js.last_name ? `${js.first_name} ${js.last_name}` : js.name })),
+        ...searchResults.organizations.map(o => ({ type: 'organization', id: o.id, name: o.name })),
+        ...searchResults.tasks.map(t => ({ type: 'task', id: t.id, name: t.title || t.task_title }))
+      ];
+      
+      if (allResults.length > 0) {
+        navigateToResult(allResults[0].type, allResults[0].id);
       }
-      const query = searchQuery.toLowerCase().trim();
-      return (
-        item.name.toLowerCase().includes(query) ||
-        item.path.toLowerCase().includes(query)
-      );
-    });
+    }
+  };
 
-    if (filtered.length === 1) {
-      router.push(filtered[0].path);
+  const navigateToResult = (type: string, id: number) => {
+    const pathMap: Record<string, string> = {
+      job: `/dashboard/jobs/view/${id}`,
+      lead: `/dashboard/leads/view/${id}`,
+      jobSeeker: `/dashboard/job-seekers/view/${id}`,
+      organization: `/dashboard/organizations/view/${id}`,
+      task: `/dashboard/tasks/view/${id}`
+    };
+    const path = pathMap[type];
+    if (path) {
+      router.push(path);
       setSearchQuery("");
       setIsSearchOpen(false);
+      setSearchResults(null);
     }
+  };
+
+  const getResultDisplayName = (item: any, type: string): string => {
+    switch (type) {
+      case 'job':
+        return item.job_title || item.title || `Job #${item.id}`;
+      case 'lead':
+        if (item.first_name && item.last_name) {
+          return `${item.first_name} ${item.last_name}`;
+        }
+        return item.organization_name || item.name || `Lead #${item.id}`;
+      case 'jobSeeker':
+        if (item.first_name && item.last_name) {
+          return `${item.first_name} ${item.last_name}`;
+        }
+        return item.name || `Job Seeker #${item.id}`;
+      case 'organization':
+        return item.name || `Organization #${item.id}`;
+      case 'task':
+        return item.title || item.task_title || `Task #${item.id}`;
+      default:
+        return `Item #${item.id}`;
+    }
+  };
+
+  const getResultIcon = (type: string) => {
+    switch (type) {
+      case 'job':
+        return <FiBriefcase size={16} />;
+      case 'lead':
+        return <FiTarget size={16} />;
+      case 'jobSeeker':
+        return <FiUsers size={16} />;
+      case 'organization':
+        return <HiOutlineOfficeBuilding size={16} />;
+      case 'task':
+        return <FiCheckSquare size={16} />;
+      default:
+        return <FiSearch size={16} />;
+    }
+  };
+
+  const getTotalResultsCount = (results: SearchResults): number => {
+    return (
+      results.jobs.length +
+      results.leads.length +
+      results.jobSeekers.length +
+      results.organizations.length +
+      results.tasks.length
+    );
   };
 
   const handleParseClick = () => {
@@ -304,8 +427,8 @@ export default function DashboardNav() {
                 <div className="relative flex items-center">
                   <input
                     type="text"
-                    placeholder="Search sidebar items..."
-                    className="bg-slate-700 text-white pl-8 pr-8 py-1 rounded w-64 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder="Search all records..."
+                    className="bg-slate-700 text-white pl-8 pr-8 py-1 rounded w-96 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     autoFocus
@@ -321,34 +444,148 @@ export default function DashboardNav() {
                 </div>
               </form>
               
-              {/* Dropdown suggestions */}
-              {searchQuery.trim() && filteredNavItems.length > 0 && (
-                <div className="absolute top-full left-0 mt-1 w-64 bg-slate-800 rounded shadow-lg py-1 z-30 max-h-80 overflow-y-auto">
-                  {filteredNavItems.map((item) => (
-                    <button
-                      key={item.path}
-                      type="button"
-                      className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
-                      onClick={() => {
-                        router.push(item.path);
-                        setSearchQuery("");
-                        setIsSearchOpen(false);
-                      }}
-                    >
-                      <span className="mr-3">{item.icon}</span>
-                      <span>{item.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-              
-              {/* No results message */}
-              {searchQuery.trim() && filteredNavItems.length === 0 && (
-                <div className="absolute top-full left-0 mt-1 w-64 bg-slate-800 rounded shadow-lg py-4 z-30">
-                  <div className="text-center text-gray-400 text-sm">
-                    <p>No results found for</p>
-                    <p className="font-medium mt-1">"{searchQuery}"</p>
-                  </div>
+              {/* Global search results dropdown */}
+              {searchQuery.trim() && searchQuery.trim().length >= 2 && (
+                <div className="absolute top-full left-0 mt-1 w-96 bg-slate-800 rounded shadow-lg z-30 max-h-96 overflow-y-auto">
+                  {isSearching ? (
+                    <div className="px-4 py-8 text-center">
+                      <div className="text-gray-400 text-sm">Searching...</div>
+                    </div>
+                  ) : searchResults && getTotalResultsCount(searchResults) > 0 ? (
+                    <div className="py-1">
+                      {/* Jobs */}
+                      {searchResults.jobs.length > 0 && (
+                        <div>
+                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                            Jobs ({searchResults.jobs.length})
+                          </div>
+                          {searchResults.jobs.slice(0, 5).map((job) => (
+                            <button
+                              key={`job-${job.id}`}
+                              type="button"
+                              className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                              onClick={() => navigateToResult('job', job.id)}
+                            >
+                              <span className="mr-3 text-blue-400">{getResultIcon('job')}</span>
+                              <span className="flex-1 text-left truncate">{getResultDisplayName(job, 'job')}</span>
+                            </button>
+                          ))}
+                          {searchResults.jobs.length > 5 && (
+                            <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                              +{searchResults.jobs.length - 5} more jobs
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Leads */}
+                      {searchResults.leads.length > 0 && (
+                        <div>
+                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                            Leads ({searchResults.leads.length})
+                          </div>
+                          {searchResults.leads.slice(0, 5).map((lead) => (
+                            <button
+                              key={`lead-${lead.id}`}
+                              type="button"
+                              className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                              onClick={() => navigateToResult('lead', lead.id)}
+                            >
+                              <span className="mr-3 text-orange-400">{getResultIcon('lead')}</span>
+                              <span className="flex-1 text-left truncate">{getResultDisplayName(lead, 'lead')}</span>
+                            </button>
+                          ))}
+                          {searchResults.leads.length > 5 && (
+                            <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                              +{searchResults.leads.length - 5} more leads
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Job Seekers */}
+                      {searchResults.jobSeekers.length > 0 && (
+                        <div>
+                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                            Job Seekers ({searchResults.jobSeekers.length})
+                          </div>
+                          {searchResults.jobSeekers.slice(0, 5).map((js) => (
+                            <button
+                              key={`jobSeeker-${js.id}`}
+                              type="button"
+                              className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                              onClick={() => navigateToResult('jobSeeker', js.id)}
+                            >
+                              <span className="mr-3 text-green-400">{getResultIcon('jobSeeker')}</span>
+                              <span className="flex-1 text-left truncate">{getResultDisplayName(js, 'jobSeeker')}</span>
+                            </button>
+                          ))}
+                          {searchResults.jobSeekers.length > 5 && (
+                            <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                              +{searchResults.jobSeekers.length - 5} more job seekers
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Organizations */}
+                      {searchResults.organizations.length > 0 && (
+                        <div>
+                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                            Organizations ({searchResults.organizations.length})
+                          </div>
+                          {searchResults.organizations.slice(0, 5).map((org) => (
+                            <button
+                              key={`organization-${org.id}`}
+                              type="button"
+                              className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                              onClick={() => navigateToResult('organization', org.id)}
+                            >
+                              <span className="mr-3 text-purple-400">{getResultIcon('organization')}</span>
+                              <span className="flex-1 text-left truncate">{getResultDisplayName(org, 'organization')}</span>
+                            </button>
+                          ))}
+                          {searchResults.organizations.length > 5 && (
+                            <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                              +{searchResults.organizations.length - 5} more organizations
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Tasks */}
+                      {searchResults.tasks.length > 0 && (
+                        <div>
+                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                            Tasks ({searchResults.tasks.length})
+                          </div>
+                          {searchResults.tasks.slice(0, 5).map((task) => (
+                            <button
+                              key={`task-${task.id}`}
+                              type="button"
+                              className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                              onClick={() => navigateToResult('task', task.id)}
+                            >
+                              <span className="mr-3 text-cyan-400">{getResultIcon('task')}</span>
+                              <span className="flex-1 text-left truncate">{getResultDisplayName(task, 'task')}</span>
+                            </button>
+                          ))}
+                          {searchResults.tasks.length > 5 && (
+                            <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                              +{searchResults.tasks.length - 5} more tasks
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ) : searchQuery.trim().length >= 2 ? (
+                    <div className="px-4 py-8 text-center">
+                      <div className="text-gray-400 text-sm">
+                        <p>No results found for</p>
+                        <p className="font-medium mt-1">"{searchQuery}"</p>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               )}
             </div>
