@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
             });
         } catch (error) {
             // Properly handle the unknown error type
-            console.error('JWT verification error:', error);
+            // Don't log JWT verification errors - they're expected for invalid tokens
             const errorMessage = error instanceof Error ? error.message : String(error);
 
             return NextResponse.json(
@@ -46,7 +46,10 @@ export async function GET(request: NextRequest) {
             );
         }
     } catch (error) {
-        console.error('Error checking token:', error);
+        // Don't log SyntaxError for JSON parsing
+        if (!(error instanceof SyntaxError)) {
+            console.error('Error checking token:', error);
+        }
         const errorMessage = error instanceof Error ? error.message : String(error);
 
         return NextResponse.json(

@@ -48,7 +48,10 @@ export async function POST(request: NextRequest) {
             );
         }
     } catch (error) {
-        console.error('Error refreshing token:', error);
+        // Don't log SyntaxError for JSON parsing - this is expected when request body is invalid
+        if (!(error instanceof SyntaxError)) {
+            console.error('Error refreshing token:', error);
+        }
         return NextResponse.json(
             {
                 success: false,

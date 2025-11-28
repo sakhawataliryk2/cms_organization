@@ -62,12 +62,21 @@ export const refreshTokenIfNeeded = async (): Promise<void> => {
         if (!token) return;
 
         // Check if the token is about to expire
-        const response = await fetch('/api/check-token');
+        let response;
+        try {
+            response = await fetch('/api/check-token', {
+                method: 'GET',
+                credentials: 'include',
+            });
+        } catch (fetchError) {
+            // Silently handle fetch errors (network issues, etc.)
+            return;
+        }
         
         // Check if response is JSON before parsing
         const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-            // If not JSON, likely an error page - skip token refresh silently
+        if (!response.ok || !contentType || !contentType.includes('application/json')) {
+            // If not JSON or not OK, likely an error page - skip token refresh silently
             return;
         }
 
@@ -92,32 +101,34 @@ export const refreshTokenIfNeeded = async (): Promise<void> => {
 
         // If token expires in less than 5 minutes (300000 ms), refresh it
         if (timeUntilExpiry < 300000) {
-            console.log('Token about to expire, refreshing...');
-            const refreshResponse = await fetch('/api/auth/refresh', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ token }),
-            });
+            try {
+                const refreshResponse = await fetch('/api/auth/refresh', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ token }),
+                });
 
-            if (refreshResponse.ok) {
-                const refreshContentType = refreshResponse.headers.get('content-type');
-                if (refreshContentType && refreshContentType.includes('application/json')) {
-                    try {
-                        const refreshData = await refreshResponse.json();
-                        // Update token cookie
-                        setCookie('token', refreshData.token, {
-                            maxAge: 60 * 60 * 24 * 7, // 7 days
-                            secure: process.env.NODE_ENV === 'production',
-                            sameSite: 'strict',
-                            path: '/'
-                        });
-                        console.log('Token refreshed successfully');
-                    } catch (parseError) {
-                        // Silently ignore JSON parse errors
+                if (refreshResponse.ok) {
+                    const refreshContentType = refreshResponse.headers.get('content-type');
+                    if (refreshContentType && refreshContentType.includes('application/json')) {
+                        try {
+                            const refreshData = await refreshResponse.json();
+                            // Update token cookie
+                            setCookie('token', refreshData.token, {
+                                maxAge: 60 * 60 * 24 * 7, // 7 days
+                                secure: process.env.NODE_ENV === 'production',
+                                sameSite: 'strict',
+                                path: '/'
+                            });
+                        } catch (parseError) {
+                            // Silently ignore JSON parse errors
+                        }
                     }
                 }
+            } catch (refreshError) {
+                // Silently handle refresh errors
             }
         }
     } catch (error) {
