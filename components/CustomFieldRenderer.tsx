@@ -306,12 +306,24 @@ export default function CustomFieldRenderer({
     //     />
     //   );
     case "date":
+      // Remove defaultValue if value is provided to avoid controlled/uncontrolled conflict
+      const { defaultValue, ...dateFieldProps } = fieldProps;
       return (
         <input
-          {...fieldProps}
+          {...dateFieldProps}
           type="date"
-          defaultValue={new Date().toISOString().split("T")[0]}
-          onFocus={(e) => e.target.showPicker && e.target.showPicker()}
+          value={value || ""}
+          onClick={(e) => {
+            // Only call showPicker on click (user gesture), not on focus
+            if (e.target.showPicker && typeof e.target.showPicker === 'function') {
+              try {
+                e.target.showPicker();
+              } catch (error) {
+                // Silently ignore if showPicker is not supported or fails
+                // The native date picker will still work normally
+              }
+            }
+          }}
         />
       );
     // case "date":

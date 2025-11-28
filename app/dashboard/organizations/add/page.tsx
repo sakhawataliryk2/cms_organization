@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -30,6 +30,7 @@ export default function AddOrganization() {
   const [isLoading, setIsLoading] = useState(!!organizationId);
   const [error, setError] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(!!organizationId);
+  const hasFetchedRef = useRef(false); // Track if we've already fetched organization data
   const {
     customFields,
     customFieldValues,
@@ -59,14 +60,8 @@ export default function AddOrganization() {
     customFields: {} as Record<string, any>,
   });
 
-  // If organizationId is present, fetch the organization data
-  useEffect(() => {
-    if (organizationId) {
-      fetchOrganization(organizationId);
-    }
-  }, [organizationId, customFields]);
-
-  const fetchOrganization = async (id: string) => {
+  // Memoize fetchOrganization to prevent it from being recreated on every render
+  const fetchOrganization = useCallback(async (id: string) => {
     setIsLoading(true);
     setError(null);
 
@@ -84,15 +79,9 @@ export default function AddOrganization() {
       console.log("API Response:", data); // Check if backend ne bheja ya nahi
       const org = data.organization;
 
-      // ✅ Correct field name use karo
-      if (data?.custom_fields) {
-        setCustomFieldValues(data.custom_fields);
-      }
-
-      console.log("Custom Field Values Loaded:", data.custom_fields);
       console.log("Received organization data:", org);
 
-      // Parse existing custom fields
+      // Parse existing custom fields from the organization
       let existingCustomFields: Record<string, any> = {};
       if (org.custom_fields) {
         try {
@@ -104,6 +93,66 @@ export default function AddOrganization() {
           console.error("Error parsing existing custom fields:", e);
         }
       }
+
+      // Map custom fields from field_label (database key) to field_name (form key)
+      // Custom fields are stored with field_label as keys, but form uses field_name
+      const mappedCustomFieldValues: Record<string, any> = {};
+      
+      // First, map any existing custom field values from the database
+      if (customFields.length > 0 && Object.keys(existingCustomFields).length > 0) {
+        customFields.forEach((field) => {
+          // Try to find the value by field_label (as stored in DB)
+          const value = existingCustomFields[field.field_label];
+          if (value !== undefined) {
+            // Map to field_name for the form
+            mappedCustomFieldValues[field.field_name] = value;
+          }
+        });
+      }
+
+      // Second, map standard organization fields to custom fields based on field labels
+      // This ensures that standard fields like "name", "nicknames" etc. populate custom fields
+      // with matching labels like "Organization Name", "Nicknames", etc.
+      if (customFields.length > 0) {
+        const standardFieldMapping: Record<string, string> = {
+          "Organization Name": org.name || "",
+          "Name": org.name || "",
+          "Nicknames": org.nicknames || "",
+          "Parent Organization": org.parent_organization || "",
+          "Website": org.website || "",
+          "Organization Website": org.website || "",
+          "Contact Phone": org.contact_phone || "",
+          "Address": org.address || "",
+          "Status": org.status || "Active",
+          "Contract Signed on File": org.contract_on_file || "No",
+          "Contract Signed By": org.contract_signed_by || "",
+          "Date Contract Signed": org.date_contract_signed
+            ? org.date_contract_signed.split("T")[0]
+            : "",
+          "Year Founded": org.year_founded || "",
+          "Overview": org.overview || "",
+          "Organization Overview": org.overview || "",
+          "About": org.overview || "",
+          "Standard Perm Fee (%)": org.perm_fee ? org.perm_fee.toString() : "",
+          "# of Employees": org.num_employees ? org.num_employees.toString() : "",
+          "# of Offices": org.num_offices ? org.num_offices.toString() : "",
+        };
+
+        customFields.forEach((field) => {
+          // Only set if not already set from existingCustomFields
+          if (mappedCustomFieldValues[field.field_name] === undefined) {
+            // Try to find matching standard field by field_label
+            const standardValue = standardFieldMapping[field.field_label];
+            if (standardValue !== undefined && standardValue !== "") {
+              mappedCustomFieldValues[field.field_name] = standardValue;
+            }
+          }
+        });
+      }
+
+      console.log("Custom Field Values Loaded (mapped):", mappedCustomFieldValues);
+      console.log("Original custom fields from DB:", existingCustomFields);
+      console.log("Custom Fields Definitions:", customFields.map(f => ({ name: f.field_name, label: f.field_label })));
 
       setFormData({
         name: org.name || "",
@@ -125,8 +174,9 @@ export default function AddOrganization() {
         address: org.address || "",
         customFields: existingCustomFields,
       });
-      // ✅ IMPORTANT: Yeh line yahi add karni hai!
-      setCustomFieldValues(existingCustomFields);
+      
+      // Set the mapped custom field values (field_name as keys)
+      setCustomFieldValues(mappedCustomFieldValues);
     } catch (err) {
       console.error("Error fetching organization:", err);
       setError(
@@ -137,10 +187,23 @@ export default function AddOrganization() {
     } finally {
       setIsLoading(false);
     }
-  };
-  console.log("FormData Loaded:", formData);
-  console.log("Custom Fields Loaded:", customFields);
-  console.log("Custom Field Values Loaded:", customFieldValues);
+  }, [customFields, setCustomFieldValues]);
+
+  // If organizationId is present, fetch the organization data
+  // Wait for customFields to load before fetching to ensure proper mapping
+  useEffect(() => {
+    // Only fetch if we have an organizationId, customFields are loaded, and we haven't fetched yet
+    if (organizationId && !customFieldsLoading && customFields.length > 0 && !hasFetchedRef.current) {
+      hasFetchedRef.current = true;
+      fetchOrganization(organizationId);
+    }
+    // Reset the ref when organizationId changes or is removed
+    if (!organizationId) {
+      hasFetchedRef.current = false;
+    }
+  }, [organizationId, customFieldsLoading, customFields.length, fetchOrganization]);
+  
+  // Removed console.logs from component level to prevent excessive logging on every render
 
   const handleChange = (
     e: React.ChangeEvent<
@@ -230,38 +293,62 @@ export default function AddOrganization() {
         "";
 
       // ✅ Build the API payload
-      const apiData = {
+      // Ensure custom_fields is always a valid object (not integer or other types)
+      const customFieldsForDB: Record<string, any> = {};
+      
+      // Filter out undefined/null values and ensure all values are properly formatted
+      Object.keys(customFieldsToSend).forEach((key) => {
+        const value = customFieldsToSend[key];
+        // Only include non-undefined, non-null values
+        if (value !== undefined && value !== null && value !== "") {
+          customFieldsForDB[key] = value;
+        }
+      });
+
+      const apiData: Record<string, any> = {
         name: name,
-        nicknames: customFieldsToSend["Nicknames"] || formData.nicknames,
+        nicknames: customFieldsToSend["Nicknames"] || formData.nicknames || "",
         parent_organization:
           customFieldsToSend["Parent Organization"] ||
-          formData.parentOrganization,
+          formData.parentOrganization ||
+          "",
         website: website,
-        status: customFieldsToSend["Status"] || formData.status,
-        contract_on_file: formData.contractOnFile,
-        contract_signed_by: formData.contractSignedBy,
+        status: customFieldsToSend["Status"] || formData.status || "Active",
+        contract_on_file: formData.contractOnFile || "No",
+        contract_signed_by: formData.contractSignedBy || null,
         date_contract_signed: formData.dateContractSigned || null,
         year_founded:
-          customFieldsToSend["Year Founded"] || formData.yearFounded,
+          customFieldsToSend["Year Founded"] || formData.yearFounded || "",
         overview: overview,
         perm_fee:
-          customFieldsToSend["Standard Perm Fee (%)"] || formData.permFee,
-        num_employees: customFieldsToSend["# of Employees"]
-          ? parseInt(customFieldsToSend["# of Employees"])
-          : formData.numEmployees
-          ? parseInt(formData.numEmployees)
-          : null,
-        num_offices: customFieldsToSend["# of Offices"]
-          ? parseInt(customFieldsToSend["# of Offices"])
-          : formData.numOffices
-          ? parseInt(formData.numOffices)
-          : null,
+          customFieldsToSend["Standard Perm Fee (%)"] || formData.permFee || "",
         contact_phone:
-          customFieldsToSend["Contact Phone"] || formData.contactPhone,
-        address: customFieldsToSend["Address"] || formData.address,
-        // ✅ CRITICAL FIX: Always send custom_fields, even if empty
-        custom_fields: customFieldsToSend || {},
+          customFieldsToSend["Contact Phone"] || formData.contactPhone || "",
+        address: customFieldsToSend["Address"] || formData.address || "",
+        // ✅ CRITICAL FIX: Always send custom_fields as a valid JSON object
+        custom_fields: customFieldsForDB,
       };
+
+      // Handle numeric fields separately to avoid type issues
+      const numEmployees = customFieldsToSend["# of Employees"]
+        ? parseInt(customFieldsToSend["# of Employees"])
+        : formData.numEmployees
+        ? parseInt(formData.numEmployees)
+        : null;
+      
+      const numOffices = customFieldsToSend["# of Offices"]
+        ? parseInt(customFieldsToSend["# of Offices"])
+        : formData.numOffices
+        ? parseInt(formData.numOffices)
+        : null;
+
+      // Only add numeric fields if they have valid values
+      if (numEmployees !== null && !isNaN(numEmployees)) {
+        apiData.num_employees = numEmployees;
+      }
+      if (numOffices !== null && !isNaN(numOffices)) {
+        apiData.num_offices = numOffices;
+      }
 
       // 🔍 DEBUG: Log the final payload
       console.log("=== FINAL PAYLOAD ===");
@@ -271,20 +358,119 @@ export default function AddOrganization() {
         "Type of apiData.custom_fields:",
         typeof apiData.custom_fields
       );
+      console.log(
+        "Is apiData.custom_fields an object?",
+        typeof apiData.custom_fields === "object" && !Array.isArray(apiData.custom_fields)
+      );
       console.log("=== END PAYLOAD ===");
+
+      // Validate that custom_fields is always a plain object (not array, not null, not other types)
+      if (
+        typeof apiData.custom_fields !== "object" ||
+        apiData.custom_fields === null ||
+        Array.isArray(apiData.custom_fields)
+      ) {
+        console.error("ERROR: custom_fields is not a valid object!", apiData.custom_fields);
+        apiData.custom_fields = {};
+      }
+
+      // Ensure custom_fields is a plain object (not a class instance or special object)
+      try {
+        apiData.custom_fields = JSON.parse(JSON.stringify(apiData.custom_fields));
+      } catch (e) {
+        console.error("ERROR: Failed to serialize custom_fields!", e);
+        apiData.custom_fields = {};
+      }
+
+      // Final validation - ensure custom_fields is definitely an object
+      if (typeof apiData.custom_fields !== "object" || apiData.custom_fields === null) {
+        console.error("FINAL VALIDATION FAILED: custom_fields is still not an object!", apiData.custom_fields);
+        apiData.custom_fields = {};
+      }
+
+      // Remove any potential conflicting keys that might cause backend issues
+      // Don't send both customFields and custom_fields
+      delete (apiData as any).customFields;
+      
+      // Log final payload before sending
+      console.log("=== FINAL VALIDATION ===");
+      console.log("custom_fields type:", typeof apiData.custom_fields);
+      console.log("custom_fields value:", apiData.custom_fields);
+      console.log("custom_fields is object:", typeof apiData.custom_fields === "object" && !Array.isArray(apiData.custom_fields));
+      console.log("All keys in apiData:", Object.keys(apiData));
+      console.log("=== END VALIDATION ===");
+
+      // Create a clean payload object to ensure no type issues
+      // IMPORTANT: Order matters - custom_fields should be last to avoid parameter position issues
+      const cleanPayload: Record<string, any> = {};
+      
+      // Add all fields explicitly, ensuring no undefined values
+      if (apiData.name !== undefined) cleanPayload.name = apiData.name || "";
+      if (apiData.nicknames !== undefined) cleanPayload.nicknames = apiData.nicknames || "";
+      if (apiData.parent_organization !== undefined) cleanPayload.parent_organization = apiData.parent_organization || "";
+      if (apiData.website !== undefined) cleanPayload.website = apiData.website || "";
+      if (apiData.status !== undefined) cleanPayload.status = apiData.status || "Active";
+      if (apiData.contract_on_file !== undefined) cleanPayload.contract_on_file = apiData.contract_on_file || "No";
+      if (apiData.contract_signed_by !== undefined) cleanPayload.contract_signed_by = apiData.contract_signed_by || null;
+      if (apiData.year_founded !== undefined) cleanPayload.year_founded = apiData.year_founded || "";
+      if (apiData.overview !== undefined) cleanPayload.overview = apiData.overview || "";
+      if (apiData.perm_fee !== undefined) cleanPayload.perm_fee = apiData.perm_fee || "";
+      if (apiData.contact_phone !== undefined) cleanPayload.contact_phone = apiData.contact_phone || "";
+      if (apiData.address !== undefined) cleanPayload.address = apiData.address || "";
+
+      // Handle date_contract_signed separately - explicitly set to null if empty
+      if (apiData.date_contract_signed !== undefined) {
+        if (apiData.date_contract_signed && typeof apiData.date_contract_signed === 'string' && apiData.date_contract_signed.trim() !== '') {
+          cleanPayload.date_contract_signed = apiData.date_contract_signed;
+        } else {
+          cleanPayload.date_contract_signed = null;
+        }
+      }
+
+      // Only add numeric fields if they exist and are valid (before custom_fields)
+      if (apiData.num_employees !== undefined && apiData.num_employees !== null && apiData.num_employees !== '') {
+        cleanPayload.num_employees = apiData.num_employees;
+      }
+      if (apiData.num_offices !== undefined && apiData.num_offices !== null && apiData.num_offices !== '') {
+        cleanPayload.num_offices = apiData.num_offices;
+      }
+
+      // IMPORTANT: Add custom_fields LAST to ensure it's processed correctly by backend
+      // Ensure custom_fields is always a plain object (not array, not null, not other types)
+      const customFieldsValue = typeof apiData.custom_fields === "object" && 
+                                !Array.isArray(apiData.custom_fields) && 
+                                apiData.custom_fields !== null
+        ? apiData.custom_fields
+        : {};
+      
+      // Final serialization to ensure it's a plain object
+      cleanPayload.custom_fields = JSON.parse(JSON.stringify(customFieldsValue));
+
+      console.log("=== CLEAN PAYLOAD ===");
+      console.log("cleanPayload.custom_fields:", cleanPayload.custom_fields);
+      console.log("cleanPayload.custom_fields type:", typeof cleanPayload.custom_fields);
+      console.log("cleanPayload keys:", Object.keys(cleanPayload));
+      console.log("Full cleanPayload:", JSON.stringify(cleanPayload, null, 2));
+      console.log("=== END CLEAN PAYLOAD ===");
+      
+      // Double-check: ensure custom_fields is definitely an object before sending
+      if (typeof cleanPayload.custom_fields !== "object" || cleanPayload.custom_fields === null || Array.isArray(cleanPayload.custom_fields)) {
+        console.error("CRITICAL: custom_fields is not valid before sending!", cleanPayload.custom_fields);
+        cleanPayload.custom_fields = {};
+      }
 
       let response;
       if (isEditMode && organizationId) {
         response = await fetch(`/api/organizations/${organizationId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(apiData),
+          body: JSON.stringify(cleanPayload),
         });
       } else {
         response = await fetch("/api/organizations", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(apiData),
+          body: JSON.stringify(cleanPayload),
         });
       }
 

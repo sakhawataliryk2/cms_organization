@@ -63,6 +63,15 @@ export const refreshTokenIfNeeded = async (): Promise<void> => {
 
         // Check if the token is about to expire
         const response = await fetch('/api/check-token');
+        
+        // Check if response is JSON before parsing
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            // If not JSON, likely an error page - skip token refresh
+            console.warn('Token check endpoint returned non-JSON response, skipping refresh');
+            return;
+        }
+
         const data = await response.json();
 
         if (!data.success) {
@@ -88,19 +97,28 @@ export const refreshTokenIfNeeded = async (): Promise<void> => {
             });
 
             if (refreshResponse.ok) {
-                const refreshData = await refreshResponse.json();
-                // Update token cookie
-                setCookie('token', refreshData.token, {
-                    maxAge: 60 * 60 * 24 * 7, // 7 days
-                    secure: process.env.NODE_ENV === 'production',
-                    sameSite: 'strict',
-                    path: '/'
-                });
-                console.log('Token refreshed successfully');
+                const refreshContentType = refreshResponse.headers.get('content-type');
+                if (refreshContentType && refreshContentType.includes('application/json')) {
+                    const refreshData = await refreshResponse.json();
+                    // Update token cookie
+                    setCookie('token', refreshData.token, {
+                        maxAge: 60 * 60 * 24 * 7, // 7 days
+                        secure: process.env.NODE_ENV === 'production',
+                        sameSite: 'strict',
+                        path: '/'
+                    });
+                    console.log('Token refreshed successfully');
+                }
             }
         }
     } catch (error) {
-        console.error('Error refreshing token:', error);
+        // Silently handle errors to avoid console spam
+        // Only log if it's not a JSON parse error
+        if (error instanceof SyntaxError) {
+            console.warn('Token refresh: Received non-JSON response');
+        } else {
+            console.error('Error refreshing token:', error);
+        }
     }
 };
 

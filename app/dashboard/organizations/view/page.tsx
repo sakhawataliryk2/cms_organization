@@ -681,19 +681,27 @@ export default function OrganizationView() {
     { id: "placements", label: "Placements" },
   ];
 
-  // Update the renderModifyTab function to forward to the add page instead of showing inline form
-  const renderModifyTab = () => {
-    // If we have an organization ID, redirect to the add page with that ID
+  // Handle modify button click - redirect to add page with organization ID
+  const handleModifyClick = () => {
     if (organizationId) {
       router.push(`/dashboard/organizations/add?id=${organizationId}`);
-      return null;
     }
+  };
 
+  // Update the renderModifyTab function to show a button instead of auto-redirecting
+  const renderModifyTab = () => {
     return (
       <div className="bg-white p-4 rounded shadow-sm">
-        <h2 className="text-lg font-semibold mb-4">
-          Loading organization editor...
-        </h2>
+        <h2 className="text-lg font-semibold mb-4">Modify Organization</h2>
+        <p className="text-gray-600 mb-4">
+          Click the button below to edit this organization's details.
+        </p>
+        <button
+          onClick={handleModifyClick}
+          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        >
+          Modify Organization
+        </button>
       </div>
     );
   };
