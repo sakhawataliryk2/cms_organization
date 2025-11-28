@@ -306,11 +306,10 @@ export default function CustomFieldRenderer({
     //     />
     //   );
     case "date":
-      // Remove defaultValue if value is provided to avoid controlled/uncontrolled conflict
-      const { defaultValue, ...dateFieldProps } = fieldProps;
+      // Use fieldProps directly - defaultValue is not in fieldProps type, so no need to destructure
       return (
         <input
-          {...dateFieldProps}
+          {...fieldProps}
           type="date"
           value={value || ""}
           onClick={(e) => {
