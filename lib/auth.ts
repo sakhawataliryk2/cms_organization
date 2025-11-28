@@ -67,12 +67,17 @@ export const refreshTokenIfNeeded = async (): Promise<void> => {
         // Check if response is JSON before parsing
         const contentType = response.headers.get('content-type');
         if (!contentType || !contentType.includes('application/json')) {
-            // If not JSON, likely an error page - skip token refresh
-            console.warn('Token check endpoint returned non-JSON response, skipping refresh');
+            // If not JSON, likely an error page - skip token refresh silently
             return;
         }
 
-        const data = await response.json();
+        let data;
+        try {
+            data = await response.json();
+        } catch (parseError) {
+            // If JSON parsing fails, silently return
+            return;
+        }
 
         if (!data.success) {
             // Token is invalid, redirect to login
@@ -99,26 +104,26 @@ export const refreshTokenIfNeeded = async (): Promise<void> => {
             if (refreshResponse.ok) {
                 const refreshContentType = refreshResponse.headers.get('content-type');
                 if (refreshContentType && refreshContentType.includes('application/json')) {
-                    const refreshData = await refreshResponse.json();
-                    // Update token cookie
-                    setCookie('token', refreshData.token, {
-                        maxAge: 60 * 60 * 24 * 7, // 7 days
-                        secure: process.env.NODE_ENV === 'production',
-                        sameSite: 'strict',
-                        path: '/'
-                    });
-                    console.log('Token refreshed successfully');
+                    try {
+                        const refreshData = await refreshResponse.json();
+                        // Update token cookie
+                        setCookie('token', refreshData.token, {
+                            maxAge: 60 * 60 * 24 * 7, // 7 days
+                            secure: process.env.NODE_ENV === 'production',
+                            sameSite: 'strict',
+                            path: '/'
+                        });
+                        console.log('Token refreshed successfully');
+                    } catch (parseError) {
+                        // Silently ignore JSON parse errors
+                    }
                 }
             }
         }
     } catch (error) {
-        // Silently handle errors to avoid console spam
-        // Only log if it's not a JSON parse error
-        if (error instanceof SyntaxError) {
-            console.warn('Token refresh: Received non-JSON response');
-        } else {
-            console.error('Error refreshing token:', error);
-        }
+        // Silently handle all errors to avoid console spam
+        // Errors are already handled by try-catch blocks around JSON parsing
+        // No need to log anything here
     }
 };
 

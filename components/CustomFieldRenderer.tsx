@@ -314,9 +314,10 @@ export default function CustomFieldRenderer({
           value={value || ""}
           onClick={(e) => {
             // Only call showPicker on click (user gesture), not on focus
-            if (e.target.showPicker && typeof e.target.showPicker === 'function') {
+            const target = e.target as HTMLInputElement;
+            if (target.showPicker && typeof target.showPicker === 'function') {
               try {
-                e.target.showPicker();
+                target.showPicker();
               } catch (error) {
                 // Silently ignore if showPicker is not supported or fails
                 // The native date picker will still work normally
