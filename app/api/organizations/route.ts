@@ -90,6 +90,7 @@ export async function POST(request: NextRequest) {
             num_offices: body.num_offices || null,
             contact_phone: body.contact_phone || null,
             address: body.address || null,
+            custom_fields: body.custom_fields || {}, // CRITICAL: Include custom_fields
             created_by: userId
         };
 

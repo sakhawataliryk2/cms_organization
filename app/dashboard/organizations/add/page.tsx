@@ -296,11 +296,12 @@ export default function AddOrganization() {
       // Ensure custom_fields is always a valid object (not integer or other types)
       const customFieldsForDB: Record<string, any> = {};
       
-      // Filter out undefined/null values and ensure all values are properly formatted
+      // Include all custom fields, even if they're empty strings (but filter out undefined/null)
+      // This ensures all custom field values are saved, including empty ones
       Object.keys(customFieldsToSend).forEach((key) => {
         const value = customFieldsToSend[key];
-        // Only include non-undefined, non-null values
-        if (value !== undefined && value !== null && value !== "") {
+        // Include all values except undefined and null (allow empty strings)
+        if (value !== undefined && value !== null) {
           customFieldsForDB[key] = value;
         }
       });
@@ -315,8 +316,9 @@ export default function AddOrganization() {
         website: website,
         status: customFieldsToSend["Status"] || formData.status || "Active",
         contract_on_file: formData.contractOnFile || "No",
-        contract_signed_by: formData.contractSignedBy || null,
-        date_contract_signed: formData.dateContractSigned || null,
+        // Check both custom fields and formData for contract_signed_by and date_contract_signed
+        contract_signed_by: customFieldsToSend["Contract Signed By"] || formData.contractSignedBy || null,
+        date_contract_signed: customFieldsToSend["Date Contract Signed"] || formData.dateContractSigned || null,
         year_founded:
           customFieldsToSend["Year Founded"] || formData.yearFounded || "",
         overview: overview,
