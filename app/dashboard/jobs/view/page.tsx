@@ -309,6 +309,7 @@ export default function JobView() {
         { label: 'Publish to Job Board', action: () => handleActionSelected('publish') },
         { label: 'Add Task', action: () => handleActionSelected('add-task') },
         { label: 'Transfer', action: () => handleActionSelected('transfer') },
+        { label: 'Add Placement', action: () => handleActionSelected('add-placement') },
     ];
 
     // Tabs from the image

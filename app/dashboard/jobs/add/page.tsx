@@ -559,17 +559,17 @@ export default function AddJob() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
             {/* Standard Job Fields */}
-            {/* {formFields
+            {formFields
                             .filter(field => field.visible)
                             .map((field, index) => (
-                                <div key={field.id} className="flex items-center"> */}
-            {/* Field label */}
-            {/* <label className="w-48 font-medium">
+                                <div key={field.id} className="flex items-center">
+            
+            <label className="w-48 font-medium">
                                         {field.label}:
-                                    </label> */}
+                                    </label>
 
-            {/* Field input */}
-            {/* <div className="flex-1 relative">
+            
+            <div className="flex-1 relative">
                                         {field.type === 'text' || field.type === 'email' || field.type === 'tel' || field.type === 'url' ? (
                                             <input
                                                 type={field.type}
@@ -640,9 +640,9 @@ export default function AddJob() {
                                         {field.required && (
                                             <span className="absolute text-red-500 left-[-10px] top-2">*</span>
                                         )}
-                                    </div> */}
-            {/* </div> */}
-            {/* ))} */}
+                                    </div>
+            </div>
+             ))}
 
             {/* Custom Fields Section */}
             {customFields.length > 0 && (

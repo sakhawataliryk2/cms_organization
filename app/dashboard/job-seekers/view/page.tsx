@@ -526,6 +526,7 @@ Best regards`;
     { label: "Send Email", action: () => handleActionSelected("email") },
     { label: "Add Task", action: () => handleActionSelected("add-task") },
     { label: "Transfer", action: () => handleActionSelected("transfer") },
+    { label: "Password Reset", action: () => handleActionSelected("password-reset") },
   ];
 
   // Tabs from the image

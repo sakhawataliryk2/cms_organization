@@ -259,6 +259,7 @@ export default function HiringManagerView() {
         { label: 'Export', action: () => handleActionSelected('export') },
         { label: 'Add Task', action: () => handleActionSelected('add-task') },
         { label: 'Transfer', action: () => handleActionSelected('transfer') },
+        { label: 'Password Reset', action: () => handleActionSelected('password-reset') },
     ];
 
     // Tabs from the interface
