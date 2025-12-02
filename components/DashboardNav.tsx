@@ -267,11 +267,11 @@ export default function DashboardNav() {
 
   const navigateToResult = (type: string, id: number) => {
     const pathMap: Record<string, string> = {
-      job: `/dashboard/jobs/view?=${id}`,
-      lead: `/dashboard/leads/view?=${id}`,
-      jobSeeker: `/dashboard/job-seekers/view?=${id}`,
-      organization: `/dashboard/organizations/view?=${id}`,
-      task: `/dashboard/tasks/view?=${id}`
+      job: `/dashboard/jobs/view?id=${id}`,
+      lead: `/dashboard/leads/view?id=${id}`,
+      jobSeeker: `/dashboard/job-seekers/view?id=${id}`,
+      organization: `/dashboard/organizations/view?id=${id}`,
+      task: `/dashboard/tasks/view?id=${id}`
     };
     const path = pathMap[type];
     if (path) {
