@@ -30,6 +30,15 @@ export default function JobSeekerView() {
   const [noteType, setNoteType] = useState("General Note");
   const [isOffice365Connected, setIsOffice365Connected] = useState(false);
 
+  // Field management state
+  const [availableFields, setAvailableFields] = useState<any[]>([]);
+  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
+    resume: ['profile', 'skills', 'experience'],
+    jobSeekerDetails: ['status', 'currentOrganization', 'title', 'email', 'mobilePhone', 'address', 'desiredSalary', 'dateAdded', 'lastContactDate', 'owner']
+  });
+  const [editingPanel, setEditingPanel] = useState<string | null>(null);
+  const [isLoadingFields, setIsLoadingFields] = useState(false);
+
   // Onboarding send modal state
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [selectedDocs, setSelectedDocs] = useState<Record<string, boolean>>({});
@@ -168,6 +177,71 @@ Best regards`;
       fetchJobSeeker(jobSeekerId);
     }
   }, [jobSeekerId]);
+
+  // Fetch available fields after job seeker is loaded
+  useEffect(() => {
+    if (jobSeeker && jobSeekerId) {
+      fetchAvailableFields();
+    }
+  }, [jobSeeker, jobSeekerId]);
+
+  // Fetch available fields from modify page (custom fields)
+  const fetchAvailableFields = async () => {
+    setIsLoadingFields(true);
+    try {
+      const response = await fetch('/api/admin/field-management/job-seekers');
+      if (response.ok) {
+        const data = await response.json();
+        const fields = data.fields || [];
+        setAvailableFields(fields);
+        
+        // Add custom fields to visible fields if they have values
+        if (jobSeeker && jobSeeker.customFields) {
+          const customFieldKeys = Object.keys(jobSeeker.customFields);
+          customFieldKeys.forEach(fieldKey => {
+            if (!visibleFields.jobSeekerDetails.includes(fieldKey)) {
+              setVisibleFields(prev => ({
+                ...prev,
+                jobSeekerDetails: [...prev.jobSeekerDetails, fieldKey]
+              }));
+            }
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching available fields:', err);
+    } finally {
+      setIsLoadingFields(false);
+    }
+  };
+
+  // Toggle field visibility
+  const toggleFieldVisibility = (panelId: string, fieldKey: string) => {
+    setVisibleFields(prev => {
+      const panelFields = prev[panelId] || [];
+      if (panelFields.includes(fieldKey)) {
+        return {
+          ...prev,
+          [panelId]: panelFields.filter(f => f !== fieldKey)
+        };
+      } else {
+        return {
+          ...prev,
+          [panelId]: [...panelFields, fieldKey]
+        };
+      }
+    });
+  };
+
+  // Handle edit panel click
+  const handleEditPanel = (panelId: string) => {
+    setEditingPanel(panelId);
+  };
+
+  // Close edit modal
+  const handleCloseEditModal = () => {
+    setEditingPanel(null);
+  };
 
   // Function to fetch job seeker data with better error handling
   const fetchJobSeeker = async (id: string) => {
@@ -917,168 +991,153 @@ Best regards`;
           <>
             {/* Left Column - Resume Section (4/7 width) */}
             <div className="col-span-4">
-              <div className="bg-white rounded-lg shadow">
-                <div className="border-b border-gray-300 p-2 font-medium">
-                  Resume
-                </div>
-                <div className="p-4">
-                  <div className="text-center mb-4">
-                    {/* <h2 className="text-xl font-bold">
-                      {jobSeeker.fullName.toUpperCase()}
-                    </h2>
-                    <div className="flex justify-center items-center text-gray-600 space-x-2 mt-1 flex-wrap">
-                      <a
-                        href={`mailto:${jobSeeker.email}`}
-                        className="text-blue-600"
-                      >
-                        {jobSeeker.email}
-                      </a>
-                      <span>/</span>
-                      <span>{jobSeeker.phone}</span>
-                      <span>/</span>
-                      <span>{jobSeeker.fullAddress}</span>
-                    </div> */}
-                  </div>
-
-                  {/* Profile Section */}
-                  <div className="mb-6">
-                    <h3 className="font-bold border-b border-gray-300 pb-1 mb-2">
-                      PROFILE
-                    </h3>
-                    <p className="text-sm">{jobSeeker.resume.profile}</p>
-                  </div>
-
-                  {/* Skills Section */}
-                  {jobSeeker.skills && jobSeeker.skills.length > 0 && (
-                    <div className="mb-6">
-                      <h3 className="font-bold border-b border-gray-300 pb-1 mb-2">
-                        SKILLS
-                      </h3>
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        {jobSeeker.skills.map(
-                          (skill: string, index: number) => (
+              <PanelWithHeader
+                title="Resume"
+                onEdit={() => handleEditPanel('resume')}
+              >
+                <div className="space-y-0 border border-gray-200 rounded">
+                  {visibleFields.resume.includes('profile') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Profile:</div>
+                      <div className="flex-1 p-2 text-sm">{jobSeeker.resume.profile}</div>
+                    </div>
+                  )}
+                  {visibleFields.resume.includes('skills') && jobSeeker.skills && jobSeeker.skills.length > 0 && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Skills:</div>
+                      <div className="flex-1 p-2">
+                        <div className="flex flex-wrap gap-2">
+                          {jobSeeker.skills.map((skill: string, index: number) => (
                             <span
                               key={index}
                               className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm"
                             >
                               {skill}
                             </span>
-                          )
-                        )}
+                          ))}
+                        </div>
                       </div>
                     </div>
                   )}
-
-                  {/* Work Experience Section - only shown if there are experiences */}
-                  {jobSeeker.resume.experience &&
-                    jobSeeker.resume.experience.length > 0 && (
-                      <div className="mb-6">
-                        <h3 className="font-bold border-b border-gray-300 pb-1 mb-2">
-                          WORK EXPERIENCE
-                        </h3>
-                        {jobSeeker.resume.experience.map(
-                          (exp: any, index: number) => (
-                            <div key={index} className="mb-4">
-                              <div className="flex justify-between">
-                                <div className="font-bold text-sm">
-                                  {exp.title} {exp.location}
-                                </div>
-                                <div className="text-sm">{exp.period}</div>
+                  {visibleFields.resume.includes('experience') && jobSeeker.resume.experience && jobSeeker.resume.experience.length > 0 && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Work Experience:</div>
+                      <div className="flex-1 p-2">
+                        {jobSeeker.resume.experience.map((exp: any, index: number) => (
+                          <div key={index} className="mb-4 last:mb-0">
+                            <div className="flex justify-between mb-1">
+                              <div className="font-bold text-sm">
+                                {exp.title} {exp.location}
                               </div>
-                              <ul className="list-disc pl-5 mt-1">
-                                {exp.responsibilities.map(
-                                  (resp: string, respIndex: number) => (
-                                    <li
-                                      key={respIndex}
-                                      className="text-sm mb-1"
-                                    >
-                                      {resp}
-                                    </li>
-                                  )
-                                )}
-                              </ul>
+                              <div className="text-sm">{exp.period}</div>
                             </div>
-                          )
-                        )}
+                            <ul className="list-disc pl-5 mt-1">
+                              {exp.responsibilities.map((resp: string, respIndex: number) => (
+                                <li key={respIndex} className="text-sm mb-1">
+                                  {resp}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
                       </div>
-                    )}
+                    </div>
+                  )}
                 </div>
-              </div>
+              </PanelWithHeader>
             </div>
 
             {/* Right Column - Job Seeker Details */}
             <div className="col-span-3">
-              <div className="bg-white rounded-lg shadow">
-                <div className="border-b border-gray-300 p-2 font-medium">
-                  Job Seeker Details
-                </div>
-                <div className="p-4">
-                  <div className="space-y-3">
-                    <div className="flex">
-                      <div className="w-32 text-gray-600">Status:</div>
-                      <div className="flex-1">
+              <PanelWithHeader
+                title="Job Seeker Details"
+                onEdit={() => handleEditPanel('jobSeekerDetails')}
+              >
+                <div className="space-y-0 border border-gray-200 rounded">
+                  {visibleFields.jobSeekerDetails.includes('status') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
+                      <div className="flex-1 p-2">
                         <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
                           {jobSeeker.status}
                         </span>
                       </div>
                     </div>
-
-                    <div className="flex">
-                      <div className="w-32 text-gray-600">
-                        Current Organization:
-                      </div>
-                      <div className="flex-1 text-blue-600">
-                        {jobSeeker.currentOrganization}
-                      </div>
+                  )}
+                  {visibleFields.jobSeekerDetails.includes('currentOrganization') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Current Organization:</div>
+                      <div className="flex-1 p-2 text-blue-600">{jobSeeker.currentOrganization}</div>
                     </div>
-
-                    <div className="flex">
-                      <div className="w-32 text-gray-600">Title:</div>
-                      <div className="flex-1">{jobSeeker.title}</div>
+                  )}
+                  {visibleFields.jobSeekerDetails.includes('title') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Title:</div>
+                      <div className="flex-1 p-2">{jobSeeker.title}</div>
                     </div>
-
-                    <div className="flex">
-                      <div className="w-32 text-gray-600">Email:</div>
-                      <div className="flex-1 text-blue-600">
-                        {jobSeeker.email}
-                      </div>
+                  )}
+                  {visibleFields.jobSeekerDetails.includes('email') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Email:</div>
+                      <div className="flex-1 p-2 text-blue-600">{jobSeeker.email}</div>
                     </div>
-
-                    <div className="flex">
-                      <div className="w-32 text-gray-600">Mobile Phone:</div>
-                      <div className="flex-1">{jobSeeker.mobilePhone}</div>
+                  )}
+                  {visibleFields.jobSeekerDetails.includes('mobilePhone') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Mobile Phone:</div>
+                      <div className="flex-1 p-2">{jobSeeker.mobilePhone}</div>
                     </div>
-
-                    <div className="flex">
-                      <div className="w-32 text-gray-600">Address:</div>
-                      <div className="flex-1">{jobSeeker.fullAddress}</div>
+                  )}
+                  {visibleFields.jobSeekerDetails.includes('address') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Address:</div>
+                      <div className="flex-1 p-2">{jobSeeker.fullAddress}</div>
                     </div>
-
-                    <div className="flex">
-                      <div className="w-32 text-gray-600">Desired Salary:</div>
-                      <div className="flex-1">{jobSeeker.desiredSalary}</div>
+                  )}
+                  {visibleFields.jobSeekerDetails.includes('desiredSalary') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Desired Salary:</div>
+                      <div className="flex-1 p-2">{jobSeeker.desiredSalary}</div>
                     </div>
-
-                    <div className="flex">
-                      <div className="w-32 text-gray-600">Date Added:</div>
-                      <div className="flex-1">{jobSeeker.dateAdded}</div>
+                  )}
+                  {visibleFields.jobSeekerDetails.includes('dateAdded') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
+                      <div className="flex-1 p-2">{jobSeeker.dateAdded}</div>
                     </div>
-
-                    <div className="flex">
-                      <div className="w-32 text-gray-600">Last Contact:</div>
-                      <div className="flex-1">{jobSeeker.lastContactDate}</div>
+                  )}
+                  {visibleFields.jobSeekerDetails.includes('lastContactDate') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Last Contact:</div>
+                      <div className="flex-1 p-2">{jobSeeker.lastContactDate}</div>
                     </div>
-
-                    <div className="flex">
-                      <div className="w-32 text-gray-600">User Owner:</div>
-                      <div className="flex-1">{jobSeeker.owner}</div>
+                  )}
+                  {visibleFields.jobSeekerDetails.includes('owner') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">User Owner:</div>
+                      <div className="flex-1 p-2">{jobSeeker.owner}</div>
                     </div>
-                  </div>
+                  )}
+                  {/* Display custom fields */}
+                  {jobSeeker.customFields && Object.keys(jobSeeker.customFields).map((fieldKey) => {
+                    if (visibleFields.jobSeekerDetails.includes(fieldKey)) {
+                      const field = availableFields.find(f => (f.field_name || f.field_label || f.id) === fieldKey);
+                      const fieldLabel = field?.field_label || field?.field_name || fieldKey;
+                      const fieldValue = jobSeeker.customFields[fieldKey];
+                      return (
+                        <div key={fieldKey} className="flex border-b border-gray-200 last:border-b-0">
+                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
+                          <div className="flex-1 p-2">{String(fieldValue || "-")}</div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
                 </div>
-              </div>
+              </PanelWithHeader>
 
               {/* Recent Notes Section */}
-              <div className="bg-white rounded-lg shadow mt-4">
+              {/* <div className="bg-white rounded-lg shadow mt-4">
                 <div className="border-b border-gray-300 p-2 font-medium">
                   Recent Notes
                 </div>
@@ -1092,7 +1151,7 @@ Best regards`;
                     </button>
                   </div>
 
-                  {/* Notes preview */}
+                  
                   {notes.length > 0 ? (
                     <div>
                       {notes.slice(0, 2).map((note) => (
@@ -1130,7 +1189,7 @@ Best regards`;
                     </div>
                   )}
 
-                  {/* Show add note form if button was clicked */}
+                  
                   {showAddNote && (
                     <div className="mt-4 p-3 bg-gray-50 rounded border">
                       <h3 className="font-medium mb-2">Add New Note</h3>
@@ -1178,7 +1237,7 @@ Best regards`;
                     </div>
                   )}
                 </div>
-              </div>
+              </div> */}
             </div>
           </>
         )}
@@ -1355,6 +1414,114 @@ Best regards`;
               <button className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={handleSendReferenceForm}>
                 {isOffice365Connected ? 'Send via Office 365' : 'Open in Outlook'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Fields Modal */}
+      {editingPanel && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Edit Fields - {editingPanel}</h2>
+              <button
+                onClick={handleCloseEditModal}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="mb-4">
+                <h3 className="font-medium mb-3">Available Fields from Modify Page:</h3>
+                <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                  {isLoadingFields ? (
+                    <div className="text-center py-4 text-gray-500">Loading fields...</div>
+                  ) : availableFields.length > 0 ? (
+                    availableFields.map((field) => {
+                      const fieldKey = field.field_name || field.field_label || field.id;
+                      const isVisible = visibleFields[editingPanel]?.includes(fieldKey) || false;
+                      return (
+                        <div key={field.id || fieldKey} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              checked={isVisible}
+                              onChange={() => toggleFieldVisibility(editingPanel, fieldKey)}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <label className="text-sm text-gray-700">
+                              {field.field_label || field.field_name || fieldKey}
+                            </label>
+                          </div>
+                          <span className="text-xs text-gray-500">{field.field_type || 'text'}</span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-4 text-gray-500">
+                      <p>No custom fields available</p>
+                      <p className="text-xs mt-1">Fields from the modify page will appear here</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <div className="mb-4">
+                <h3 className="font-medium mb-3">Standard Fields:</h3>
+                <div className="space-y-2 border border-gray-200 rounded p-3">
+                  {(() => {
+                    const standardFieldsMap: Record<string, Array<{ key: string; label: string }>> = {
+                      resume: [
+                        { key: 'profile', label: 'Profile' },
+                        { key: 'skills', label: 'Skills' },
+                        { key: 'experience', label: 'Work Experience' }
+                      ],
+                      jobSeekerDetails: [
+                        { key: 'status', label: 'Status' },
+                        { key: 'currentOrganization', label: 'Current Organization' },
+                        { key: 'title', label: 'Title' },
+                        { key: 'email', label: 'Email' },
+                        { key: 'mobilePhone', label: 'Mobile Phone' },
+                        { key: 'address', label: 'Address' },
+                        { key: 'desiredSalary', label: 'Desired Salary' },
+                        { key: 'dateAdded', label: 'Date Added' },
+                        { key: 'lastContactDate', label: 'Last Contact' },
+                        { key: 'owner', label: 'User Owner' }
+                      ]
+                    };
+                    
+                    const fields = standardFieldsMap[editingPanel] || [];
+                    return fields.map((field) => {
+                      const isVisible = visibleFields[editingPanel]?.includes(field.key) || false;
+                      return (
+                        <div key={field.key} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              checked={isVisible}
+                              onChange={() => toggleFieldVisibility(editingPanel, field.key)}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <label className="text-sm text-gray-700">{field.label}</label>
+                          </div>
+                          <span className="text-xs text-gray-500">standard</span>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-4 border-t">
+                <button
+                  onClick={handleCloseEditModal}
+                  className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

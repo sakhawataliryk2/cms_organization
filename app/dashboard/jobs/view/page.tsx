@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
+import PanelWithHeader from '@/components/PanelWithHeader';
 
 export default function JobView() {
     const router = useRouter();
@@ -25,6 +26,17 @@ export default function JobView() {
     const [showAddNote, setShowAddNote] = useState(false);
     const [newNote, setNewNote] = useState('');
 
+    // Field management state
+    const [availableFields, setAvailableFields] = useState<any[]>([]);
+    const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
+        jobDetails: ['title', 'description', 'benefits', 'requiredSkills', 'salaryRange', 'customFields'],
+        details: ['status', 'priority', 'employmentType', 'startDate', 'worksite', 'dateAdded', 'jobBoardStatus', 'owner'],
+        hiringManager: ['name', 'phone', 'email'],
+        recentNotes: ['notes']
+    });
+    const [editingPanel, setEditingPanel] = useState<string | null>(null);
+    const [isLoadingFields, setIsLoadingFields] = useState(false);
+
     const jobId = searchParams.get('id');
 
     // Fetch job when component mounts
@@ -33,6 +45,71 @@ export default function JobView() {
             fetchJob(jobId);
         }
     }, [jobId]);
+
+    // Fetch available fields after job is loaded
+    useEffect(() => {
+        if (job && jobId) {
+            fetchAvailableFields();
+        }
+    }, [job, jobId]);
+
+    // Fetch available fields from modify page (custom fields)
+    const fetchAvailableFields = async () => {
+        setIsLoadingFields(true);
+        try {
+            const response = await fetch('/api/admin/field-management/jobs');
+            if (response.ok) {
+                const data = await response.json();
+                const fields = data.fields || [];
+                setAvailableFields(fields);
+                
+                // Add custom fields to visible fields if they have values
+                if (job && job.customFields) {
+                    const customFieldKeys = Object.keys(job.customFields);
+                    customFieldKeys.forEach(fieldKey => {
+                        if (!visibleFields.jobDetails.includes(fieldKey)) {
+                            setVisibleFields(prev => ({
+                                ...prev,
+                                jobDetails: [...prev.jobDetails, fieldKey]
+                            }));
+                        }
+                    });
+                }
+            }
+        } catch (err) {
+            console.error('Error fetching available fields:', err);
+        } finally {
+            setIsLoadingFields(false);
+        }
+    };
+
+    // Toggle field visibility
+    const toggleFieldVisibility = (panelId: string, fieldKey: string) => {
+        setVisibleFields(prev => {
+            const panelFields = prev[panelId] || [];
+            if (panelFields.includes(fieldKey)) {
+                return {
+                    ...prev,
+                    [panelId]: panelFields.filter(f => f !== fieldKey)
+                };
+            } else {
+                return {
+                    ...prev,
+                    [panelId]: [...panelFields, fieldKey]
+                };
+            }
+        });
+    };
+
+    // Handle edit panel click
+    const handleEditPanel = (panelId: string) => {
+        setEditingPanel(panelId);
+    };
+
+    // Close edit modal
+    const handleCloseEditModal = () => {
+        setEditingPanel(null);
+    };
 
     // Function to fetch job data with better error handling
     const fetchJob = async (id: string) => {
@@ -626,201 +703,220 @@ export default function JobView() {
                     <>
                         {/* Left Column - Job Details (4/7 width) */}
                         <div className="col-span-4">
-                            <div className="bg-white rounded-lg shadow">
-                                <div className="border-b border-gray-300 p-4 font-medium">
-                                    <div className="flex justify-between items-center">
-                                        <h2 className="text-xl font-bold">{job.title}</h2>
-                                        <div className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
-                                            {job.employmentType}
-                                        </div>
-                                    </div>
-                                    <div className="text-sm text-gray-600 mt-1">
-                                        {job.organization.name} • {job.location}
-                                    </div>
-                                </div>
-                                <div className="p-4">
-                                    {/* Job Description */}
-                                    <div className="mb-6">
-                                        <h3 className="font-bold text-lg mb-2">Job Description</h3>
-                                        <div className="whitespace-pre-line text-gray-700">
-                                            {job.description}
-                                        </div>
-                                    </div>
-
-                                    {/* Custom fields section with proper type handling */}
-                                    {Object.keys(job.customFields).length > 0 && (
-                                        <div className="mb-6">
-                                            <h3 className="font-bold text-lg mb-2">Additional Information</h3>
-                                            <ul className="list-inside">
-                                                {Object.entries(job.customFields).map(([key, value]) => (
-                                                    <li key={key} className="mb-1 text-gray-700">
-                                                        <span className="font-medium">{key}:</span> {String(value)}
-                                                    </li>
-                                                ))}
-                                            </ul>
+                            <PanelWithHeader
+                                title={`${job.title} - ${job.organization.name} • ${job.location}`}
+                                onEdit={() => handleEditPanel('jobDetails')}
+                            >
+                                <div className="space-y-0 border border-gray-200 rounded">
+                                    {visibleFields.jobDetails.includes('title') && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Title:</div>
+                                            <div className="flex-1 p-2 flex items-center justify-between">
+                                                <span className="text-blue-600 font-semibold">{job.title}</span>
+                                                <div className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
+                                                    {job.employmentType}
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
-
-                                    {/* Benefits Section */}
-                                    <div className="mb-6">
-                                        <h3 className="font-bold text-lg mb-2">Benefits</h3>
-                                        {job.benefits.length > 0 ? (
-                                            <ul className="list-disc pl-5">
-                                                {job.benefits.map((benefit: string, index: number) => (
-                                                    <li key={index} className="text-gray-700 mb-1">{benefit}</li>
-                                                ))}
-                                            </ul>
-                                        ) : (
-                                            <p className="text-gray-500 italic">No benefits listed</p>
-                                        )}
-                                    </div>
-
-                                    {/* Required Skills */}
-                                    {job.requiredSkills && (
-                                        <div className="mb-6">
-                                            <h3 className="font-bold text-lg mb-2">Required Skills</h3>
-                                            <div className="text-gray-700">
+                                    {visibleFields.jobDetails.includes('description') && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Description:</div>
+                                            <div className="flex-1 p-2 whitespace-pre-line text-gray-700">
+                                                {job.description}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {visibleFields.jobDetails.includes('benefits') && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Benefits:</div>
+                                            <div className="flex-1 p-2">
+                                                {job.benefits.length > 0 ? (
+                                                    <ul className="list-disc pl-5">
+                                                        {job.benefits.map((benefit: string, index: number) => (
+                                                            <li key={index} className="text-gray-700 mb-1">{benefit}</li>
+                                                        ))}
+                                                    </ul>
+                                                ) : (
+                                                    <p className="text-gray-500 italic">No benefits listed</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {visibleFields.jobDetails.includes('requiredSkills') && job.requiredSkills && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Required Skills:</div>
+                                            <div className="flex-1 p-2 text-gray-700">
                                                 {job.requiredSkills}
                                             </div>
                                         </div>
                                     )}
-
-                                    {/* Salary and Details */}
-                                    <div className="mb-6">
-                                        <h3 className="font-bold text-lg mb-2">Compensation</h3>
-                                        <div className="text-gray-700">
-                                            <p><span className="font-medium">Salary Range:</span> {job.salaryRange}</p>
-                                            <p><span className="font-medium">Employment Type:</span> {job.employmentType}</p>
+                                    {visibleFields.jobDetails.includes('salaryRange') && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Salary Range:</div>
+                                            <div className="flex-1 p-2 text-gray-700">
+                                                {job.salaryRange}
+                                            </div>
                                         </div>
-                                    </div>
+                                    )}
+                                    {/* Display custom fields */}
+                                    {job.customFields && Object.keys(job.customFields).map((fieldKey) => {
+                                        if (visibleFields.jobDetails.includes(fieldKey)) {
+                                            const field = availableFields.find(f => (f.field_name || f.field_label || f.id) === fieldKey);
+                                            const fieldLabel = field?.field_label || field?.field_name || fieldKey;
+                                            const fieldValue = job.customFields[fieldKey];
+                                            return (
+                                                <div key={fieldKey} className="flex border-b border-gray-200 last:border-b-0">
+                                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
+                                                    <div className="flex-1 p-2">{String(fieldValue || "-")}</div>
+                                                </div>
+                                            );
+                                        }
+                                        return null;
+                                    })}
                                 </div>
-                            </div>
+                            </PanelWithHeader>
                         </div>
 
                         {/* Right Column - Job Details (3/7 width) */}
                         <div className="col-span-3 space-y-4">
                             {/* Details Panel */}
-                            <div className="bg-white rounded-lg shadow">
-                                <div className="border-b border-gray-300 p-2 font-medium">
-                                    Details
-                                </div>
-                                <div className="p-4">
-                                    <div className="space-y-3">
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Status:</div>
-                                            <div className="flex-1">
+                            <PanelWithHeader
+                                title="Details"
+                                onEdit={() => handleEditPanel('details')}
+                            >
+                                <div className="space-y-0 border border-gray-200 rounded">
+                                    {visibleFields.details.includes('status') && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
+                                            <div className="flex-1 p-2">
                                                 <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
                                                     {job.status}
                                                 </span>
                                             </div>
                                         </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Priority:</div>
-                                            <div className="flex-1">{job.priority}</div>
+                                    )}
+                                    {visibleFields.details.includes('priority') && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Priority:</div>
+                                            <div className="flex-1 p-2">{job.priority}</div>
                                         </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Employment Type:</div>
-                                            <div className="flex-1">{job.employmentType}</div>
+                                    )}
+                                    {visibleFields.details.includes('employmentType') && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Employment Type:</div>
+                                            <div className="flex-1 p-2">{job.employmentType}</div>
                                         </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Start Date:</div>
-                                            <div className="flex-1">{job.startDate}</div>
+                                    )}
+                                    {visibleFields.details.includes('startDate') && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Start Date:</div>
+                                            <div className="flex-1 p-2">{job.startDate}</div>
                                         </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Worksite Location:</div>
-                                            <div className="flex-1">{job.worksite}</div>
+                                    )}
+                                    {visibleFields.details.includes('worksite') && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Worksite Location:</div>
+                                            <div className="flex-1 p-2">{job.worksite}</div>
                                         </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Date Added:</div>
-                                            <div className="flex-1">{job.dateAdded}</div>
+                                    )}
+                                    {visibleFields.details.includes('dateAdded') && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
+                                            <div className="flex-1 p-2">{job.dateAdded}</div>
                                         </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Job Board Status:</div>
-                                            <div className="flex-1">{job.jobBoardStatus}</div>
+                                    )}
+                                    {visibleFields.details.includes('jobBoardStatus') && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Job Board Status:</div>
+                                            <div className="flex-1 p-2">{job.jobBoardStatus}</div>
                                         </div>
-
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">User Owner:</div>
-                                            <div className="flex-1">{job.owner}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Hiring Manager Contact */}
-                            <div className="bg-white rounded-lg shadow">
-                                <div className="border-b border-gray-300 p-2 font-medium">
-                                    Hiring Manager
-                                </div>
-                                <div className="p-4">
-                                    <div className="space-y-3">
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Name:</div>
-                                            <div className="flex-1 text-blue-600">{job.hiringManager.name}</div>
-                                        </div>
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Phone:</div>
-                                            <div className="flex-1">{job.hiringManager.phone}</div>
-                                        </div>
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Email:</div>
-                                            <div className="flex-1 text-blue-600">{job.hiringManager.email}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Recent Notes Section */}
-                            <div className="bg-white rounded-lg shadow">
-                                <div className="border-b border-gray-300 p-2 font-medium">
-                                    Recent Notes
-                                </div>
-                                <div className="p-4">
-                                    <div className="flex justify-end mb-3">
-                                        <button
-                                            onClick={() => setShowAddNote(true)}
-                                            className="text-sm text-blue-600 hover:underline"
-                                        >
-                                            Add Note
-                                        </button>
-                                    </div>
-
-                                    {/* Notes preview */}
-                                    {notes.length > 0 ? (
-                                        <div>
-                                            {notes.slice(0, 2).map(note => (
-                                                <div key={note.id} className="mb-3 pb-3 border-b last:border-0">
-                                                    <div className="flex justify-between text-sm mb-1">
-                                                        <span className="font-medium">{note.created_by_name || 'Unknown User'}</span>
-                                                        <span className="text-gray-500">{new Date(note.created_at).toLocaleString()}</span>
-                                                    </div>
-                                                    <p className="text-sm text-gray-700">
-                                                        {note.text.length > 100 ? `${note.text.substring(0, 100)}...` : note.text}
-                                                    </p>
-                                                </div>
-                                            ))}
-                                            {notes.length > 2 && (
-                                                <button
-                                                    onClick={() => setActiveTab('notes')}
-                                                    className="text-blue-500 text-sm hover:underline"
-                                                >
-                                                    View all {notes.length} notes
-                                                </button>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <div className="text-center text-gray-500 p-4">
-                                            No notes have been added yet.
+                                    )}
+                                    {visibleFields.details.includes('owner') && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">User Owner:</div>
+                                            <div className="flex-1 p-2">{job.owner}</div>
                                         </div>
                                     )}
                                 </div>
-                            </div>
+                            </PanelWithHeader>
+
+                            {/* Hiring Manager Contact */}
+                            <PanelWithHeader
+                                title="Hiring Manager"
+                                onEdit={() => handleEditPanel('hiringManager')}
+                            >
+                                <div className="space-y-0 border border-gray-200 rounded">
+                                    {visibleFields.hiringManager.includes('name') && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Name:</div>
+                                            <div className="flex-1 p-2 text-blue-600">{job.hiringManager.name}</div>
+                                        </div>
+                                    )}
+                                    {visibleFields.hiringManager.includes('phone') && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Phone:</div>
+                                            <div className="flex-1 p-2">{job.hiringManager.phone}</div>
+                                        </div>
+                                    )}
+                                    {visibleFields.hiringManager.includes('email') && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Email:</div>
+                                            <div className="flex-1 p-2 text-blue-600">{job.hiringManager.email}</div>
+                                        </div>
+                                    )}
+                                </div>
+                            </PanelWithHeader>
+
+                            {/* Recent Notes Section */}
+                            <PanelWithHeader
+                                title="Recent Notes"
+                                onEdit={() => handleEditPanel('recentNotes')}
+                            >
+                                <div className="border border-gray-200 rounded">
+                                    {visibleFields.recentNotes.includes('notes') && (
+                                        <div className="p-2">
+                                            <div className="flex justify-end mb-3">
+                                                <button
+                                                    onClick={() => setShowAddNote(true)}
+                                                    className="text-sm text-blue-600 hover:underline"
+                                                >
+                                                    Add Note
+                                                </button>
+                                            </div>
+
+                                            {/* Notes preview */}
+                                            {notes.length > 0 ? (
+                                                <div>
+                                                    {notes.slice(0, 2).map(note => (
+                                                        <div key={note.id} className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0">
+                                                            <div className="flex justify-between text-sm mb-1">
+                                                                <span className="font-medium">{note.created_by_name || 'Unknown User'}</span>
+                                                                <span className="text-gray-500">{new Date(note.created_at).toLocaleString()}</span>
+                                                            </div>
+                                                            <p className="text-sm text-gray-700">
+                                                                {note.text.length > 100 ? `${note.text.substring(0, 100)}...` : note.text}
+                                                            </p>
+                                                        </div>
+                                                    ))}
+                                                    {notes.length > 2 && (
+                                                        <button
+                                                            onClick={() => setActiveTab('notes')}
+                                                            className="text-blue-500 text-sm hover:underline"
+                                                        >
+                                                            View all {notes.length} notes
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            ) : (
+                                                <div className="text-center text-gray-500 p-4">
+                                                    No notes have been added yet.
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            </PanelWithHeader>
                         </div>
                     </>
                 )}
@@ -857,6 +953,123 @@ export default function JobView() {
                 )}
                 </div>
             </div>
+
+            {/* Edit Fields Modal */}
+            {editingPanel && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+                        <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                            <h2 className="text-lg font-semibold">Edit Fields - {editingPanel}</h2>
+                            <button
+                                onClick={handleCloseEditModal}
+                                className="p-1 rounded hover:bg-gray-200"
+                            >
+                                <span className="text-2xl font-bold">×</span>
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <div className="mb-4">
+                                <h3 className="font-medium mb-3">Available Fields from Modify Page:</h3>
+                                <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                                    {isLoadingFields ? (
+                                        <div className="text-center py-4 text-gray-500">Loading fields...</div>
+                                    ) : availableFields.length > 0 ? (
+                                        availableFields.map((field) => {
+                                            const fieldKey = field.field_name || field.field_label || field.id;
+                                            const isVisible = visibleFields[editingPanel]?.includes(fieldKey) || false;
+                                            return (
+                                                <div key={field.id || fieldKey} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                                                    <div className="flex items-center space-x-2">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isVisible}
+                                                            onChange={() => toggleFieldVisibility(editingPanel, fieldKey)}
+                                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                        />
+                                                        <label className="text-sm text-gray-700">
+                                                            {field.field_label || field.field_name || fieldKey}
+                                                        </label>
+                                                    </div>
+                                                    <span className="text-xs text-gray-500">{field.field_type || 'text'}</span>
+                                                </div>
+                                            );
+                                        })
+                                    ) : (
+                                        <div className="text-center py-4 text-gray-500">
+                                            <p>No custom fields available</p>
+                                            <p className="text-xs mt-1">Fields from the modify page will appear here</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            
+                            <div className="mb-4">
+                                <h3 className="font-medium mb-3">Standard Fields:</h3>
+                                <div className="space-y-2 border border-gray-200 rounded p-3">
+                                    {(() => {
+                                        const standardFieldsMap: Record<string, Array<{ key: string; label: string }>> = {
+                                            jobDetails: [
+                                                { key: 'title', label: 'Title' },
+                                                { key: 'description', label: 'Description' },
+                                                { key: 'benefits', label: 'Benefits' },
+                                                { key: 'requiredSkills', label: 'Required Skills' },
+                                                { key: 'salaryRange', label: 'Salary Range' },
+                                                { key: 'customFields', label: 'Custom Fields' }
+                                            ],
+                                            details: [
+                                                { key: 'status', label: 'Status' },
+                                                { key: 'priority', label: 'Priority' },
+                                                { key: 'employmentType', label: 'Employment Type' },
+                                                { key: 'startDate', label: 'Start Date' },
+                                                { key: 'worksite', label: 'Worksite Location' },
+                                                { key: 'dateAdded', label: 'Date Added' },
+                                                { key: 'jobBoardStatus', label: 'Job Board Status' },
+                                                { key: 'owner', label: 'User Owner' }
+                                            ],
+                                            hiringManager: [
+                                                { key: 'name', label: 'Name' },
+                                                { key: 'phone', label: 'Phone' },
+                                                { key: 'email', label: 'Email' }
+                                            ],
+                                            recentNotes: [
+                                                { key: 'notes', label: 'Notes' }
+                                            ]
+                                        };
+                                        
+                                        const fields = standardFieldsMap[editingPanel] || [];
+                                        return fields.map((field) => {
+                                            const isVisible = visibleFields[editingPanel]?.includes(field.key) || false;
+                                            return (
+                                                <div key={field.key} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                                                    <div className="flex items-center space-x-2">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isVisible}
+                                                            onChange={() => toggleFieldVisibility(editingPanel, field.key)}
+                                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                        />
+                                                        <label className="text-sm text-gray-700">{field.label}</label>
+                                                    </div>
+                                                    <span className="text-xs text-gray-500">standard</span>
+                                                </div>
+                                            );
+                                        });
+                                    })()}
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end space-x-2 pt-4 border-t">
+                                <button
+                                    onClick={handleCloseEditModal}
+                                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
