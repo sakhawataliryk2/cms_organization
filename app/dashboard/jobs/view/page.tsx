@@ -6,6 +6,7 @@ import Image from 'next/image';
 import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
+import { FiBriefcase } from "react-icons/fi";
 
 export default function JobView() {
     const router = useRouter();
@@ -24,7 +25,19 @@ export default function JobView() {
     const [isLoadingNotes, setIsLoadingNotes] = useState(false);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
     const [showAddNote, setShowAddNote] = useState(false);
-    const [newNote, setNewNote] = useState('');
+    
+    // Add Note form state
+    const [noteForm, setNoteForm] = useState({
+        text: '',
+        about: job ? `${job.id} ${job.title}` : '',
+        copyNote: 'No',
+        replaceGeneralContactComments: false,
+        additionalReferences: '',
+        scheduleNextAction: 'None',
+        emailNotification: 'Internal User'
+    });
+    const [users, setUsers] = useState<any[]>([]);
+    const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
     // Field management state
     const [availableFields, setAvailableFields] = useState<any[]>([]);
@@ -36,6 +49,18 @@ export default function JobView() {
     });
     const [editingPanel, setEditingPanel] = useState<string | null>(null);
     const [isLoadingFields, setIsLoadingFields] = useState(false);
+
+    // Add Placement modal state
+    const [showAddPlacementModal, setShowAddPlacementModal] = useState(false);
+    const [placementForm, setPlacementForm] = useState({
+        internalEmailNotification: '',
+        candidate: '',
+        status: '',
+        startDate: ''
+    });
+    const [jobSeekers, setJobSeekers] = useState<any[]>([]);
+    const [isLoadingJobSeekers, setIsLoadingJobSeekers] = useState(false);
+    const [isSavingPlacement, setIsSavingPlacement] = useState(false);
 
     const jobId = searchParams.get('id');
 
@@ -50,8 +75,37 @@ export default function JobView() {
     useEffect(() => {
         if (job && jobId) {
             fetchAvailableFields();
+            // Update note form about field when job is loaded
+            setNoteForm(prev => ({ ...prev, about: `${job.id} ${job.title}` }));
         }
     }, [job, jobId]);
+
+    // Fetch users for email notification
+    useEffect(() => {
+        if (showAddNote) {
+            fetchUsers();
+        }
+    }, [showAddNote]);
+
+    // Fetch users for email notification dropdown
+    const fetchUsers = async () => {
+        setIsLoadingUsers(true);
+        try {
+            const response = await fetch('/api/users/active', {
+                headers: {
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setUsers(data.users || []);
+            }
+        } catch (err) {
+            console.error('Error fetching users:', err);
+        } finally {
+            setIsLoadingUsers(false);
+        }
+    };
 
     // Fetch available fields from modify page (custom fields)
     const fetchAvailableFields = async () => {
@@ -290,7 +344,7 @@ export default function JobView() {
 
     // Handle adding a new note
     const handleAddNote = async () => {
-        if (!newNote.trim() || !jobId) return;
+        if (!noteForm.text.trim() || !jobId) return;
 
         try {
             const response = await fetch(`/api/jobs/${jobId}/notes`, {
@@ -299,7 +353,14 @@ export default function JobView() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
                 },
-                body: JSON.stringify({ text: newNote })
+                body: JSON.stringify({ 
+                    text: noteForm.text,
+                    copy_note: noteForm.copyNote === 'Yes',
+                    replace_general_contact_comments: noteForm.replaceGeneralContactComments,
+                    additional_references: noteForm.additionalReferences,
+                    schedule_next_action: noteForm.scheduleNextAction,
+                    email_notification: noteForm.emailNotification
+                })
             });
 
             if (!response.ok) {
@@ -312,7 +373,15 @@ export default function JobView() {
             setNotes([data.note, ...notes]);
 
             // Clear the form
-            setNewNote('');
+            setNoteForm({
+                text: '',
+                about: job ? `${job.id} ${job.title}` : '',
+                copyNote: 'No',
+                replaceGeneralContactComments: false,
+                additionalReferences: '',
+                scheduleNextAction: 'None',
+                emailNotification: 'Internal User'
+            });
             setShowAddNote(false);
 
             // Refresh history
@@ -321,6 +390,20 @@ export default function JobView() {
             console.error('Error adding note:', err);
             alert('Failed to add note. Please try again.');
         }
+    };
+
+    // Close add note modal
+    const handleCloseAddNoteModal = () => {
+        setShowAddNote(false);
+        setNoteForm({
+            text: '',
+            about: job ? `${job.id} ${job.title}` : '',
+            copyNote: 'No',
+            replaceGeneralContactComments: false,
+            additionalReferences: '',
+            scheduleNextAction: 'None',
+            emailNotification: 'Internal User'
+        });
     };
 
     const handleGoBack = () => {
@@ -347,7 +430,88 @@ export default function JobView() {
                     `/dashboard/tasks/add?relatedEntity=job&relatedEntityId=${jobId}`
                 );
             }
+        } else if (action === 'add-placement') {
+            setShowAddPlacementModal(true);
+            fetchJobSeekers();
         }
+    };
+
+    // Fetch job seekers for candidate dropdown
+    const fetchJobSeekers = async () => {
+        setIsLoadingJobSeekers(true);
+        try {
+            const response = await fetch('/api/job-seekers', {
+                headers: {
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setJobSeekers(data.jobSeekers || []);
+            }
+        } catch (err) {
+            console.error('Error fetching job seekers:', err);
+        } finally {
+            setIsLoadingJobSeekers(false);
+        }
+    };
+
+    // Handle placement form submission
+    const handlePlacementSubmit = async () => {
+        if (!placementForm.candidate || !placementForm.status || !placementForm.startDate) {
+            alert('Please fill in all required fields (Candidate, Status, Start Date)');
+            return;
+        }
+
+        setIsSavingPlacement(true);
+        try {
+            // Create placement via API
+            const response = await fetch('/api/placements', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                },
+                body: JSON.stringify({
+                    job_id: jobId,
+                    job_seeker_id: placementForm.candidate,
+                    status: placementForm.status,
+                    start_date: placementForm.startDate,
+                    internal_email_notification: placementForm.internalEmailNotification || null
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to create placement');
+            }
+
+            // Success - close modal and reset form
+            alert('Placement created successfully!');
+            setShowAddPlacementModal(false);
+            setPlacementForm({
+                internalEmailNotification: '',
+                candidate: '',
+                status: '',
+                startDate: ''
+            });
+        } catch (err) {
+            console.error('Error creating placement:', err);
+            alert(err instanceof Error ? err.message : 'Failed to create placement. Please try again.');
+        } finally {
+            setIsSavingPlacement(false);
+        }
+    };
+
+    // Close placement modal
+    const handleClosePlacementModal = () => {
+        setShowAddPlacementModal(false);
+        setPlacementForm({
+            internalEmailNotification: '',
+            candidate: '',
+            status: '',
+            startDate: ''
+        });
     };
 
     // Handle job deletion
@@ -418,35 +582,6 @@ export default function JobView() {
                     Add Note
                 </button>
             </div>
-
-            {/* Add Note Form */}
-            {showAddNote && (
-                <div className="mb-6 p-4 bg-gray-50 rounded border">
-                    <h3 className="font-medium mb-2">Add New Note</h3>
-                    <textarea
-                        value={newNote}
-                        onChange={(e) => setNewNote(e.target.value)}
-                        placeholder="Enter your note here..."
-                        className="w-full p-2 border rounded mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        rows={4}
-                    />
-                    <div className="flex justify-end space-x-2">
-                        <button
-                            onClick={() => setShowAddNote(false)}
-                            className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            onClick={handleAddNote}
-                            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-                            disabled={!newNote.trim()}
-                        >
-                            Save Note
-                        </button>
-                    </div>
-                </div>
-            )}
 
             {/* Notes List */}
             {isLoadingNotes ? (
@@ -604,12 +739,13 @@ export default function JobView() {
             <div className="bg-gray-400 p-2 flex items-center">
                 <div className="flex items-center">
                     <div className="bg-blue-200 border border-blue-300 p-1 mr-2">
-                        <Image
+                        {/* <Image
                             src="/file.svg"
                             alt="Job"
                             width={24}
                             height={24}
-                        />
+                        /> */}
+                        <FiBriefcase size={24} />
                     </div>
                     <h1 className="text-xl font-semibold text-gray-700">
                         {job.id} {job.title}
@@ -1064,6 +1200,315 @@ export default function JobView() {
                                     className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
                                 >
                                     Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add Placement Modal */}
+            {showAddPlacementModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded shadow-xl max-w-md w-full mx-4 my-8">
+                        <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                            <h2 className="text-lg font-semibold">Add Placement</h2>
+                            <button
+                                onClick={handleClosePlacementModal}
+                                className="p-1 rounded hover:bg-gray-200"
+                            >
+                                <span className="text-2xl font-bold">×</span>
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <div className="space-y-4">
+                                {/* Internal Email Notification */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Internal Email Notification
+                                    </label>
+                                    <input
+                                        type="email"
+                                        value={placementForm.internalEmailNotification}
+                                        onChange={(e) => setPlacementForm(prev => ({ ...prev, internalEmailNotification: e.target.value }))}
+                                        placeholder="Enter email address"
+                                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                </div>
+
+                                {/* Candidate */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Candidate <span className="text-red-500">*</span>
+                                    </label>
+                                    {isLoadingJobSeekers ? (
+                                        <div className="w-full p-2 border border-gray-300 rounded text-gray-500">
+                                            Loading candidates...
+                                        </div>
+                                    ) : (
+                                        <select
+                                            value={placementForm.candidate}
+                                            onChange={(e) => setPlacementForm(prev => ({ ...prev, candidate: e.target.value }))}
+                                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            required
+                                        >
+                                            <option value="">Select a candidate</option>
+                                            {jobSeekers.map((js) => (
+                                                <option key={js.id} value={js.id}>
+                                                    {js.full_name || `${js.first_name || ''} ${js.last_name || ''}`.trim() || `Job Seeker #${js.id}`}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    )}
+                                </div>
+
+                                {/* Status */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Status <span className="text-red-500">*</span>
+                                    </label>
+                                    <select
+                                        value={placementForm.status}
+                                        onChange={(e) => setPlacementForm(prev => ({ ...prev, status: e.target.value }))}
+                                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        required
+                                    >
+                                        <option value="">Select status</option>
+                                        <option value="Pending">Pending</option>
+                                        <option value="Active">Active</option>
+                                        <option value="Completed">Completed</option>
+                                        <option value="Terminated">Terminated</option>
+                                        <option value="On Hold">On Hold</option>
+                                    </select>
+                                </div>
+
+                                {/* Start Date */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Start Date <span className="text-red-500">*</span>
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={placementForm.startDate}
+                                        onChange={(e) => setPlacementForm(prev => ({ ...prev, startDate: e.target.value }))}
+                                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        required
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
+                                <button
+                                    onClick={handleClosePlacementModal}
+                                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                                    disabled={isSavingPlacement}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handlePlacementSubmit}
+                                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                    disabled={isSavingPlacement || !placementForm.candidate || !placementForm.status || !placementForm.startDate}
+                                >
+                                    {isSavingPlacement ? 'Saving...' : 'Create Placement'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add Note Modal */}
+            {showAddNote && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+                        <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                            <div className="flex items-center space-x-2">
+                                <Image src="/file.svg" alt="Note" width={20} height={20} />
+                                <h2 className="text-lg font-semibold">Add Note</h2>
+                            </div>
+                            <button
+                                onClick={handleCloseAddNoteModal}
+                                className="p-1 rounded hover:bg-gray-200"
+                            >
+                                <span className="text-2xl font-bold">×</span>
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <div className="space-y-4">
+                                {/* Note Text Area */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Note Text
+                                    </label>
+                                    <textarea
+                                        value={noteForm.text}
+                                        onChange={(e) => setNoteForm(prev => ({ ...prev, text: e.target.value }))}
+                                        placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
+                                        className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        rows={6}
+                                    />
+                                </div>
+
+                                {/* About Section */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        About
+                                    </label>
+                                    <div className="relative">
+                                        <div className="flex items-center border border-gray-300 rounded p-2 bg-white">
+                                            <div className="w-6 h-6 rounded-full bg-orange-400 mr-2 flex-shrink-0"></div>
+                                            <span className="flex-1 text-sm">{noteForm.about}</span>
+                                            <button
+                                                onClick={() => setNoteForm(prev => ({ ...prev, about: '' }))}
+                                                className="ml-2 text-gray-500 hover:text-gray-700 text-xs"
+                                            >
+                                                CLEAR ALL X
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Action Section */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Action
+                                    </label>
+                                    <div className="border border-gray-300 rounded p-3 bg-gray-50">
+                                        <div className="font-medium mb-3">Copy Note</div>
+                                        <div className="flex space-x-2 mb-3">
+                                            <button
+                                                type="button"
+                                                onClick={() => setNoteForm(prev => ({ ...prev, copyNote: 'No' }))}
+                                                className={`px-4 py-2 rounded text-sm ${
+                                                    noteForm.copyNote === 'No'
+                                                        ? 'bg-blue-500 text-white'
+                                                        : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                                                }`}
+                                            >
+                                                No
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => setNoteForm(prev => ({ ...prev, copyNote: 'Yes' }))}
+                                                className={`px-4 py-2 rounded text-sm ${
+                                                    noteForm.copyNote === 'Yes'
+                                                        ? 'bg-blue-500 text-white'
+                                                        : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                                                }`}
+                                            >
+                                                Yes
+                                            </button>
+                                        </div>
+                                        {noteForm.copyNote === 'Yes' && (
+                                            <div className="mt-2">
+                                                <label className="flex items-center space-x-2 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={noteForm.replaceGeneralContactComments}
+                                                        onChange={(e) => setNoteForm(prev => ({ ...prev, replaceGeneralContactComments: e.target.checked }))}
+                                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                    />
+                                                    <span className="text-sm text-gray-700">
+                                                        Replace the General Contact Comments with this note?
+                                                    </span>
+                                                </label>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Additional References Section */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Additional References
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            value={noteForm.additionalReferences}
+                                            onChange={(e) => setNoteForm(prev => ({ ...prev, additionalReferences: e.target.value }))}
+                                            placeholder="Reference other records using #"
+                                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
+                                        />
+                                        <span className="absolute right-2 top-2 text-gray-400 text-sm">Q</span>
+                                    </div>
+                                </div>
+
+                                {/* Schedule Next Action Section */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                                        Schedule Next Action
+                                    </label>
+                                    <div className="flex space-x-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => setNoteForm(prev => ({ ...prev, scheduleNextAction: 'None' }))}
+                                            className={`px-4 py-2 rounded text-sm ${
+                                                noteForm.scheduleNextAction === 'None'
+                                                    ? 'bg-blue-500 text-white'
+                                                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                                            }`}
+                                        >
+                                            None
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setNoteForm(prev => ({ ...prev, scheduleNextAction: 'Appointment' }))}
+                                            className={`px-4 py-2 rounded text-sm ${
+                                                noteForm.scheduleNextAction === 'Appointment'
+                                                    ? 'bg-blue-500 text-white'
+                                                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                                            }`}
+                                        >
+                                            Appointment
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setNoteForm(prev => ({ ...prev, scheduleNextAction: 'Task' }))}
+                                            className={`px-4 py-2 rounded text-sm ${
+                                                noteForm.scheduleNextAction === 'Task'
+                                                    ? 'bg-blue-500 text-white'
+                                                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                                            }`}
+                                        >
+                                            Task
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {/* Email Notification Section */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                                        <span className="mr-2">📧</span>
+                                        Email Notification
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            value={noteForm.emailNotification}
+                                            onChange={(e) => setNoteForm(prev => ({ ...prev, emailNotification: e.target.value }))}
+                                            placeholder="Internal User"
+                                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Form Actions */}
+                            <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
+                                <button
+                                    onClick={handleCloseAddNoteModal}
+                                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium"
+                                >
+                                    CANCEL
+                                </button>
+                                <button
+                                    onClick={handleAddNote}
+                                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                    disabled={!noteForm.text.trim()}
+                                >
+                                    SAVE
                                 </button>
                             </div>
                         </div>

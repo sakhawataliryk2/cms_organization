@@ -363,8 +363,22 @@ export default function Dashboard() {
         router.push(`/dashboard/tasks/view?id=${taskId}`);
     };
 
+    // Handle close/return to home
+    const handleClose = () => {
+        router.push('/dashboard');
+    };
+
     return (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full relative">
+            {/* X button in top right corner */}
+            <button
+                onClick={handleClose}
+                className="absolute top-2 right-2 z-10 p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors"
+                aria-label="Close and return to home"
+            >
+                <FiX size={24} />
+            </button>
+            
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-grow mb-4">
                 {/* Appointments Calendar */}
                 <div className="bg-white rounded-md shadow overflow-hidden">
@@ -613,73 +627,8 @@ export default function Dashboard() {
                             </div>
                         )}
                     </div>
-                </div>
-
-                {/* Right Column */}
-                <div className="flex flex-col space-y-4">
-                    {/* Goals and Quotas */}
-                    {showGoalsQuotas && (
-                        <div className="bg-white rounded-md shadow overflow-hidden">
-                            <div className="p-2 border-b border-gray-200 flex items-center justify-between">
-                                <div className="flex items-center space-x-2">
-                                    <h2 className="text-lg font-semibold">Activity Report</h2>
-                                    <Link
-                                        href="/dashboard/goals"
-                                        className="bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600 transition-colors"
-                                    >
-                                        Goal
-                                    </Link>
-                                    <Link
-                                        href="/dashboard/goals"
-                                        className="bg-gray-100 border border-gray-300 px-2 py-1 rounded text-xs hover:bg-gray-200 transition-colors"
-                                    >
-                                        QUOTA
-                                    </Link>
-                                    <div className="flex items-center">
-                                        <button className="bg-gray-100 border border-gray-300 px-2 py-1 rounded-l text-xs hover:bg-gray-200 transition-colors">
-                                            Filters
-                                        </button>
-                                        <button className="bg-gray-100 border border-gray-300 border-l-0 px-2 py-1 rounded-r text-xs hover:bg-gray-200 transition-colors">
-                                            <FiChevronDown size={14} />
-                                        </button>
-                                    </div>
-                                </div>
-                                <button 
-                                    onClick={() => router.back()}
-                                    className="text-gray-400 hover:text-gray-600 transition-colors"
-                                    aria-label="Go to previous screen"
-                                >
-                                    <FiX size={18} />
-                                </button>
-                            </div>
-                            <div className="p-4">
-                                <div className="text-center mb-4">
-                                    <p className="text-gray-600 text-sm mb-2">View and manage your goals and quotas</p>
-                                    <Link
-                                        href="/dashboard/goals"
-                                        className="inline-block bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
-                                    >
-                                        Go to Goals & Quotas
-                                    </Link>
-                                </div>
-                                <div className="border-t border-gray-200 pt-4 mt-4">
-                                    <div className="grid grid-cols-2 gap-4 text-center">
-                                        <div>
-                                            <div className="text-2xl font-bold text-blue-600">0</div>
-                                            <div className="text-xs text-gray-500 mt-1">Active Goals</div>
-                                        </div>
-                                        <div>
-                                            <div className="text-2xl font-bold text-green-600">0</div>
-                                            <div className="text-xs text-gray-500 mt-1">Quotas Met</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Planner Overview */}
-                    <div className="bg-white rounded-md shadow overflow-hidden flex flex-col">
+                     {/* Planner Overview */}
+                     <div className="bg-white rounded-md shadow overflow-hidden flex flex-col">
                         <div className="p-2 border-b border-gray-200 flex justify-between items-center">
                             <div>
                                 <h2 className="text-lg font-semibold">
@@ -786,6 +735,72 @@ export default function Dashboard() {
                             )}
                         </div>
                     </div>
+                </div>
+
+                {/* Right Column */}
+                <div className="flex flex-col space-y-4">
+                    {/* Goals and Quotas */}
+                    {showGoalsQuotas && (
+                        <div className="bg-white rounded-md shadow overflow-hidden">
+                            <div className="p-2 border-b border-gray-200 flex items-center justify-between">
+                                <div className="flex items-center space-x-2">
+                                    <h2 className="text-lg font-semibold">Activity Report</h2>
+                                    <Link
+                                        href="/dashboard/goals"
+                                        className="bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600 transition-colors"
+                                    >
+                                        Goal
+                                    </Link>
+                                    <Link
+                                        href="/dashboard/goals"
+                                        className="bg-gray-100 border border-gray-300 px-2 py-1 rounded text-xs hover:bg-gray-200 transition-colors"
+                                    >
+                                        QUOTA
+                                    </Link>
+                                    <div className="flex items-center">
+                                        <button className="bg-gray-100 border border-gray-300 px-2 py-1 rounded-l text-xs hover:bg-gray-200 transition-colors">
+                                            Filters
+                                        </button>
+                                        <button className="bg-gray-100 border border-gray-300 border-l-0 px-2 py-1 rounded-r text-xs hover:bg-gray-200 transition-colors">
+                                            <FiChevronDown size={14} />
+                                        </button>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => router.back()}
+                                    className="text-gray-400 hover:text-gray-600 transition-colors"
+                                    aria-label="Go to previous screen"
+                                >
+                                    <FiX size={18} />
+                                </button>
+                            </div>
+                            <div className="p-4">
+                                <div className="text-center mb-4">
+                                    <p className="text-gray-600 text-sm mb-2">View and manage your goals and quotas</p>
+                                    <Link
+                                        href="/dashboard/goals"
+                                        className="inline-block bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
+                                    >
+                                        Go to Goals & Quotas
+                                    </Link>
+                                </div>
+                                <div className="border-t border-gray-200 pt-4 mt-4">
+                                    <div className="grid grid-cols-2 gap-4 text-center">
+                                        <div>
+                                            <div className="text-2xl font-bold text-blue-600">0</div>
+                                            <div className="text-xs text-gray-500 mt-1">Active Goals</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-2xl font-bold text-green-600">0</div>
+                                            <div className="text-xs text-gray-500 mt-1">Quotas Met</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                   
 
                     {/* Rules of Engagement */}
                     <div className="bg-white rounded-md shadow overflow-hidden">

@@ -8,6 +8,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import { FaLinkedin, FaFacebookSquare } from "react-icons/fa";
 import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, type EmailMessage } from "@/lib/office365";
+import { FiUsers } from "react-icons/fi";
 
 export default function JobSeekerView() {
   const router = useRouter();
@@ -890,12 +891,13 @@ Best regards`;
       <div className="bg-gray-400 p-2 flex items-center">
         <div className="flex items-center">
           <div className="bg-blue-200 border border-blue-300 p-1 mr-2">
-            <Image
+            {/* <Image
               src="/file.svg"
               alt="Job Seeker"
               width={24}
               height={24}
-            />
+            /> */}
+            <FiUsers size={20} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
             {jobSeeker.id} {jobSeeker.fullName}

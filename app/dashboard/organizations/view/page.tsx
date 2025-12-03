@@ -7,6 +7,7 @@ import Image from "next/image";
 import ActionDropdown from "@/components/ActionDropdown";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import LoadingScreen from "@/components/LoadingScreen";
+import { HiOutlineOfficeBuilding } from "react-icons/hi";
 
 export default function OrganizationView() {
   const router = useRouter();
@@ -908,12 +909,13 @@ export default function OrganizationView() {
       <div className="bg-gray-400 p-2 flex items-center">
         <div className="flex items-center">
           <div className="bg-blue-200 border border-blue-300 p-1 mr-2">
-            <Image
+            {/* <Image
               src="/window.svg"
               alt="Organization"
               width={24}
               height={24}
-            />
+            /> */}
+            <HiOutlineOfficeBuilding size={24} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
             {organization.id} {organization.name}

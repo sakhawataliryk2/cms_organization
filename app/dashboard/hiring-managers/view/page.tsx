@@ -6,6 +6,7 @@ import Image from 'next/image';
 import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
+import { FiUserCheck } from 'react-icons/fi';
 
 export default function HiringManagerView() {
     const router = useRouter();
@@ -555,12 +556,13 @@ export default function HiringManagerView() {
             <div className="bg-gray-400 p-2 flex items-center">
                 <div className="flex items-center">
                     <div className="bg-blue-200 border border-blue-300 p-1 mr-2">
-                        <Image
+                        {/* <Image
                             src="/file.svg"
                             alt="Hiring Manager"
                             width={24}
                             height={24}
-                        />
+                        /> */}
+                        <FiUserCheck size={20} />
                     </div>
                     <h1 className="text-xl font-semibold text-gray-700">
                         {hiringManager.id} {hiringManager.fullName}

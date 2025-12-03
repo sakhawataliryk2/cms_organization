@@ -581,8 +581,8 @@ export default function DashboardNav() {
                   ) : searchQuery.trim().length >= 2 ? (
                     <div className="px-4 py-8 text-center">
                       <div className="text-gray-400 text-sm">
-                        <p>No results found for</p>
-                        <p className="font-medium mt-1">"{searchQuery}"</p>
+                        {/* <p>No results found for</p>
+                        <p className="font-medium mt-1">"{searchQuery}"</p> */}
                       </div>
                     </div>
                   ) : null}
@@ -712,8 +712,8 @@ export default function DashboardNav() {
               <div className="text-gray-400 text-sm">
                 {searchQuery.trim() ? (
                   <>
-                    <p>No results found for</p>
-                    <p className="font-medium mt-1">"{searchQuery}"</p>
+                    {/* <p>No results found for</p>
+                    <p className="font-medium mt-1">"{searchQuery}"</p> */}
                   </>
                 ) : (
                   <p>No navigation items</p>

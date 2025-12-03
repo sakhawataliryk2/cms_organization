@@ -7,6 +7,7 @@ import Image from "next/image";
 import ActionDropdown from "@/components/ActionDropdown";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import LoadingScreen from "@/components/LoadingScreen";
+import { FiTarget } from "react-icons/fi";
 
 export default function LeadView() {
   const router = useRouter();
@@ -49,12 +50,99 @@ export default function LeadView() {
   // Current active tab
   const [activeTab, setActiveTab] = useState("summary");
 
+  // Field management state
+  const [availableFields, setAvailableFields] = useState<any[]>([]);
+  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
+    contactInfo: ['fullName', 'nickname', 'title', 'organizationName', 'department', 'phone', 'mobilePhone', 'email', 'email2', 'fullAddress', 'linkedinUrl'],
+    details: ['status', 'owner', 'reportsTo', 'dateAdded', 'lastContactDate'],
+    recentNotes: ['notes'],
+    websiteJobs: ['jobs'],
+    ourJobs: ['jobs']
+  });
+  const [editingPanel, setEditingPanel] = useState<string | null>(null);
+  const [isLoadingFields, setIsLoadingFields] = useState(false);
+
   // Fetch lead data when component mounts
   useEffect(() => {
     if (leadId) {
       fetchLeadData(leadId);
     }
   }, [leadId]);
+
+  // Fetch available fields after lead is loaded
+  useEffect(() => {
+    if (lead && leadId) {
+      fetchAvailableFields();
+    }
+  }, [lead, leadId]);
+
+  // Fetch available fields from modify page (custom fields)
+  const fetchAvailableFields = async () => {
+    setIsLoadingFields(true);
+    try {
+      const response = await fetch('/api/admin/field-management/leads');
+      if (response.ok) {
+        const data = await response.json();
+        const fields = data.customFields || [];
+        setAvailableFields(fields);
+        
+        // Add custom fields to visible fields if they have values
+        if (lead && lead.customFields) {
+          const customFieldKeys = Object.keys(lead.customFields);
+          customFieldKeys.forEach(fieldKey => {
+            // Add to appropriate panel based on field name
+            if (fieldKey.toLowerCase().includes('contact') || fieldKey.toLowerCase().includes('phone') || fieldKey.toLowerCase().includes('address') || fieldKey.toLowerCase().includes('email')) {
+              if (!visibleFields.contactInfo.includes(fieldKey)) {
+                setVisibleFields(prev => ({
+                  ...prev,
+                  contactInfo: [...prev.contactInfo, fieldKey]
+                }));
+              }
+            } else if (fieldKey.toLowerCase().includes('status') || fieldKey.toLowerCase().includes('owner') || fieldKey.toLowerCase().includes('date')) {
+              if (!visibleFields.details.includes(fieldKey)) {
+                setVisibleFields(prev => ({
+                  ...prev,
+                  details: [...prev.details, fieldKey]
+                }));
+              }
+            }
+          });
+        }
+      }
+    } catch (err) {
+      console.error('Error fetching available fields:', err);
+    } finally {
+      setIsLoadingFields(false);
+    }
+  };
+
+  // Toggle field visibility
+  const toggleFieldVisibility = (panelId: string, fieldKey: string) => {
+    setVisibleFields(prev => {
+      const panelFields = prev[panelId] || [];
+      if (panelFields.includes(fieldKey)) {
+        return {
+          ...prev,
+          [panelId]: panelFields.filter(f => f !== fieldKey)
+        };
+      } else {
+        return {
+          ...prev,
+          [panelId]: [...panelFields, fieldKey]
+        };
+      }
+    });
+  };
+
+  // Handle edit panel click
+  const handleEditPanel = (panelId: string) => {
+    setEditingPanel(panelId);
+  };
+
+  // Close edit modal
+  const handleCloseEditModal = () => {
+    setEditingPanel(null);
+  };
 
   const fetchLeadData = async (id: string) => {
     setIsLoading(true);
@@ -757,12 +845,13 @@ export default function LeadView() {
       <div className="bg-gray-400 p-2 flex items-center">
         <div className="flex items-center">
           <div className="bg-blue-200 border border-blue-300 p-1 mr-2">
-            <Image
+            {/* <Image
               src="/file.svg"
               alt="Lead"
               width={24}
               height={24}
-            />
+            /> */}
+            <FiTarget size={20} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
             {lead.id} {lead.fullName}
@@ -846,108 +935,174 @@ export default function LeadView() {
             {/* Left Column - 4/7 width */}
             <div className="col-span-4 space-y-4">
               {/* Lead Contact Info */}
-              <PanelWithHeader title="Lead Contact Info:">
-                <div className="space-y-2">
-                  <div className="flex">
-                    <div className="w-24 font-medium">Name:</div>
-                    <div className="flex-1 text-blue-600">
-                      {lead.fullName}
+              <PanelWithHeader 
+                title="Lead Contact Info:"
+                onEdit={() => handleEditPanel('contactInfo')}
+              >
+                <div className="space-y-0 border border-gray-200 rounded">
+                  {visibleFields.contactInfo.includes('fullName') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Name:</div>
+                      <div className="flex-1 p-2 text-blue-600">
+                        {lead.fullName}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-24 font-medium">Nickname:</div>
-                    <div className="flex-1">
-                      {lead.nickname || "-"}
+                  )}
+                  {visibleFields.contactInfo.includes('nickname') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Nickname:</div>
+                      <div className="flex-1 p-2">{lead.nickname || "-"}</div>
                     </div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-24 font-medium">Title:</div>
-                    <div className="flex-1">{lead.title || "-"}</div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-24 font-medium">Organization:</div>
-                    <div className="flex-1 text-blue-600">
-                      {lead.organizationName || lead.organizationId || "-"}
+                  )}
+                  {visibleFields.contactInfo.includes('title') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Title:</div>
+                      <div className="flex-1 p-2">{lead.title || "-"}</div>
                     </div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-24 font-medium">Department:</div>
-                    <div className="flex-1">{lead.department || "-"}</div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-24 font-medium">Phone:</div>
-                    <div className="flex-1">{lead.phone || "-"}</div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-24 font-medium">Mobile:</div>
-                    <div className="flex-1">{lead.mobilePhone || "-"}</div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-24 font-medium">Email:</div>
-                    <div className="flex-1 text-blue-600">
-                      <a href={`mailto:${lead.email}`}>{lead.email || "-"}</a>
+                  )}
+                  {visibleFields.contactInfo.includes('organizationName') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Organization:</div>
+                      <div className="flex-1 p-2 text-blue-600">
+                        {lead.organizationName || lead.organizationId || "-"}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-24 font-medium">Email 2:</div>
-                    <div className="flex-1 text-blue-600">
-                      {lead.email2 ? (
-                        <a href={`mailto:${lead.email2}`}>{lead.email2}</a>
-                      ) : (
-                        "-"
-                      )}
+                  )}
+                  {visibleFields.contactInfo.includes('department') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Department:</div>
+                      <div className="flex-1 p-2">{lead.department || "-"}</div>
                     </div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-24 font-medium">Address:</div>
-                    <div className="flex-1">{lead.fullAddress}</div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-24 font-medium">LinkedIn:</div>
-                    <div className="flex-1 text-blue-600">
-                      {lead.linkedinUrl ? (
-                        <a
-                          href={lead.linkedinUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {lead.linkedinUrl}
-                        </a>
-                      ) : (
-                        "-"
-                      )}
+                  )}
+                  {visibleFields.contactInfo.includes('phone') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Phone:</div>
+                      <div className="flex-1 p-2">{lead.phone || "-"}</div>
                     </div>
-                  </div>
+                  )}
+                  {visibleFields.contactInfo.includes('mobilePhone') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Mobile:</div>
+                      <div className="flex-1 p-2">{lead.mobilePhone || "-"}</div>
+                    </div>
+                  )}
+                  {visibleFields.contactInfo.includes('email') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Email:</div>
+                      <div className="flex-1 p-2 text-blue-600">
+                        {lead.email ? <a href={`mailto:${lead.email}`}>{lead.email}</a> : "-"}
+                      </div>
+                    </div>
+                  )}
+                  {visibleFields.contactInfo.includes('email2') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Email 2:</div>
+                      <div className="flex-1 p-2 text-blue-600">
+                        {lead.email2 ? (
+                          <a href={`mailto:${lead.email2}`}>{lead.email2}</a>
+                        ) : (
+                          "-"
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {visibleFields.contactInfo.includes('fullAddress') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Address:</div>
+                      <div className="flex-1 p-2">{lead.fullAddress}</div>
+                    </div>
+                  )}
+                  {visibleFields.contactInfo.includes('linkedinUrl') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">LinkedIn:</div>
+                      <div className="flex-1 p-2 text-blue-600">
+                        {lead.linkedinUrl ? (
+                          <a
+                            href={lead.linkedinUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {lead.linkedinUrl}
+                          </a>
+                        ) : (
+                          "-"
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {/* Display custom fields */}
+                  {lead.customFields && Object.keys(lead.customFields).map((fieldKey) => {
+                    if (visibleFields.contactInfo.includes(fieldKey)) {
+                      const field = availableFields.find(f => (f.field_name || f.field_label || f.id) === fieldKey);
+                      const fieldLabel = field?.field_label || field?.field_name || fieldKey;
+                      const fieldValue = lead.customFields[fieldKey];
+                      return (
+                        <div key={fieldKey} className="flex border-b border-gray-200 last:border-b-0">
+                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
+                          <div className="flex-1 p-2">{String(fieldValue || "-")}</div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
                 </div>
               </PanelWithHeader>
 
               {/* Lead Details */}
-              <PanelWithHeader title="Lead Details:">
-                <div className="space-y-2">
-                  <div className="flex">
-                    <div className="w-32 font-medium">Status:</div>
-                    <div className="flex-1">
-                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                        {lead.status}
-                      </span>
+              <PanelWithHeader 
+                title="Lead Details:"
+                onEdit={() => handleEditPanel('details')}
+              >
+                <div className="space-y-0 border border-gray-200 rounded">
+                  {visibleFields.details.includes('status') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
+                      <div className="flex-1 p-2">
+                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
+                          {lead.status}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-32 font-medium">Owner:</div>
-                    <div className="flex-1">{lead.owner || "-"}</div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-32 font-medium">Reports To:</div>
-                    <div className="flex-1">{lead.reportsTo || "-"}</div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-32 font-medium">Date Added:</div>
-                    <div className="flex-1">{lead.dateAdded || "-"}</div>
-                  </div>
-                  <div className="flex">
-                    <div className="w-32 font-medium">Last Contact:</div>
-                    <div className="flex-1">{lead.lastContactDate}</div>
-                  </div>
+                  )}
+                  {visibleFields.details.includes('owner') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Owner:</div>
+                      <div className="flex-1 p-2">{lead.owner || "-"}</div>
+                    </div>
+                  )}
+                  {visibleFields.details.includes('reportsTo') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Reports To:</div>
+                      <div className="flex-1 p-2">{lead.reportsTo || "-"}</div>
+                    </div>
+                  )}
+                  {visibleFields.details.includes('dateAdded') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
+                      <div className="flex-1 p-2">{lead.dateAdded || "-"}</div>
+                    </div>
+                  )}
+                  {visibleFields.details.includes('lastContactDate') && (
+                    <div className="flex border-b border-gray-200 last:border-b-0">
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Last Contact:</div>
+                      <div className="flex-1 p-2">{lead.lastContactDate}</div>
+                    </div>
+                  )}
+                  {/* Display custom fields */}
+                  {lead.customFields && Object.keys(lead.customFields).map((fieldKey) => {
+                    if (visibleFields.details.includes(fieldKey)) {
+                      const field = availableFields.find(f => (f.field_name || f.field_label || f.id) === fieldKey);
+                      const fieldLabel = field?.field_label || field?.field_name || fieldKey;
+                      const fieldValue = lead.customFields[fieldKey];
+                      return (
+                        <div key={fieldKey} className="flex border-b border-gray-200 last:border-b-0">
+                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
+                          <div className="flex-1 p-2">{String(fieldValue || "-")}</div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
                 </div>
               </PanelWithHeader>
             </div>
@@ -955,56 +1110,79 @@ export default function LeadView() {
             {/* Right Column - 3/7 width */}
             <div className="col-span-3 space-y-4">
               {/* Recent Notes */}
-              <PanelWithHeader title="Recent Notes:">
-                {notes.length > 0 ? (
-                  <div>
-                    {notes.slice(0, 3).map((note) => (
-                      <div
-                        key={note.id}
-                        className="mb-3 pb-3 border-b last:border-0"
-                      >
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="font-medium">
-                            {note.created_by_name || "Unknown User"}
-                          </span>
-                          <span className="text-gray-500">
-                            {new Date(note.created_at).toLocaleString()}
-                          </span>
+              <PanelWithHeader 
+                title="Recent Notes:"
+                onEdit={() => handleEditPanel('recentNotes')}
+              >
+                <div className="border border-gray-200 rounded">
+                  {visibleFields.recentNotes.includes('notes') && (
+                    <div className="p-2">
+                      {notes.length > 0 ? (
+                        <div>
+                          {notes.slice(0, 3).map((note) => (
+                            <div
+                              key={note.id}
+                              className="mb-3 pb-3 border-b border-gray-200 last:border-0"
+                            >
+                              <div className="flex justify-between text-sm mb-1">
+                                <span className="font-medium">
+                                  {note.created_by_name || "Unknown User"}
+                                </span>
+                                <span className="text-gray-500">
+                                  {new Date(note.created_at).toLocaleString()}
+                                </span>
+                              </div>
+                              {note.note_type && (
+                                <div className="text-xs text-gray-500 mb-1">
+                                  Type: {note.note_type}
+                                </div>
+                              )}
+                              <p className="text-sm text-gray-700">
+                                {note.text.length > 100
+                                  ? `${note.text.substring(0, 100)}...`
+                                  : note.text}
+                              </p>
+                            </div>
+                          ))}
+                          {notes.length > 3 && (
+                            <button
+                              onClick={() => setActiveTab("notes")}
+                              className="text-blue-500 text-sm hover:underline"
+                            >
+                              View all {notes.length} notes
+                            </button>
+                          )}
                         </div>
-                        {note.note_type && (
-                          <div className="text-xs text-gray-500 mb-1">
-                            Type: {note.note_type}
-                          </div>
-                        )}
-                        <p className="text-sm text-gray-700">
-                          {note.text.length > 100
-                            ? `${note.text.substring(0, 100)}...`
-                            : note.text}
-                        </p>
-                      </div>
-                    ))}
-                    {notes.length > 3 && (
-                      <button
-                        onClick={() => setActiveTab("notes")}
-                        className="text-blue-500 text-sm hover:underline"
-                      >
-                        View all {notes.length} notes
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-gray-500 italic">No recent notes</p>
-                )}
+                      ) : (
+                        <p className="text-gray-500 italic">No recent notes</p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </PanelWithHeader>
 
               {/* Open Jobs from Website */}
-              <PanelWithHeader title="Open Jobs from Website:">
-                <p className="text-gray-500 italic">No open jobs found</p>
+              <PanelWithHeader 
+                title="Open Jobs from Website:"
+                onEdit={() => handleEditPanel('websiteJobs')}
+              >
+                <div className="border border-gray-200 rounded">
+                  <div className="p-2">
+                    <p className="text-gray-500 italic">No open jobs found</p>
+                  </div>
+                </div>
               </PanelWithHeader>
 
               {/* Our Open Jobs */}
-              <PanelWithHeader title="Our Open Jobs:">
-                <p className="text-gray-500 italic">No open jobs</p>
+              <PanelWithHeader 
+                title="Our Open Jobs:"
+                onEdit={() => handleEditPanel('ourJobs')}
+              >
+                <div className="border border-gray-200 rounded">
+                  <div className="p-2">
+                    <p className="text-gray-500 italic">No open jobs</p>
+                  </div>
+                </div>
               </PanelWithHeader>
             </div>
           </div>
@@ -1232,6 +1410,126 @@ export default function LeadView() {
           </div>
         )}
       </div>
+
+      {/* Edit Fields Modal */}
+      {editingPanel && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Edit Fields - {editingPanel}</h2>
+              <button
+                onClick={handleCloseEditModal}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="mb-4">
+                <h3 className="font-medium mb-3">Available Fields from Modify Page:</h3>
+                <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                  {isLoadingFields ? (
+                    <div className="text-center py-4 text-gray-500">Loading fields...</div>
+                  ) : availableFields.length > 0 ? (
+                    availableFields.map((field) => {
+                      const fieldKey = field.field_name || field.field_label || field.id;
+                      const isVisible = visibleFields[editingPanel]?.includes(fieldKey) || false;
+                      return (
+                        <div key={field.id || fieldKey} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              checked={isVisible}
+                              onChange={() => toggleFieldVisibility(editingPanel, fieldKey)}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <label className="text-sm text-gray-700">
+                              {field.field_label || field.field_name || fieldKey}
+                            </label>
+                          </div>
+                          <span className="text-xs text-gray-500">{field.field_type || 'text'}</span>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="text-center py-4 text-gray-500">
+                      <p>No custom fields available</p>
+                      <p className="text-xs mt-1">Fields from the modify page will appear here</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              
+              <div className="mb-4">
+                <h3 className="font-medium mb-3">Standard Fields:</h3>
+                <div className="space-y-2 border border-gray-200 rounded p-3">
+                  {(() => {
+                    const standardFieldsMap: Record<string, Array<{ key: string; label: string }>> = {
+                      contactInfo: [
+                        { key: 'fullName', label: 'Name' },
+                        { key: 'nickname', label: 'Nickname' },
+                        { key: 'title', label: 'Title' },
+                        { key: 'organizationName', label: 'Organization' },
+                        { key: 'department', label: 'Department' },
+                        { key: 'phone', label: 'Phone' },
+                        { key: 'mobilePhone', label: 'Mobile' },
+                        { key: 'email', label: 'Email' },
+                        { key: 'email2', label: 'Email 2' },
+                        { key: 'fullAddress', label: 'Address' },
+                        { key: 'linkedinUrl', label: 'LinkedIn' }
+                      ],
+                      details: [
+                        { key: 'status', label: 'Status' },
+                        { key: 'owner', label: 'Owner' },
+                        { key: 'reportsTo', label: 'Reports To' },
+                        { key: 'dateAdded', label: 'Date Added' },
+                        { key: 'lastContactDate', label: 'Last Contact' }
+                      ],
+                      recentNotes: [
+                        { key: 'notes', label: 'Notes' }
+                      ],
+                      websiteJobs: [
+                        { key: 'jobs', label: 'Jobs' }
+                      ],
+                      ourJobs: [
+                        { key: 'jobs', label: 'Jobs' }
+                      ]
+                    };
+                    
+                    const fields = standardFieldsMap[editingPanel] || [];
+                    return fields.map((field) => {
+                      const isVisible = visibleFields[editingPanel]?.includes(field.key) || false;
+                      return (
+                        <div key={field.key} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="checkbox"
+                              checked={isVisible}
+                              onChange={() => toggleFieldVisibility(editingPanel, field.key)}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                            />
+                            <label className="text-sm text-gray-700">{field.label}</label>
+                          </div>
+                          <span className="text-xs text-gray-500">standard</span>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-4 border-t">
+                <button
+                  onClick={handleCloseEditModal}
+                  className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

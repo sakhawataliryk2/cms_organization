@@ -16,20 +16,6 @@ export default function UserManagement() {
 
     const managementModules = [
         {
-            id: 'add-user',
-            name: 'Add User',
-            icon: (
-                <svg width="76" height="76" viewBox="0 0 76 76" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <rect width="76" height="76" fill="white" />
-                    <path d="M47 36C47 43.1797 41.1797 49 34 49C26.8203 49 21 43.1797 21 36C21 28.8203 26.8203 23 34 23C41.1797 23 47 28.8203 47 36Z" stroke="black" strokeWidth="2" />
-                    <path d="M34 49V49C24.6112 49 17 56.6112 17 66V66" stroke="black" strokeWidth="2" />
-                    <path d="M48 47L48 57" stroke="black" strokeWidth="2" />
-                    <path d="M53 52L43 52" stroke="black" strokeWidth="2" />
-                </svg>
-            ),
-            path: '/dashboard/admin/user-management/add-user'
-        },
-        {
             id: 'add-office',
             name: 'Add Office',
             icon: (
@@ -55,6 +41,8 @@ export default function UserManagement() {
             ),
             path: '/dashboard/admin/user-management/add-office'
         },
+       
+        
         {
             id: 'add-team',
             name: 'Add Team',
@@ -73,7 +61,21 @@ export default function UserManagement() {
                 </svg>
             ),
             path: '/dashboard/admin/user-management/add-team'
-        }
+        },
+        {
+            id: 'add-user',
+            name: 'Add User',
+            icon: (
+                <svg width="76" height="76" viewBox="0 0 76 76" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="76" height="76" fill="white" />
+                    <path d="M47 36C47 43.1797 41.1797 49 34 49C26.8203 49 21 43.1797 21 36C21 28.8203 26.8203 23 34 23C41.1797 23 47 28.8203 47 36Z" stroke="black" strokeWidth="2" />
+                    <path d="M34 49V49C24.6112 49 17 56.6112 17 66V66" stroke="black" strokeWidth="2" />
+                    <path d="M48 47L48 57" stroke="black" strokeWidth="2" />
+                    <path d="M53 52L43 52" stroke="black" strokeWidth="2" />
+                </svg>
+            ),
+            path: '/dashboard/admin/user-management/add-user'
+        },
     ];
 
     const handleModuleClick = (path: string) => {

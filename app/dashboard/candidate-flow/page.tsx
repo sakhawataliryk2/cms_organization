@@ -4,7 +4,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
-import { FiUsers, FiEye } from 'react-icons/fi';
+import { FiUsers, FiEye, FiX } from 'react-icons/fi';
 import { useRouter } from 'next/navigation';
 
 interface Candidate {
@@ -104,9 +104,13 @@ export default function CandidateFlowDashboard() {
     };
 
     const handleNext = () => {
-        // Navigate to the next page in your flow
-        // Replace with your actual next route
-        router.push('/dashboard/reports');
+        // Navigate to the third sales dashboard page
+        router.push('/dashboard/sales-dashboard');
+    };
+
+    // Handle close/return to home
+    const handleClose = () => {
+        router.push('/dashboard');
     };
 
     // Function to render a candidate card
@@ -126,7 +130,16 @@ export default function CandidateFlowDashboard() {
     };
 
     return (
-        <div className="flex flex-col h-full">
+        <div className="flex flex-col h-full relative">
+            {/* X button in top right corner */}
+            <button
+                onClick={handleClose}
+                className="absolute top-2 right-2 z-10 p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors"
+                aria-label="Close and return to home"
+            >
+                <FiX size={24} />
+            </button>
+            
             {/* Main content area */}
             <div className="flex-grow overflow-auto">
                 <div className="flex overflow-x-auto min-h-full p-2 pb-8">

@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
+import { FiCheckSquare } from 'react-icons/fi';
 
 export default function TaskView() {
     const router = useRouter();
@@ -538,12 +539,13 @@ export default function TaskView() {
             <div className="bg-gray-400 p-2 flex items-center">
                 <div className="flex items-center">
                     <div className="bg-blue-200 border border-blue-300 p-1 mr-2">
-                        <Image
+                        {/* <Image
                             src="/file.svg"
                             alt="Task"
                             width={24}
                             height={24}
-                        />
+                        /> */}
+                        <FiCheckSquare size={20} />
                     </div>
                     <h1 className="text-xl font-semibold text-gray-700">
                         {task.id} {task.title}
