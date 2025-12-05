@@ -1,9 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
-// Get all placements
-export async function GET(request: NextRequest) {
+export async function GET(
+    request: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+) {
     try {
+        const { id } = await params;
+
         // Get the token from cookies
         const cookieStore = await cookies();
         const token = cookieStore.get('token')?.value;
@@ -17,7 +21,7 @@ export async function GET(request: NextRequest) {
 
         // Make a request to your backend API
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-        const response = await fetch(`${apiUrl}/api/placements`, {
+        const response = await fetch(`${apiUrl}/api/job-seekers/${id}/documents`, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
@@ -29,14 +33,14 @@ export async function GET(request: NextRequest) {
 
         if (!response.ok) {
             return NextResponse.json(
-                { success: false, message: data.message || 'Failed to fetch placements' },
+                { success: false, message: data.message || 'Failed to fetch documents' },
                 { status: response.status }
             );
         }
 
         return NextResponse.json(data);
     } catch (error) {
-        console.error('Error fetching placements:', error);
+        console.error('Error fetching documents:', error);
         return NextResponse.json(
             { success: false, message: 'Internal server error' },
             { status: 500 }
@@ -44,10 +48,12 @@ export async function GET(request: NextRequest) {
     }
 }
 
-// Create a placement
-export async function POST(request: NextRequest) {
+export async function POST(
+    request: NextRequest,
+    { params }: { params: Promise<{ id: string }> }
+) {
     try {
-        const body = await request.json();
+        const { id } = await params;
 
         // Get the token from cookies
         const cookieStore = await cookies();
@@ -60,57 +66,51 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Log the request data for debugging
-        console.log('Creating placement with data:', body);
+        // Parse the form data
+        const formData = await request.formData();
+        const file = formData.get('file') as File;
+        const documentName = formData.get('document_name') as string;
+        const documentType = formData.get('document_type') as string || 'General';
 
-        // Make a request to your backend API
-        const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-        const response = await fetch(`${apiUrl}/api/placements`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify(body)
-        });
-
-        // Log the response status
-        console.log('Backend response status:', response.status);
-
-        // Get response as text first for debugging
-        const responseText = await response.text();
-        console.log('Raw response:', responseText);
-
-        // Try to parse the response
-        let data;
-        try {
-            data = JSON.parse(responseText);
-            console.log('Parsed response data:', data);
-        } catch (jsonError) {
-            console.error('Error parsing response JSON:', jsonError);
+        if (!file) {
             return NextResponse.json(
-                {
-                    success: false,
-                    message: 'Invalid response from server',
-                    raw: responseText
-                },
-                { status: 500 }
+                { success: false, message: 'File is required' },
+                { status: 400 }
             );
         }
 
+        // Create FormData for backend
+        const backendFormData = new FormData();
+        backendFormData.append('file', file);
+        backendFormData.append('document_name', documentName || file.name);
+        backendFormData.append('document_type', documentType);
+
+        // Make a request to your backend API
+        const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
+        const response = await fetch(`${apiUrl}/api/job-seekers/${id}/documents`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            },
+            body: backendFormData
+        });
+
+        const data = await response.json();
+
         if (!response.ok) {
             return NextResponse.json(
-                { success: false, message: data.message || 'Failed to create placement' },
+                { success: false, message: data.message || 'Failed to upload document' },
                 { status: response.status }
             );
         }
 
         return NextResponse.json(data);
     } catch (error) {
-        console.error('Error creating placement:', error);
+        console.error('Error uploading document:', error);
         return NextResponse.json(
             { success: false, message: 'Internal server error' },
             { status: 500 }
         );
     }
 }
+

@@ -404,17 +404,9 @@ export default function DashboardNav() {
     // { name: 'API', path: '/dashboard/api', icon: <FiGrid size={20} /> },
   ];
 
-  // Filter navigation items based on search query
-  const filteredNavItems = navItems.filter((item) => {
-    if (!searchQuery.trim()) {
-      return true; // Show all items when search is empty
-    }
-    const query = searchQuery.toLowerCase().trim();
-    return (
-      item.name.toLowerCase().includes(query) ||
-      item.path.toLowerCase().includes(query)
-    );
-  });
+  // Don't filter navigation items based on search query - always show all items
+  // The search query is only for the global search functionality, not for filtering sidebar
+  const filteredNavItems = navItems;
 
   return (
     <>
@@ -681,46 +673,31 @@ export default function DashboardNav() {
           </span>
         </div>
 
-        {/* Navigation links - filtered by search */}
+        {/* Navigation links - always show all items, not filtered by search */}
         <div className="overflow-y-auto">
-          {filteredNavItems.length > 0 ? (
-            filteredNavItems.map((item) => (
-              <Link
-                key={item.path}
-                href={item.path}
-                onClick={() => {
-                  // Close search when navigating to an item
-                  if (isSearchOpen) {
-                    setSearchQuery("");
-                    setIsSearchOpen(false);
-                  }
-                }}
-                className={`flex items-center py-2 px-4 ${
-                  pathname === item.path
-                    ? "bg-blue-600 text-white"
-                    : "text-gray-300 hover:bg-slate-700"
-                }`}
-              >
-                <div className="w-6 h-6 mr-3 flex-shrink-0 flex items-center justify-center">
-                  {item.icon}
-                </div>
-                {item.name}
-              </Link>
-            ))
-          ) : (
-            <div className="px-4 py-8 text-center">
-              <div className="text-gray-400 text-sm">
-                {searchQuery.trim() ? (
-                  <>
-                    {/* <p>No results found for</p>
-                    <p className="font-medium mt-1">"{searchQuery}"</p> */}
-                  </>
-                ) : (
-                  <p>No navigation items</p>
-                )}
+          {filteredNavItems.map((item) => (
+            <Link
+              key={item.path}
+              href={item.path}
+              onClick={() => {
+                // Optional: Close search when navigating to an item
+                // if (isSearchOpen) {
+                //   setSearchQuery("");
+                //   setIsSearchOpen(false);
+                // }
+              }}
+              className={`flex items-center py-2 px-4 ${
+                pathname === item.path
+                  ? "bg-blue-600 text-white"
+                  : "text-gray-300 hover:bg-slate-700"
+              }`}
+            >
+              <div className="w-6 h-6 mr-3 flex-shrink-0 flex items-center justify-center">
+                {item.icon}
               </div>
-            </div>
-          )}
+              {item.name}
+            </Link>
+          ))}
         </div>
 
         {/* Flexible spacer */}

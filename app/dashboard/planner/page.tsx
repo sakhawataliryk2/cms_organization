@@ -15,48 +15,48 @@ import {
 const mockAppointments = [
   {
     id: 1,
-    time: '9:00 AM',
-    type: 'Meeting',
-    client: 'Tech Corp',
-    job: 'Senior Developer',
-    references: ['Stephanie Marcus', 'Sophia Esposito'],
-    owner: 'Devi Arnold'
+    time: '0',
+    type: '0',
+    client: '0',
+    job: '0',
+    references: ['0'],
+    owner: '0'
   },
   {
     id: 2,
-    time: '9:30 AM',
-    type: 'Meeting',
-    client: 'Startup Inc',
-    job: 'Product Manager',
-    references: ['Toni Arruda', 'Allison Silva', 'Devi Arnold', 'Klaudia Gajda', 'Jennifer Michaels'],
-    owner: 'Briana Dozois'
+    time: '0',
+    type: '0',
+    client: '0',
+    job: '0',
+    references: ['0'],
+    owner: '0'
   },
   {
     id: 3,
-    time: '10:00 AM',
-    type: 'Meeting',
-    client: 'Consulting Firm',
-    job: 'Business Analyst',
-    references: ['Evan Waicberg', 'Rachel Howell'],
-    owner: 'Justin Shields'
+    time: '0',
+    type: '0',
+    client: '0',
+    job: '0',
+    references: ['0'],
+    owner: '0'
   },
   {
     id: 4,
-    time: '10:30 AM',
-    type: 'Meeting',
-    client: 'Finance Co',
-    job: 'Financial Advisor',
-    references: ['Evan Waicberg', 'Rachel Howell'],
-    owner: 'Devi Arnold'
+    time: '0',
+    type: '0',
+    client: '0',
+    job: '0',
+    references: ['0'],
+    owner: '0'
   },
   {
     id: 5,
-    time: '11:00 AM',
-    type: 'Meeting',
-    client: 'Marketing Agency',
-    job: 'Creative Director',
-    references: ['Stephanie Marcus', 'Sophia Esposito'],
-    owner: 'Briana Dozois'
+    time: '0',
+    type: '0',
+    client: '0',
+    job: '0',
+    references: ['0'],
+    owner: '0'
   }
 ];
 

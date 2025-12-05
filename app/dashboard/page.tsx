@@ -39,10 +39,15 @@ export default function Dashboard() {
     const router = useRouter();
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
+    const [startDateTime, setStartDateTime] = useState('');
+    const [endDateTime, setEndDateTime] = useState('');
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
     const [tasks, setTasks] = useState<Task[]>([]);
     const [allTasks, setAllTasks] = useState<Task[]>([]); // Store all tasks for calendar indicators
+    const [filteredTasks, setFilteredTasks] = useState<Task[]>([]);
+    const [taskSearchQuery, setTaskSearchQuery] = useState('');
+    const [goalsSearchQuery, setGoalsSearchQuery] = useState('');
     const [isLoadingTasks, setIsLoadingTasks] = useState(true);
     const [tasksError, setTasksError] = useState<string | null>(null);
     const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -207,6 +212,7 @@ export default function Dashboard() {
             });
             
             setTasks(tasksForDate);
+            setFilteredTasks(tasksForDate);
         } catch (err) {
             console.error('Error fetching tasks:', err);
             setTasksError(err instanceof Error ? err.message : 'An error occurred while fetching tasks');
@@ -329,6 +335,7 @@ export default function Dashboard() {
             // Get up to 5 recent tasks for dashboard when no date is selected
             const recentTasks = allTasksData.slice(0, 5);
             setTasks(recentTasks);
+            setFilteredTasks(recentTasks);
         } catch (err) {
             console.error('Error fetching tasks:', err);
             setTasksError(err instanceof Error ? err.message : 'An error occurred while fetching tasks');
@@ -363,6 +370,20 @@ export default function Dashboard() {
         router.push(`/dashboard/tasks/view?id=${taskId}`);
     };
 
+    // Filter tasks based on search query
+    useEffect(() => {
+        if (!taskSearchQuery.trim()) {
+            setFilteredTasks(tasks);
+        } else {
+            const filtered = tasks.filter(task => 
+                task.title.toLowerCase().includes(taskSearchQuery.toLowerCase()) ||
+                task.description?.toLowerCase().includes(taskSearchQuery.toLowerCase()) ||
+                task.status?.toLowerCase().includes(taskSearchQuery.toLowerCase())
+            );
+            setFilteredTasks(filtered);
+        }
+    }, [taskSearchQuery, tasks]);
+
     // Handle close/return to home
     const handleClose = () => {
         router.push('/dashboard');
@@ -371,13 +392,13 @@ export default function Dashboard() {
     return (
         <div className="flex flex-col h-full relative">
             {/* X button in top right corner */}
-            <button
-                onClick={handleClose}
+            <Link
+                href="/home"
                 className="absolute top-2 right-2 z-10 p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors"
                 aria-label="Close and return to home"
             >
                 <FiX size={24} />
-            </button>
+            </Link>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-grow mb-4">
                 {/* Appointments Calendar */}
@@ -480,28 +501,18 @@ export default function Dashboard() {
 
                 {/* Middle - Tasks */}
                 <div className="bg-white rounded-md shadow overflow-hidden flex flex-col">
-                    <div className="p-2 border-b border-gray-200 flex justify-between items-center">
-                        <div>
-                            <h2 className="text-lg font-semibold">
-                                {selectedDate 
-                                    ? `Tasks for ${selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                                    : 'Tasks Overview'}
-                            </h2>
-                        </div>
-                        <div className="flex items-center space-x-2">
-                            <Link
-                                href="/dashboard/tasks/add"
-                                className="text-blue-600 hover:text-blue-800 p-1"
-                                title="Add Task"
-                            >
-                                <FiPlus size={18} />
-                            </Link>
-                            <Link
-                                href="/dashboard/tasks"
-                                className="text-gray-600 hover:text-gray-800 text-xs px-2 py-1 rounded hover:bg-gray-100"
-                            >
-                                View All
-                            </Link>
+                    <div className="p-2 border-b border-gray-200">
+                        <h2 className="text-lg font-semibold mb-2">Tasks</h2>
+                        {/* Search bar */}
+                        <div className="relative">
+                            <FiSearch className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                            <input
+                                type="text"
+                                placeholder="Search tasks..."
+                                value={taskSearchQuery}
+                                onChange={(e) => setTaskSearchQuery(e.target.value)}
+                                className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                            />
                         </div>
                     </div>
                     <div className="p-4 flex-1 overflow-y-auto">
@@ -544,7 +555,7 @@ export default function Dashboard() {
                             </div>
                         ) : (
                             <div className="space-y-3">
-                                {tasks.map((task) => (
+                                {filteredTasks.map((task) => (
                                     <div
                                         key={task.id}
                                         onClick={() => handleTaskClick(task.id)}
@@ -601,7 +612,7 @@ export default function Dashboard() {
                                         )}
                                     </div>
                                 ))}
-                                {!selectedDate && tasks.length >= 5 && (
+                                {!selectedDate && filteredTasks.length >= 5 && (
                                     <div className="pt-2 border-t border-gray-200">
                                         <Link
                                             href="/dashboard/tasks"
@@ -627,471 +638,375 @@ export default function Dashboard() {
                             </div>
                         )}
                     </div>
-                     {/* Planner Overview */}
-                     <div className="bg-white rounded-md shadow overflow-hidden flex flex-col">
-                        <div className="p-2 border-b border-gray-200 flex justify-between items-center">
-                            <div>
-                                <h2 className="text-lg font-semibold">
-                                    Planner Overview
-                                </h2>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                                <Link
-                                    href="/dashboard/planner"
-                                    className="text-gray-600 hover:text-gray-800 text-xs px-2 py-1 rounded hover:bg-gray-100"
-                                >
-                                    View All
-                                </Link>
-                            </div>
-                        </div>
-                        <div className="p-4 flex-1 overflow-y-auto">
-                            {isLoadingAppointments ? (
-                                <div className="flex items-center justify-center py-8">
-                                    <div className="text-gray-400 text-sm">Loading appointments...</div>
-                                </div>
-                            ) : appointmentsError ? (
-                                <div className="text-center py-8">
-                                    <p className="text-red-600 text-sm mb-2">Error loading appointments</p>
-                                    <p className="text-gray-400 text-xs">{appointmentsError}</p>
-                                    <button
-                                        onClick={fetchAppointments}
-                                        className="mt-4 text-blue-600 hover:text-blue-800 text-xs"
-                                    >
-                                        Retry
-                                    </button>
-                                </div>
-                            ) : appointments.length === 0 ? (
-                                <div className="text-center py-8">
-                                    <div className="bg-gray-200 rounded-full p-4 inline-flex mx-auto mb-4">
-                                        <FiCalendar size={24} className="text-gray-500" />
-                                    </div>
-                                    <p className="text-gray-600 text-sm">
-                                        No upcoming appointments
-                                    </p>
-                                    <p className="text-gray-400 text-xs mt-2">
-                                        Schedule your first appointment to get started
-                                    </p>
-                                    <Link
-                                        href="/dashboard/planner"
-                                        className="mt-4 inline-block bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-xs font-medium transition-colors"
-                                    >
-                                        Go to Planner
-                                    </Link>
-                                </div>
-                            ) : (
-                                <div className="space-y-3">
-                                    {appointments.map((appointment) => (
-                                        <div
-                                            key={appointment.id}
-                                            onClick={() => router.push('/dashboard/planner')}
-                                            className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 cursor-pointer transition-colors"
-                                        >
-                                            <div className="flex items-start justify-between mb-2">
-                                                <div className="flex items-start space-x-2 flex-1">
-                                                    <div className="mt-1 text-blue-600">
-                                                        <FiCalendar size={16} />
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <h3 className="text-sm font-medium text-gray-900">
-                                                            {appointment.type} - {appointment.client}
-                                                        </h3>
-                                                        <p className="text-xs text-gray-500 mt-1">
-                                                            {appointment.job}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            <div className="flex items-center justify-between mt-2 flex-wrap gap-2">
-                                                <div className="flex items-center text-xs text-gray-500">
-                                                    <FiClock size={12} className="mr-1" />
-                                                    {appointment.time}
-                                                </div>
-                                                <div className="text-xs text-gray-500">
-                                                    Owner: {appointment.owner}
-                                                </div>
-                                            </div>
-                                            {appointment.references && appointment.references.length > 0 && (
-                                                <div className="mt-2 text-xs text-gray-500">
-                                                    <span className="font-medium">References: </span>
-                                                    <span>{appointment.references.slice(0, 2).join(', ')}</span>
-                                                    {appointment.references.length > 2 && (
-                                                        <span> +{appointment.references.length - 2} more</span>
-                                                    )}
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                    {appointments.length >= 5 && (
-                                        <div className="pt-2 border-t border-gray-200">
-                                            <Link
-                                                href="/dashboard/planner"
-                                                className="text-center block text-blue-600 hover:text-blue-800 text-sm font-medium"
-                                            >
-                                                View All Appointments →
-                                            </Link>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    </div>
                 </div>
 
-                {/* Right Column */}
-                <div className="flex flex-col space-y-4">
-                    {/* Goals and Quotas */}
-                    {showGoalsQuotas && (
-                        <div className="bg-white rounded-md shadow overflow-hidden">
-                            <div className="p-2 border-b border-gray-200 flex items-center justify-between">
-                                <div className="flex items-center space-x-2">
-                                    <h2 className="text-lg font-semibold">Activity Report</h2>
-                                    <Link
-                                        href="/dashboard/goals"
-                                        className="bg-blue-500 text-white px-2 py-1 rounded text-xs hover:bg-blue-600 transition-colors"
-                                    >
-                                        Goal
-                                    </Link>
-                                    <Link
-                                        href="/dashboard/goals"
-                                        className="bg-gray-100 border border-gray-300 px-2 py-1 rounded text-xs hover:bg-gray-200 transition-colors"
-                                    >
-                                        QUOTA
-                                    </Link>
-                                    <div className="flex items-center">
-                                        <button className="bg-gray-100 border border-gray-300 px-2 py-1 rounded-l text-xs hover:bg-gray-200 transition-colors">
-                                            Filters
-                                        </button>
-                                        <button className="bg-gray-100 border border-gray-300 border-l-0 px-2 py-1 rounded-r text-xs hover:bg-gray-200 transition-colors">
-                                            <FiChevronDown size={14} />
-                                        </button>
-                                    </div>
-                                </div>
-                                <button 
-                                    onClick={() => router.back()}
-                                    className="text-gray-400 hover:text-gray-600 transition-colors"
-                                    aria-label="Go to previous screen"
-                                >
-                                    <FiX size={18} />
-                                </button>
+                {/* Right Column - Information */}
+                <div className="bg-white rounded-md shadow overflow-hidden flex flex-col">
+                    <div className="p-2 border-b border-gray-200">
+                        <h2 className="text-lg font-semibold">Information:</h2>
+                    </div>
+                    <div className="p-4 flex-1 overflow-y-auto">
+                        {isLoadingAppointments ? (
+                            <div className="flex items-center justify-center py-8">
+                                <div className="text-gray-400 text-sm">Loading...</div>
                             </div>
-                            <div className="p-4">
-                                <div className="text-center mb-4">
-                                    <p className="text-gray-600 text-sm mb-2">View and manage your goals and quotas</p>
-                                    <Link
-                                        href="/dashboard/goals"
-                                        className="inline-block bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
+                        ) : appointmentsError ? (
+                            <div className="text-center py-8">
+                                <p className="text-red-600 text-sm mb-2">Error loading information</p>
+                                <p className="text-gray-400 text-xs">{appointmentsError}</p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {appointments.slice(0, 3).map((appointment) => (
+                                    <div
+                                        key={appointment.id}
+                                        className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 cursor-pointer transition-colors"
                                     >
-                                        Go to Goals & Quotas
-                                    </Link>
-                                </div>
-                                <div className="border-t border-gray-200 pt-4 mt-4">
-                                    <div className="grid grid-cols-2 gap-4 text-center">
-                                        <div>
-                                            <div className="text-2xl font-bold text-blue-600">0</div>
-                                            <div className="text-xs text-gray-500 mt-1">Active Goals</div>
+                                        <div className="flex items-start justify-between mb-2">
+                                            <div className="flex items-start space-x-2 flex-1">
+                                                <div className="mt-1 text-blue-600">
+                                                    <FiCalendar size={16} />
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <h3 className="text-sm font-medium text-gray-900">
+                                                        {appointment.type} - {appointment.client}
+                                                    </h3>
+                                                    <p className="text-xs text-gray-500 mt-1">
+                                                        {appointment.job}
+                                                    </p>
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div>
-                                            <div className="text-2xl font-bold text-green-600">0</div>
-                                            <div className="text-xs text-gray-500 mt-1">Quotas Met</div>
+                                        <div className="flex items-center justify-between mt-2 flex-wrap gap-2">
+                                            <div className="flex items-center text-xs text-gray-500">
+                                                <FiClock size={12} className="mr-1" />
+                                                {appointment.time}
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
+                                ))}
                             </div>
-                        </div>
-                    )}
-
-                   
-
-                    {/* Rules of Engagement */}
-                    <div className="bg-white rounded-md shadow overflow-hidden">
-                        <div className="p-2 border-b border-gray-200">
-                            <h2 className="text-lg font-semibold">Important Notices and Updates</h2>
-                        </div>
-                        <div className="p-6 flex justify-center">
-                            <div className="bg-blue-500 rounded-md p-4 w-28 h-28 flex flex-col items-center justify-center text-white">
-                                <div className="bg-white w-10 h-10 mb-2"></div>
-                                <div className="text-center">
-                                    <div className="text-sm">Rules of</div>
-                                    <div className="text-sm">Engagement</div>
-                                </div>
-                            </div>
-                        </div>
+                        )}
                     </div>
                 </div>
             </div>
-            {/* Activity Report Section */}
-      <div className="px-6 pb-6 mt-8">
-        {/* Activity Report Header */}
-        <div className="mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">
-            ACTIVITY REPORT
-          </h2>
-        </div>
-
-        {/* Activity Report Grid */}
-        <div className="bg-white border border-gray-300 rounded-lg overflow-hidden">
-          {/* Header Row */}
-          <div className="flex bg-gray-50 border-b border-gray-300">
-            <div className="w-32 p-3 border-r border-gray-300"></div>
-            <div className="w-24 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              Notes
-            </div>
-            <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              <div>Goals</div>
-              <div className="text-xs font-normal text-gray-500">Quotas</div>
-            </div>
-            <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              Added to System
-            </div>
-            <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              <div>Goals</div>
-              <div className="text-xs font-normal text-gray-500">Quotas</div>
-            </div>
-            <div className="w-28 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              Inbound emails
-            </div>
-            <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              <div>Goals</div>
-              <div className="text-xs font-normal text-gray-500">Quotas</div>
-            </div>
-            <div className="w-28 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              Outbound emails
-            </div>
-            <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              <div>Goals</div>
-              <div className="text-xs font-normal text-gray-500">Quotas</div>
-            </div>
-            <div className="w-16 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              Calls
-            </div>
-            <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              <div>Goals</div>
-              <div className="text-xs font-normal text-gray-500">Quotas</div>
-            </div>
-            <div className="w-16 p-3 text-sm font-medium text-gray-700">
-              Texts
-            </div>
-          </div>
-
-          {/* Data Rows */}
-          {[
-            { category: "Organization", rowClass: "bg-white" },
-            { category: "Jobs", rowClass: "bg-gray-50" },
-            { category: "Job Seekers", rowClass: "bg-white" },
-            { category: "Hiring Managers", rowClass: "bg-gray-50" },
-            { category: "Placements", rowClass: "bg-white" },
-            { category: "Leads", rowClass: "bg-gray-50" },
-          ].map((row, index) => (
-            <div
-              key={index}
-              className={`flex border-b border-gray-300 last:border-b-0 ${row.rowClass}`}
-            >
-              {/* Category Name */}
-              <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-                {row.category}
-              </div>
-
-              {/* Notes Column */}
-              <div className="w-24 p-3 border-r border-gray-300">
-                <input
-                  type="text"
-                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                  placeholder=""
-                />
-              </div>
-
-              {/* Notes - Goals/Quotas */}
-              <div className="w-20 p-3 border-r border-gray-300">
-                <div className="flex space-x-2">
-                  <input
-                    type="number"
-                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                    placeholder=""
-                  />
-                  <input 
-                    type="number" 
-                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
-                    placeholder=""
-                  />
-                </div>
-              </div>
-
-              {/* Added to System Column */}
-              <div className="w-32 p-3 border-r border-gray-300">
-                <input
-                  type="number"
-                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                  placeholder=""
-                />
-              </div>
-
-              {/* Added to System - Goals/Quotas */}
-              <div className="w-20 p-3 border-r border-gray-300">
-                <div className="flex space-x-2">
-                  <input
-                    type="number"
-                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                    placeholder=""
-                  />
-                  <input 
-                    type="number" 
-                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
-                    placeholder="0"
-                  />
-                </div>
-              </div>
-
-              {/* Inbound emails Column */}
-              <div className="w-28 p-3 border-r border-gray-300">
-                <input
-                  type="number"
-                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                  placeholder=""
-                />
-              </div>
-
-              {/* Inbound emails - Goals/Quotas */}
-              <div className="w-20 p-3 border-r border-gray-300">
-                <div className="flex space-x-2">
-                  <input
-                    type="number"
-                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                    placeholder=""
-                  />
-                  <input 
-                    type="number" 
-                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
-                    placeholder=""
-                  />
-                </div>
-              </div>
-
-              {/* Outbound emails Column */}
-              <div className="w-28 p-3 border-r border-gray-300">
-                <input
-                  type="number"
-                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                  placeholder=""
-                />
-              </div>
-
-              {/* Outbound emails - Goals/Quotas */}
-              <div className="w-20 p-3 border-r border-gray-300">
-                <div className="flex space-x-2">
-                  <input
-                    type="number"
-                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                    placeholder=""
-                  />
-                  <input 
-                    type="number" 
-                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
-                      placeholder=""
-                  />
-                </div>
-              </div>
-
-              {/* Calls Column */}
-              <div className="w-16 p-3 border-r border-gray-300">
-                <input
-                  type="number"
-                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                  placeholder=""
-                />
-              </div>
-
-              {/* Calls - Goals/Quotas */}
-              <div className="w-20 p-3 border-r border-gray-300">
-                <div className="flex space-x-2">
-                  <input
-                    type="number"
-                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                    placeholder=""
-                  />
-                  <input 
-                    type="number" 
-                    className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
-                    placeholder=""
-                  />
-                </div>
-              </div>
-
-              {/* Texts Column */}
-              <div className="w-16 p-3">
-                <input
-                  type="number"
-                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                  placeholder=""
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Next Button - Bottom Right */}
-      <div className="flex justify-end mt-6 mb-4 px-6">
-        <div className="text-right">
-          <div className="text-lg mb-1 text-gray-700">Next</div>
-          <button
-            className="bg-teal-600 hover:bg-teal-700 text-white w-24 h-10 rounded flex items-center justify-center transition-colors"
-            onClick={handleNextClick}
-            aria-label="Go to next page"
-          >
-            <span className="transform translate-x-1">▶</span>
-          </button>
-        </div>
-      </div>
 
             {/* Bottom Row */}
-            {/* <div className="grid grid-cols-12 gap-4 mt-4">
-                
-                <div className="col-span-12 md:col-span-6 lg:col-span-4">
-                    <div className="bg-gray-50 p-4">
-                        <h2 className="font-bold mb-4">Select Date and Time Range</h2>
-
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+                {/* Select Date and Time Range */}
+                <div className="bg-white rounded-md shadow overflow-hidden">
+                    <div className="p-2 border-b border-gray-200">
+                        <h2 className="text-lg font-semibold">Select Date and Time Range</h2>
+                    </div>
+                    <div className="p-4">
                         <div className="mb-4">
-                            <label className="block mb-1">Start Date & Time:</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">Start Date & Time:</label>
                             <input
-                                type="text"
-                                placeholder="Select start date and time"
-                                className="w-full p-2 border border-gray-300 rounded"
-                                value={startDate}
-                                onChange={(e) => setStartDate(e.target.value)}
+                                type="datetime-local"
+                                value={startDateTime}
+                                onChange={(e) => setStartDateTime(e.target.value)}
+                                className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                             />
                         </div>
-
                         <div>
-                            <label className="block mb-1">End Date & Time:</label>
+                            <label className="block text-sm font-medium text-gray-700 mb-1">End Date & Time:</label>
                             <input
-                                type="text"
-                                placeholder="Select end date and time"
-                                className="w-full p-2 border border-gray-300 rounded"
-                                value={endDate}
-                                onChange={(e) => setEndDate(e.target.value)}
+                                type="datetime-local"
+                                value={endDateTime}
+                                onChange={(e) => setEndDateTime(e.target.value)}
+                                className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                             />
                         </div>
                     </div>
-
-
                 </div>
 
-                
-                <div className="hidden md:block md:col-span-2 lg:col-span-4"></div>
+                {/* Goals and Quotas */}
+                {showGoalsQuotas && (
+                    <div className="bg-white rounded-md shadow overflow-hidden">
+                        <div className="p-2 border-b border-gray-200">
+                            <h2 className="text-lg font-semibold mb-2">Goals and Quotas</h2>
+                            {/* Search bar */}
+                            <div className="relative">
+                                <FiSearch className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
+                                <input
+                                    type="text"
+                                    placeholder="Search goals and quotas..."
+                                    value={goalsSearchQuery}
+                                    onChange={(e) => setGoalsSearchQuery(e.target.value)}
+                                    className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                />
+                            </div>
+                        </div>
+                        <div className="p-4">
+                            <div className="text-center mb-4">
+                                <p className="text-gray-600 text-sm mb-2">View and manage your goals and quotas</p>
+                                <Link
+                                    href="/dashboard/goals"
+                                    className="inline-block bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
+                                >
+                                    Go to Goals & Quotas
+                                </Link>
+                            </div>
+                            <div className="border-t border-gray-200 pt-4 mt-4">
+                                <div className="grid grid-cols-2 gap-4 text-center">
+                                    <div>
+                                        <div className="text-2xl font-bold text-blue-600">0</div>
+                                        <div className="text-xs text-gray-500 mt-1">Active Goals</div>
+                                    </div>
+                                    <div>
+                                        <div className="text-2xl font-bold text-green-600">0</div>
+                                        <div className="text-xs text-gray-500 mt-1">Quotas Met</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
 
-                
-                <div className="col-span-12 md:col-span-4 lg:col-span-4 flex items-end justify-end">
-                    <div className="text-right">
-                        <div className="text-lg mb-1">Next</div>
-                        <button
-                            className="bg-teal-600 text-white w-24 h-10 rounded flex items-center justify-center"
-                            onClick={handleNextClick}
-                        >
-                            <span className="transform translate-x-1">▶</span>
+                {/* Rules of Engagement */}
+                <div className="bg-white rounded-md shadow overflow-hidden">
+                    <div className="p-2 border-b border-gray-200">
+                        <h2 className="text-lg font-semibold">Rules of engagement</h2>
+                    </div>
+                    <div className="p-6 flex justify-center">
+                        <button className="bg-blue-500 rounded-md p-4 w-28 h-28 flex flex-col items-center justify-center text-white hover:bg-blue-600 transition-colors">
+                            <div className="bg-white w-10 h-10 mb-2 rounded flex items-center justify-center">
+                                <svg className="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                </svg>
+                            </div>
+                            <div className="text-center">
+                                <div className="text-sm font-medium">Rules of</div>
+                                <div className="text-sm font-medium">Engagement</div>
+                            </div>
                         </button>
                     </div>
                 </div>
-            </div> */}
+            </div>
+
+            {/* Activity Report Section */}
+            <div className="px-6 pb-6 mt-8">
+                {/* Activity Report Header */}
+                <div className="mb-4">
+                    <h2 className="text-lg font-semibold text-gray-900">
+                        ACTIVITY REPORT
+                    </h2>
+                </div>
+
+                {/* Activity Report Grid */}
+                <div className="bg-white border border-gray-300 rounded-lg overflow-hidden">
+                    {/* Header Row */}
+                    <div className="flex bg-gray-50 border-b border-gray-300">
+                        <div className="w-32 p-3 border-r border-gray-300"></div>
+                        <div className="w-24 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+                            Notes
+                        </div>
+                        <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+                            <div>Goals</div>
+                            <div className="text-xs font-normal text-gray-500">Quotas</div>
+                        </div>
+                        <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+                            Added to System
+                        </div>
+                        <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+                            <div>Goals</div>
+                            <div className="text-xs font-normal text-gray-500">Quotas</div>
+                        </div>
+                        <div className="w-28 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+                            Inbound emails
+                        </div>
+                        <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+                            <div>Goals</div>
+                            <div className="text-xs font-normal text-gray-500">Quotas</div>
+                        </div>
+                        <div className="w-28 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+                            Outbound emails
+                        </div>
+                        <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+                            <div>Goals</div>
+                            <div className="text-xs font-normal text-gray-500">Quotas</div>
+                        </div>
+                        <div className="w-16 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+                            Calls
+                        </div>
+                        <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+                            <div>Goals</div>
+                            <div className="text-xs font-normal text-gray-500">Quotas</div>
+                        </div>
+                        <div className="w-16 p-3 text-sm font-medium text-gray-700">
+                            Texts
+                        </div>
+                    </div>
+
+                    {/* Data Rows */}
+                    {[
+                        { category: "Organization", rowClass: "bg-white" },
+                        { category: "Jobs", rowClass: "bg-gray-50" },
+                        { category: "Job Seekers", rowClass: "bg-white" },
+                        { category: "Hiring Managers", rowClass: "bg-gray-50" },
+                        { category: "Placements", rowClass: "bg-white" },
+                        { category: "Leads", rowClass: "bg-gray-50" },
+                    ].map((row, index) => (
+                        <div
+                            key={index}
+                            className={`flex border-b border-gray-300 last:border-b-0 ${row.rowClass}`}
+                        >
+                            {/* Category Name */}
+                            <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+                                {row.category}
+                            </div>
+
+                            {/* Notes Column */}
+                            <div className="w-24 p-3 border-r border-gray-300">
+                                <input
+                                    type="text"
+                                    className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                                    placeholder=""
+                                />
+                            </div>
+
+                            {/* Notes - Goals/Quotas */}
+                            <div className="w-20 p-3 border-r border-gray-300">
+                                <div className="flex space-x-2">
+                                    <input
+                                        type="number"
+                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                                        placeholder=""
+                                    />
+                                    <input 
+                                        type="number" 
+                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
+                                        placeholder=""
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Added to System Column */}
+                            <div className="w-32 p-3 border-r border-gray-300">
+                                <input
+                                    type="number"
+                                    className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                                    placeholder=""
+                                />
+                            </div>
+
+                            {/* Added to System - Goals/Quotas */}
+                            <div className="w-20 p-3 border-r border-gray-300">
+                                <div className="flex space-x-2">
+                                    <input
+                                        type="number"
+                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                                        placeholder=""
+                                    />
+                                    <input 
+                                        type="number" 
+                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
+                                        placeholder="0"
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Inbound emails Column */}
+                            <div className="w-28 p-3 border-r border-gray-300">
+                                <input
+                                    type="number"
+                                    className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                                    placeholder=""
+                                />
+                            </div>
+
+                            {/* Inbound emails - Goals/Quotas */}
+                            <div className="w-20 p-3 border-r border-gray-300">
+                                <div className="flex space-x-2">
+                                    <input
+                                        type="number"
+                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                                        placeholder=""
+                                    />
+                                    <input 
+                                        type="number" 
+                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
+                                        placeholder=""
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Outbound emails Column */}
+                            <div className="w-28 p-3 border-r border-gray-300">
+                                <input
+                                    type="number"
+                                    className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                                    placeholder=""
+                                />
+                            </div>
+
+                            {/* Outbound emails - Goals/Quotas */}
+                            <div className="w-20 p-3 border-r border-gray-300">
+                                <div className="flex space-x-2">
+                                    <input
+                                        type="number"
+                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                                        placeholder=""
+                                    />
+                                    <input 
+                                        type="number" 
+                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
+                                        placeholder=""
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Calls Column */}
+                            <div className="w-16 p-3 border-r border-gray-300">
+                                <input
+                                    type="number"
+                                    className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                                    placeholder=""
+                                />
+                            </div>
+
+                            {/* Calls - Goals/Quotas */}
+                            <div className="w-20 p-3 border-r border-gray-300">
+                                <div className="flex space-x-2">
+                                    <input
+                                        type="number"
+                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                                        placeholder=""
+                                    />
+                                    <input 
+                                        type="number" 
+                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
+                                        placeholder=""
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Texts Column */}
+                            <div className="w-16 p-3">
+                                <input
+                                    type="number"
+                                    className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                                    placeholder=""
+                                />
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* Next Button - Bottom Right */}
+            <div className="flex justify-end mt-6 mb-4 px-6">
+                <div className="text-right">
+                    <div className="text-lg mb-1 text-gray-700">Next</div>
+                    <button
+                        className="bg-teal-600 hover:bg-teal-700 text-white w-24 h-10 rounded flex items-center justify-center transition-colors"
+                        onClick={handleNextClick}
+                        aria-label="Go to next page"
+                    >
+                        <span className="transform translate-x-1">▶</span>
+                    </button>
+                </div>
+            </div>
         </div>
     );
 }

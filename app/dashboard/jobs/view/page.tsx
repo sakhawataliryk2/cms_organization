@@ -56,7 +56,21 @@ export default function JobView() {
         internalEmailNotification: '',
         candidate: '',
         status: '',
-        startDate: ''
+        startDate: '',
+        // Permanent Employment Info
+        salary: '',
+        placementFeePercent: '',
+        placementFeeFlat: '',
+        daysGuaranteed: '',
+        // Contract Employment Info
+        hoursPerDay: '',
+        hoursOfOperation: '',
+        // Pay Rate Information
+        payRate: '',
+        payRateChecked: false,
+        effectiveDate: '',
+        effectiveDateChecked: false,
+        overtimeExemption: 'False'
     });
     const [jobSeekers, setJobSeekers] = useState<any[]>([]);
     const [isLoadingJobSeekers, setIsLoadingJobSeekers] = useState(false);
@@ -477,7 +491,21 @@ export default function JobView() {
                     job_seeker_id: placementForm.candidate,
                     status: placementForm.status,
                     start_date: placementForm.startDate,
-                    internal_email_notification: placementForm.internalEmailNotification || null
+                    internal_email_notification: placementForm.internalEmailNotification || null,
+                    // Permanent Employment Info
+                    salary: placementForm.salary || null,
+                    placement_fee_percent: placementForm.placementFeePercent || null,
+                    placement_fee_flat: placementForm.placementFeeFlat || null,
+                    days_guaranteed: placementForm.daysGuaranteed || null,
+                    // Contract Employment Info
+                    hours_per_day: placementForm.hoursPerDay || null,
+                    hours_of_operation: placementForm.hoursOfOperation || null,
+                    // Pay Rate Information
+                    pay_rate: placementForm.payRate || null,
+                    pay_rate_checked: placementForm.payRateChecked,
+                    effective_date: placementForm.effectiveDate || null,
+                    effective_date_checked: placementForm.effectiveDateChecked,
+                    overtime_exemption: placementForm.overtimeExemption === 'True'
                 })
             });
 
@@ -493,7 +521,18 @@ export default function JobView() {
                 internalEmailNotification: '',
                 candidate: '',
                 status: '',
-                startDate: ''
+                startDate: '',
+                salary: '',
+                placementFeePercent: '',
+                placementFeeFlat: '',
+                daysGuaranteed: '',
+                hoursPerDay: '',
+                hoursOfOperation: '',
+                payRate: '',
+                payRateChecked: false,
+                effectiveDate: '',
+                effectiveDateChecked: false,
+                overtimeExemption: 'False'
             });
         } catch (err) {
             console.error('Error creating placement:', err);
@@ -510,7 +549,18 @@ export default function JobView() {
             internalEmailNotification: '',
             candidate: '',
             status: '',
-            startDate: ''
+            startDate: '',
+            salary: '',
+            placementFeePercent: '',
+            placementFeeFlat: '',
+            daysGuaranteed: '',
+            hoursPerDay: '',
+            hoursOfOperation: '',
+            payRate: '',
+            payRateChecked: false,
+            effectiveDate: '',
+            effectiveDateChecked: false,
+            overtimeExemption: 'False'
         });
     };
 
@@ -1209,9 +1259,9 @@ export default function JobView() {
 
             {/* Add Placement Modal */}
             {showAddPlacementModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded shadow-xl max-w-md w-full mx-4 my-8">
-                        <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
+                    <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+                        <div className="bg-gray-100 p-4 border-b flex justify-between items-center sticky top-0 z-10">
                             <h2 className="text-lg font-semibold">Add Placement</h2>
                             <button
                                 onClick={handleClosePlacementModal}
@@ -1221,7 +1271,7 @@ export default function JobView() {
                             </button>
                         </div>
                         <div className="p-6">
-                            <div className="space-y-4">
+                            <div className="space-y-6">
                                 {/* Internal Email Notification */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1294,6 +1344,172 @@ export default function JobView() {
                                         className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         required
                                     />
+                                </div>
+
+                                {/* Permanent Employment Info Section */}
+                                <div className="border border-gray-300 rounded p-4 bg-white">
+                                    <h3 className="text-md font-semibold mb-4 flex items-center">
+                                        <span className="w-4 h-4 bg-green-500 rounded-full mr-2 flex-shrink-0"></span>
+                                        Permanent Employment Info
+                                    </h3>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Salary
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={placementForm.salary}
+                                                onChange={(e) => setPlacementForm(prev => ({ ...prev, salary: e.target.value }))}
+                                                placeholder="0"
+                                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Placement Fee (%)
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={placementForm.placementFeePercent}
+                                                onChange={(e) => setPlacementForm(prev => ({ ...prev, placementFeePercent: e.target.value }))}
+                                                placeholder="0"
+                                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Placement Fee (Flat)
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={placementForm.placementFeeFlat}
+                                                onChange={(e) => setPlacementForm(prev => ({ ...prev, placementFeeFlat: e.target.value }))}
+                                                placeholder="0"
+                                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Days Guaranteed
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={placementForm.daysGuaranteed}
+                                                onChange={(e) => setPlacementForm(prev => ({ ...prev, daysGuaranteed: e.target.value }))}
+                                                placeholder="0"
+                                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Contract Employment Info Section */}
+                                <div className="border border-gray-300 rounded p-4 bg-white">
+                                    <h3 className="text-md font-semibold mb-4 flex items-center">
+                                        <span className="w-4 h-4 bg-green-500 rounded-full mr-2 flex-shrink-0"></span>
+                                        Contract Employment Info
+                                    </h3>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Hours Per Day
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={placementForm.hoursPerDay}
+                                                onChange={(e) => setPlacementForm(prev => ({ ...prev, hoursPerDay: e.target.value }))}
+                                                placeholder=""
+                                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-1">
+                                                Hours of Operation
+                                            </label>
+                                            <input
+                                                type="text"
+                                                value={placementForm.hoursOfOperation}
+                                                onChange={(e) => setPlacementForm(prev => ({ ...prev, hoursOfOperation: e.target.value }))}
+                                                placeholder=""
+                                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Pay Rate Information Section */}
+                                <div className="border border-gray-300 rounded p-4 bg-white">
+                                    <h3 className="text-md font-semibold mb-4 flex items-center">
+                                        <span className="w-4 h-4 bg-green-500 rounded-full mr-2 flex-shrink-0"></span>
+                                        Pay Rate Information
+                                    </h3>
+                                    <div className="space-y-4">
+                                        <div className="flex items-center space-x-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={placementForm.payRateChecked}
+                                                onChange={(e) => setPlacementForm(prev => ({ ...prev, payRateChecked: e.target.checked }))}
+                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                            />
+                                            <label className="block text-sm font-medium text-gray-700 flex-1">
+                                                Pay Rate
+                                            </label>
+                                            <input
+                                                type="number"
+                                                value={placementForm.payRate}
+                                                onChange={(e) => setPlacementForm(prev => ({ ...prev, payRate: e.target.value }))}
+                                                placeholder="70"
+                                                className="w-32 p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div className="flex items-center space-x-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={placementForm.effectiveDateChecked}
+                                                onChange={(e) => setPlacementForm(prev => ({ ...prev, effectiveDateChecked: e.target.checked }))}
+                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                            />
+                                            <label className="block text-sm font-medium text-gray-700 flex-1">
+                                                Effective Date
+                                            </label>
+                                            <input
+                                                type="date"
+                                                value={placementForm.effectiveDate}
+                                                onChange={(e) => setPlacementForm(prev => ({ ...prev, effectiveDate: e.target.value }))}
+                                                className="w-40 p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-700 mb-2">
+                                                Overtime Exemption
+                                            </label>
+                                            <div className="flex space-x-4">
+                                                <label className="flex items-center space-x-2 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="overtimeExemption"
+                                                        value="True"
+                                                        checked={placementForm.overtimeExemption === 'True'}
+                                                        onChange={(e) => setPlacementForm(prev => ({ ...prev, overtimeExemption: e.target.value }))}
+                                                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                                    />
+                                                    <span className="text-sm text-gray-700">True</span>
+                                                </label>
+                                                <label className="flex items-center space-x-2 cursor-pointer">
+                                                    <input
+                                                        type="radio"
+                                                        name="overtimeExemption"
+                                                        value="False"
+                                                        checked={placementForm.overtimeExemption === 'False'}
+                                                        onChange={(e) => setPlacementForm(prev => ({ ...prev, overtimeExemption: e.target.value }))}
+                                                        className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                                    />
+                                                    <span className="text-sm text-gray-700">False</span>
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 

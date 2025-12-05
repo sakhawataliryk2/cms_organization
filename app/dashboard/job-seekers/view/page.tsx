@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import ActionDropdown from "@/components/ActionDropdown";
@@ -8,7 +8,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import { FaLinkedin, FaFacebookSquare } from "react-icons/fa";
 import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, type EmailMessage } from "@/lib/office365";
-import { FiUsers } from "react-icons/fi";
+import { FiUsers, FiUpload, FiFile, FiX } from "react-icons/fi";
 
 export default function JobSeekerView() {
   const router = useRouter();
@@ -27,8 +27,19 @@ export default function JobSeekerView() {
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
-  const [newNote, setNewNote] = useState("");
-  const [noteType, setNoteType] = useState("General Note");
+  
+  // Add Note form state
+  const [noteForm, setNoteForm] = useState({
+    text: '',
+    about: jobSeeker ? `${jobSeeker.id} ${jobSeeker.fullName}` : '',
+    copyNote: 'No',
+    replaceGeneralContactComments: false,
+    additionalReferences: '',
+    scheduleNextAction: 'None',
+    emailNotification: 'Internal User'
+  });
+  const [users, setUsers] = useState<any[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isOffice365Connected, setIsOffice365Connected] = useState(false);
 
   // Field management state
@@ -39,6 +50,15 @@ export default function JobSeekerView() {
   });
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
+
+  // Documents state
+  const [documents, setDocuments] = useState<Array<any>>([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [documentError, setDocumentError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Onboarding send modal state
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
@@ -183,8 +203,39 @@ Best regards`;
   useEffect(() => {
     if (jobSeeker && jobSeekerId) {
       fetchAvailableFields();
+      // Update note form about field when job seeker is loaded
+      setNoteForm(prev => ({ ...prev, about: `${jobSeeker.id} ${jobSeeker.fullName}` }));
+      // Fetch documents when job seeker is loaded
+      fetchDocuments(jobSeekerId);
     }
   }, [jobSeeker, jobSeekerId]);
+
+  // Fetch users for email notification
+  useEffect(() => {
+    if (showAddNote) {
+      fetchUsers();
+    }
+  }, [showAddNote]);
+
+  // Fetch users for email notification dropdown
+  const fetchUsers = async () => {
+    setIsLoadingUsers(true);
+    try {
+      const response = await fetch('/api/users/active', {
+        headers: {
+          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+        }
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setUsers(data.users || []);
+      }
+    } catch (err) {
+      console.error('Error fetching users:', err);
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
 
   // Fetch available fields from modify page (custom fields)
   const fetchAvailableFields = async () => {
@@ -242,6 +293,165 @@ Best regards`;
   // Close edit modal
   const handleCloseEditModal = () => {
     setEditingPanel(null);
+  };
+
+  // Fetch documents for the job seeker
+  const fetchDocuments = async (id: string) => {
+    setIsLoadingDocuments(true);
+    setDocumentError(null);
+
+    try {
+      const response = await fetch(`/api/job-seekers/${id}/documents`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch documents");
+      }
+
+      const data = await response.json();
+      setDocuments(data.documents || []);
+    } catch (err) {
+      console.error("Error fetching documents:", err);
+      setDocumentError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while fetching documents"
+      );
+    } finally {
+      setIsLoadingDocuments(false);
+    }
+  };
+
+  // Handle drag and drop
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const droppedFiles = e.dataTransfer.files;
+    if (droppedFiles.length > 0 && jobSeekerId) {
+      handleFileUpload(droppedFiles[0]);
+    }
+  };
+
+  // Handle file selection
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0 && jobSeekerId) {
+      handleFileUpload(e.target.files[0]);
+    }
+  };
+
+  // Handle file upload
+  const handleFileUpload = async (file: File) => {
+    if (!jobSeekerId) return;
+
+    // Validate file
+    if (file.size > 10 * 1024 * 1024) {
+      setUploadError('File size should be less than 10MB');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('document_name', file.name);
+      formData.append('document_type', 'General');
+
+      const response = await fetch(`/api/job-seekers/${jobSeekerId}/documents`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to upload document');
+      }
+
+      const data = await response.json();
+      
+      // Add the new document to the list
+      setDocuments([data.document, ...documents]);
+
+      // Reset file input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+
+      alert('Document uploaded successfully');
+    } catch (err) {
+      console.error('Error uploading document:', err);
+      const errorMessage = err instanceof Error ? err.message : 'An error occurred while uploading the document';
+      setUploadError(errorMessage);
+      alert(errorMessage);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // Handle delete document
+  const handleDeleteDocument = async (documentId: string) => {
+    if (!confirm("Are you sure you want to delete this document?")) return;
+
+    try {
+      const response = await fetch(`/api/job-seekers/${jobSeekerId}/documents/${documentId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to delete document");
+      }
+
+      // Remove the document from the list
+      setDocuments(documents.filter((doc) => doc.id !== documentId));
+
+      alert("Document deleted successfully");
+    } catch (err) {
+      console.error("Error deleting document:", err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while deleting the document"
+      );
+    }
+  };
+
+  // Trigger file input
+  const triggerFileInput = () => {
+    fileInputRef.current?.click();
   };
 
   // Function to fetch job seeker data with better error handling
@@ -343,6 +553,7 @@ Best regards`;
       // Now fetch notes and history
       fetchNotes(id);
       fetchHistory(id);
+      fetchDocuments(id);
     } catch (err) {
       console.error("Error fetching job seeker:", err);
       setError(
@@ -443,27 +654,29 @@ Best regards`;
   };
 
   // Handle adding a new note
+  // Handle adding a new note
   const handleAddNote = async () => {
-    if (!newNote.trim() || !jobSeekerId) return;
+    if (!noteForm.text.trim() || !jobSeekerId) return;
 
     try {
       const response = await fetch(`/api/job-seekers/${jobSeekerId}/notes`, {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
         },
         body: JSON.stringify({ 
-          text: newNote,
-          note_type: noteType 
-        }),
+          text: noteForm.text,
+          copy_note: noteForm.copyNote === 'Yes',
+          replace_general_contact_comments: noteForm.replaceGeneralContactComments,
+          additional_references: noteForm.additionalReferences,
+          schedule_next_action: noteForm.scheduleNextAction,
+          email_notification: noteForm.emailNotification
+        })
       });
 
       if (!response.ok) {
-        throw new Error("Failed to add note");
+        throw new Error('Failed to add note');
       }
 
       const data = await response.json();
@@ -472,16 +685,37 @@ Best regards`;
       setNotes([data.note, ...notes]);
 
       // Clear the form
-      setNewNote("");
-      setNoteType("General Note");
+      setNoteForm({
+        text: '',
+        about: jobSeeker ? `${jobSeeker.id} ${jobSeeker.fullName}` : '',
+        copyNote: 'No',
+        replaceGeneralContactComments: false,
+        additionalReferences: '',
+        scheduleNextAction: 'None',
+        emailNotification: 'Internal User'
+      });
       setShowAddNote(false);
 
       // Refresh history
       fetchHistory(jobSeekerId);
     } catch (err) {
-      console.error("Error adding note:", err);
-      alert("Failed to add note. Please try again.");
+      console.error('Error adding note:', err);
+      alert('Failed to add note. Please try again.');
     }
+  };
+
+  // Close add note modal
+  const handleCloseAddNoteModal = () => {
+    setShowAddNote(false);
+    setNoteForm({
+      text: '',
+      about: jobSeeker ? `${jobSeeker.id} ${jobSeeker.fullName}` : '',
+      copyNote: 'No',
+      replaceGeneralContactComments: false,
+      additionalReferences: '',
+      scheduleNextAction: 'None',
+      emailNotification: 'Internal User'
+    });
   };
 
   const handleGoBack = () => {
@@ -628,63 +862,17 @@ Best regards`;
   // Render notes tab content
   const renderNotesTab = () => (
     <div className="bg-white p-4 rounded shadow-sm">
-      {/* <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold">Job Seeker Notes</h2>
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg font-semibold">
+          Job Seeker Notes {notes.length > 0 && <span className="text-gray-500 font-normal">({notes.length})</span>}
+        </h2>
         <button
           onClick={() => setShowAddNote(true)}
           className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
         >
           Add Note
         </button>
-      </div> */}
-
-      {/* Add Note Form */}
-      {showAddNote && (
-        <div className="mb-6 p-4 bg-gray-50 rounded border">
-          <h3 className="font-medium mb-2">Add New Note</h3>
-          <div className="mb-3">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Note Type <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={noteType}
-              onChange={(e) => setNoteType(e.target.value)}
-              className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="General Note">General Note</option>
-              <option value="Phone Call">Phone Call</option>
-              <option value="Email">Email</option>
-              <option value="Interview">Interview</option>
-            </select>
-          </div>
-          <textarea
-            value={newNote}
-            onChange={(e) => setNewNote(e.target.value)}
-            placeholder="Enter your note here..."
-            className="w-full p-2 border rounded mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            rows={4}
-          />
-          <div className="flex justify-end space-x-2">
-            <button
-              onClick={() => {
-                setShowAddNote(false);
-                setNewNote("");
-                setNoteType("General Note");
-              }}
-              className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleAddNote}
-              className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-              disabled={!newNote.trim()}
-            >
-              Save Note
-            </button>
-          </div>
-        </div>
-      )}
+      </div>
 
       {/* Notes List */}
       {isLoadingNotes ? (
@@ -1259,12 +1447,126 @@ Best regards`;
           <div className="col-span-7">{renderModifyTab()}</div>
         )}
 
-        {/* Placeholder for other tabs */}
+        {/* Docs Tab */}
         {activeTab === "docs" && (
           <div className="col-span-7">
             <div className="bg-white p-4 rounded shadow-sm">
-              <h2 className="text-lg font-semibold mb-4">Documents</h2>
-              <p className="text-gray-500 italic">No documents available</p>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-semibold">Documents</h2>
+                <button
+                  onClick={triggerFileInput}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center space-x-2"
+                >
+                  <FiUpload size={16} />
+                  <span>Add Docs</span>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+                />
+              </div>
+
+              {/* Drag and Drop Area */}
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                  isDragging
+                    ? 'border-blue-500 bg-blue-50'
+                    : 'border-gray-300 bg-gray-50 hover:border-gray-400'
+                }`}
+              >
+                {isUploading ? (
+                  <div className="flex flex-col items-center">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mb-2"></div>
+                    <p className="text-gray-600">Uploading document...</p>
+                  </div>
+                ) : (
+                  <>
+                    <FiUpload className="mx-auto text-4xl text-gray-400 mb-4" />
+                    <p className="text-gray-600 mb-2">
+                      Drag and drop files here, or click "Add Docs" button above
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      Supported formats: PDF, DOC, DOCX, TXT, JPG, PNG (Max 10MB)
+                    </p>
+                    {uploadError && (
+                      <p className="text-red-500 text-sm mt-2">{uploadError}</p>
+                    )}
+                  </>
+                )}
+              </div>
+
+              {/* Documents List */}
+              {isLoadingDocuments ? (
+                <div className="flex justify-center py-4 mt-4">
+                  <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                </div>
+              ) : documentError ? (
+                <div className="text-red-500 py-4 mt-4">{documentError}</div>
+              ) : documents.length > 0 ? (
+                <div className="mt-6">
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-gray-100 border-b">
+                          <th className="text-left p-3 font-medium">Document Name</th>
+                          <th className="text-left p-3 font-medium">Type</th>
+                          <th className="text-left p-3 font-medium">Size</th>
+                          <th className="text-left p-3 font-medium">Created By</th>
+                          <th className="text-left p-3 font-medium">Created At</th>
+                          <th className="text-left p-3 font-medium">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {documents.map((doc) => (
+                          <tr key={doc.id} className="border-b hover:bg-gray-50">
+                            <td className="p-3">
+                              <div className="flex items-center space-x-2">
+                                <FiFile className="text-gray-400" />
+                                <span className="text-blue-600 hover:underline cursor-pointer">
+                                  {doc.document_name || doc.name || 'Untitled Document'}
+                                </span>
+                              </div>
+                            </td>
+                            <td className="p-3 text-gray-600">
+                              {doc.document_type || doc.type || 'General'}
+                            </td>
+                            <td className="p-3 text-gray-600">
+                              {doc.file_size ? `${(doc.file_size / 1024).toFixed(2)} KB` : '-'}
+                            </td>
+                            <td className="p-3 text-gray-600">
+                              {doc.created_by_name || 'Unknown'}
+                            </td>
+                            <td className="p-3 text-gray-600">
+                              {doc.created_at
+                                ? new Date(doc.created_at).toLocaleDateString()
+                                : '-'}
+                            </td>
+                            <td className="p-3">
+                              <button
+                                onClick={() => handleDeleteDocument(doc.id)}
+                                className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
+                                title="Delete document"
+                              >
+                                <FiX size={18} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-8 mt-4">
+                  <p className="text-gray-500 italic">No documents have been uploaded yet.</p>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1528,6 +1830,204 @@ Best regards`;
           </div>
         </div>
       )}
-      </div>
+
+      {/* Add Note Modal */}
+      {showAddNote && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <div className="flex items-center space-x-2">
+                <Image src="/file.svg" alt="Note" width={20} height={20} />
+                <h2 className="text-lg font-semibold">Add Note</h2>
+              </div>
+              <button
+                onClick={handleCloseAddNoteModal}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="space-y-4">
+                {/* Note Text Area */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Note Text
+                  </label>
+                  <textarea
+                    value={noteForm.text}
+                    onChange={(e) => setNoteForm(prev => ({ ...prev, text: e.target.value }))}
+                    placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
+                    className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={6}
+                  />
+                </div>
+
+                {/* About Section */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    About
+                  </label>
+                  <div className="relative">
+                    <div className="flex items-center border border-gray-300 rounded p-2 bg-white">
+                      <div className="w-6 h-6 rounded-full bg-orange-400 mr-2 flex-shrink-0"></div>
+                      <span className="flex-1 text-sm">{noteForm.about}</span>
+                      <button
+                        onClick={() => setNoteForm(prev => ({ ...prev, about: '' }))}
+                        className="ml-2 text-gray-500 hover:text-gray-700 text-xs"
+                      >
+                        CLEAR ALL X
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Action Section */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Action
+                  </label>
+                  <div className="border border-gray-300 rounded p-3 bg-gray-50">
+                    <div className="font-medium mb-3">Copy Note</div>
+                    <div className="flex space-x-2 mb-3">
+                      <button
+                        type="button"
+                        onClick={() => setNoteForm(prev => ({ ...prev, copyNote: 'No' }))}
+                        className={`px-4 py-2 rounded text-sm ${
+                          noteForm.copyNote === 'No'
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        No
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNoteForm(prev => ({ ...prev, copyNote: 'Yes' }))}
+                        className={`px-4 py-2 rounded text-sm ${
+                          noteForm.copyNote === 'Yes'
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                        }`}
+                      >
+                        Yes
+                      </button>
+                    </div>
+                    {noteForm.copyNote === 'Yes' && (
+                      <div className="mt-2">
+                        <label className="flex items-center space-x-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={noteForm.replaceGeneralContactComments}
+                            onChange={(e) => setNoteForm(prev => ({ ...prev, replaceGeneralContactComments: e.target.checked }))}
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          />
+                          <span className="text-sm text-gray-700">
+                            Replace the General Contact Comments with this note?
+                          </span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Additional References Section */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Additional References
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={noteForm.additionalReferences}
+                      onChange={(e) => setNoteForm(prev => ({ ...prev, additionalReferences: e.target.value }))}
+                      placeholder="Reference other records using #"
+                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
+                    />
+                    <span className="absolute right-2 top-2 text-gray-400 text-sm">Q</span>
+                  </div>
+                </div>
+
+                {/* Schedule Next Action Section */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Schedule Next Action
+                  </label>
+                  <div className="flex space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => setNoteForm(prev => ({ ...prev, scheduleNextAction: 'None' }))}
+                      className={`px-4 py-2 rounded text-sm ${
+                        noteForm.scheduleNextAction === 'None'
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      None
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNoteForm(prev => ({ ...prev, scheduleNextAction: 'Appointment' }))}
+                      className={`px-4 py-2 rounded text-sm ${
+                        noteForm.scheduleNextAction === 'Appointment'
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      Appointment
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNoteForm(prev => ({ ...prev, scheduleNextAction: 'Task' }))}
+                      className={`px-4 py-2 rounded text-sm ${
+                        noteForm.scheduleNextAction === 'Task'
+                          ? 'bg-blue-500 text-white'
+                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                      }`}
+                    >
+                      Task
+                    </button>
+                  </div>
+                </div>
+
+                {/* Email Notification Section */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                    <span className="mr-2">📧</span>
+                    Email Notification
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={noteForm.emailNotification}
+                      onChange={(e) => setNoteForm(prev => ({ ...prev, emailNotification: e.target.value }))}
+                      placeholder="Internal User"
+                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Form Actions */}
+              <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
+                <button
+                  onClick={handleCloseAddNoteModal}
+                  className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium"
+                >
+                  CANCEL
+                </button>
+                <button
+                  onClick={handleAddNote}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  disabled={!noteForm.text.trim()}
+                >
+                  SAVE
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
