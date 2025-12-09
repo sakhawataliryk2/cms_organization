@@ -764,7 +764,7 @@ export default function Dashboard() {
                 )}
 
                 {/* Rules of Engagement */}
-                <div className="bg-white rounded-md shadow overflow-hidden">
+                {/* <div className="bg-white rounded-md shadow overflow-hidden">
                     <div className="p-2 border-b border-gray-200">
                         <h2 className="text-lg font-semibold">Rules of engagement</h2>
                     </div>
@@ -781,7 +781,7 @@ export default function Dashboard() {
                             </div>
                         </button>
                     </div>
-                </div>
+                </div> */}
             </div>
 
             {/* Activity Report Section */}

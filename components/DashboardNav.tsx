@@ -703,8 +703,21 @@ export default function DashboardNav() {
         {/* Flexible spacer */}
         <div className="flex-grow"></div>
 
+        {/* T.B.I Button - Static, always visible */}
+        <div className="p-4 border-t border-slate-700">
+          <button
+            className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold text-2xl rounded transition-colors"
+            onClick={() => {
+              // Add your T.B.I functionality here
+              console.log('T.B.I clicked');
+            }}
+          >
+            T.B.I
+          </button>
+        </div>
+
         {/* Footer with "Parse" button - always visible */}
-        <div className="p-4 border-t border-slate-700 mt-auto">
+        <div className="p-4 border-t border-slate-700">
           <div className="flex justify-between items-center">
             <span className="text-blue-300 text-sm">Parse</span>
             <button

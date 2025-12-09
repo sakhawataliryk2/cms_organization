@@ -559,7 +559,7 @@ export default function AddJob() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
             {/* Standard Job Fields */}
-            {formFields
+            {/* {formFields
                             .filter(field => field.visible)
                             .map((field, index) => (
                                 <div key={field.id} className="flex items-center">
@@ -642,7 +642,7 @@ export default function AddJob() {
                                         )}
                                     </div>
             </div>
-             ))}
+             ))} */}
 
             {/* Custom Fields Section */}
             {customFields.length > 0 && (

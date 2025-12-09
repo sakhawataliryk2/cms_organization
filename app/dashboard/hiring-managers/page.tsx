@@ -351,6 +351,30 @@ export default function HiringManagerList() {
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                 <button
+                                    onClick={() => handleSort('status')}
+                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                                >
+                                    <span>Status</span>
+                                    <div className="flex flex-col">
+                                        <svg 
+                                            className={`w-3 h-3 ${sortField === 'status' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
+                                        </svg>
+                                        <svg 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'status' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            fill="currentColor" 
+                                            viewBox="0 0 20 20"
+                                        >
+                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
+                                        </svg>
+                                    </div>
+                                </button>
+                            </th>
+                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                <button
                                     onClick={() => handleSort('title')}
                                     className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
                                 >
@@ -365,30 +389,6 @@ export default function HiringManagerList() {
                                         </svg>
                                         <svg 
                                             className={`w-3 h-3 -mt-1 ${sortField === 'title' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
-                                            fill="currentColor" 
-                                            viewBox="0 0 20 20"
-                                        >
-                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                                        </svg>
-                                    </div>
-                                </button>
-                            </th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                <button
-                                    onClick={() => handleSort('organization_name')}
-                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
-                                >
-                                    <span>Organization</span>
-                                    <div className="flex flex-col">
-                                        <svg 
-                                            className={`w-3 h-3 ${sortField === 'organization_name' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
-                                            fill="currentColor" 
-                                            viewBox="0 0 20 20"
-                                        >
-                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                                        </svg>
-                                        <svg 
-                                            className={`w-3 h-3 -mt-1 ${sortField === 'organization_name' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
                                             fill="currentColor" 
                                             viewBox="0 0 20 20"
                                         >
@@ -447,20 +447,20 @@ export default function HiringManagerList() {
                             </th>
                             <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                 <button
-                                    onClick={() => handleSort('status')}
+                                    onClick={() => handleSort('created_by_name')}
                                     className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
                                 >
-                                    <span>Status</span>
+                                    <span>Owner</span>
                                     <div className="flex flex-col">
                                         <svg 
-                                            className={`w-3 h-3 ${sortField === 'status' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            className={`w-3 h-3 ${sortField === 'created_by_name' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
                                             fill="currentColor" 
                                             viewBox="0 0 20 20"
                                         >
                                             <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
                                         </svg>
                                         <svg 
-                                            className={`w-3 h-3 -mt-1 ${sortField === 'status' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
+                                            className={`w-3 h-3 -mt-1 ${sortField === 'created_by_name' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
                                             fill="currentColor" 
                                             viewBox="0 0 20 20"
                                         >
@@ -485,30 +485,6 @@ export default function HiringManagerList() {
                                         </svg>
                                         <svg 
                                             className={`w-3 h-3 -mt-1 ${sortField === 'created_at' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
-                                            fill="currentColor" 
-                                            viewBox="0 0 20 20"
-                                        >
-                                            <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                                        </svg>
-                                    </div>
-                                </button>
-                            </th>
-                            <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                                <button
-                                    onClick={() => handleSort('created_by_name')}
-                                    className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
-                                >
-                                    <span>Owner</span>
-                                    <div className="flex flex-col">
-                                        <svg 
-                                            className={`w-3 h-3 ${sortField === 'created_by_name' && sortDirection === 'asc' ? 'text-blue-600' : 'text-gray-400'}`} 
-                                            fill="currentColor" 
-                                            viewBox="0 0 20 20"
-                                        >
-                                            <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                                        </svg>
-                                        <svg 
-                                            className={`w-3 h-3 -mt-1 ${sortField === 'created_by_name' && sortDirection === 'desc' ? 'text-blue-600' : 'text-gray-400'}`} 
                                             fill="currentColor" 
                                             viewBox="0 0 20 20"
                                         >
@@ -546,11 +522,13 @@ export default function HiringManagerList() {
                                             {hm.full_name || `${hm.last_name}, ${hm.first_name}`}
                                         </div>
                                     </td>
+                                    <td className="px-6 py-4 whitespace-nowrap">
+                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(hm.status)}`}>
+                                            {hm.status}
+                                        </span>
+                                    </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         {hm.title || 'Not specified'}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <div className="text-sm text-blue-600">{hm.organization_name || 'Not specified'}</div>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         {hm.email || 'Not provided'}
@@ -558,22 +536,17 @@ export default function HiringManagerList() {
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         {hm.phone || 'Not provided'}
                                     </td>
-                                    <td className="px-6 py-4 whitespace-nowrap">
-                                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(hm.status)}`}>
-                                            {hm.status}
-                                        </span>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                                        {hm.created_by_name || 'Unknown'}
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                         {formatDate(hm.created_at)}
-                                    </td>
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                        {hm.created_by_name || 'Unknown'}
                                     </td>
                                 </tr>
                             ))
                         ) : (
                             <tr>
-                                <td colSpan={10} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                                <td colSpan={9} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
                                     {searchTerm ? 'No hiring managers found matching your search.' : 'No hiring managers found. Click "Add Hiring Manager" to create one.'}
                                 </td>
                             </tr>

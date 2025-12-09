@@ -1586,7 +1586,7 @@ export default function JobView() {
                                 </div>
 
                                 {/* Action Section */}
-                                <div>
+                                {/* <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-2">
                                         Action
                                     </label>
@@ -1632,7 +1632,7 @@ export default function JobView() {
                                             </div>
                                         )}
                                     </div>
-                                </div>
+                                </div> */}
 
                                 {/* Additional References Section */}
                                 <div>
@@ -1652,7 +1652,7 @@ export default function JobView() {
                                 </div>
 
                                 {/* Schedule Next Action Section */}
-                                <div>
+                                {/* <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-2">
                                         Schedule Next Action
                                     </label>
@@ -1691,7 +1691,7 @@ export default function JobView() {
                                             Task
                                         </button>
                                     </div>
-                                </div>
+                                </div> */}
 
                                 {/* Email Notification Section */}
                                 <div>
@@ -1700,13 +1700,24 @@ export default function JobView() {
                                         Email Notification
                                     </label>
                                     <div className="relative">
-                                        <input
-                                            type="text"
-                                            value={noteForm.emailNotification}
-                                            onChange={(e) => setNoteForm(prev => ({ ...prev, emailNotification: e.target.value }))}
-                                            placeholder="Internal User"
-                                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        />
+                                        {isLoadingUsers ? (
+                                            <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                                                Loading users...
+                                            </div>
+                                        ) : (
+                                            <select
+                                                value={noteForm.emailNotification}
+                                                onChange={(e) => setNoteForm(prev => ({ ...prev, emailNotification: e.target.value }))}
+                                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            >
+                                                <option value="Internal User">Internal User</option>
+                                                {users.map((user) => (
+                                                    <option key={user.id} value={user.name || user.email}>
+                                                        {user.name || user.email}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        )}
                                     </div>
                                 </div>
                             </div>

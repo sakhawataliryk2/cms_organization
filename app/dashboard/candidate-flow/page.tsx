@@ -30,7 +30,7 @@ export default function CandidateFlowDashboard() {
             id: 'prescreened',
             title: 'Candidates PreScreened',
             color: 'bg-green-200',
-            candidates: Array.from({ length: 5 }, (_, i) => ({
+            candidates: Array.from({ length: 1 }, (_, i) => ({
                 id: i + 1,
                 name: 'Candidate Name',
                 jobId: 'Job ID #'
@@ -40,7 +40,7 @@ export default function CandidateFlowDashboard() {
             id: 'submitted',
             title: 'Candidates Submitted',
             color: 'bg-gray-400',
-            candidates: Array.from({ length: 5 }, (_, i) => ({
+            candidates: Array.from({ length: 1 }, (_, i) => ({
                 id: i + 101,
                 name: 'Candidate Name',
                 jobId: 'Job ID #'
@@ -50,7 +50,7 @@ export default function CandidateFlowDashboard() {
             id: 'client-submitted',
             title: 'Client Submitted',
             color: 'bg-green-300',
-            candidates: Array.from({ length: 5 }, (_, i) => ({
+            candidates: Array.from({ length: 1 }, (_, i) => ({
                 id: i + 201,
                 name: 'Candidate Name',
                 jobId: 'Job ID #'
@@ -60,7 +60,7 @@ export default function CandidateFlowDashboard() {
             id: 'interviews',
             title: 'Candidates with Interviews',
             color: 'bg-orange-300',
-            candidates: Array.from({ length: 4 }, (_, i) => ({
+            candidates: Array.from({ length: 1 }, (_, i) => ({
                 id: i + 301,
                 name: 'Candidate Name',
                 jobId: 'Job ID #'
@@ -70,7 +70,7 @@ export default function CandidateFlowDashboard() {
             id: 'offer',
             title: 'Candidates with Offer',
             color: 'bg-green-400',
-            candidates: Array.from({ length: 3 }, (_, i) => ({
+            candidates: Array.from({ length: 1 }, (_, i) => ({
                 id: i + 401,
                 name: 'Candidate Name',
                 jobId: 'Job ID #'
@@ -80,7 +80,7 @@ export default function CandidateFlowDashboard() {
             id: 'starting',
             title: 'Candidates Starting',
             color: 'bg-blue-200',
-            candidates: Array.from({ length: 3 }, (_, i) => ({
+            candidates: Array.from({ length: 1 }, (_, i) => ({
                 id: i + 501,
                 name: 'Candidate Name',
                 jobId: 'Job ID #'
@@ -110,7 +110,7 @@ export default function CandidateFlowDashboard() {
 
     // Handle close/return to home
     const handleClose = () => {
-        router.push('/dashboard');
+        router.push('/home');
     };
 
     // Function to render a candidate card
@@ -141,7 +141,7 @@ export default function CandidateFlowDashboard() {
             </button>
             
             {/* Main content area */}
-            <div className="flex-grow overflow-auto">
+            <div className="flex-grow overflow-auto h-screen">
                 <div className="flex overflow-x-auto min-h-full p-2 pb-8">
                     {columns.map(column => (
                         <div key={column.id} className="flex-shrink-0 w-36 mx-2">

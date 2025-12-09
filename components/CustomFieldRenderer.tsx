@@ -30,6 +30,27 @@ export default function CustomFieldRenderer({
   onChange,
   className = "w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500",
 }: CustomFieldRendererProps) {
+  // Track if we've auto-populated the date to prevent infinite loops
+  const hasAutoFilledRef = React.useRef(false);
+
+  // Auto-populate today's date for "Date Added" fields
+  React.useEffect(() => {
+    if (field.field_type === "date" && !value && !hasAutoFilledRef.current) {
+      
+        // Get today's date in YYYY-MM-DD format
+        const today = new Date();
+        const formattedDate = today.toISOString().split("T")[0];
+        // Set the value via onChange
+        onChange(field.field_name, formattedDate);
+        hasAutoFilledRef.current = true;
+     
+    }
+    // Reset the ref if value changes externally (e.g., when editing)
+    if (value) {
+      hasAutoFilledRef.current = false;
+    }
+  }, [field.field_type, field.field_label, field.field_name, value, onChange]);
+
   const normalizedOptions = React.useMemo<string[]>(() => {
     if (!field.options) {
       return [];

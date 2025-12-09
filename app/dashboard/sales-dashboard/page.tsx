@@ -2,16 +2,92 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
-import { FiX, FiTrendingUp, FiDollarSign, FiUsers, FiBriefcase } from 'react-icons/fi';
+import { FiX, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import { useRouter } from 'next/navigation';
+import { HiEye } from 'react-icons/hi';
+
+interface ApplicationTile {
+    id: number;
+    companyName: string;
+    jobId: string;
+    jobName: string;
+    viewCount: number;
+    candidateId?: number;
+}
+
+interface Column {
+    id: string;
+    title: string;
+    color: string;
+    applications: ApplicationTile[];
+}
 
 export default function SalesDashboard() {
     const { user } = useAuth();
     const router = useRouter();
+    const [isSaving, setIsSaving] = useState(false);
+
+    // Sample data matching the screenshot design
+    const [columns, setColumns] = useState<Column[]>([
+        {
+            id: 'submission',
+            title: 'Submission',
+            color: 'bg-green-200', // Light green
+            applications: [
+                { id: 1, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 5 },
+                { id: 2, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 3 },
+                { id: 3, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 7 },
+                { id: 4, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 2 },
+                { id: 5, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 4 },
+            ]
+        },
+        {
+            id: 'client-submitted',
+            title: 'Client Submitted',
+            color: 'bg-blue-200', // Light blue
+            applications: [
+                { id: 6, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 8 },
+                { id: 7, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 6 },
+                { id: 8, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 9 },
+                { id: 9, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 1 },
+            ]
+        },
+        {
+            id: 'interview',
+            title: 'Interview',
+            color: 'bg-green-500', // Green (darker)
+            applications: [
+                { id: 10, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 12 },
+                { id: 11, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 15 },
+                { id: 12, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 10 },
+            ]
+        },
+        {
+            id: 'offer-extended',
+            title: 'Offer Extended',
+            color: 'bg-orange-400', // Orange
+            applications: [
+                { id: 13, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 20 },
+                { id: 14, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 18 },
+                { id: 15, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 22 },
+                { id: 16, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 19 },
+            ]
+        },
+        {
+            id: 'placement',
+            title: 'Placement',
+            color: 'bg-green-700', // Dark green
+            applications: [
+                { id: 17, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 25 },
+                { id: 18, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 30 },
+                { id: 19, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 28 },
+            ]
+        }
+    ]);
 
     // Handle close/return to home
     const handleClose = () => {
-        router.push('/dashboard');
+        router.push('/home');
     };
 
     // Handle previous navigation
@@ -19,29 +95,66 @@ export default function SalesDashboard() {
         router.push('/dashboard/candidate-flow');
     };
 
-    // Sample sales data
-    const salesMetrics = [
-        { label: 'Total Revenue', value: '$125,000', change: '+12.5%', trend: 'up' },
-        { label: 'Active Deals', value: '24', change: '+3', trend: 'up' },
-        { label: 'Conversion Rate', value: '18.5%', change: '+2.1%', trend: 'up' },
-        { label: 'Avg Deal Size', value: '$5,200', change: '-$200', trend: 'down' },
-    ];
+    // Handle tile click - navigate to candidate profile
+    const handleTileClick = (application: ApplicationTile) => {
+        if (application.candidateId) {
+            router.push(`/dashboard/job-seekers/view?id=${application.candidateId}`);
+        } else {
+            // If no candidate ID, you could navigate to a generic page or show a message
+            console.log('Navigate to candidate profile for:', application);
+        }
+    };
 
-    const recentDeals = [
-        { id: 1, company: 'Tech Corp', value: '$15,000', stage: 'Proposal', probability: '75%' },
-        { id: 2, company: 'Startup Inc', value: '$8,500', stage: 'Negotiation', probability: '60%' },
-        { id: 3, company: 'Consulting Firm', value: '$22,000', stage: 'Closed Won', probability: '100%' },
-        { id: 4, company: 'Finance Co', value: '$12,000', stage: 'Qualified', probability: '40%' },
-    ];
+    // Handle save
+    const handleSave = async () => {
+        setIsSaving(true);
+        try {
+            // Save logic here - update application stages
+            // This would typically make an API call to save the current state
+            await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API call
+            alert('Changes saved successfully');
+        } catch (error) {
+            console.error('Error saving:', error);
+            alert('Error saving changes');
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
-    const topPerformers = [
-        { name: 'John Smith', revenue: '$45,000', deals: 8 },
-        { name: 'Jane Doe', revenue: '$38,000', deals: 6 },
-        { name: 'Mike Johnson', revenue: '$32,000', deals: 5 },
-    ];
+    // Handle moving application between columns (drag and drop would be implemented here)
+    const moveApplication = (applicationId: number, fromColumnId: string, toColumnId: string) => {
+        setColumns(prevColumns => {
+            const newColumns = [...prevColumns];
+            const fromColumn = newColumns.find(col => col.id === fromColumnId);
+            const toColumn = newColumns.find(col => col.id === toColumnId);
+            
+            if (!fromColumn || !toColumn) return prevColumns;
+
+            const application = fromColumn.applications.find(app => app.id === applicationId);
+            if (!application) return prevColumns;
+
+            // Remove from source column
+            fromColumn.applications = fromColumn.applications.filter(app => app.id !== applicationId);
+            
+            // Add to target column
+            toColumn.applications.push(application);
+
+            // If moving to Placement, trigger placement actions
+            if (toColumnId === 'placement') {
+                // These actions would be triggered:
+                // 1. Force note to be entered
+                // 2. Automatically add note to Candidate record and Job order
+                // 3. Force task to be scheduled
+                // 4. Send email to Account Manager and recruiter
+                console.log('Application moved to Placement - triggering placement actions');
+            }
+
+            return newColumns;
+        });
+    };
 
     return (
-        <div className="flex flex-col h-full relative">
+        <div className="flex flex-col h-screen relative bg-gray-100">
             {/* X button in top right corner */}
             <button
                 onClick={handleClose}
@@ -51,117 +164,86 @@ export default function SalesDashboard() {
                 <FiX size={24} />
             </button>
 
-            {/* Header */}
-            <div className="bg-white border-b border-gray-300 p-4 mb-4">
-                <h1 className="text-2xl font-bold text-gray-800">Sales Dashboard</h1>
-                <p className="text-gray-600 mt-1">Overview of sales performance and metrics</p>
-            </div>
-
-            {/* Main content */}
-            <div className="flex-grow overflow-auto p-4">
-                {/* Sales Metrics Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                    {salesMetrics.map((metric, index) => (
-                        <div key={index} className="bg-white rounded-lg shadow p-4 border border-gray-200">
-                            <div className="flex items-center justify-between mb-2">
-                                <h3 className="text-sm font-medium text-gray-600">{metric.label}</h3>
-                                {metric.trend === 'up' ? (
-                                    <FiTrendingUp className="text-green-500" size={20} />
-                                ) : (
-                                    <FiTrendingUp className="text-red-500 rotate-180" size={20} />
-                                )}
+            {/* Main Kanban Board */}
+            <div className="flex-grow overflow-x-auto overflow-y-hidden p-4">
+                <div className="flex gap-4 h-full min-w-max">
+                    {columns.map((column) => (
+                        <div
+                            key={column.id}
+                            className="flex-shrink-0 w-64 flex flex-col"
+                        >
+                            {/* Column Header */}
+                            <div className="bg-white rounded-t-lg p-3 border-b-2 border-gray-300">
+                                <h2 className="text-lg font-semibold text-gray-800 text-center">
+                                    {column.title}
+                                </h2>
                             </div>
-                            <div className="text-2xl font-bold text-gray-800 mb-1">{metric.value}</div>
-                            <div className={`text-sm ${metric.trend === 'up' ? 'text-green-600' : 'text-red-600'}`}>
-                                {metric.change}
+
+                            {/* Column Content */}
+                            <div className="flex-1 bg-gray-50 rounded-b-lg p-3 overflow-y-auto space-y-3">
+                                {column.applications.map((application) => (
+                                    <div
+                                        key={application.id}
+                                        onClick={() => handleTileClick(application)}
+                                        className={`${column.color} rounded-lg p-4 cursor-pointer hover:shadow-lg transition-all transform hover:scale-105`}
+                                    >
+                                        <div className="text-gray-800 font-medium mb-1">
+                                            {application.companyName}
+                                        </div>
+                                        <div className="text-gray-700 text-sm mb-1">
+                                            {application.jobId}
+                                        </div>
+                                        <div className="text-gray-800 text-sm font-semibold mb-2">
+                                            {application.jobName}
+                                        </div>
+                                        <div className="flex items-center justify-end text-gray-700">
+                                            <HiEye className="mr-1" size={16} />
+                                            <span className="text-sm font-medium">#{application.viewCount}</span>
+                                        </div>
+                                    </div>
+                                ))}
                             </div>
                         </div>
                     ))}
                 </div>
-
-                {/* Content Grid */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Recent Deals */}
-                    <div className="bg-white rounded-lg shadow border border-gray-200">
-                        <div className="p-4 border-b border-gray-200">
-                            <h2 className="text-lg font-semibold text-gray-800 flex items-center">
-                                <FiBriefcase className="mr-2" />
-                                Recent Deals
-                            </h2>
-                        </div>
-                        <div className="p-4">
-                            <div className="space-y-3">
-                                {recentDeals.map((deal) => (
-                                    <div key={deal.id} className="flex items-center justify-between p-3 bg-gray-50 rounded hover:bg-gray-100 transition-colors">
-                                        <div className="flex-1">
-                                            <div className="font-medium text-gray-800">{deal.company}</div>
-                                            <div className="text-sm text-gray-600">{deal.stage}</div>
-                                        </div>
-                                        <div className="text-right">
-                                            <div className="font-semibold text-gray-800">{deal.value}</div>
-                                            <div className="text-sm text-gray-600">{deal.probability}</div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Top Performers */}
-                    <div className="bg-white rounded-lg shadow border border-gray-200">
-                        <div className="p-4 border-b border-gray-200">
-                            <h2 className="text-lg font-semibold text-gray-800 flex items-center">
-                                <FiUsers className="mr-2" />
-                                Top Performers
-                            </h2>
-                        </div>
-                        <div className="p-4">
-                            <div className="space-y-3">
-                                {topPerformers.map((performer, index) => (
-                                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded hover:bg-gray-100 transition-colors">
-                                        <div className="flex items-center">
-                                            <div className="w-8 h-8 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold mr-3">
-                                                {performer.name.charAt(0)}
-                                            </div>
-                                            <div>
-                                                <div className="font-medium text-gray-800">{performer.name}</div>
-                                                <div className="text-sm text-gray-600">{performer.deals} deals</div>
-                                            </div>
-                                        </div>
-                                        <div className="font-semibold text-gray-800">{performer.revenue}</div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                {/* Sales Chart Placeholder */}
-                <div className="mt-6 bg-white rounded-lg shadow border border-gray-200 p-6">
-                    <h2 className="text-lg font-semibold text-gray-800 mb-4 flex items-center">
-                        <FiTrendingUp className="mr-2" />
-                        Sales Trend
-                    </h2>
-                    <div className="h-64 bg-gray-50 rounded flex items-center justify-center border-2 border-dashed border-gray-300">
-                        <div className="text-center text-gray-500">
-                            <FiDollarSign size={48} className="mx-auto mb-2" />
-                            <p>Sales chart visualization</p>
-                            <p className="text-sm mt-1">Chart component would be integrated here</p>
-                        </div>
-                    </div>
-                </div>
             </div>
 
-            {/* Navigation buttons */}
-            <div className="flex justify-end p-4 border-t border-gray-300 bg-white">
-                <div className="flex space-x-4">
+            {/* Navigation buttons at bottom */}
+            <div className="flex justify-between items-center p-4 border-t border-gray-300 bg-white">
+                {/* Left side - Previous button */}
+                <div className="flex items-center space-x-4">
                     <div className="text-right">
                         <div className="text-lg mb-1 text-gray-700">Previous</div>
                         <button
                             onClick={handlePrevious}
                             className="bg-teal-600 hover:bg-teal-700 text-white w-24 h-10 rounded flex items-center justify-center transition-colors"
                         >
-                            <span className="transform -translate-x-1">◀</span>
+                            <FiChevronLeft size={20} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Right side - Save and navigation arrows */}
+                <div className="flex items-center space-x-4">
+                    <button
+                        onClick={handleSave}
+                        disabled={isSaving}
+                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 h-10 rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isSaving ? 'Saving...' : 'SAVE'}
+                    </button>
+                    <div className="flex items-center space-x-2">
+                        <button
+                            className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors"
+                            aria-label="Previous page"
+                        >
+                            <FiChevronLeft size={20} />
+                        </button>
+                        <button
+                            className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors"
+                            aria-label="Next page"
+                        >
+                            <FiChevronRight size={20} />
                         </button>
                     </div>
                 </div>
@@ -169,4 +251,3 @@ export default function SalesDashboard() {
         </div>
     );
 }
-
