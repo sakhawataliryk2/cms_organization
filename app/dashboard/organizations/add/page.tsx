@@ -204,6 +204,7 @@ export default function AddOrganization() {
   }, [organizationId, customFieldsLoading, customFields.length, fetchOrganization]);
   
   // Removed console.logs from component level to prevent excessive logging on every render
+  //console.log("Custom Fields:", customFields);
 
   const handleChange = (
     e: React.ChangeEvent<
