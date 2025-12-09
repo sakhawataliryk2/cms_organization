@@ -38,6 +38,7 @@ export default function CustomFieldRenderer({
     if (field.field_type === "date" && !value && !hasAutoFilledRef.current) {
       
         // Get today's date in YYYY-MM-DD format
+        //console.log("Field name:", field.field_name);
         const today = new Date();
         const formattedDate = today.toISOString().split("T")[0];
         // Set the value via onChange
