@@ -25,6 +25,7 @@ export default function JobView() {
     const [isLoadingNotes, setIsLoadingNotes] = useState(false);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
     const [showAddNote, setShowAddNote] = useState(false);
+    const [noteTypeFilter, setNoteTypeFilter] = useState<string>('');
     
     // Add Note form state
     const [noteForm, setNoteForm] = useState({
@@ -53,7 +54,7 @@ export default function JobView() {
     // Add Placement modal state
     const [showAddPlacementModal, setShowAddPlacementModal] = useState(false);
     const [placementForm, setPlacementForm] = useState({
-        internalEmailNotification: '',
+        internalEmailNotification: [] as string[], // Changed to array for multi-select
         candidate: '',
         status: '',
         startDate: '',
@@ -72,6 +73,8 @@ export default function JobView() {
         effectiveDateChecked: false,
         overtimeExemption: 'False'
     });
+    const [placementUsers, setPlacementUsers] = useState<any[]>([]);
+    const [isLoadingPlacementUsers, setIsLoadingPlacementUsers] = useState(false);
     const [jobSeekers, setJobSeekers] = useState<any[]>([]);
     const [isLoadingJobSeekers, setIsLoadingJobSeekers] = useState(false);
     const [isSavingPlacement, setIsSavingPlacement] = useState(false);
@@ -447,6 +450,7 @@ export default function JobView() {
         } else if (action === 'add-placement') {
             setShowAddPlacementModal(true);
             fetchJobSeekers();
+            fetchPlacementUsers();
         }
     };
 
@@ -467,6 +471,26 @@ export default function JobView() {
             console.error('Error fetching job seekers:', err);
         } finally {
             setIsLoadingJobSeekers(false);
+        }
+    };
+
+    // Fetch active users for placement email notification
+    const fetchPlacementUsers = async () => {
+        setIsLoadingPlacementUsers(true);
+        try {
+            const response = await fetch('/api/users/active', {
+                headers: {
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setPlacementUsers(data.users || []);
+            }
+        } catch (err) {
+            console.error('Error fetching users:', err);
+        } finally {
+            setIsLoadingPlacementUsers(false);
         }
     };
 
@@ -491,7 +515,9 @@ export default function JobView() {
                     job_seeker_id: placementForm.candidate,
                     status: placementForm.status,
                     start_date: placementForm.startDate,
-                    internal_email_notification: placementForm.internalEmailNotification || null,
+                    internal_email_notification: Array.isArray(placementForm.internalEmailNotification) 
+                        ? placementForm.internalEmailNotification.join(',') 
+                        : placementForm.internalEmailNotification || null,
                     // Permanent Employment Info
                     salary: placementForm.salary || null,
                     placement_fee_percent: placementForm.placementFeePercent || null,
@@ -518,7 +544,7 @@ export default function JobView() {
             alert('Placement created successfully!');
             setShowAddPlacementModal(false);
             setPlacementForm({
-                internalEmailNotification: '',
+                internalEmailNotification: [],
                 candidate: '',
                 status: '',
                 startDate: '',
@@ -546,7 +572,7 @@ export default function JobView() {
     const handleClosePlacementModal = () => {
         setShowAddPlacementModal(false);
         setPlacementForm({
-            internalEmailNotification: '',
+            internalEmailNotification: [],
             candidate: '',
             status: '',
             startDate: '',
@@ -561,6 +587,24 @@ export default function JobView() {
             effectiveDate: '',
             effectiveDateChecked: false,
             overtimeExemption: 'False'
+        });
+    };
+
+    // Handle user selection for placement email notification
+    const handleUserSelection = (userId: string) => {
+        setPlacementForm(prev => {
+            const currentSelection = prev.internalEmailNotification || [];
+            if (currentSelection.includes(userId)) {
+                return {
+                    ...prev,
+                    internalEmailNotification: currentSelection.filter(id => id !== userId)
+                };
+            } else {
+                return {
+                    ...prev,
+                    internalEmailNotification: [...currentSelection, userId]
+                };
+            }
         });
     };
 
@@ -655,6 +699,26 @@ export default function JobView() {
             ) : (
                 <p className="text-gray-500 italic">No notes have been added yet.</p>
             )}
+
+            {/* Note Type Dropdown */}
+            <div className="mt-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Note Type
+                </label>
+                <select
+                    value={noteTypeFilter}
+                    onChange={(e) => setNoteTypeFilter(e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                    <option value="">Select note type</option>
+                    <option value="General Note">General Note</option>
+                    <option value="Client Note">Client Note</option>
+                    <option value="Candidate Note">Candidate Note</option>
+                    <option value="Job Note">Job Note</option>
+                    <option value="Internal Note">Internal Note</option>
+                    <option value="Follow-up Note">Follow-up Note</option>
+                </select>
+            </div>
         </div>
     );
 
@@ -1262,7 +1326,7 @@ export default function JobView() {
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
                     <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
                         <div className="bg-gray-100 p-4 border-b flex justify-between items-center sticky top-0 z-10">
-                            <h2 className="text-lg font-semibold">Add Placement</h2>
+                            <h2 className="text-lg font-semibold">Internal Email Notification</h2>
                             <button
                                 onClick={handleClosePlacementModal}
                                 className="p-1 rounded hover:bg-gray-200"
@@ -1272,18 +1336,68 @@ export default function JobView() {
                         </div>
                         <div className="p-6">
                             <div className="space-y-6">
-                                {/* Internal Email Notification */}
+                                {/* Internal Email Notification - Multi-select dropdown */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
                                         Internal Email Notification
                                     </label>
-                                    <input
-                                        type="email"
-                                        value={placementForm.internalEmailNotification}
-                                        onChange={(e) => setPlacementForm(prev => ({ ...prev, internalEmailNotification: e.target.value }))}
-                                        placeholder="Enter email address"
-                                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    />
+                                    {isLoadingPlacementUsers ? (
+                                        <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                                            Loading users...
+                                        </div>
+                                    ) : (
+                                        <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500">
+                                            <div className="max-h-48 overflow-y-auto p-2">
+                                                {placementUsers.length === 0 ? (
+                                                    <div className="text-gray-500 text-sm p-2">No active users available</div>
+                                                ) : (
+                                                    placementUsers.map((user) => (
+                                                        <label
+                                                            key={user.id}
+                                                            className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
+                                                        >
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={placementForm.internalEmailNotification.includes(user.id.toString())}
+                                                                onChange={() => handleUserSelection(user.id.toString())}
+                                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                                                            />
+                                                            <span className="text-sm text-gray-700">
+                                                                {user.name || user.email || `User #${user.id}`}
+                                                            </span>
+                                                        </label>
+                                                    ))
+                                                )}
+                                            </div>
+                                            {placementForm.internalEmailNotification.length > 0 && (
+                                                <div className="border-t border-gray-300 p-2 bg-gray-50">
+                                                    <div className="text-xs text-gray-600 mb-1">
+                                                        Selected: {placementForm.internalEmailNotification.length} user(s)
+                                                    </div>
+                                                    <div className="flex flex-wrap gap-1">
+                                                        {placementForm.internalEmailNotification.map((userId) => {
+                                                            const user = placementUsers.find(u => u.id.toString() === userId);
+                                                            return user ? (
+                                                                <span
+                                                                    key={userId}
+                                                                    className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                                                                >
+                                                                    {user.name || user.email || `User #${userId}`}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleUserSelection(userId)}
+                                                                        className="ml-1 text-blue-600 hover:text-blue-800"
+                                                                    >
+                                                                        ×
+                                                                    </button>
+                                                                </span>
+                                                            ) : null;
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
 
                                 {/* Candidate */}

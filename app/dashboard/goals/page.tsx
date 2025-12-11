@@ -87,6 +87,18 @@ const getCalendarData = () => {
   return calendarData;
 };
 
+interface GoalQuotaRow {
+  userId: string;
+  userName: string;
+  category: string;
+  notes: string;
+  addedToSystem: number;
+  inboundEmails: number;
+  outboundEmails: number;
+  calls: number;
+  texts: number;
+}
+
 const GoalsAndQuotas = () => {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -97,9 +109,19 @@ const GoalsAndQuotas = () => {
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [isUsersDropdownOpen, setIsUsersDropdownOpen] = useState(false);
   const usersDropdownRef = useRef<HTMLDivElement>(null);
+  const [goalsQuotasData, setGoalsQuotasData] = useState<GoalQuotaRow[]>([]);
 
   const calendarData = getCalendarData();
   const selectedDayAppointments = mockAppointments; // In real app, filter by selected date
+
+  const categories = [
+    "Organization",
+    "Jobs",
+    "Job Seekers",
+    "Hiring Managers",
+    "Placements",
+    "Leads",
+  ];
 
   const monthNames = [
     "January",
@@ -151,6 +173,25 @@ const GoalsAndQuotas = () => {
         if (response.ok) {
           const data = await response.json();
           setUsers(data.users || []);
+          
+          // Initialize goals/quotes data for all users
+          const initialData: GoalQuotaRow[] = [];
+          (data.users || []).forEach((user: User) => {
+            categories.forEach((category) => {
+              initialData.push({
+                userId: user.id,
+                userName: user.name || user.email,
+                category,
+                notes: "",
+                addedToSystem: 0,
+                inboundEmails: 0,
+                outboundEmails: 0,
+                calls: 0,
+                texts: 0,
+              });
+            });
+          });
+          setGoalsQuotasData(initialData);
         }
       } catch (error) {
         console.error("Error fetching users:", error);
@@ -159,6 +200,14 @@ const GoalsAndQuotas = () => {
 
     fetchUsers();
   }, []);
+
+  // Filter goals/quotes data based on selected users
+  const filteredGoalsQuotasData = goalsQuotasData.filter((row) => {
+    if (selectedUsers.length === 0) {
+      return true; // Show all if no users selected
+    }
+    return selectedUsers.includes(row.userId);
+  });
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -200,17 +249,100 @@ const GoalsAndQuotas = () => {
       {/* Activity Report Section */}
       <div className="px-6 pb-6 mt-8">
         {/* Activity Report Header */}
-        <div className="mb-4">
+        <div className="mb-4 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">
             ACTIVITY REPORT
           </h2>
+          
+          {/* User Filter */}
+          <div className="relative" ref={usersDropdownRef}>
+            <button
+              onClick={() => setIsUsersDropdownOpen(!isUsersDropdownOpen)}
+              className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <span className="text-sm font-medium text-gray-700">
+                {selectedUsers.length === 0
+                  ? "All Users"
+                  : selectedUsers.length === 1
+                  ? users.find((u) => u.id === selectedUsers[0])?.name || "1 User"
+                  : `${selectedUsers.length} Users`}
+              </span>
+              <svg
+                className={`w-4 h-4 text-gray-500 transition-transform ${
+                  isUsersDropdownOpen ? "rotate-180" : ""
+                }`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M19 9l-7 7-7-7"
+                />
+              </svg>
+            </button>
+
+            {/* Dropdown Menu */}
+            {isUsersDropdownOpen && (
+              <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-96 overflow-y-auto">
+                <div className="p-2 border-b border-gray-200">
+                  <button
+                    onClick={selectAllUsers}
+                    className="w-full text-left px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded"
+                  >
+                    {selectedUsers.length === users.length
+                      ? "Deselect All"
+                      : "Select All"}
+                  </button>
+                </div>
+                <div className="p-2">
+                  {users.length === 0 ? (
+                    <div className="px-3 py-2 text-sm text-gray-500">
+                      No users available
+                    </div>
+                  ) : (
+                    users.map((user) => (
+                      <label
+                        key={user.id}
+                        className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer rounded"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedUsers.includes(user.id)}
+                          onChange={() => toggleUserSelection(user.id)}
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                        />
+                        <span className="text-sm text-gray-700">
+                          {user.name || user.email}
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
+                {selectedUsers.length > 0 && (
+                  <div className="p-2 border-t border-gray-200">
+                    <div className="px-3 py-2 text-xs text-gray-500">
+                      {selectedUsers.length} user(s) selected
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Activity Report Grid */}
         <div className="bg-white border border-gray-300 rounded-lg overflow-hidden">
           {/* Header Row */}
           <div className="flex bg-gray-50 border-b border-gray-300">
-            <div className="w-32 p-3 border-r border-gray-300"></div>
+            <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              User
+            </div>
+            <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              Category
+            </div>
             <div className="w-24 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
               Notes
             </div>
@@ -252,31 +384,47 @@ const GoalsAndQuotas = () => {
           </div>
 
           {/* Data Rows */}
-          {[
-            { category: "Organization", rowClass: "bg-white" },
-            { category: "Jobs", rowClass: "bg-gray-50" },
-            { category: "Job Seekers", rowClass: "bg-white" },
-            { category: "Hiring Managers", rowClass: "bg-gray-50" },
-            { category: "Placements", rowClass: "bg-white" },
-            { category: "Leads", rowClass: "bg-gray-50" },
-          ].map((row, index) => (
-            <div
-              key={index}
-              className={`flex border-b border-gray-300 last:border-b-0 ${row.rowClass}`}
-            >
-              {/* Category Name */}
-              <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-                {row.category}
-              </div>
+          {filteredGoalsQuotasData.length === 0 ? (
+            <div className="p-8 text-center text-gray-500">
+              {selectedUsers.length === 0
+                ? "No goals/quotes data available"
+                : "No goals/quotes found for selected users"}
+            </div>
+          ) : (
+            filteredGoalsQuotasData.map((row, index) => {
+              const rowClass = index % 2 === 0 ? "bg-white" : "bg-gray-50";
+              return (
+                <div
+                  key={`${row.userId}-${row.category}`}
+                  className={`flex border-b border-gray-300 last:border-b-0 ${rowClass}`}
+                >
+                  {/* User Name */}
+                  <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+                    {row.userName}
+                  </div>
 
-              {/* Notes Column */}
-              <div className="w-24 p-3 border-r border-gray-300">
-                <input
-                  type="text"
-                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                  placeholder=""
-                />
-              </div>
+                  {/* Category Name */}
+                  <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+                    {row.category}
+                  </div>
+
+                  {/* Notes Column */}
+                  <div className="w-24 p-3 border-r border-gray-300">
+                    <input
+                      type="text"
+                      value={row.notes}
+                      onChange={(e) => {
+                        const updated = goalsQuotasData.map((item) =>
+                          item.userId === row.userId && item.category === row.category
+                            ? { ...item, notes: e.target.value }
+                            : item
+                        );
+                        setGoalsQuotasData(updated);
+                      }}
+                      className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                      placeholder=""
+                    />
+                  </div>
 
               {/* Notes - Goals/Quotas */}
               {/* <div className="w-20 p-3 border-r border-gray-300">
@@ -294,14 +442,23 @@ const GoalsAndQuotas = () => {
                 </div>
               </div> */}
 
-              {/* Added to System Column */}
-              <div className="w-32 p-3 border-r border-gray-300">
-                <input
-                  type="number"
-                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                  placeholder=""
-                />
-              </div>
+                  {/* Added to System Column */}
+                  <div className="w-32 p-3 border-r border-gray-300">
+                    <input
+                      type="number"
+                      value={row.addedToSystem || ""}
+                      onChange={(e) => {
+                        const updated = goalsQuotasData.map((item) =>
+                          item.userId === row.userId && item.category === row.category
+                            ? { ...item, addedToSystem: parseInt(e.target.value) || 0 }
+                            : item
+                        );
+                        setGoalsQuotasData(updated);
+                      }}
+                      className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                      placeholder=""
+                    />
+                  </div>
 
               {/* Added to System - Goals/Quotas */}
               {/* <div className="w-20 p-3 border-r border-gray-300">
@@ -319,14 +476,23 @@ const GoalsAndQuotas = () => {
                 </div>
               </div> */}
 
-              {/* Inbound emails Column */}
-              <div className="w-28 p-3 border-r border-gray-300">
-                <input
-                  type="number"
-                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                  placeholder=""
-                />
-              </div>
+                  {/* Inbound emails Column */}
+                  <div className="w-28 p-3 border-r border-gray-300">
+                    <input
+                      type="number"
+                      value={row.inboundEmails || ""}
+                      onChange={(e) => {
+                        const updated = goalsQuotasData.map((item) =>
+                          item.userId === row.userId && item.category === row.category
+                            ? { ...item, inboundEmails: parseInt(e.target.value) || 0 }
+                            : item
+                        );
+                        setGoalsQuotasData(updated);
+                      }}
+                      className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                      placeholder=""
+                    />
+                  </div>
 
               {/* Inbound emails - Goals/Quotas */}
               {/* <div className="w-20 p-3 border-r border-gray-300">
@@ -344,14 +510,23 @@ const GoalsAndQuotas = () => {
                 </div>
               </div> */}
 
-              {/* Outbound emails Column */}
-              <div className="w-28 p-3 border-r border-gray-300">
-                <input
-                  type="number"
-                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                  placeholder=""
-                />
-              </div>
+                  {/* Outbound emails Column */}
+                  <div className="w-28 p-3 border-r border-gray-300">
+                    <input
+                      type="number"
+                      value={row.outboundEmails || ""}
+                      onChange={(e) => {
+                        const updated = goalsQuotasData.map((item) =>
+                          item.userId === row.userId && item.category === row.category
+                            ? { ...item, outboundEmails: parseInt(e.target.value) || 0 }
+                            : item
+                        );
+                        setGoalsQuotasData(updated);
+                      }}
+                      className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                      placeholder=""
+                    />
+                  </div>
 
               {/* Outbound emails - Goals/Quotas */}
               {/* <div className="w-20 p-3 border-r border-gray-300">
@@ -369,14 +544,23 @@ const GoalsAndQuotas = () => {
                 </div>
               </div> */}
 
-              {/* Calls Column */}
-              <div className="w-16 p-3 border-r border-gray-300">
-                <input
-                  type="number"
-                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                  placeholder=""
-                />
-              </div>
+                  {/* Calls Column */}
+                  <div className="w-16 p-3 border-r border-gray-300">
+                    <input
+                      type="number"
+                      value={row.calls || ""}
+                      onChange={(e) => {
+                        const updated = goalsQuotasData.map((item) =>
+                          item.userId === row.userId && item.category === row.category
+                            ? { ...item, calls: parseInt(e.target.value) || 0 }
+                            : item
+                        );
+                        setGoalsQuotasData(updated);
+                      }}
+                      className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                      placeholder=""
+                    />
+                  </div>
 
               {/* Calls - Goals/Quotas */}
               {/* <div className="w-20 p-3 border-r border-gray-300">
@@ -394,16 +578,27 @@ const GoalsAndQuotas = () => {
                 </div>
               </div> */}
 
-              {/* Texts Column */}
-              <div className="w-16 p-3">
-                <input
-                  type="number"
-                  className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                  placeholder=""
-                />
-              </div>
-            </div>
-          ))}
+                  {/* Texts Column */}
+                  <div className="w-16 p-3">
+                    <input
+                      type="number"
+                      value={row.texts || ""}
+                      onChange={(e) => {
+                        const updated = goalsQuotasData.map((item) =>
+                          item.userId === row.userId && item.category === row.category
+                            ? { ...item, texts: parseInt(e.target.value) || 0 }
+                            : item
+                        );
+                        setGoalsQuotasData(updated);
+                      }}
+                      className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
+                      placeholder=""
+                    />
+                  </div>
+                </div>
+              );
+            })
+          )}
         </div>
       </div>
     </div>
