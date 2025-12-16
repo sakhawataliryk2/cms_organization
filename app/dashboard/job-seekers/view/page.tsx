@@ -1883,7 +1883,7 @@ Best regards`;
                 </div>
 
                 {/* Action Section */}
-                <div>
+                {/* <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Action
                   </label>
@@ -1929,7 +1929,7 @@ Best regards`;
                       </div>
                     )}
                   </div>
-                </div>
+                </div> */}
 
                 {/* Additional References Section */}
                 <div>

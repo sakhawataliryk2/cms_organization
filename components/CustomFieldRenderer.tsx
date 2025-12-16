@@ -332,6 +332,7 @@ export default function CustomFieldRenderer({
       return (
         <input
           {...fieldProps}
+          readOnly={true}
           type="date"
           value={value || ""}
           onClick={(e) => {
@@ -348,6 +349,81 @@ export default function CustomFieldRenderer({
           }}
         />
       );
+      case "datetime":
+        const inputType =
+  field.field_type === "datetime" ? "datetime-local" : field.field_type;
+  console.log("FIELD TYPE:", field.field_type);
+  return (
+    <input
+      {...fieldProps}
+      type={inputType}
+      value={value ? value.slice(0, 16) : ""}
+      onChange={(e) => onChange(field.field_name, e.target.value)}
+    />
+  );
+    // case "datetime":
+    //   // Handle datetime-local input for Date and Time fields
+    //   // Convert ISO timestamp to datetime-local format (YYYY-MM-DDTHH:mm)
+    //   const formatDateTimeForInput = (isoString: string | null | undefined): string => {
+    //     if (!isoString) return "";
+    //     try {
+    //       const date = new Date(isoString);
+    //       if (isNaN(date.getTime())) return "";
+    //       // Format as YYYY-MM-DDTHH:mm for datetime-local input
+    //       const year = date.getFullYear();
+    //       const month = String(date.getMonth() + 1).padStart(2, "0");
+    //       const day = String(date.getDate()).padStart(2, "0");
+    //       const hours = String(date.getHours()).padStart(2, "0");
+    //       const minutes = String(date.getMinutes()).padStart(2, "0");
+    //       return `${year}-${month}-${day}T${hours}:${minutes}`;
+    //     } catch (error) {
+    //       console.error("Error formatting datetime:", error);
+    //       return "";
+    //     }
+    //   };
+
+    //   // Convert datetime-local format back to ISO timestamp
+    //   const handleDateTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    //     const inputValue = e.target.value;
+    //     if (!inputValue) {
+    //       onChange(field.field_name, "");
+    //       return;
+    //     }
+    //     try {
+    //       // datetime-local format is YYYY-MM-DDTHH:mm
+    //       // Convert to ISO string
+    //       const date = new Date(inputValue);
+    //       if (!isNaN(date.getTime())) {
+    //         onChange(field.field_name, date.toISOString());
+    //       } else {
+    //         onChange(field.field_name, "");
+    //       }
+    //     } catch (error) {
+    //       console.error("Error parsing datetime:", error);
+    //       onChange(field.field_name, "");
+    //     }
+    //   };
+
+    //   return (
+    //     <input
+    //       {...fieldProps}
+    //       type="datetime-local"
+    //       value={formatDateTimeForInput(value)}
+    //       onChange={handleDateTimeChange}
+    //       onClick={(e) => {
+    //         // Only call showPicker on click (user gesture), not on focus
+    //         const target = e.target as HTMLInputElement;
+    //         if (target.showPicker && typeof target.showPicker === 'function') {
+    //           try {
+    //             target.showPicker();
+    //           } catch (error) {
+    //             // Silently ignore if showPicker is not supported or fails
+    //             // The native datetime picker will still work normally
+    //           }
+    //         }
+    //       }}
+    //     />
+    //   );
     // case "date":
     //   return <input {...fieldProps} type="date" />;
     case "email":

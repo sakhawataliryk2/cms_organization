@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
-import { FiSearch, FiChevronDown, FiX, FiChevronLeft, FiChevronRight, FiCheckSquare, FiPlus, FiClock, FiCalendar } from 'react-icons/fi';
+import { FiSearch, FiChevronDown, FiX, FiChevronLeft, FiChevronRight, FiCheckSquare, FiPlus, FiClock, FiCalendar, FiEdit2 } from 'react-icons/fi';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -642,8 +642,19 @@ export default function Dashboard() {
 
                 {/* Right Column - Information */}
                 <div className="bg-white rounded-md shadow overflow-hidden flex flex-col">
-                    <div className="p-2 border-b border-gray-200">
+                    <div className="p-2 border-b border-gray-200 flex items-center justify-between">
                         <h2 className="text-lg font-semibold">Information:</h2>
+                        <button
+                            type="button"
+                            className="p-1.5 mr-8 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
+                            aria-label="Edit information"
+                            onClick={() => {
+                                // Handle edit action
+                                console.log('Edit information');
+                            }}
+                        >
+                            <FiEdit2 size={18} />
+                        </button>
                     </div>
                     <div className="p-4 flex-1 overflow-y-auto">
                         {isLoadingAppointments ? (
@@ -694,7 +705,7 @@ export default function Dashboard() {
             {/* Bottom Row */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
                 {/* Select Date and Time Range */}
-                <div className="bg-white rounded-md shadow overflow-hidden">
+                {/* <div className="bg-white rounded-md shadow overflow-hidden">
                     <div className="p-2 border-b border-gray-200">
                         <h2 className="text-lg font-semibold">Select Date and Time Range</h2>
                     </div>
@@ -718,14 +729,14 @@ export default function Dashboard() {
                             />
                         </div>
                     </div>
-                </div>
+                </div> */}
 
                 {/* Goals and Quotas */}
-                {showGoalsQuotas && (
+                {/* {showGoalsQuotas && (
                     <div className="bg-white rounded-md shadow overflow-hidden">
                         <div className="p-2 border-b border-gray-200">
                             <h2 className="text-lg font-semibold mb-2">Goals and Quotas</h2>
-                            {/* Search bar */}
+                            
                             <div className="relative">
                                 <FiSearch className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
                                 <input
@@ -761,7 +772,7 @@ export default function Dashboard() {
                             </div>
                         </div>
                     </div>
-                )}
+                )} */}
 
                 {/* Rules of Engagement */}
                 {/* <div className="bg-white rounded-md shadow overflow-hidden">

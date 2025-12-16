@@ -890,6 +890,7 @@ export default function JobView() {
                             <p className="text-gray-700">{note.text}</p>
                         </div>
                     ))}
+                    <p className="text-sm text-gray-600 mt-2">note action</p>
                 </div>
             ) : (
                 <p className="text-gray-500 italic">No notes have been added yet.</p>

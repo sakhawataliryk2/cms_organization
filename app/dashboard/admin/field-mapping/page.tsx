@@ -103,6 +103,7 @@ const FieldMapping = () => {
     "phone",
     "number",
     "date",
+    "datetime",
     "textarea",
     "select",
     "checkbox",

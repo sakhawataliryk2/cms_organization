@@ -61,22 +61,64 @@ const mockAppointments = [
 ];
 
 // Mock data for calendar days with appointment counts
-const getCalendarData = () => {
-  const today = new Date();
-  const currentMonth = today.getMonth();
-  const currentYear = today.getFullYear();
+const getCalendarData = (currentMonth: Date) => {
+  const year = currentMonth.getFullYear();
+  const month = currentMonth.getMonth();
   
-  // Generate mock appointment counts for each day
-  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-  const calendarData = [];
+  // First day of the month
+  const firstDay = new Date(year, month, 1);
+  const firstDayOfWeek = firstDay.getDay();
   
-  for (let day = 1; day <= daysInMonth; day++) {
-    const appointmentCount = 0; // Set to 0 to hide numbers
+  // Last day of the month
+  const lastDay = new Date(year, month + 1, 0);
+  const daysInMonth = lastDay.getDate();
+  
+  // Days from previous month to show
+  const daysFromPrevMonth = firstDayOfWeek;
+  const prevMonth = new Date(year, month, 0);
+  const daysInPrevMonth = prevMonth.getDate();
+  
+  const calendarData: Array<{ day: number; appointmentCount: number; isCurrentMonth: boolean; isToday: boolean; date: Date }> = [];
+  
+  // Add days from previous month
+  for (let i = daysFromPrevMonth - 1; i >= 0; i--) {
+    const day = daysInPrevMonth - i;
+    const date = new Date(year, month - 1, day);
     calendarData.push({
       day,
-      appointmentCount,
+      appointmentCount: 0,
+      isCurrentMonth: false,
+      isToday: false,
+      date
+    });
+  }
+  
+  // Add days from current month
+  const today = new Date();
+  for (let day = 1; day <= daysInMonth; day++) {
+    const date = new Date(year, month, day);
+    const isToday = date.getDate() === today.getDate() &&
+                    date.getMonth() === today.getMonth() &&
+                    date.getFullYear() === today.getFullYear();
+    calendarData.push({
+      day,
+      appointmentCount: 0, // Default to 0 for all days
       isCurrentMonth: true,
-      isToday: day === today.getDate()
+      isToday,
+      date
+    });
+  }
+  
+  // Add days from next month to fill the grid (42 days total for 6 weeks)
+  const remainingDays = 42 - calendarData.length;
+  for (let day = 1; day <= remainingDays; day++) {
+    const date = new Date(year, month + 1, day);
+    calendarData.push({
+      day,
+      appointmentCount: 0, // Default to 0 for all days
+      isCurrentMonth: false,
+      isToday: false,
+      date
     });
   }
   
@@ -94,7 +136,7 @@ const Planners = () => {
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncStatus, setSyncStatus] = useState<string>('');
   
-  const calendarData = getCalendarData();
+  const calendarData = getCalendarData(currentMonth);
   const selectedDayAppointments = mockAppointments; // In real app, filter by selected date
 
   // Check Office 365 connection status on mount
@@ -459,21 +501,19 @@ const Planners = () => {
               className={`min-h-[80px] border border-gray-200 p-2 cursor-pointer hover:bg-gray-50 ${
                 dayData.isToday ? 'bg-blue-100 border-blue-300' : ''
               }`}
-              onClick={() => setSelectedDate(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), dayData.day))}
+              onClick={() => setSelectedDate(dayData.date)}
             >
               <div className="flex flex-col h-full">
                 <div className={`text-sm ${
-                  dayData.isToday ? 'text-blue-600 font-semibold' : 'text-gray-500'
+                  dayData.isToday ? 'text-blue-600 font-semibold' : dayData.isCurrentMonth ? 'text-gray-700' : 'text-gray-300'
                 }`}>
                   {dayData.day}
                 </div>
-                {dayData.appointmentCount > 0 && (
-                  <div className={`text-lg font-bold underline mt-1 ${
-                    dayData.isToday ? 'text-blue-600' : 'text-blue-500'
-                  }`}>
-                    {dayData.appointmentCount}
-                  </div>
-                )}
+                <div className={`text-lg font-bold underline mt-1 ${
+                  dayData.isToday ? 'text-blue-600' : dayData.isCurrentMonth ? 'text-blue-500' : 'text-gray-300'
+                }`}>
+                  {dayData.appointmentCount || 0}
+                </div>
               </div>
             </div>
           ))}
