@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -48,6 +48,9 @@ export default function AddHiringManager() {
 
   // Custom fields state
   const [customFields, setCustomFields] = useState<FormField[]>([]);
+  
+  // Ref to track if initial load has happened
+  const hasInitialLoad = useRef(false);
 
   const [formData, setFormData] = useState({
     firstName: "",
@@ -88,15 +91,37 @@ export default function AddHiringManager() {
     // Fetch active users for owner dropdown
     fetchActiveUsers();
 
-    // Fetch custom fields for hiring managers
-    fetchCustomFields();
+    // Fetch custom fields for hiring managers first
+    fetchCustomFields().then(() => {
+      // After custom fields are loaded, fetch hiring manager data if in edit mode
+      if (hiringManagerId) {
+        fetchHiringManager(hiringManagerId);
+      }
+    });
   }, []);
 
-  // If hiringManagerId is present, fetch the hiring manager data
+  // If hiringManagerId changes after initial load, fetch the hiring manager data
   useEffect(() => {
-    if (hiringManagerId) {
-      fetchHiringManager(hiringManagerId);
+    // Skip initial mount - handled by first useEffect
+    if (!hasInitialLoad.current) {
+      hasInitialLoad.current = true;
+      return;
     }
+    
+    // Only run if hiringManagerId changes after initial load
+    if (!hiringManagerId) return;
+    
+    // Ensure custom fields are loaded first, then fetch hiring manager
+    const loadData = async () => {
+      let fields = customFields;
+      if (customFields.length === 0) {
+        fields = await fetchCustomFields();
+      }
+      // Fetch hiring manager with the updated custom fields
+      await fetchHiringManager(hiringManagerId);
+    };
+    
+    loadData();
   }, [hiringManagerId]);
 
   // Fetch active users
@@ -138,14 +163,17 @@ export default function AddHiringManager() {
             sortOrder: field.sort_order,
           }));
 
-        setCustomFields(
-          customFormFields.sort(
-            (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)
-          )
+        const sortedFields = customFormFields.sort(
+          (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)
         );
+        
+        setCustomFields(sortedFields);
+        return sortedFields;
       }
+      return [];
     } catch (error) {
       console.error("Error fetching custom fields:", error);
+      return [];
     }
   };
 
@@ -191,22 +219,70 @@ export default function AddHiringManager() {
       });
 
       // Load custom field values if they exist
-      if (hm.custom_fields) {
+      // First ensure custom fields are loaded - always fetch fresh to avoid state issues
+      let fieldsToUpdate = await fetchCustomFields();
+      
+      if (hm.custom_fields && fieldsToUpdate.length > 0) {
         try {
           const customFieldValues =
             typeof hm.custom_fields === "string"
               ? JSON.parse(hm.custom_fields)
               : hm.custom_fields;
 
-          setCustomFields((prev) =>
-            prev.map((field) => ({
+          console.log("Custom field values from API:", customFieldValues);
+          console.log("Custom fields structure:", fieldsToUpdate);
+
+          // Update custom fields with values from the API
+          // Try matching by field.name first (most common), then by other formats
+          const updatedFields = fieldsToUpdate.map((field) => {
+            // Try multiple possible key formats to match the custom field value
+            let value = "";
+            
+            // First try exact match with field.name
+            if (customFieldValues[field.name]) {
+              value = customFieldValues[field.name];
+            } 
+            // Try without 'custom_' prefix
+            else if (field.id && customFieldValues[field.id.replace('custom_', '')]) {
+              value = customFieldValues[field.id.replace('custom_', '')];
+            }
+            // Try with field label (case-insensitive)
+            else if (field.label) {
+              const labelKey = Object.keys(customFieldValues).find(
+                key => key.toLowerCase() === field.label.toLowerCase()
+              );
+              if (labelKey) {
+                value = customFieldValues[labelKey];
+              }
+            }
+            // Try matching by field_name from the API response
+            else {
+              // Check if there's a field_name property and try matching
+              const fieldNameKey = Object.keys(customFieldValues).find(
+                key => key.toLowerCase() === (field.name || '').toLowerCase()
+              );
+              if (fieldNameKey) {
+                value = customFieldValues[fieldNameKey];
+              }
+            }
+            
+            console.log(`Setting field ${field.name} (label: ${field.label}) to value:`, value);
+            
+            return {
               ...field,
-              value: customFieldValues[field.name] || "",
-            }))
-          );
+              value: value || "",
+            };
+          });
+          
+          setCustomFields(updatedFields);
         } catch (e) {
           console.error("Error parsing custom fields:", e);
+          // Even if parsing fails, set the fields without values
+          setCustomFields(fieldsToUpdate);
         }
+      } else {
+        // If no custom fields in response, just set the fields without values
+        setCustomFields(fieldsToUpdate);
       }
     } catch (err) {
       console.error("Error fetching hiring manager:", err);
@@ -238,56 +314,56 @@ export default function AddHiringManager() {
     );
   };
 
-  const validateForm = () => {
-    // Validate required fields
-    if (!formData.firstName.trim()) {
-      setError("First name is required");
-      return false;
-    }
-    if (!formData.lastName.trim()) {
-      setError("Last name is required");
-      return false;
-    }
-    if (!formData.title.trim()) {
-      setError("Title is required");
-      return false;
-    }
-    if (!formData.email.trim()) {
-      setError("Email is required");
-      return false;
-    }
+  // const validateForm = () => {
+    
+  //   if (!formData.firstName.trim()) {
+  //     setError("First name is required");
+  //     return false;
+  //   }
+  //   if (!formData.lastName.trim()) {
+  //     setError("Last name is required");
+  //     return false;
+  //   }
+  //   if (!formData.title.trim()) {
+  //     setError("Title is required");
+  //     return false;
+  //   }
+  //   if (!formData.email.trim()) {
+  //     setError("Email is required");
+  //     return false;
+  //   }
 
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setError("Invalid email format");
-      return false;
-    }
+    
+  //   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  //   if (!emailRegex.test(formData.email)) {
+  //     setError("Invalid email format");
+  //     return false;
+  //   }
 
-    // Validate second email if provided
-    if (formData.email2 && !emailRegex.test(formData.email2)) {
-      setError("Invalid format for second email");
-      return false;
-    }
+    
+  //   if (formData.email2 && !emailRegex.test(formData.email2)) {
+  //     setError("Invalid format for second email");
+  //     return false;
+  //   }
 
-    // Validate required custom fields
-    for (const field of customFields) {
-      if (field.required && !field.value.trim()) {
-        setError(`${field.label} is required`);
-        return false;
-      }
-    }
+    
+  //   for (const field of customFields) {
+  //     if (field.required && !field.value.trim()) {
+  //       setError(`${field.label} is required`);
+  //       return false;
+  //     }
+  //   }
 
-    return true;
-  };
+  //   return true;
+  // };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     // Validate form
-    if (!validateForm()) {
-      return;
-    }
+    // if (!validateForm()) {
+    //   return;
+    // }
 
     setIsSubmitting(true);
     setError(null);
@@ -300,6 +376,7 @@ export default function AddHiringManager() {
           customFieldValues[field.name] = field.value;
         }
       });
+      
 
       const apiData = {
         firstName: formData.firstName,

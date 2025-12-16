@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import ActionDropdown from '@/components/ActionDropdown';
@@ -39,6 +39,12 @@ export default function JobView() {
     });
     const [users, setUsers] = useState<any[]>([]);
     const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+    
+    // Reference autocomplete state
+    const [referenceSuggestions, setReferenceSuggestions] = useState<any[]>([]);
+    const [showReferenceDropdown, setShowReferenceDropdown] = useState(false);
+    const [isLoadingReferences, setIsLoadingReferences] = useState(false);
+    const referenceInputRef = useRef<HTMLInputElement>(null);
 
     // Field management state
     const [availableFields, setAvailableFields] = useState<any[]>([]);
@@ -104,6 +110,25 @@ export default function JobView() {
         }
     }, [showAddNote]);
 
+    // Close reference dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (
+                referenceInputRef.current &&
+                !referenceInputRef.current.contains(event.target as Node)
+            ) {
+                setShowReferenceDropdown(false);
+            }
+        };
+
+        if (showReferenceDropdown) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => {
+                document.removeEventListener('mousedown', handleClickOutside);
+            };
+        }
+    }, [showReferenceDropdown]);
+
     // Fetch users for email notification dropdown
     const fetchUsers = async () => {
         setIsLoadingUsers(true);
@@ -121,6 +146,176 @@ export default function JobView() {
             console.error('Error fetching users:', err);
         } finally {
             setIsLoadingUsers(false);
+        }
+    };
+
+    // Search for references (jobs, organizations, job seekers, etc.)
+    const searchReferences = async (query: string) => {
+        if (!query || query.trim().length < 2) {
+            setReferenceSuggestions([]);
+            setShowReferenceDropdown(false);
+            return;
+        }
+
+        setIsLoadingReferences(true);
+        setShowReferenceDropdown(true);
+
+        try {
+            const searchTerm = query.trim();
+            const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+            const headers = {
+                'Authorization': `Bearer ${token}`
+            };
+
+            // Search across multiple entity types in parallel
+            const [jobsRes, orgsRes, jobSeekersRes, leadsRes, tasksRes, placementsRes] = await Promise.allSettled([
+                fetch('/api/jobs', { headers }),
+                fetch('/api/organizations', { headers }),
+                fetch('/api/job-seekers', { headers }),
+                fetch('/api/leads', { headers }),
+                fetch('/api/tasks', { headers }),
+                fetch('/api/placements', { headers })
+            ]);
+
+            const suggestions: any[] = [];
+
+            // Process jobs
+            if (jobsRes.status === 'fulfilled' && jobsRes.value.ok) {
+                const data = await jobsRes.value.json();
+                const jobs = (data.jobs || []).filter((job: any) =>
+                    job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    job.id?.toString().includes(searchTerm)
+                );
+                jobs.forEach((job: any) => {
+                    suggestions.push({
+                        id: job.id,
+                        type: 'Job',
+                        display: `#${job.id} ${job.job_title || 'Untitled'}`,
+                        value: `#${job.id}`
+                    });
+                });
+            }
+
+            // Process organizations
+            if (orgsRes.status === 'fulfilled' && orgsRes.value.ok) {
+                const data = await orgsRes.value.json();
+                const orgs = (data.organizations || []).filter((org: any) =>
+                    org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    org.id?.toString().includes(searchTerm)
+                );
+                orgs.forEach((org: any) => {
+                    suggestions.push({
+                        id: org.id,
+                        type: 'Organization',
+                        display: `#${org.id} ${org.name || 'Unnamed'}`,
+                        value: `#${org.id}`
+                    });
+                });
+            }
+
+            // Process job seekers
+            if (jobSeekersRes.status === 'fulfilled' && jobSeekersRes.value.ok) {
+                const data = await jobSeekersRes.value.json();
+                const seekers = (data.jobSeekers || []).filter((seeker: any) =>
+                    seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    seeker.id?.toString().includes(searchTerm)
+                );
+                seekers.forEach((seeker: any) => {
+                    const name = seeker.full_name || `${seeker.first_name || ''} ${seeker.last_name || ''}`.trim() || 'Unnamed';
+                    suggestions.push({
+                        id: seeker.id,
+                        type: 'Job Seeker',
+                        display: `#${seeker.id} ${name}`,
+                        value: `#${seeker.id}`
+                    });
+                });
+            }
+
+            // Process leads
+            if (leadsRes.status === 'fulfilled' && leadsRes.value.ok) {
+                const data = await leadsRes.value.json();
+                const leads = (data.leads || []).filter((lead: any) =>
+                    lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    lead.id?.toString().includes(searchTerm)
+                );
+                leads.forEach((lead: any) => {
+                    suggestions.push({
+                        id: lead.id,
+                        type: 'Lead',
+                        display: `#${lead.id} ${lead.name || lead.company_name || 'Unnamed'}`,
+                        value: `#${lead.id}`
+                    });
+                });
+            }
+
+            // Process tasks
+            if (tasksRes.status === 'fulfilled' && tasksRes.value.ok) {
+                const data = await tasksRes.value.json();
+                const tasks = (data.tasks || []).filter((task: any) =>
+                    task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    task.id?.toString().includes(searchTerm)
+                );
+                tasks.forEach((task: any) => {
+                    suggestions.push({
+                        id: task.id,
+                        type: 'Task',
+                        display: `#${task.id} ${task.title || 'Untitled'}`,
+                        value: `#${task.id}`
+                    });
+                });
+            }
+
+            // Process placements
+            if (placementsRes.status === 'fulfilled' && placementsRes.value.ok) {
+                const data = await placementsRes.value.json();
+                const placements = (data.placements || []).filter((placement: any) =>
+                    placement.jobTitle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    placement.jobSeekerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                    placement.id?.toString().includes(searchTerm)
+                );
+                placements.forEach((placement: any) => {
+                    suggestions.push({
+                        id: placement.id,
+                        type: 'Placement',
+                        display: `#${placement.id} ${placement.jobSeekerName || 'Unnamed'} - ${placement.jobTitle || 'Untitled'}`,
+                        value: `#${placement.id}`
+                    });
+                });
+            }
+
+            // Limit to top 10 suggestions
+            setReferenceSuggestions(suggestions.slice(0, 10));
+        } catch (err) {
+            console.error('Error searching references:', err);
+            setReferenceSuggestions([]);
+        } finally {
+            setIsLoadingReferences(false);
+        }
+    };
+
+    // Handle reference input change
+    const handleReferenceInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const value = e.target.value;
+        setNoteForm(prev => ({ ...prev, additionalReferences: value }));
+        searchReferences(value);
+    };
+
+    // Handle reference selection
+    const handleReferenceSelect = (reference: any) => {
+        const currentValue = noteForm.additionalReferences.trim();
+        const newValue = currentValue 
+            ? `${currentValue} ${reference.value}`
+            : reference.value;
+        setNoteForm(prev => ({ ...prev, additionalReferences: newValue }));
+        setShowReferenceDropdown(false);
+        setReferenceSuggestions([]);
+        if (referenceInputRef.current) {
+            referenceInputRef.current.focus();
         }
     };
 
@@ -1753,15 +1948,60 @@ export default function JobView() {
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
                                         Additional References
                                     </label>
-                                    <div className="relative">
+                                    <div className="relative" ref={referenceInputRef}>
                                         <input
                                             type="text"
                                             value={noteForm.additionalReferences}
-                                            onChange={(e) => setNoteForm(prev => ({ ...prev, additionalReferences: e.target.value }))}
+                                            onChange={handleReferenceInputChange}
+                                            onFocus={() => {
+                                                if (noteForm.additionalReferences.trim().length >= 2) {
+                                                    searchReferences(noteForm.additionalReferences);
+                                                }
+                                            }}
                                             placeholder="Reference other records using #"
                                             className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
                                         />
                                         <span className="absolute right-2 top-2 text-gray-400 text-sm">Q</span>
+                                        
+                                        {/* Autocomplete Dropdown */}
+                                        {showReferenceDropdown && (
+                                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                {isLoadingReferences ? (
+                                                    <div className="p-3 text-sm text-gray-500 text-center">
+                                                        Searching...
+                                                    </div>
+                                                ) : referenceSuggestions.length > 0 ? (
+                                                    <>
+                                                        {referenceSuggestions.map((ref, index) => (
+                                                            <button
+                                                                key={`${ref.type}-${ref.id}-${index}`}
+                                                                type="button"
+                                                                onClick={() => handleReferenceSelect(ref)}
+                                                                className="w-full text-left px-4 py-2 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none border-b border-gray-100 last:border-b-0"
+                                                            >
+                                                                <div className="flex items-center justify-between">
+                                                                    <div>
+                                                                        <div className="text-sm font-medium text-gray-900">
+                                                                            {ref.display}
+                                                                        </div>
+                                                                        <div className="text-xs text-gray-500">
+                                                                            {ref.type}
+                                                                        </div>
+                                                                    </div>
+                                                                    <span className="text-xs text-blue-600 font-medium">
+                                                                        {ref.value}
+                                                                    </span>
+                                                                </div>
+                                                            </button>
+                                                        ))}
+                                                    </>
+                                                ) : noteForm.additionalReferences.trim().length >= 2 ? (
+                                                    <div className="p-3 text-sm text-gray-500 text-center">
+                                                        No references found
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
 

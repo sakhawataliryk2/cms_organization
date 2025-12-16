@@ -47,10 +47,11 @@ export default function AddJob() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Use the custom fields hook
+  // Use the custom fields hook (✅ Added setCustomFieldValues like Organizations)
   const {
     customFields,
     customFieldValues,
+    setCustomFieldValues, // ✅ Extract setCustomFieldValues
     isLoading: customFieldsLoading,
     handleCustomFieldChange,
     validateCustomFields,
@@ -274,7 +275,7 @@ export default function AddJob() {
     }
   }, [jobId, formFields.length, customFieldsLoading]);
 
-  // Function to fetch job data
+  // Function to fetch job data (✅ Updated to match Organizations pattern)
   const fetchJobData = async (id: string) => {
     setIsLoadingJob(true);
     setLoadError(null);
@@ -303,6 +304,82 @@ export default function AddJob() {
 
       // Map API data to form fields
       const job = data.job;
+
+      // Parse existing custom fields from the job
+      let existingCustomFields: Record<string, any> = {};
+      if (job.custom_fields) {
+        try {
+          existingCustomFields =
+            typeof job.custom_fields === "string"
+              ? JSON.parse(job.custom_fields)
+              : job.custom_fields;
+        } catch (e) {
+          console.error("Error parsing existing custom fields:", e);
+        }
+      }
+
+      // ✅ Map custom fields from field_label (database key) to field_name (form key)
+      // Custom fields are stored with field_label as keys, but form uses field_name
+      const mappedCustomFieldValues: Record<string, any> = {};
+      
+      // First, map any existing custom field values from the database
+      if (customFields.length > 0 && Object.keys(existingCustomFields).length > 0) {
+        customFields.forEach((field) => {
+          // Try to find the value by field_label (as stored in DB)
+          const value = existingCustomFields[field.field_label];
+          if (value !== undefined) {
+            // Map to field_name for the form
+            mappedCustomFieldValues[field.field_name] = value;
+          }
+        });
+      }
+
+      // ✅ Second, map standard job fields to custom fields based on field labels
+      // This ensures that standard fields like "job_title", "status" etc. populate custom fields
+      // with matching labels like "Job Title", "Status", etc.
+      if (customFields.length > 0) {
+        const standardFieldMapping: Record<string, string> = {
+          "Job Title": job.job_title || "",
+          "Title": job.job_title || "",
+          "Category": job.category || "",
+          "Organization": job.organization_name || job.organization_id?.toString() || "",
+          "Hiring Manager": job.hiring_manager || "",
+          "Status": job.status || "Open",
+          "Priority": job.priority || "",
+          "Employment Type": job.employment_type || "",
+          "Start Date": job.start_date
+            ? job.start_date.split("T")[0]
+            : "",
+          "Worksite Location": job.worksite_location || "",
+          "Remote Option": job.remote_option || "",
+          "Job Description": job.job_description || "",
+          "Description": job.job_description || "",
+          "Minimum Salary": job.min_salary ? job.min_salary.toString() : "",
+          "Maximum Salary": job.max_salary ? job.max_salary.toString() : "",
+          "Benefits": job.benefits || "",
+          "Required Skills": job.required_skills || "",
+          "Job Board Status": job.job_board_status || "Not Posted",
+          "Owner": job.owner || "",
+          "Date Added": job.date_added
+            ? job.date_added.split("T")[0]
+            : "",
+        };
+
+        customFields.forEach((field) => {
+          // Only set if not already set from existingCustomFields
+          if (mappedCustomFieldValues[field.field_name] === undefined) {
+            // Try to find matching standard field by field_label
+            const standardValue = standardFieldMapping[field.field_label];
+            if (standardValue !== undefined && standardValue !== "") {
+              mappedCustomFieldValues[field.field_name] = standardValue;
+            }
+          }
+        });
+      }
+
+      console.log("Custom Field Values Loaded (mapped):", mappedCustomFieldValues);
+      console.log("Original custom fields from DB:", existingCustomFields);
+      console.log("Custom Fields Definitions:", customFields.map(f => ({ name: f.field_name, label: f.field_label })));
 
       // Update formFields with existing job data
       setFormFields((prevFields) => {
@@ -350,28 +427,11 @@ export default function AddJob() {
           job.date_added ? job.date_added.split("T")[0] : ""
         );
 
-        // Handle custom fields if they exist
-        if (job.custom_fields) {
-          let customFieldsObj = {};
-
-          try {
-            if (typeof job.custom_fields === "string") {
-              customFieldsObj = JSON.parse(job.custom_fields);
-            } else if (typeof job.custom_fields === "object") {
-              customFieldsObj = job.custom_fields;
-            }
-
-            // Update custom field values using the hook
-            Object.entries(customFieldsObj).forEach(([key, value]) => {
-              handleCustomFieldChange(key, String(value));
-            });
-          } catch (error) {
-            console.error("Error parsing custom fields:", error);
-          }
-        }
-
         return updatedFields;
       });
+
+      // ✅ Set the mapped custom field values (field_name as keys) - same as Organizations
+      setCustomFieldValues(mappedCustomFieldValues);
 
       console.log("Job data loaded successfully");
     } catch (err) {
@@ -400,46 +460,81 @@ export default function AddJob() {
     }
   };
 
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
+  
     // Validate required custom fields
     const customFieldValidation = validateCustomFields();
     if (!customFieldValidation.isValid) {
       setError(customFieldValidation.message);
       return;
     }
-
+  
     setIsSubmitting(true);
     setError(null);
-
+  
     try {
-      // Create an object with all standard field values (only the visible ones)
-      const formData = formFields.reduce((acc, field) => {
-        if (field.visible) {
-          acc[field.name] = field.value;
-        }
+      // 1) Standard fields (visible ones)
+      const payload = formFields.reduce((acc, field) => {
+        if (field.visible) acc[field.name] = field.value;
         return acc;
-      }, {} as Record<string, string>);
-
-      // Add custom fields to the form data
+      }, {} as Record<string, any>);
+  
+      // 2) Custom fields from hook (keys are field_label)
       const customFieldsToSend = getCustomFieldsForSubmission();
-      if (Object.keys(customFieldsToSend).length > 0) {
-        formData.custom_fields = JSON.stringify(customFieldsToSend);
-      }
+  
+      // 3) Build DB customFields object (keep empty strings, skip undefined/null)
+      const customFieldsForDB: Record<string, any> = {};
+      Object.keys(customFieldsToSend).forEach((k) => {
+        const v = customFieldsToSend[k];
+        if (v !== undefined && v !== null) customFieldsForDB[k] = v;
+      });
+  
+      // 4) Map custom -> standard (Organizations style)
+      const mappedJobTitle =
+        customFieldsToSend["Job Title"] ||
+        customFieldsToSend["Title"] ||
+        payload.jobTitle ||
+        "";
+  
+      const mappedHiringManager =
+        customFieldsToSend["Hiring Manager"] ||
+        payload.hiringManager ||
+        "";
+  
+      const mappedJobDescription =
+        customFieldsToSend["Job Description"] ||
+        customFieldsToSend["Description"] ||
+        payload.jobDescription ||
+        "";
+  
+      const mappedStatusRaw =
+        customFieldsToSend["Status"] || payload.status || "Open";
+      const allowedStatus = ["Open", "On Hold", "Filled", "Closed"];
+      const mappedStatus = allowedStatus.includes(mappedStatusRaw)
+        ? mappedStatusRaw
+        : "Open";
+  
+      // 5) Final payload (✅ Use snake_case custom_fields like Organizations)
+      const finalPayload: Record<string, any> = {
+        ...payload,
+        jobTitle: mappedJobTitle,
+        hiringManager: mappedHiringManager,
+        jobDescription: mappedJobDescription,
+        status: mappedStatus,
 
-      console.log(
-        `${isEditMode ? "Updating" : "Creating"} job data:`,
-        formData
-      );
-
-      // Choose the appropriate API endpoint and method based on whether we're editing or creating
+        // ✅ Use snake_case custom_fields to match Organizations pattern
+        custom_fields: customFieldsForDB,
+      };
+  
+      console.log(`${isEditMode ? "Updating" : "Creating"} job payload:`, finalPayload);
+  
       const url = isEditMode ? `/api/jobs/${jobId}` : "/api/jobs";
       const method = isEditMode ? "PUT" : "POST";
-
-      // Send the data to the backend API
+  
       const response = await fetch(url, {
-        method: method,
+        method,
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${document.cookie.replace(
@@ -447,40 +542,26 @@ export default function AddJob() {
             "$1"
           )}`,
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(finalPayload),
       });
-
+  
       const data = await response.json();
-
       if (!response.ok) {
-        throw new Error(
-          data.message || `Failed to ${isEditMode ? "update" : "create"} job`
-        );
+        throw new Error(data.message || `Failed to ${isEditMode ? "update" : "create"} job`);
       }
-
-      console.log(
-        `Job ${isEditMode ? "updated" : "created"} successfully:`,
-        data
-      );
-
-      // Navigate to the job view page
-      const resultId = isEditMode ? jobId : data.job ? data.job.id : null;
-      if (resultId) {
-        router.push("/dashboard/jobs/view?id=" + resultId);
-      } else {
-        // Fallback if we don't have an ID
-        router.push("/dashboard/jobs");
-      }
-    } catch (error) {
-      console.error(
-        `Error ${isEditMode ? "updating" : "creating"} job:`,
-        error
-      );
-      setError(error instanceof Error ? error.message : "An error occurred");
+  
+      const resultId = isEditMode ? jobId : data.job?.id;
+      router.push(resultId ? `/dashboard/jobs/view?id=${resultId}` : "/dashboard/jobs");
+    } catch (err) {
+      console.error(`Error ${isEditMode ? "updating" : "creating"} job:`, err);
+      setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setIsSubmitting(false);
     }
   };
+  
+
+
 
   const handleGoBack = () => {
     router.back();

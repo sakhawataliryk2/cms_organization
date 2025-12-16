@@ -71,7 +71,7 @@ const getCalendarData = () => {
   const calendarData = [];
   
   for (let day = 1; day <= daysInMonth; day++) {
-    const appointmentCount = Math.floor(Math.random() * 25); // Random count 0-24
+    const appointmentCount = 0; // Set to 0 to hide numbers
     calendarData.push({
       day,
       appointmentCount,
@@ -467,11 +467,13 @@ const Planners = () => {
                 }`}>
                   {dayData.day}
                 </div>
-                <div className={`text-lg font-bold underline mt-1 ${
-                  dayData.isToday ? 'text-blue-600' : 'text-blue-500'
-                }`}>
-                  {dayData.appointmentCount}
-                </div>
+                {dayData.appointmentCount > 0 && (
+                  <div className={`text-lg font-bold underline mt-1 ${
+                    dayData.isToday ? 'text-blue-600' : 'text-blue-500'
+                  }`}>
+                    {dayData.appointmentCount}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -536,7 +538,7 @@ const Planners = () => {
               </tr>
             </thead>
             <tbody>
-              {selectedDayAppointments.map((appointment, index) => (
+              {/* {selectedDayAppointments.map((appointment, index) => (
                 <tr key={appointment.id} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
                   <td className="px-4 py-3">
                     <div className="flex items-center space-x-2">
@@ -568,7 +570,7 @@ const Planners = () => {
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{appointment.owner}</td>
                 </tr>
-              ))}
+              ))} */}
             </tbody>
           </table>
         </div>
