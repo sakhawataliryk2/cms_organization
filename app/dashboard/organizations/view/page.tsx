@@ -8,6 +8,7 @@ import ActionDropdown from "@/components/ActionDropdown";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import LoadingScreen from "@/components/LoadingScreen";
 import { HiOutlineOfficeBuilding } from "react-icons/hi";
+import { formatRecordId } from '@/lib/recordIdFormatter';
 
 export default function OrganizationView() {
   const router = useRouter();
@@ -686,7 +687,7 @@ export default function OrganizationView() {
       // Clear the form
       setNoteForm({
         text: '',
-        about: organization ? `${organization.id} ${organization.name}` : '',
+        about: organization ? `${formatRecordId(organization.id, 'organization')} ${organization.name}` : '',
         copyNote: 'No',
         replaceGeneralContactComments: false,
         additionalReferences: '',
@@ -965,7 +966,7 @@ export default function OrganizationView() {
             <HiOutlineOfficeBuilding size={24} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
-            {organization.id} {organization.name}
+            {formatRecordId(organization.id, 'organization')} {organization.name}
           </h1>
         </div>
       </div>

@@ -225,14 +225,14 @@ export default function SalesDashboard() {
 
                 {/* Right side - Save and navigation arrows */}
                 <div className="flex items-center space-x-4">
-                    <button
+                    {/* <button
                         onClick={handleSave}
                         disabled={isSaving}
                         className="bg-blue-600 hover:bg-blue-700 text-white px-6 h-10 rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                         {isSaving ? 'Saving...' : 'SAVE'}
-                    </button>
-                    <div className="flex items-center space-x-2">
+                    </button> */}
+                    {/* <div className="flex items-center space-x-2">
                         <button
                             className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors"
                             aria-label="Previous page"
@@ -245,7 +245,7 @@ export default function SalesDashboard() {
                         >
                             <FiChevronRight size={20} />
                         </button>
-                    </div>
+                    </div> */}
                 </div>
             </div>
         </div>

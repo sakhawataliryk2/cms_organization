@@ -9,6 +9,7 @@ import PanelWithHeader from "@/components/PanelWithHeader";
 import { FaLinkedin, FaFacebookSquare } from "react-icons/fa";
 import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, type EmailMessage } from "@/lib/office365";
 import { FiUsers, FiUpload, FiFile, FiX } from "react-icons/fi";
+import { formatRecordId } from '@/lib/recordIdFormatter';
 
 export default function JobSeekerView() {
   const router = useRouter();
@@ -31,7 +32,7 @@ export default function JobSeekerView() {
   // Add Note form state
   const [noteForm, setNoteForm] = useState({
     text: '',
-    about: jobSeeker ? `${jobSeeker.id} ${jobSeeker.fullName}` : '',
+    about: jobSeeker ? `${formatRecordId(jobSeeker.id, 'jobSeeker')} ${jobSeeker.fullName}` : '',
     copyNote: 'No',
     replaceGeneralContactComments: false,
     additionalReferences: '',
@@ -687,7 +688,7 @@ Best regards`;
       // Clear the form
       setNoteForm({
         text: '',
-        about: jobSeeker ? `${jobSeeker.id} ${jobSeeker.fullName}` : '',
+        about: jobSeeker ? `${formatRecordId(jobSeeker.id, 'jobSeeker')} ${jobSeeker.fullName}` : '',
         copyNote: 'No',
         replaceGeneralContactComments: false,
         additionalReferences: '',
@@ -709,7 +710,7 @@ Best regards`;
     setShowAddNote(false);
     setNoteForm({
       text: '',
-      about: jobSeeker ? `${jobSeeker.id} ${jobSeeker.fullName}` : '',
+      about: jobSeeker ? `${formatRecordId(jobSeeker.id, 'jobSeeker')} ${jobSeeker.fullName}` : '',
       copyNote: 'No',
       replaceGeneralContactComments: false,
       additionalReferences: '',
@@ -994,51 +995,16 @@ Best regards`;
 
   // Render modify tab to direct to edit form
   const renderModifyTab = () => (
-    <>
-      {/* <div className="bg-white p-4 rounded shadow-sm">
-        <h2 className="text-lg font-semibold mb-4">Edit Job Seeker</h2>
-        <p className="text-gray-600 mb-4">
-          Click the button below to edit this job seeker's details.
-        </p>
-        <button
-          onClick={handleEdit}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          Edit Job Seeker
-        </button>
-      </div> */}
-      {/* Skills/Software Section */}
-      <div className="bg-white rounded-lg shadow mt-4">
-        <div className="border-b border-gray-300 p-2 font-medium">
-          Skills/Software
-        </div>
-        <div className="p-4">
-          <div className="flex justify-end mb-3">
-            <button className="text-sm text-blue-600 hover:underline">
-              Add Skill
-            </button>
-          </div>
-
-          {/* Skills content */}
-          {jobSeeker.skills && jobSeeker.skills.length > 0 ? (
-            <div className="flex flex-wrap gap-2">
-              {jobSeeker.skills.map((skill: string, index: number) => (
-                <span
-                  key={index}
-                  className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm"
-                >
-                  {skill}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center text-gray-500 p-4">
-              No skills or software entries have been added yet.
-            </div>
-          )}
-        </div>
-      </div>
-    </>
+    <div className="bg-white p-4 rounded shadow-sm">
+      <h2 className="text-lg font-semibold mb-4">Edit Job Seeker</h2>
+      <p className="text-gray-600 mb-4">Click the button below to edit this job seeker's details.</p>
+      <button
+        onClick={handleEdit}
+        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+      >
+        Edit Job Seeker
+      </button>
+    </div>
   );
 
   if (isLoading) {
@@ -1088,7 +1054,7 @@ Best regards`;
             <FiUsers size={20} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
-            {jobSeeker.id} {jobSeeker.fullName}
+            {formatRecordId(jobSeeker.id, 'jobSeeker')} {jobSeeker.fullName}
           </h1>
         </div>
       </div>

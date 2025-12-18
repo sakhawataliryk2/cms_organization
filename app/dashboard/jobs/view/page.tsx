@@ -7,6 +7,7 @@ import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
 import { FiBriefcase } from "react-icons/fi";
+import { formatRecordId } from '@/lib/recordIdFormatter';
 
 export default function JobView() {
     const router = useRouter();
@@ -30,7 +31,7 @@ export default function JobView() {
     // Add Note form state
     const [noteForm, setNoteForm] = useState({
         text: '',
-        about: job ? `${job.id} ${job.title}` : '',
+        about: job ? `${formatRecordId(job.id, 'job')} ${job.title}` : '',
         copyNote: 'No',
         replaceGeneralContactComments: false,
         additionalReferences: '',
@@ -82,8 +83,14 @@ export default function JobView() {
     const [placementUsers, setPlacementUsers] = useState<any[]>([]);
     const [isLoadingPlacementUsers, setIsLoadingPlacementUsers] = useState(false);
     const [jobSeekers, setJobSeekers] = useState<any[]>([]);
+    const [submittedCandidates, setSubmittedCandidates] = useState<any[]>([]);
     const [isLoadingJobSeekers, setIsLoadingJobSeekers] = useState(false);
+    const [isLoadingSubmittedCandidates, setIsLoadingSubmittedCandidates] = useState(false);
     const [isSavingPlacement, setIsSavingPlacement] = useState(false);
+    const [candidateSearchQuery, setCandidateSearchQuery] = useState('');
+    const [showCandidateDropdown, setShowCandidateDropdown] = useState(false);
+    const [filteredCandidates, setFilteredCandidates] = useState<any[]>([]);
+    const candidateInputRef = useRef<HTMLInputElement>(null);
 
     const jobId = searchParams.get('id');
 
@@ -190,8 +197,8 @@ export default function JobView() {
                     suggestions.push({
                         id: job.id,
                         type: 'Job',
-                        display: `#${job.id} ${job.job_title || 'Untitled'}`,
-                        value: `#${job.id}`
+                        display: `${formatRecordId(job.id, 'job')} ${job.job_title || 'Untitled'}`,
+                        value: formatRecordId(job.id, 'job')
                     });
                 });
             }
@@ -587,7 +594,7 @@ export default function JobView() {
             // Clear the form
             setNoteForm({
                 text: '',
-                about: job ? `${job.id} ${job.title}` : '',
+                about: job ? `${formatRecordId(job.id, 'job')} ${job.title}` : '',
                 copyNote: 'No',
                 replaceGeneralContactComments: false,
                 additionalReferences: '',
@@ -609,7 +616,7 @@ export default function JobView() {
         setShowAddNote(false);
         setNoteForm({
             text: '',
-            about: job ? `${job.id} ${job.title}` : '',
+            about: job ? `${formatRecordId(job.id, 'job')} ${job.title}` : '',
             copyNote: 'No',
             replaceGeneralContactComments: false,
             additionalReferences: '',
@@ -644,30 +651,105 @@ export default function JobView() {
             }
         } else if (action === 'add-placement') {
             setShowAddPlacementModal(true);
-            fetchJobSeekers();
+            fetchSubmittedCandidates();
             fetchPlacementUsers();
+        } else if (action === 'add-note') {
+            setShowAddNote(true);
+            setActiveTab('notes');
         }
     };
 
-    // Fetch job seekers for candidate dropdown
-    const fetchJobSeekers = async () => {
-        setIsLoadingJobSeekers(true);
+    // Fetch candidates who were submitted to this job
+    const fetchSubmittedCandidates = async () => {
+        if (!jobId) return;
+        
+        setIsLoadingSubmittedCandidates(true);
         try {
-            const response = await fetch('/api/job-seekers', {
+            // Try to fetch applications/submissions for this job
+            // If API doesn't exist, we'll need to create it or use a different approach
+            const response = await fetch(`/api/jobs/${jobId}/applications`, {
                 headers: {
                     'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
                 }
             });
+            
             if (response.ok) {
                 const data = await response.json();
-                setJobSeekers(data.jobSeekers || []);
+                // Assuming the API returns applications with job_seeker_id or job_seeker data
+                const candidates = data.applications?.map((app: any) => ({
+                    id: app.job_seeker_id || app.job_seeker?.id,
+                    name: app.job_seeker?.full_name || app.job_seeker?.name || 
+                          `${app.job_seeker?.first_name || ''} ${app.job_seeker?.last_name || ''}`.trim(),
+                    email: app.job_seeker?.email,
+                    ...app.job_seeker
+                })).filter((c: any) => c.id) || [];
+                
+                setSubmittedCandidates(candidates);
+                setFilteredCandidates(candidates);
+            } else {
+                // If API doesn't exist, fallback to fetching all job seekers
+                // In production, this should be replaced with actual submissions API
+                console.warn('Applications API not found, fetching all job seekers as fallback');
+                const fallbackResponse = await fetch('/api/job-seekers', {
+                    headers: {
+                        'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                    }
+                });
+                if (fallbackResponse.ok) {
+                    const fallbackData = await fallbackResponse.json();
+                    const allCandidates = (fallbackData.jobSeekers || []).map((js: any) => ({
+                        id: js.id,
+                        name: js.full_name || `${js.first_name || ''} ${js.last_name || ''}`.trim() || `Job Seeker #${js.id}`,
+                        email: js.email,
+                        ...js
+                    }));
+                    setSubmittedCandidates(allCandidates);
+                    setFilteredCandidates(allCandidates);
+                }
             }
         } catch (err) {
-            console.error('Error fetching job seekers:', err);
+            console.error('Error fetching submitted candidates:', err);
+            // Fallback to empty array
+            setSubmittedCandidates([]);
+            setFilteredCandidates([]);
         } finally {
-            setIsLoadingJobSeekers(false);
+            setIsLoadingSubmittedCandidates(false);
         }
     };
+
+    // Filter candidates based on search query
+    useEffect(() => {
+        if (!candidateSearchQuery.trim()) {
+            setFilteredCandidates(submittedCandidates);
+        } else {
+            const query = candidateSearchQuery.toLowerCase();
+            const filtered = submittedCandidates.filter((candidate) =>
+                candidate.name?.toLowerCase().includes(query) ||
+                candidate.email?.toLowerCase().includes(query) ||
+                candidate.id?.toString().includes(query)
+            );
+            setFilteredCandidates(filtered);
+        }
+    }, [candidateSearchQuery, submittedCandidates]);
+
+    // Close candidate dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (
+                candidateInputRef.current &&
+                !candidateInputRef.current.contains(event.target as Node)
+            ) {
+                setShowCandidateDropdown(false);
+            }
+        };
+
+        if (showCandidateDropdown) {
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => {
+                document.removeEventListener('mousedown', handleClickOutside);
+            };
+        }
+    }, [showCandidateDropdown]);
 
     // Fetch active users for placement email notification
     const fetchPlacementUsers = async () => {
@@ -755,6 +837,8 @@ export default function JobView() {
                 effectiveDateChecked: false,
                 overtimeExemption: 'False'
             });
+            setCandidateSearchQuery('');
+            setShowCandidateDropdown(false);
         } catch (err) {
             console.error('Error creating placement:', err);
             alert(err instanceof Error ? err.message : 'Failed to create placement. Please try again.');
@@ -783,6 +867,8 @@ export default function JobView() {
             effectiveDateChecked: false,
             overtimeExemption: 'False'
         });
+        setCandidateSearchQuery('');
+        setShowCandidateDropdown(false);
     };
 
     // Handle user selection for placement email notification
@@ -840,6 +926,7 @@ export default function JobView() {
         { label: 'Add Task', action: () => handleActionSelected('add-task') },
         { label: 'Transfer', action: () => handleActionSelected('transfer') },
         { label: 'Add Placement', action: () => handleActionSelected('add-placement') },
+        { label: 'Add Note', action: () => handleActionSelected('add-note') },
     ];
 
     // Tabs from the image
@@ -1058,7 +1145,7 @@ export default function JobView() {
                         <FiBriefcase size={24} />
                     </div>
                     <h1 className="text-xl font-semibold text-gray-700">
-                        {job.id} {job.title}
+                        {formatRecordId(job.id, 'job')} {job.title}
                     </h1>
                 </div>
             </div>
@@ -1596,30 +1683,106 @@ export default function JobView() {
                                     )}
                                 </div>
 
-                                {/* Candidate */}
+                                {/* Candidate - Searchable Text Field */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
                                         Candidate <span className="text-red-500">*</span>
                                     </label>
-                                    {isLoadingJobSeekers ? (
-                                        <div className="w-full p-2 border border-gray-300 rounded text-gray-500">
-                                            Loading candidates...
-                                        </div>
-                                    ) : (
-                                        <select
-                                            value={placementForm.candidate}
-                                            onChange={(e) => setPlacementForm(prev => ({ ...prev, candidate: e.target.value }))}
-                                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            required
-                                        >
-                                            <option value="">Select a candidate</option>
-                                            {jobSeekers.map((js) => (
-                                                <option key={js.id} value={js.id}>
-                                                    {js.full_name || `${js.first_name || ''} ${js.last_name || ''}`.trim() || `Job Seeker #${js.id}`}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    )}
+                                    <div className="relative" ref={candidateInputRef}>
+                                        {isLoadingSubmittedCandidates ? (
+                                            <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                                                Loading candidates...
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <input
+                                                    type="text"
+                                                    value={candidateSearchQuery}
+                                                    onChange={(e) => {
+                                                        setCandidateSearchQuery(e.target.value);
+                                                        setShowCandidateDropdown(true);
+                                                    }}
+                                                    onFocus={() => {
+                                                        if (submittedCandidates.length > 0) {
+                                                            setShowCandidateDropdown(true);
+                                                        }
+                                                    }}
+                                                    placeholder="Search for a candidate..."
+                                                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                    required
+                                                />
+                                                
+                                                {/* Display selected candidate */}
+                                                {placementForm.candidate && !candidateSearchQuery && (
+                                                    <div className="mt-2">
+                                                        {(() => {
+                                                            const selected = submittedCandidates.find(c => c.id.toString() === placementForm.candidate);
+                                                            return selected ? (
+                                                                <div className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800">
+                                                                    {selected.name}
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => {
+                                                                            setPlacementForm(prev => ({ ...prev, candidate: '' }));
+                                                                            setCandidateSearchQuery('');
+                                                                        }}
+                                                                        className="ml-2 text-blue-600 hover:text-blue-800"
+                                                                    >
+                                                                        ×
+                                                                    </button>
+                                                                </div>
+                                                            ) : null;
+                                                        })()}
+                                                    </div>
+                                                )}
+
+                                                {/* Autocomplete Dropdown */}
+                                                {showCandidateDropdown && filteredCandidates.length > 0 && (
+                                                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                                                        {filteredCandidates.map((candidate) => (
+                                                            <button
+                                                                key={candidate.id}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setPlacementForm(prev => ({ ...prev, candidate: candidate.id.toString() }));
+                                                                    setCandidateSearchQuery(candidate.name || '');
+                                                                    setShowCandidateDropdown(false);
+                                                                }}
+                                                                className={`w-full text-left px-4 py-2 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none border-b border-gray-100 last:border-b-0 ${
+                                                                    placementForm.candidate === candidate.id.toString() ? 'bg-blue-50' : ''
+                                                                }`}
+                                                            >
+                                                                <div className="flex items-center justify-between">
+                                                                    <div>
+                                                                        <div className="text-sm font-medium text-gray-900">
+                                                                            {candidate.name || `Candidate #${candidate.id}`}
+                                                                        </div>
+                                                                        {candidate.email && (
+                                                                            <div className="text-xs text-gray-500">
+                                                                                {candidate.email}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                                
+                                                {showCandidateDropdown && filteredCandidates.length === 0 && candidateSearchQuery.trim().length > 0 && (
+                                                    <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg p-3 text-sm text-gray-500 text-center">
+                                                        No candidates found matching "{candidateSearchQuery}"
+                                                    </div>
+                                                )}
+                                                
+                                                {submittedCandidates.length === 0 && !isLoadingSubmittedCandidates && (
+                                                    <div className="mt-1 text-sm text-gray-500">
+                                                        No candidates have been submitted to this job yet.
+                                                    </div>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Status */}
@@ -1634,11 +1797,8 @@ export default function JobView() {
                                         required
                                     >
                                         <option value="">Select status</option>
-                                        <option value="Pending">Pending</option>
-                                        <option value="Active">Active</option>
-                                        <option value="Completed">Completed</option>
-                                        <option value="Terminated">Terminated</option>
-                                        <option value="On Hold">On Hold</option>
+                                        <option value="Temp-Placed">Temp-Placed</option>
+                                        <option value="Perm-Placed">Perm-Placed</option>
                                     </select>
                                 </div>
 

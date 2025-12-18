@@ -6,6 +6,7 @@ import Image from 'next/image';
 import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
 import { FiCheckSquare } from 'react-icons/fi';
+import { formatRecordId } from '@/lib/recordIdFormatter';
 
 export default function TaskView() {
     const router = useRouter();
@@ -597,7 +598,7 @@ export default function TaskView() {
                         <FiCheckSquare size={20} />
                     </div>
                     <h1 className="text-xl font-semibold text-gray-700">
-                        {task.id} {task.title}
+                        {formatRecordId(task.id, 'task')} {task.title}
                     </h1>
                 </div>
             </div>
@@ -689,19 +690,30 @@ export default function TaskView() {
                                     {/* Related Records */}
                                     <div className="mb-6">
                                         <h3 className="font-bold text-lg mb-2">Related Records</h3>
-                                        <div className="grid grid-cols-2 gap-4">
-                                            <div>
-                                                <p><span className="font-medium">Job Seeker:</span> {task.jobSeeker}</p>
-                                                <p><span className="font-medium">Hiring Manager:</span> {task.hiringManager}</p>
+                                        <div className="border border-gray-200 rounded">
+                                            <div className="flex border-b border-gray-200 last:border-b-0">
+                                                <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Job Seeker:</div>
+                                                <div className="flex-1 p-2">{task.jobSeeker}</div>
                                             </div>
-                                            <div>
-                                                <p><span className="font-medium">Job:</span> {task.job}</p>
-                                                <p><span className="font-medium">Lead:</span> {task.lead}</p>
+                                            <div className="flex border-b border-gray-200 last:border-b-0">
+                                                <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Hiring Manager:</div>
+                                                <div className="flex-1 p-2">{task.hiringManager}</div>
                                             </div>
+                                            <div className="flex border-b border-gray-200 last:border-b-0">
+                                                <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Job:</div>
+                                                <div className="flex-1 p-2">{task.job}</div>
+                                            </div>
+                                            <div className="flex border-b border-gray-200 last:border-b-0">
+                                                <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Lead:</div>
+                                                <div className="flex-1 p-2">{task.lead}</div>
+                                            </div>
+                                            {task.placement !== 'Not specified' && (
+                                                <div className="flex border-b border-gray-200 last:border-b-0">
+                                                    <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Placement:</div>
+                                                    <div className="flex-1 p-2">{task.placement}</div>
+                                                </div>
+                                            )}
                                         </div>
-                                        {task.placement !== 'Not specified' && (
-                                            <p className="mt-2"><span className="font-medium">Placement:</span> {task.placement}</p>
-                                        )}
                                     </div>
 
                                     {/* Completion Info */}
@@ -728,10 +740,10 @@ export default function TaskView() {
                                     Details
                                 </div>
                                 <div className="p-4">
-                                    <div className="space-y-3">
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Status:</div>
-                                            <div className="flex-1">
+                                    <div className="space-y-0 border border-gray-200 rounded">
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Status:</div>
+                                            <div className="flex-1 p-2">
                                                 <span className={`px-2 py-1 rounded text-sm ${task.isCompleted ? 'bg-green-100 text-green-800' :
                                                         task.status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
                                                             'bg-yellow-100 text-yellow-800'
@@ -741,9 +753,9 @@ export default function TaskView() {
                                             </div>
                                         </div>
 
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Priority:</div>
-                                            <div className="flex-1">
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Priority:</div>
+                                            <div className="flex-1 p-2">
                                                 <span className={`px-2 py-1 rounded text-sm ${task.priority === 'High' ? 'bg-red-100 text-red-800' :
                                                         task.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
                                                             'bg-green-100 text-green-800'
@@ -753,34 +765,34 @@ export default function TaskView() {
                                             </div>
                                         </div>
 
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Due Date:</div>
-                                            <div className="flex-1">{task.dueDate}</div>
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Due Date:</div>
+                                            <div className="flex-1 p-2">{task.dueDate}</div>
                                         </div>
 
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Due Time:</div>
-                                            <div className="flex-1">{task.dueTime}</div>
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Due Time:</div>
+                                            <div className="flex-1 p-2">{task.dueTime}</div>
                                         </div>
 
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Owner:</div>
-                                            <div className="flex-1">{task.owner}</div>
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Owner:</div>
+                                            <div className="flex-1 p-2">{task.owner}</div>
                                         </div>
 
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Assigned To:</div>
-                                            <div className="flex-1">{task.assignedTo}</div>
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Assigned To:</div>
+                                            <div className="flex-1 p-2">{task.assignedTo}</div>
                                         </div>
 
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Created:</div>
-                                            <div className="flex-1">{task.dateCreated}</div>
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Created:</div>
+                                            <div className="flex-1 p-2">{task.dateCreated}</div>
                                         </div>
 
-                                        <div className="flex">
-                                            <div className="w-32 text-gray-600">Created By:</div>
-                                            <div className="flex-1">{task.createdBy}</div>
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Created By:</div>
+                                            <div className="flex-1 p-2">{task.createdBy}</div>
                                         </div>
                                     </div>
                                 </div>

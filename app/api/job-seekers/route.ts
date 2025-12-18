@@ -60,8 +60,30 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Log the request data for debugging
-        console.log('Creating job seeker with data:', body);
+        // ✅ Clean payload (same pattern as Organizations)
+        const apiData = {
+            firstName: body.firstName || "",
+            lastName: body.lastName || "",
+            email: body.email || "",
+            phone: body.phone || "",
+            mobilePhone: body.mobilePhone || "",
+            address: body.address || "",
+            city: body.city || "",
+            state: body.state || "",
+            zip: body.zip || "",
+            status: body.status || "New lead",
+            currentOrganization: body.currentOrganization || "",
+            title: body.title || "",
+            resumeText: body.resumeText || "",
+            skills: body.skills || "",
+            desiredSalary: body.desiredSalary || "",
+            owner: body.owner || "",
+            dateAdded: body.dateAdded || null,
+            lastContactDate: body.lastContactDate || null,
+            custom_fields: body.custom_fields || {}, // ✅ CRITICAL: Include custom_fields like Organizations
+        };
+
+        console.log('Creating job seeker with data:', apiData);
 
         // Make a request to your backend API
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
@@ -71,7 +93,7 @@ export async function POST(request: NextRequest) {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify(body)
+            body: JSON.stringify(apiData)
         });
 
         // Log the response status

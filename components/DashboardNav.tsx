@@ -10,6 +10,7 @@ import {
   FiSearch,
   FiPlus,
   FiUsers,
+  FiUser,
   FiTarget,
   FiUserCheck,
   FiCalendar,
@@ -40,6 +41,8 @@ interface SearchResults {
   jobSeekers: any[];
   organizations: any[];
   tasks: any[];
+  hiringManagers?: any[];
+  placements?: any[];
 }
 
 export default function DashboardNav() {
@@ -113,12 +116,15 @@ export default function DashboardNav() {
       clearTimeout(searchTimeoutRef.current);
     }
 
-    // If search query is empty or too short, clear results
-    if (!searchQuery.trim() || searchQuery.trim().length < 2) {
+    // If search query is empty, clear results
+    if (!searchQuery.trim()) {
       setSearchResults(null);
       setIsSearching(false);
       return;
     }
+
+    // Allow single character searches (especially for numeric IDs)
+    // Minimum length check removed to allow searching for IDs like "8"
 
     // Set loading state
     setIsSearching(true);
@@ -135,6 +141,13 @@ export default function DashboardNav() {
             setSearchResults(null);
           }
         } else {
+          // Try to get error message from response
+          try {
+            const errorData = await response.json();
+            console.error('Search API error:', errorData.message || 'Unknown error');
+          } catch (e) {
+            console.error('Search API error:', response.status, response.statusText);
+          }
           setSearchResults(null);
         }
       } catch (error) {
@@ -256,7 +269,9 @@ export default function DashboardNav() {
         ...searchResults.leads.map(l => ({ type: 'lead', id: l.id, name: l.first_name && l.last_name ? `${l.first_name} ${l.last_name}` : l.organization_name || l.name })),
         ...searchResults.jobSeekers.map(js => ({ type: 'jobSeeker', id: js.id, name: js.first_name && js.last_name ? `${js.first_name} ${js.last_name}` : js.name })),
         ...searchResults.organizations.map(o => ({ type: 'organization', id: o.id, name: o.name })),
-        ...searchResults.tasks.map(t => ({ type: 'task', id: t.id, name: t.title || t.task_title }))
+        ...searchResults.tasks.map(t => ({ type: 'task', id: t.id, name: t.title || t.task_title })),
+        ...(searchResults.hiringManagers || []).map(hm => ({ type: 'hiringManager', id: hm.id, name: hm.first_name && hm.last_name ? `${hm.first_name} ${hm.last_name}` : hm.name })),
+        ...(searchResults.placements || []).map(p => ({ type: 'placement', id: p.id, name: p.job_title || `Placement ${p.id}` }))
       ];
       
       if (allResults.length > 0) {
@@ -271,7 +286,9 @@ export default function DashboardNav() {
       lead: `/dashboard/leads/view?id=${id}`,
       jobSeeker: `/dashboard/job-seekers/view?id=${id}`,
       organization: `/dashboard/organizations/view?id=${id}`,
-      task: `/dashboard/tasks/view?id=${id}`
+      task: `/dashboard/tasks/view?id=${id}`,
+      hiringManager: `/dashboard/hiring-managers/view?id=${id}`,
+      placement: `/dashboard/placements/view?id=${id}`
     };
     const path = pathMap[type];
     if (path) {
@@ -283,21 +300,35 @@ export default function DashboardNav() {
   };
 
   const getResultDisplayName = (item: any, type: string): string => {
+    const formatId = (id: number | string, prefix: string) => {
+      if (!id && id !== 0) return '';
+      return `${prefix}${id}`;
+    };
+
     switch (type) {
       case 'job':
-        return item.job_title || item.title || `Job #${item.id}`;
+        return item.job_title || item.title || `Job ${formatId(item.id, 'J')}`;
       case 'lead':
         if (item.first_name && item.last_name) {
           return `${item.first_name} ${item.last_name}`;
         }
-        return item.organization_name || item.name || `Lead #${item.id}`;
+        return item.organization_name || item.name || `Lead ${formatId(item.id, 'L')}`;
       case 'jobSeeker':
         if (item.first_name && item.last_name) {
           return `${item.first_name} ${item.last_name}`;
         }
-        return item.name || `Job Seeker #${item.id}`;
+        return item.name || `Job Seeker ${formatId(item.id, 'JS')}`;
       case 'organization':
-        return item.name || `Organization #${item.id}`;
+        return item.name || `Organization ${formatId(item.id, 'O')}`;
+      case 'task':
+        return item.title || item.task_title || `Task ${formatId(item.id, 'T')}`;
+      case 'hiringManager':
+        if (item.first_name && item.last_name) {
+          return `${item.first_name} ${item.last_name}`;
+        }
+        return item.name || `Hiring Manager ${formatId(item.id, 'HM')}`;
+      case 'placement':
+        return item.job_title || `Placement ${formatId(item.id, 'P')}`;
       case 'task':
         return item.title || item.task_title || `Task #${item.id}`;
       default:
@@ -317,6 +348,10 @@ export default function DashboardNav() {
         return <HiOutlineOfficeBuilding size={16} />;
       case 'task':
         return <FiCheckSquare size={16} />;
+      case 'hiringManager':
+        return <FiUser size={16} />;
+      case 'placement':
+        return <FiDollarSign size={16} />;
       default:
         return <FiSearch size={16} />;
     }
@@ -328,7 +363,9 @@ export default function DashboardNav() {
       results.leads.length +
       results.jobSeekers.length +
       results.organizations.length +
-      results.tasks.length
+      results.tasks.length +
+      (results.hiringManagers?.length || 0) +
+      (results.placements?.length || 0)
     );
   };
 
@@ -437,7 +474,7 @@ export default function DashboardNav() {
               </form>
               
               {/* Global search results dropdown */}
-              {searchQuery.trim() && searchQuery.trim().length >= 2 && (
+              {searchQuery.trim() && searchQuery.trim().length >= 1 && (
                 <div className="absolute top-full left-0 mt-1 w-96 bg-slate-800 rounded shadow-lg z-30 max-h-96 overflow-y-auto">
                   {isSearching ? (
                     <div className="px-4 py-8 text-center">
@@ -569,8 +606,58 @@ export default function DashboardNav() {
                           )}
                         </div>
                       )}
+
+                      {/* Hiring Managers */}
+                      {searchResults.hiringManagers && searchResults.hiringManagers.length > 0 && (
+                        <div>
+                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                            Hiring Managers ({searchResults.hiringManagers.length})
+                          </div>
+                          {searchResults.hiringManagers.slice(0, 5).map((hm) => (
+                            <button
+                              key={`hiringManager-${hm.id}`}
+                              type="button"
+                              className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                              onClick={() => navigateToResult('hiringManager', hm.id)}
+                            >
+                              <span className="mr-3 text-yellow-400">{getResultIcon('hiringManager')}</span>
+                              <span className="flex-1 text-left truncate">{getResultDisplayName(hm, 'hiringManager')}</span>
+                            </button>
+                          ))}
+                          {searchResults.hiringManagers.length > 5 && (
+                            <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                              +{searchResults.hiringManagers.length - 5} more hiring managers
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Placements */}
+                      {searchResults.placements && searchResults.placements.length > 0 && (
+                        <div>
+                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                            Placements ({searchResults.placements.length})
+                          </div>
+                          {searchResults.placements.slice(0, 5).map((placement) => (
+                            <button
+                              key={`placement-${placement.id}`}
+                              type="button"
+                              className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                              onClick={() => navigateToResult('placement', placement.id)}
+                            >
+                              <span className="mr-3 text-pink-400">{getResultIcon('placement')}</span>
+                              <span className="flex-1 text-left truncate">{getResultDisplayName(placement, 'placement')}</span>
+                            </button>
+                          ))}
+                          {searchResults.placements.length > 5 && (
+                            <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                              +{searchResults.placements.length - 5} more placements
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ) : searchQuery.trim().length >= 2 ? (
+                  ) : searchQuery.trim().length >= 1 ? (
                     <div className="px-4 py-8 text-center">
                       <div className="text-gray-400 text-sm">
                         {/* <p>No results found for</p>

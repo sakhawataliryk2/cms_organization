@@ -7,6 +7,7 @@ import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
 import { FiUserCheck } from 'react-icons/fi';
+import { formatRecordId } from '@/lib/recordIdFormatter';
 
 export default function HiringManagerView() {
     const router = useRouter();
@@ -24,7 +25,18 @@ export default function HiringManagerView() {
     const [isLoadingNotes, setIsLoadingNotes] = useState(false);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
     const [showAddNote, setShowAddNote] = useState(false);
-    const [newNote, setNewNote] = useState('');
+    // Add Note form state - matching organizations view structure
+    const [noteForm, setNoteForm] = useState({
+        text: '',
+        about: hiringManager ? `${hiringManager.id} ${hiringManager.fullName}` : '',
+        copyNote: 'No',
+        replaceGeneralContactComments: false,
+        additionalReferences: '',
+        scheduleNextAction: 'None',
+        emailNotification: 'Internal User'
+    });
+    const [users, setUsers] = useState<any[]>([]);
+    const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
     // Field management state
     const [availableFields, setAvailableFields] = useState<any[]>([]);
@@ -49,8 +61,17 @@ export default function HiringManagerView() {
     useEffect(() => {
         if (hiringManager && hiringManagerId) {
             fetchAvailableFields();
+            // Update note form about field when hiring manager is loaded
+            setNoteForm(prev => ({ ...prev, about: `${formatRecordId(hiringManager.id, 'hiringManager')} ${hiringManager.fullName}` }));
         }
     }, [hiringManager, hiringManagerId]);
+
+    // Fetch users for email notification
+    useEffect(() => {
+        if (showAddNote) {
+            fetchUsers();
+        }
+    }, [showAddNote]);
 
     // Fetch available fields from modify page (custom fields)
     const fetchAvailableFields = async () => {
@@ -239,9 +260,29 @@ export default function HiringManagerView() {
         }
     };
 
+    // Fetch users for email notification dropdown
+    const fetchUsers = async () => {
+        setIsLoadingUsers(true);
+        try {
+            const response = await fetch('/api/users/active', {
+                headers: {
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setUsers(data.users || []);
+            }
+        } catch (err) {
+            console.error('Error fetching users:', err);
+        } finally {
+            setIsLoadingUsers(false);
+        }
+    };
+
     // Handle adding a new note
     const handleAddNote = async () => {
-        if (!newNote.trim() || !hiringManagerId) return;
+        if (!noteForm.text.trim() || !hiringManagerId) return;
 
         try {
             const response = await fetch(`/api/hiring-managers/${hiringManagerId}/notes`, {
@@ -250,7 +291,14 @@ export default function HiringManagerView() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
                 },
-                body: JSON.stringify({ text: newNote })
+                body: JSON.stringify({ 
+                    text: noteForm.text,
+                    copy_note: noteForm.copyNote === 'Yes',
+                    replace_general_contact_comments: noteForm.replaceGeneralContactComments,
+                    additional_references: noteForm.additionalReferences,
+                    schedule_next_action: noteForm.scheduleNextAction,
+                    email_notification: noteForm.emailNotification
+                })
             });
 
             if (!response.ok) {
@@ -263,7 +311,15 @@ export default function HiringManagerView() {
             setNotes([data.note, ...notes]);
 
             // Clear the form
-            setNewNote('');
+            setNoteForm({
+                text: '',
+                about: hiringManager ? `${formatRecordId(hiringManager.id, 'hiringManager')} ${hiringManager.fullName}` : '',
+                copyNote: 'No',
+                replaceGeneralContactComments: false,
+                additionalReferences: '',
+                scheduleNextAction: 'None',
+                emailNotification: 'Internal User'
+            });
             setShowAddNote(false);
 
             // Refresh history
@@ -272,6 +328,20 @@ export default function HiringManagerView() {
             console.error('Error adding note:', err);
             alert('Failed to add note. Please try again.');
         }
+    };
+
+    // Close add note modal
+    const handleCloseAddNoteModal = () => {
+        setShowAddNote(false);
+        setNoteForm({
+            text: '',
+            about: hiringManager ? `${formatRecordId(hiringManager.id, 'hiringManager')} ${hiringManager.fullName}` : '',
+            copyNote: 'No',
+            replaceGeneralContactComments: false,
+            additionalReferences: '',
+            scheduleNextAction: 'None',
+            emailNotification: 'Internal User'
+        });
     };
 
     const handleGoBack = () => {
@@ -297,6 +367,9 @@ export default function HiringManagerView() {
                     `/dashboard/tasks/add?relatedEntity=hiring_manager&relatedEntityId=${hiringManagerId}`
                 );
             }
+        } else if (action === 'add-note') {
+            setShowAddNote(true);
+            setActiveTab('notes');
         }
     };
 
@@ -337,6 +410,7 @@ export default function HiringManagerView() {
         { label: 'Add Task', action: () => handleActionSelected('add-task') },
         { label: 'Transfer', action: () => handleActionSelected('transfer') },
         { label: 'Password Reset', action: () => handleActionSelected('password-reset') },
+        { label: 'Add Note', action: () => handleActionSelected('add-note') },
     ];
 
     // Tabs from the interface
@@ -372,35 +446,6 @@ export default function HiringManagerView() {
                     Add Note
                 </button>
             </div>
-
-            {/* Add Note Form */}
-            {showAddNote && (
-                <div className="mb-6 p-4 bg-gray-50 rounded border">
-                    <h3 className="font-medium mb-2">Add New Note</h3>
-                    <textarea
-                        value={newNote}
-                        onChange={(e) => setNewNote(e.target.value)}
-                        placeholder="Enter your note here..."
-                        className="w-full p-2 border rounded mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        rows={4}
-                    />
-                    <div className="flex justify-end space-x-2">
-                        <button
-                            onClick={() => setShowAddNote(false)}
-                            className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
-                        >
-                            Cancel
-                        </button>
-                        <button
-                            onClick={handleAddNote}
-                            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-                            disabled={!newNote.trim()}
-                        >
-                            Save Note
-                        </button>
-                    </div>
-                </div>
-            )}
 
             {/* Notes List */}
             {isLoadingNotes ? (
@@ -1044,6 +1089,124 @@ export default function HiringManagerView() {
                                     className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
                                 >
                                     Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add Note Modal */}
+            {showAddNote && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+                        <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                            <div className="flex items-center space-x-2">
+                                <Image src="/file.svg" alt="Note" width={20} height={20} />
+                                <h2 className="text-lg font-semibold">Add Note</h2>
+                            </div>
+                            <button
+                                onClick={handleCloseAddNoteModal}
+                                className="p-1 rounded hover:bg-gray-200"
+                            >
+                                <span className="text-2xl font-bold">×</span>
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            <div className="space-y-4">
+                                {/* Note Text Area */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Note Text
+                                    </label>
+                                    <textarea
+                                        value={noteForm.text}
+                                        onChange={(e) => setNoteForm(prev => ({ ...prev, text: e.target.value }))}
+                                        placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
+                                        className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        rows={6}
+                                    />
+                                </div>
+
+                                {/* About Section */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        About
+                                    </label>
+                                    <div className="relative">
+                                        <div className="flex items-center border border-gray-300 rounded p-2 bg-white">
+                                            <div className="w-6 h-6 rounded-full bg-orange-400 mr-2 flex-shrink-0"></div>
+                                            <span className="flex-1 text-sm">{noteForm.about}</span>
+                                            <button
+                                                onClick={() => setNoteForm(prev => ({ ...prev, about: '' }))}
+                                                className="ml-2 text-gray-500 hover:text-gray-700 text-xs"
+                                            >
+                                                CLEAR ALL X
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Additional References Section */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Additional References
+                                    </label>
+                                    <div className="relative">
+                                        <input
+                                            type="text"
+                                            value={noteForm.additionalReferences}
+                                            onChange={(e) => setNoteForm(prev => ({ ...prev, additionalReferences: e.target.value }))}
+                                            placeholder="Reference other records using #"
+                                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
+                                        />
+                                        <span className="absolute right-2 top-2 text-gray-400 text-sm">Q</span>
+                                    </div>
+                                </div>
+
+                                {/* Email Notification Section */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                                        <span className="mr-2">📧</span>
+                                        Email Notification
+                                    </label>
+                                    <div className="relative">
+                                        {isLoadingUsers ? (
+                                            <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                                                Loading users...
+                                            </div>
+                                        ) : (
+                                            <select
+                                                value={noteForm.emailNotification}
+                                                onChange={(e) => setNoteForm(prev => ({ ...prev, emailNotification: e.target.value }))}
+                                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            >
+                                                <option value="Internal User">Internal User</option>
+                                                {users.map((user) => (
+                                                    <option key={user.id} value={user.name || user.email}>
+                                                        {user.name || user.email}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Form Actions */}
+                            <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
+                                <button
+                                    onClick={handleCloseAddNoteModal}
+                                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium"
+                                >
+                                    CANCEL
+                                </button>
+                                <button
+                                    onClick={handleAddNote}
+                                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                                    disabled={!noteForm.text.trim()}
+                                >
+                                    SAVE
                                 </button>
                             </div>
                         </div>
