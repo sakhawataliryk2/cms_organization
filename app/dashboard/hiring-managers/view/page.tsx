@@ -348,6 +348,20 @@ export default function HiringManagerView() {
         router.back();
     };
 
+    // Print handler: ensure Summary tab is active when printing
+    const handlePrint = () => {
+        const prevTab = activeTab;
+        if (prevTab !== "summary") {
+            setActiveTab("summary");
+            setTimeout(() => {
+                window.print();
+                setActiveTab(prevTab);
+            }, 300);
+        } else {
+            window.print();
+        }
+    };
+
     const handleEdit = () => {
         if (hiringManagerId) {
             router.push(`/dashboard/hiring-managers/add?id=${hiringManagerId}`);
@@ -403,14 +417,17 @@ export default function HiringManagerView() {
     };
 
     const actionOptions = [
-        { label: 'Edit', action: () => handleActionSelected('edit') },
-        { label: 'Delete', action: () => handleActionSelected('delete') },
-        { label: 'Clone', action: () => handleActionSelected('clone') },
-        { label: 'Export', action: () => handleActionSelected('export') },
-        { label: 'Add Task', action: () => handleActionSelected('add-task') },
-        { label: 'Transfer', action: () => handleActionSelected('transfer') },
-        { label: 'Password Reset', action: () => handleActionSelected('password-reset') },
         { label: 'Add Note', action: () => handleActionSelected('add-note') },
+        { label: 'Send Email', action: () => handleActionSelected('send-email') },
+        { label: 'Add Task', action: () => handleActionSelected('add-task') },
+        { label: 'Add Appointment', action: () => handleActionSelected('add-appointment') },
+        { label: 'Add Tearsheet', action: () => handleActionSelected('add-tearsheet') },
+        { label: 'Password Reset', action: () => handleActionSelected('password-reset') },
+        { label: 'Transfer', action: () => handleActionSelected('transfer') },
+        { label: 'Delete', action: () => handleActionSelected('delete') },
+        // { label: 'Edit', action: () => handleActionSelected('edit') },
+        // { label: 'Clone', action: () => handleActionSelected('clone') },
+        // { label: 'Export', action: () => handleActionSelected('export') },
     ];
 
     // Tabs from the interface
@@ -638,7 +655,11 @@ export default function HiringManagerView() {
                 </div>
                 <div className="flex items-center space-x-2">
                     <ActionDropdown label="Actions" options={actionOptions} />
-                    <button className="p-1 hover:bg-gray-200 rounded" aria-label="Print">
+                    <button
+                        onClick={handlePrint}
+                        className="p-1 hover:bg-gray-200 rounded"
+                        aria-label="Print"
+                    >
                         <Image src="/print.svg" alt="Print" width={20} height={20} />
                     </button>
                     <button
@@ -668,7 +689,13 @@ export default function HiringManagerView() {
                                 ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
                                 : "text-gray-700 hover:bg-gray-200"
                         }`}
-                        onClick={() => setActiveTab(tab.id)}
+                        onClick={() => {
+                            if (tab.id === "modify") {
+                                handleEdit();
+                            } else {
+                                setActiveTab(tab.id);
+                            }
+                        }}
                     >
                         {tab.label}
                     </button>

@@ -322,6 +322,20 @@ export default function TaskView() {
         router.back();
     };
 
+    // Print handler: ensure Summary tab is active when printing
+    const handlePrint = () => {
+        const prevTab = activeTab;
+        if (prevTab !== "summary") {
+            setActiveTab("summary");
+            setTimeout(() => {
+                window.print();
+                setActiveTab(prevTab);
+            }, 300);
+        } else {
+            window.print();
+        }
+    };
+
     const handleEdit = () => {
         if (taskId) {
             router.push(`/dashboard/tasks/add?id=${taskId}`);
@@ -401,15 +415,16 @@ export default function TaskView() {
     };
 
     const actionOptions = [
-        { label: 'Edit', action: () => handleActionSelected('edit') },
-        {
-            label: task?.isCompleted ? 'Mark Incomplete' : 'Mark Complete',
-            action: () => handleActionSelected(task?.isCompleted ? 'incomplete' : 'complete')
-        },
         { label: 'Add Note', action: () => handleActionSelected('add-note') },
+        { label: 'Add Tearsheet', action: () => handleActionSelected('add-tearsheet') },
         { label: 'Delete', action: () => handleActionSelected('delete') },
-        { label: 'Clone', action: () => handleActionSelected('clone') },    
-        { label: 'Transfer', action: () => handleActionSelected('transfer') },
+        // { label: 'Edit', action: () => handleActionSelected('edit') },
+        // {
+        //     label: task?.isCompleted ? 'Mark Incomplete' : 'Mark Complete',
+        //     action: () => handleActionSelected(task?.isCompleted ? 'incomplete' : 'complete')
+        // },
+        // { label: 'Clone', action: () => handleActionSelected('clone') },    
+        // { label: 'Transfer', action: () => handleActionSelected('transfer') },
     ];
 
     // Tabs from the design
@@ -617,7 +632,11 @@ export default function TaskView() {
                 </div>
                 <div className="flex items-center space-x-2">
                     <ActionDropdown label="Actions" options={actionOptions} />
-                    <button className="p-1 hover:bg-gray-200 rounded" aria-label="Print">
+                    <button
+                        onClick={handlePrint}
+                        className="p-1 hover:bg-gray-200 rounded"
+                        aria-label="Print"
+                    >
                         <Image src="/print.svg" alt="Print" width={20} height={20} />
                     </button>
                     <button
@@ -647,7 +666,13 @@ export default function TaskView() {
                                 ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
                                 : "text-gray-700 hover:bg-gray-200"
                         }`}
-                        onClick={() => setActiveTab(tab.id)}
+                        onClick={() => {
+                            if (tab.id === "modify") {
+                                handleEdit();
+                            } else {
+                                setActiveTab(tab.id);
+                            }
+                        }}
                     >
                         {tab.label}
                     </button>

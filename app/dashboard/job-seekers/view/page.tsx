@@ -830,13 +830,15 @@ Best regards`;
   };
 
   const actionOptions = [
-    { label: "Edit", action: () => handleActionSelected("edit") },
-    { label: "Delete", action: () => handleActionSelected("delete") },
     { label: "Add Note", action: () => setShowAddNote(true) },
     { label: "Send Email", action: () => handleActionSelected("email") },
+    { label: "Add Appointment", action: () => handleActionSelected("add-appointment") },
     { label: "Add Task", action: () => handleActionSelected("add-task") },
-    { label: "Transfer", action: () => handleActionSelected("transfer") },
+    { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
     { label: "Password Reset", action: () => handleActionSelected("password-reset") },
+    { label: "Edit", action: () => handleActionSelected("edit") },
+    { label: "Transfer", action: () => handleActionSelected("transfer") },
+    { label: "Delete", action: () => handleActionSelected("delete") },
   ];
 
   // Tabs from the image
@@ -1116,7 +1118,13 @@ Best regards`;
                 ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
                 : "text-gray-700 hover:bg-gray-200"
             }`}
-            onClick={() => setActiveTab(tab.id)}
+            onClick={() => {
+              if (tab.id === "modify") {
+                handleEdit();
+              } else {
+                setActiveTab(tab.id);
+              }
+            }}
           >
             {tab.label}
           </button>
