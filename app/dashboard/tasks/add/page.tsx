@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -8,29 +8,17 @@ import CustomFieldRenderer, {
   useCustomFields,
 } from "@/components/CustomFieldRenderer";
 
-// Define field type for typesafety - Updated to include checkbox and other types
-interface FormField {
+interface CustomFieldDefinition {
   id: string;
-  name: string;
-  label: string;
-  type:
-    | "text"
-    | "email"
-    | "tel"
-    | "date"
-    | "select"
-    | "textarea"
-    | "file"
-    | "number"
-    | "url"
-    | "time"
-    | "checkbox";
-  required: boolean;
-  visible: boolean;
-  options?: string[]; // For select fields
+  field_name: string;
+  field_label: string;
+  field_type: string;
+  is_required: boolean;
+  is_hidden: boolean;
+  options?: string[];
   placeholder?: string;
-  value: string;
-  checked?: boolean; // For checkbox fields
+  default_value?: string;
+  sort_order: number;
 }
 
 interface User {
@@ -47,147 +35,26 @@ export default function AddTask() {
   const [isEditMode, setIsEditMode] = useState(!!taskId);
   const [isLoadingTask, setIsLoadingTask] = useState(!!taskId);
   const [loadError, setLoadError] = useState<string | null>(null);
-
-  const [formFields, setFormFields] = useState<FormField[]>([]);
   const [activeUsers, setActiveUsers] = useState<User[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const hasFetchedRef = useRef(false); // Track if we've already fetched task data
 
   // Use the custom fields hook
   const {
     customFields,
     customFieldValues,
+    setCustomFieldValues,
     isLoading: customFieldsLoading,
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
   } = useCustomFields("tasks");
 
-  // Initialize with default fields and load users
+  // Initialize and load users
   useEffect(() => {
-    initializeFields();
     fetchActiveUsers();
   }, []);
-
-  const initializeFields = () => {
-    // Standard task fields
-    const standardFields: FormField[] = [
-      {
-        id: "title",
-        name: "title",
-        label: "Task Title",
-        type: "text",
-        required: true,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "status",
-        name: "status",
-        label: "Status",
-        type: "select",
-        required: true,
-        visible: true,
-        options: ["Open", "In Progress", "Completed", "On Hold", "Cancelled"],
-        value: "Open",
-      },
-      {
-        id: "priority",
-        name: "priority",
-        label: "Priority",
-        type: "select",
-        required: true,
-        visible: true,
-        options: ["High", "Medium", "Low"],
-        value: "Medium",
-      },
-      {
-        id: "type",
-        name: "type",
-        label: "Type",
-        type: "select",
-        required: true,
-        visible: true,
-        options: ["Follow-up", "Email", "Call", "Meeting", "Research", "Other"],
-        value: "Follow-up",
-      },
-      {
-        id: "assignedTo",
-        name: "assignedTo",
-        label: "Assigned To",
-        type: "select",
-        required: false,
-        visible: true,
-        value: "",
-        options: [],
-      },
-      {
-        id: "dueDate",
-        name: "dueDate",
-        label: "Due Date",
-        type: "date",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "dueTime",
-        name: "dueTime",
-        label: "Due Time",
-        type: "time",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "description",
-        name: "description",
-        label: "Description",
-        type: "textarea",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "notes",
-        name: "notes",
-        label: "Notes",
-        type: "textarea",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "relatedEntity",
-        name: "relatedEntity",
-        label: "Related Entity",
-        type: "text",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "relatedEntityId",
-        name: "relatedEntityId",
-        label: "Related Entity ID",
-        type: "text",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "dateAdded",
-        name: "dateAdded",
-        label: "Date Added",
-        type: "date",
-        required: false,
-        visible: true,
-        value: new Date().toISOString().split("T")[0],
-      },
-    ];
-
-    setFormFields(standardFields);
-  };
 
   // Fetch active users for assignment dropdown
   const fetchActiveUsers = async () => {
@@ -195,32 +62,15 @@ export default function AddTask() {
       const response = await fetch("/api/users/active");
       if (response.ok) {
         const data = await response.json();
-        const users = data.users || [];
-        setActiveUsers(users);
-
-        // Update the assignedTo field options
-        setFormFields((prev) =>
-          prev.map((field) =>
-            field.id === "assignedTo"
-              ? { ...field, options: ["", ...users.map((u: User) => u.name)] }
-              : field
-          )
-        );
+        setActiveUsers(data.users || []);
       }
     } catch (error) {
       console.error("Error fetching active users:", error);
     }
   };
 
-  // Load task data when in edit mode
-  useEffect(() => {
-    if (taskId && formFields.length > 0 && !customFieldsLoading) {
-      fetchTaskData(taskId);
-    }
-  }, [taskId, formFields.length, customFieldsLoading]);
-
-  // Function to fetch task data
-  const fetchTaskData = async (id: string) => {
+  // Memoize fetchTaskData to prevent it from being recreated on every render
+  const fetchTaskData = useCallback(async (id: string) => {
     setIsLoadingTask(true);
     setLoadError(null);
 
@@ -246,68 +96,95 @@ export default function AddTask() {
         throw new Error("No task data received");
       }
 
-      // Map API data to form fields
       const task = data.task;
 
-      setFormFields((prevFields) => {
-        const updatedFields = [...prevFields];
+      // Parse existing custom fields from the task
+      let existingCustomFields: Record<string, any> = {};
+      if (task.custom_fields) {
+        try {
+          existingCustomFields =
+            typeof task.custom_fields === "string"
+              ? JSON.parse(task.custom_fields)
+              : task.custom_fields;
+        } catch (e) {
+          console.error("Error parsing existing custom fields:", e);
+        }
+      }
 
-        const updateField = (id: string, value: any) => {
-          const fieldIndex = updatedFields.findIndex(
-            (field) => field.id === id
-          );
-          if (fieldIndex !== -1) {
-            updatedFields[fieldIndex] = {
-              ...updatedFields[fieldIndex],
-              value: value !== null && value !== undefined ? String(value) : "",
-            };
+      // Map custom fields from field_label (database key) to field_name (form key)
+      const mappedCustomFieldValues: Record<string, any> = {};
+
+      // First, map any existing custom field values from the database
+      if (customFields.length > 0 && Object.keys(existingCustomFields).length > 0) {
+        customFields.forEach((field) => {
+          // Try to find the value by field_label (as stored in DB)
+          const value = existingCustomFields[field.field_label];
+          if (value !== undefined) {
+            // Map to field_name for the form
+            mappedCustomFieldValues[field.field_name] = value;
           }
+        });
+      }
+
+      // Second, map standard task fields to custom fields based on field labels
+      if (customFields.length > 0) {
+        const standardFieldMapping: Record<string, string> = {
+          // Title variations
+          "Task Title": task.title || "",
+          "Title": task.title || "",
+          // Status variations
+          "Status": task.status || "Open",
+          "Current Status": task.status || "Open",
+          "Task Status": task.status || "Open",
+          // Priority variations
+          "Priority": task.priority || "Medium",
+          "Task Priority": task.priority || "Medium",
+          // Assigned To variations
+          "Assigned To": task.assigned_to_name || task.assigned_to || "",
+          "Assigned": task.assigned_to_name || task.assigned_to || "",
+          "Assignee": task.assigned_to_name || task.assigned_to || "",
+          // Due Date variations
+          "Due Date": task.due_date ? task.due_date.split("T")[0] : "",
+          "Due": task.due_date ? task.due_date.split("T")[0] : "",
+          // Due Time variations
+          "Due Time": task.due_time || "",
+          "Time": task.due_time || "",
+          // Description variations
+          "Description": task.description || "",
+          "Task Description": task.description || "",
+          "Details": task.description || "",
+          // Notes variations
+          "Notes": task.notes || "",
+          "Task Notes": task.notes || "",
+          // Type variations
+          "Type": task.type || "",
+          "Task Type": task.type || "",
+          // Related Entity variations
+          "Related Entity": task.related_entity || "",
+          "Related": task.related_entity || "",
+          // Related Entity ID variations
+          "Related Entity ID": task.related_entity_id || "",
+          "Related ID": task.related_entity_id || "",
+          // Date Added variations
+          "Date Added": task.created_at ? task.created_at.split("T")[0] : new Date().toISOString().split("T")[0],
+          "Created Date": task.created_at ? task.created_at.split("T")[0] : "",
         };
 
-        // Update standard fields
-        updateField("title", task.title);
-        updateField("status", task.status);
-        updateField("priority", task.priority);
-        updateField("type", task.type);
-        updateField("assignedTo", task.assigned_to);
-        updateField(
-          "dueDate",
-          task.due_date ? task.due_date.split("T")[0] : ""
-        );
-        updateField("dueTime", task.due_time);
-        updateField("description", task.description);
-        updateField("notes", task.notes);
-        updateField("relatedEntity", task.related_entity);
-        updateField("relatedEntityId", task.related_entity_id);
-        updateField(
-          "dateAdded",
-          task.date_added ? task.date_added.split("T")[0] : ""
-        );
-
-        // Handle custom fields if they exist
-        if (task.custom_fields) {
-          let customFieldsObj = {};
-
-          try {
-            if (typeof task.custom_fields === "string") {
-              customFieldsObj = JSON.parse(task.custom_fields);
-            } else if (typeof task.custom_fields === "object") {
-              customFieldsObj = task.custom_fields;
+        // For each custom field, try to populate from mapped values or standard fields
+        customFields.forEach((field) => {
+          // First check if we have a value from existing custom fields
+          if (mappedCustomFieldValues[field.field_name] === undefined) {
+            // Try to get value from standard field mapping using field_label
+            const standardValue = standardFieldMapping[field.field_label];
+            if (standardValue !== undefined) {
+              mappedCustomFieldValues[field.field_name] = standardValue;
             }
-
-            // Update custom field values using the hook
-            Object.entries(customFieldsObj).forEach(([key, value]) => {
-              handleCustomFieldChange(key, String(value));
-            });
-          } catch (error) {
-            console.error("Error parsing custom fields:", error);
           }
-        }
+        });
+      }
 
-        return updatedFields;
-      });
-
-      console.log("Task data loaded successfully");
+      // Set the mapped custom field values
+      setCustomFieldValues(mappedCustomFieldValues);
     } catch (err) {
       console.error("Error fetching task:", err);
       setLoadError(
@@ -318,23 +195,24 @@ export default function AddTask() {
     } finally {
       setIsLoadingTask(false);
     }
-  };
+  }, [customFields, setCustomFieldValues]);
 
-  // Handle input change
-  const handleChange = (id: string, value: string, checked?: boolean) => {
-    setFormFields(
-      formFields.map((field) => {
-        if (field.id === id) {
-          if (field.type === "checkbox") {
-            return { ...field, checked: checked ?? false };
-          } else {
-            return { ...field, value };
-          }
-        }
-        return field;
-      })
-    );
-  };
+  // If taskId is present, fetch the task data
+  // Wait for customFields to load before fetching to ensure proper mapping
+  useEffect(() => {
+    // Only fetch if we have a taskId, customFields are loaded, and we haven't fetched yet
+    if (taskId && !customFieldsLoading && customFields.length > 0 && !hasFetchedRef.current) {
+      hasFetchedRef.current = true;
+      fetchTaskData(taskId);
+    }
+    // Reset the ref when taskId changes or is removed
+    if (!taskId) {
+      hasFetchedRef.current = false;
+    }
+  }, [taskId, customFieldsLoading, customFields.length, fetchTaskData]);
+
+  // Real-time sync: When custom field values change, update corresponding standard fields if needed
+  // Note: This is optional - we're primarily mapping custom fields to standard fields on submit
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -350,28 +228,70 @@ export default function AddTask() {
     setError(null);
 
     try {
-      // Create an object with all standard field values
-      const formData = formFields.reduce((acc, field) => {
-        if (field.visible) {
-          if (field.type === "checkbox") {
-            acc[field.name] = field.checked ? "true" : "false";
-          } else {
-            acc[field.name] = field.value;
-          }
-        }
-        return acc;
-      }, {} as Record<string, string>);
-
-      // Add custom fields to the form data
+      // Get custom fields for submission
       const customFieldsToSend = getCustomFieldsForSubmission();
-      if (Object.keys(customFieldsToSend).length > 0) {
-        formData.custom_fields = JSON.stringify(customFieldsToSend);
-      }
+
+      // Map custom fields to API payload for standard fields
+      const apiData: any = {};
+
+      // Map custom fields to standard fields if they exist
+      const fieldMappings: Record<string, string[]> = {
+        title: ["Task Title", "Title"],
+        status: ["Status", "Current Status", "Task Status"],
+        priority: ["Priority", "Task Priority"],
+        assigned_to: ["Assigned To", "Assigned", "Assignee"],
+        due_date: ["Due Date", "Due"],
+        due_time: ["Due Time", "Time"],
+        description: ["Description", "Task Description", "Details"],
+        notes: ["Notes", "Task Notes"],
+        type: ["Type", "Task Type"],
+        related_entity: ["Related Entity", "Related"],
+        related_entity_id: ["Related Entity ID", "Related ID"],
+      };
+
+      // Map custom field values to standard API fields
+      Object.entries(fieldMappings).forEach(([apiKey, labels]) => {
+        labels.forEach((label) => {
+          if (customFieldsToSend[label] !== undefined && customFieldsToSend[label] !== null && customFieldsToSend[label] !== "") {
+            // Handle special case for assigned_to - convert name to user ID if needed
+            if (apiKey === "assigned_to") {
+              const assignedName = customFieldsToSend[label];
+              const assignedUser = activeUsers.find(u => u.name === assignedName);
+              apiData[apiKey] = assignedUser ? assignedUser.id : assignedName;
+            } else {
+              apiData[apiKey] = customFieldsToSend[label];
+            }
+          }
+        });
+      });
+
+      // Prepare custom_fields for database (clean object with all custom field values)
+      const customFieldsForDB: Record<string, any> = {};
+      customFields.forEach((field) => {
+        const value = customFieldValues[field.field_name];
+        if (value !== undefined && value !== null && value !== "") {
+          customFieldsForDB[field.field_label] = value;
+        }
+      });
+
+      // Add custom_fields to API data
+      apiData.custom_fields = customFieldsForDB;
+
+      console.log("Custom Fields to Send:", customFieldsToSend);
+      console.log("API Data:", apiData);
+      console.log("Custom Fields for DB:", customFieldsForDB);
+
+      const formData = apiData;
 
       console.log(
         `${isEditMode ? "Updating" : "Creating"} task data:`,
         formData
       );
+
+      // Ensure custom_fields is always a plain object (not stringified)
+      if (formData.custom_fields && typeof formData.custom_fields === 'string') {
+        formData.custom_fields = JSON.parse(formData.custom_fields);
+      }
 
       const url = isEditMode ? `/api/tasks/${taskId}` : "/api/tasks";
       const method = isEditMode ? "PUT" : "POST";

@@ -59,6 +59,24 @@ export default function OrganizationView() {
   const [newDocumentContent, setNewDocumentContent] = useState("");
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
 
+  // Hiring Managers (Contacts) state
+  const [hiringManagers, setHiringManagers] = useState<Array<any>>([]);
+  const [isLoadingHiringManagers, setIsLoadingHiringManagers] = useState(false);
+  const [hiringManagersError, setHiringManagersError] = useState<string | null>(null);
+
+  // Tasks state
+  const [tasks, setTasks] = useState<Array<any>>([]);
+  const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+  const [tasksError, setTasksError] = useState<string | null>(null);
+
+  // Tearsheet modal state
+  const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
+  const [tearsheetForm, setTearsheetForm] = useState({
+    name: '',
+    visibility: 'Existing' // 'New' or 'Existing'
+  });
+  const [isSavingTearsheet, setIsSavingTearsheet] = useState(false);
+
   // Current active tab
   const [activeTab, setActiveTab] = useState("summary");
 
@@ -83,6 +101,26 @@ export default function OrganizationView() {
       fetchOrganizationData(organizationId);
     }
   }, [organizationId]);
+
+  // Refresh hiring managers when returning from adding a hiring manager
+  useEffect(() => {
+    const returnToOrgId = sessionStorage.getItem('returnToOrganizationId');
+    if (returnToOrgId && returnToOrgId === organizationId) {
+      // Clear the flag
+      sessionStorage.removeItem('returnToOrganizationId');
+      // Refresh hiring managers
+      if (organizationId) {
+        fetchHiringManagers(organizationId);
+      }
+    }
+  }, [organizationId]);
+
+  // Refresh tasks when hiring managers are loaded (since tasks are filtered by hiring manager IDs)
+  useEffect(() => {
+    if (organizationId && !isLoadingHiringManagers) {
+      fetchTasks(organizationId);
+    }
+  }, [hiringManagers, organizationId, isLoadingHiringManagers]);
 
   // Fetch available fields after organization is loaded
   useEffect(() => {
@@ -278,10 +316,12 @@ export default function OrganizationView() {
       console.log("Formatted organization:", formattedOrg);
       setOrganization(formattedOrg);
 
-      // After loading organization data, fetch notes, history, and documents
+      // After loading organization data, fetch notes, history, documents, hiring managers, and tasks
       fetchNotes(id);
       fetchHistory(id);
       fetchDocuments(id);
+      fetchHiringManagers(id);
+      fetchTasks(id);
     } catch (err) {
       console.error("Error fetching organization:", err);
       setError(
@@ -372,6 +412,108 @@ export default function OrganizationView() {
       );
     } finally {
       setIsLoadingDocuments(false);
+    }
+  };
+
+  // Fetch hiring managers (contacts) for organization
+  const fetchHiringManagers = async (organizationId: string) => {
+    setIsLoadingHiringManagers(true);
+    setHiringManagersError(null);
+
+    try {
+      const response = await fetch(`/api/hiring-managers`, {
+        headers: {
+          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to fetch hiring managers");
+      }
+
+      const data = await response.json();
+      // Filter hiring managers by organization ID
+      const orgHiringManagers = (data.hiringManagers || []).filter((hm: any) => 
+        hm.organization_id?.toString() === organizationId.toString()
+      );
+      setHiringManagers(orgHiringManagers);
+    } catch (err) {
+      console.error("Error fetching hiring managers:", err);
+      setHiringManagersError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while fetching hiring managers"
+      );
+    } finally {
+      setIsLoadingHiringManagers(false);
+    }
+  };
+
+  // Fetch tasks for organization (only non-completed tasks)
+  const fetchTasks = async (organizationId: string) => {
+    setIsLoadingTasks(true);
+    setTasksError(null);
+
+    try {
+      // First, get organization's hiring manager IDs
+      const hiringManagerIds = hiringManagers.map(hm => hm.id);
+      
+      // Fetch jobs for this organization
+      const jobsResponse = await fetch(`/api/jobs`, {
+        headers: {
+          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+        }
+      });
+      let jobIds: number[] = [];
+      if (jobsResponse.ok) {
+        const jobsData = await jobsResponse.json();
+        jobIds = (jobsData.jobs || [])
+          .filter((job: any) => job.organization_id?.toString() === organizationId.toString())
+          .map((job: any) => job.id);
+      }
+
+      // Fetch all tasks
+      const tasksResponse = await fetch(`/api/tasks`, {
+        headers: {
+          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+        }
+      });
+
+      if (!tasksResponse.ok) {
+        const errorData = await tasksResponse.json();
+        throw new Error(errorData.message || "Failed to fetch tasks");
+      }
+
+      const tasksData = await tasksResponse.json();
+      
+      // Filter tasks:
+      // 1. Not completed (status !== "Completed" and is_completed !== true)
+      // 2. Related to this organization (through hiring_manager_id, job_id, or organization_id)
+      const orgTasks = (tasksData.tasks || []).filter((task: any) => {
+        // Exclude completed tasks
+        if (task.is_completed === true || task.status === "Completed") {
+          return false;
+        }
+        
+        // Check if task is related to this organization
+        return (
+          (task.hiring_manager_id && hiringManagerIds.includes(parseInt(task.hiring_manager_id))) ||
+          (task.job_id && jobIds.includes(parseInt(task.job_id))) ||
+          (task.organization_id && task.organization_id.toString() === organizationId.toString())
+        );
+      });
+
+      setTasks(orgTasks);
+    } catch (err) {
+      console.error("Error fetching tasks:", err);
+      setTasksError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while fetching tasks"
+      );
+    } finally {
+      setIsLoadingTasks(false);
     }
   };
 
@@ -506,12 +648,16 @@ export default function OrganizationView() {
     } else if (action === "add-hiring-manager") {
       // Navigate to add hiring manager page with organization context
       if (organizationId) {
+        // Store organizationId in sessionStorage to refresh contacts when returning
+        sessionStorage.setItem('returnToOrganizationId', organizationId);
         router.push(
           `/dashboard/hiring-managers/add?organizationId=${organizationId}`
         );
       } else {
         router.push("/dashboard/hiring-managers/add");
       }
+    } else if (action === "add-tearsheet") {
+      setShowAddTearsheetModal(true);
     } else {
       console.log(`Action selected: ${action}`);
     }
@@ -737,6 +883,55 @@ export default function OrganizationView() {
       scheduleNextAction: 'None',
       emailNotification: 'Internal User'
     });
+  };
+
+  // Handle tearsheet submission
+  const handleTearsheetSubmit = async () => {
+    if (!tearsheetForm.name.trim()) {
+      alert('Please enter a tearsheet name');
+      return;
+    }
+
+    if (!organizationId) {
+      alert('Organization ID is missing');
+      return;
+    }
+
+    setIsSavingTearsheet(true);
+    try {
+      const response = await fetch('/api/tearsheets', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+        },
+        body: JSON.stringify({
+          name: tearsheetForm.name,
+          visibility: tearsheetForm.visibility,
+          organization_id: organizationId
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to create tearsheet' }));
+        throw new Error(errorData.message || 'Failed to create tearsheet');
+      }
+
+      alert('Tearsheet created successfully!');
+      setShowAddTearsheetModal(false);
+      setTearsheetForm({ name: '', visibility: 'Existing' });
+    } catch (err) {
+      console.error('Error creating tearsheet:', err);
+      if (err instanceof Error && err.message.includes('Failed to fetch')) {
+        alert('Tearsheet creation feature is being set up. The tearsheet will be created once the API is ready.');
+        setShowAddTearsheetModal(false);
+        setTearsheetForm({ name: '', visibility: 'Existing' });
+      } else {
+        alert(err instanceof Error ? err.message : 'Failed to create tearsheet. Please try again.');
+      }
+    } finally {
+      setIsSavingTearsheet(false);
+    }
   };
 
   // Update the actionOptions to remove the edit option since we'll handle it in Modify tab
@@ -1048,6 +1243,10 @@ export default function OrganizationView() {
                 handleModifyClick();
               } else {
                 setActiveTab(tab.id);
+                // Refresh hiring managers when contacts tab is activated
+                if (tab.id === "contacts" && organizationId) {
+                  fetchHiringManagers(organizationId);
+                }
               }
             }}
           >
@@ -1242,6 +1441,74 @@ export default function OrganizationView() {
                   )}
                 </div>
               </PanelWithHeader>
+
+              {/* Open Tasks */}
+              <PanelWithHeader
+                title="Open Tasks:"
+              >
+                <div className="border border-gray-200 rounded">
+                  {isLoadingTasks ? (
+                    <div className="flex justify-center py-4">
+                      <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+                    </div>
+                  ) : tasksError ? (
+                    <div className="p-2 text-red-500 text-sm">{tasksError}</div>
+                  ) : tasks.length > 0 ? (
+                    <div className="divide-y divide-gray-200">
+                      {tasks.map((task) => (
+                        <div
+                          key={task.id}
+                          className="p-3 hover:bg-gray-50 cursor-pointer"
+                          onClick={() => router.push(`/dashboard/tasks/view?id=${task.id}`)}
+                        >
+                          <div className="flex justify-between items-start mb-1">
+                            <h4 className="font-medium text-blue-600 hover:underline">
+                              {task.title}
+                            </h4>
+                            {task.priority && (
+                              <span
+                                className={`px-2 py-0.5 rounded text-xs ${
+                                  task.priority === "High"
+                                    ? "bg-red-100 text-red-800"
+                                    : task.priority === "Medium"
+                                    ? "bg-yellow-100 text-yellow-800"
+                                    : "bg-gray-100 text-gray-800"
+                                }`}
+                              >
+                                {task.priority}
+                              </span>
+                            )}
+                          </div>
+                          {task.description && (
+                            <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                              {task.description}
+                            </p>
+                          )}
+                          <div className="flex justify-between items-center text-xs text-gray-500">
+                            <div className="flex space-x-3">
+                              {task.due_date && (
+                                <span>
+                                  Due: {new Date(task.due_date).toLocaleDateString()}
+                                </span>
+                              )}
+                              {task.assigned_to_name && (
+                                <span>Assigned to: {task.assigned_to_name}</span>
+                              )}
+                            </div>
+                            {task.status && (
+                              <span className="text-gray-600">{task.status}</span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-4 text-center text-gray-500 italic">
+                      No open tasks
+                    </div>
+                  )}
+                </div>
+              </PanelWithHeader>
             </div>
           </div>
         )}
@@ -1272,47 +1539,88 @@ export default function OrganizationView() {
 
         {activeTab === "contacts" && (
           <div className="bg-white p-4 rounded shadow-sm">
-            <h2 className="text-lg font-semibold mb-4">
-              Organization Contacts
-            </h2>
-            {/* <p className="text-gray-500 italic">No contacts available</p> */}
-            <div className="flex items-center">
-              <label className="w-48 font-medium">Contact Phone:</label>
-              <input
-                type="number"
-                min="0"
-                name="numEmployees"
-                className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                placeholder="e.g (123) 456-7890"
-              />
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold">Organization Contacts (Hiring Managers)</h2>
+              <button
+                onClick={() => handleActionSelected("add-hiring-manager")}
+                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+              >
+                Add Hiring Manager
+              </button>
             </div>
-            <div className="flex items-center">
-              <label className="w-48 font-medium">Address:</label>
-              <input
-                type="text"
-                name=""
-                className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                placeholder="Address"
-              />
-            </div>
-            <div className="flex items-center">
-              <label className="w-48 font-medium">City:</label>
-              <input
-                type="text"
-                name=""
-                className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                placeholder="City"
-              />
-            </div>
-            <div className="flex items-center">
-              <label className="w-48 font-medium">ZIP Code:</label>
-              <input
-                type="number"
-                name=""
-                className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                placeholder="ZIP Code"
-              />
-            </div>
+
+            {isLoadingHiringManagers ? (
+              <div className="flex justify-center py-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+              </div>
+            ) : hiringManagersError ? (
+              <div className="text-red-500 py-2">{hiringManagersError}</div>
+            ) : hiringManagers.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100 border-b">
+                      <th className="text-left p-3 font-medium">Name</th>
+                      <th className="text-left p-3 font-medium">Title</th>
+                      <th className="text-left p-3 font-medium">Email</th>
+                      <th className="text-left p-3 font-medium">Phone</th>
+                      <th className="text-left p-3 font-medium">Status</th>
+                      <th className="text-left p-3 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {hiringManagers.map((hm) => (
+                      <tr key={hm.id} className="border-b hover:bg-gray-50">
+                        <td className="p-3">
+                          <button
+                            onClick={() => router.push(`/dashboard/hiring-managers/view?id=${hm.id}`)}
+                            className="text-blue-600 hover:underline font-medium"
+                          >
+                            {hm.full_name || `${hm.first_name} ${hm.last_name}`}
+                          </button>
+                        </td>
+                        <td className="p-3">{hm.title || "-"}</td>
+                        <td className="p-3">
+                          <a href={`mailto:${hm.email}`} className="text-blue-600 hover:underline">
+                            {hm.email || "-"}
+                          </a>
+                        </td>
+                        <td className="p-3">{hm.phone || "-"}</td>
+                        <td className="p-3">
+                          <span
+                            className={`px-2 py-1 rounded text-xs ${
+                              hm.status === "Active"
+                                ? "bg-green-100 text-green-800"
+                                : "bg-gray-100 text-gray-800"
+                            }`}
+                          >
+                            {hm.status || "Active"}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <button
+                            onClick={() => router.push(`/dashboard/hiring-managers/view?id=${hm.id}`)}
+                            className="text-blue-500 hover:text-blue-700 text-sm"
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-gray-500 italic mb-4">No hiring managers have been added to this organization yet.</p>
+                <button
+                  onClick={() => handleActionSelected("add-hiring-manager")}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  Add First Hiring Manager
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -1712,6 +2020,111 @@ export default function OrganizationView() {
                   SAVE
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Tearsheet Modal */}
+      {showAddTearsheetModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+            {/* Header */}
+            <div className="flex justify-between items-center p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold">Tearsheets</h2>
+              <button
+                onClick={() => {
+                  setShowAddTearsheetModal(false);
+                  setTearsheetForm({ name: '', visibility: 'Existing' });
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            {/* Form Content */}
+            <div className="p-6 space-y-6">
+              {/* Tearsheet Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <span className="text-red-500 mr-1">•</span>
+                  Tearsheet name
+                </label>
+                <input
+                  type="text"
+                  value={tearsheetForm.name}
+                  onChange={(e) => setTearsheetForm(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="Enter tearsheet name"
+                  className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                  required
+                />
+              </div>
+
+              {/* Visibility */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Visibility
+                </label>
+                <div className="inline-flex rounded-md border border-gray-300 overflow-hidden" role="group">
+                  <button
+                    type="button"
+                    onClick={() => setTearsheetForm(prev => ({ ...prev, visibility: 'New' }))}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${
+                      tearsheetForm.visibility === 'New'
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    New
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTearsheetForm(prev => ({ ...prev, visibility: 'Existing' }))}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${
+                      tearsheetForm.visibility === 'Existing'
+                        ? 'bg-blue-500 text-white'
+                        : 'bg-white text-gray-700 hover:bg-gray-50'
+                    }`}
+                  >
+                    Existing
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowAddTearsheetModal(false);
+                  setTearsheetForm({ name: '', visibility: 'Existing' });
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSavingTearsheet}
+              >
+                BACK
+              </button>
+              <button
+                onClick={handleTearsheetSubmit}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                disabled={isSavingTearsheet || !tearsheetForm.name.trim()}
+              >
+                SAVE
+                <svg
+                  className="w-4 h-4 ml-2"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              </button>
             </div>
           </div>
         </div>

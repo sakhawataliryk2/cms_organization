@@ -92,6 +92,7 @@ interface GoalQuotaRow {
   userName: string;
   category: string;
   notes: string;
+  notesCount: number; // Number of notes added for this category
   addedToSystem: number;
   inboundEmails: number;
   outboundEmails: number;
@@ -110,6 +111,11 @@ const GoalsAndQuotas = () => {
   const [isUsersDropdownOpen, setIsUsersDropdownOpen] = useState(false);
   const usersDropdownRef = useRef<HTMLDivElement>(null);
   const [goalsQuotasData, setGoalsQuotasData] = useState<GoalQuotaRow[]>([]);
+  const [isLoadingNotes, setIsLoadingNotes] = useState(false);
+  const [isLoadingRecords, setIsLoadingRecords] = useState(false);
+  const [recordsByUserCategory, setRecordsByUserCategory] = useState<Record<string, any[]>>({});
+  const [selectedRecords, setSelectedRecords] = useState<{userId: string, category: string, records: any[]} | null>(null);
+  const [showRecordsModal, setShowRecordsModal] = useState(false);
 
   const calendarData = getCalendarData();
   const selectedDayAppointments = mockAppointments; // In real app, filter by selected date
@@ -183,6 +189,7 @@ const GoalsAndQuotas = () => {
                 userName: user.name || user.email,
                 category,
                 notes: "",
+                notesCount: 0,
                 addedToSystem: 0,
                 inboundEmails: 0,
                 outboundEmails: 0,
@@ -192,6 +199,10 @@ const GoalsAndQuotas = () => {
             });
           });
           setGoalsQuotasData(initialData);
+          
+          // Fetch notes count and records count for each category and user
+          fetchNotesCount(data.users || []);
+          fetchRecordsCount(data.users || []);
         }
       } catch (error) {
         console.error("Error fetching users:", error);
@@ -200,6 +211,187 @@ const GoalsAndQuotas = () => {
 
     fetchUsers();
   }, []);
+
+  // Fetch notes count for each category and user
+  const fetchNotesCount = async (usersList: User[]) => {
+    setIsLoadingNotes(true);
+    try {
+      const categoryApiMap: Record<string, string> = {
+        "Organization": "organizations",
+        "Jobs": "jobs",
+        "Job Seekers": "job-seekers",
+        "Hiring Managers": "hiring-managers",
+        "Placements": "placements",
+        "Leads": "leads",
+      };
+
+      const notesCountMap: Record<string, number> = {}; // Key: `${userId}-${category}`
+
+      // Fetch notes for each category
+      for (const category of categories) {
+        const apiEndpoint = categoryApiMap[category];
+        if (!apiEndpoint) continue;
+
+        try {
+          // Fetch all entities for this category
+          const entitiesResponse = await fetch(`/api/${apiEndpoint}`, {
+            headers: {
+              'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+            }
+          });
+
+          if (!entitiesResponse.ok) continue;
+
+          const entitiesData = await entitiesResponse.json();
+          
+          // Map category to correct response key
+          const responseKeyMap: Record<string, string> = {
+            "Organization": "organizations",
+            "Jobs": "jobs",
+            "Job Seekers": "jobSeekers",
+            "Hiring Managers": "hiringManagers",
+            "Placements": "placements",
+            "Leads": "leads",
+          };
+          
+          const responseKey = responseKeyMap[category] || apiEndpoint.replace("-", "");
+          const entities = entitiesData[responseKey] || entitiesData[category.toLowerCase().replace(" ", "")] || [];
+          
+          // Fetch notes for each entity
+          for (const entity of entities) {
+            if (!entity.id) continue;
+
+            try {
+              const notesResponse = await fetch(`/api/${apiEndpoint}/${entity.id}/notes`, {
+                headers: {
+                  'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                }
+              });
+
+              if (notesResponse.ok) {
+                const notesData = await notesResponse.json();
+                const notes = notesData.notes || [];
+
+                // Count notes by created_by user
+                notes.forEach((note: any) => {
+                  if (note.created_by) {
+                    const key = `${note.created_by}-${category}`;
+                    notesCountMap[key] = (notesCountMap[key] || 0) + 1;
+                  }
+                });
+              }
+            } catch (err) {
+              console.error(`Error fetching notes for ${category} entity ${entity.id}:`, err);
+            }
+          }
+        } catch (err) {
+          console.error(`Error fetching ${category} entities:`, err);
+        }
+      }
+
+      // Update goals/quotes data with notes count
+      setGoalsQuotasData((prevData) =>
+        prevData.map((row) => {
+          const key = `${row.userId}-${row.category}`;
+          return {
+            ...row,
+            notesCount: notesCountMap[key] || 0,
+          };
+        })
+      );
+    } catch (error) {
+      console.error("Error fetching notes count:", error);
+    } finally {
+      setIsLoadingNotes(false);
+    }
+  };
+
+  // Fetch records count for each category and user
+  const fetchRecordsCount = async (usersList: User[]) => {
+    setIsLoadingRecords(true);
+    try {
+      const categoryApiMap: Record<string, string> = {
+        "Organization": "organizations",
+        "Jobs": "jobs",
+        "Job Seekers": "job-seekers",
+        "Hiring Managers": "hiring-managers",
+        "Placements": "placements",
+        "Leads": "leads",
+      };
+
+      const responseKeyMap: Record<string, string> = {
+        "Organization": "organizations",
+        "Jobs": "jobs",
+        "Job Seekers": "jobSeekers",
+        "Hiring Managers": "hiringManagers",
+        "Placements": "placements",
+        "Leads": "leads",
+      };
+
+      const recordsMap: Record<string, any[]> = {}; // Key: `${userId}-${category}`, Value: array of records
+
+      // Fetch records for each category
+      for (const category of categories) {
+        const apiEndpoint = categoryApiMap[category];
+        if (!apiEndpoint) continue;
+
+        try {
+          // Fetch all entities for this category
+          const entitiesResponse = await fetch(`/api/${apiEndpoint}`, {
+            headers: {
+              'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+            }
+          });
+
+          if (!entitiesResponse.ok) continue;
+
+          const entitiesData = await entitiesResponse.json();
+          const responseKey = responseKeyMap[category] || apiEndpoint.replace("-", "");
+          const entities = entitiesData[responseKey] || [];
+
+          // Group entities by created_by user
+          entities.forEach((entity: any) => {
+            if (entity.created_by) {
+              const key = `${entity.created_by}-${category}`;
+              if (!recordsMap[key]) {
+                recordsMap[key] = [];
+              }
+              recordsMap[key].push(entity);
+            }
+          });
+        } catch (err) {
+          console.error(`Error fetching ${category} entities:`, err);
+        }
+      }
+
+      // Store records map for later use in modal
+      setRecordsByUserCategory(recordsMap);
+
+      // Update goals/quotes data with records count
+      setGoalsQuotasData((prevData) =>
+        prevData.map((row) => {
+          const key = `${row.userId}-${row.category}`;
+          const count = recordsMap[key]?.length || 0;
+          return {
+            ...row,
+            addedToSystem: count,
+          };
+        })
+      );
+    } catch (error) {
+      console.error("Error fetching records count:", error);
+    } finally {
+      setIsLoadingRecords(false);
+    }
+  };
+
+  // Handle clicking on "Added to System" count
+  const handleRecordsClick = (userId: string, category: string) => {
+    const key = `${userId}-${category}`;
+    const records = recordsByUserCategory[key] || [];
+    setSelectedRecords({ userId, category, records });
+    setShowRecordsModal(true);
+  };
 
   // Filter goals/quotes data based on selected users
   const filteredGoalsQuotasData = goalsQuotasData.filter((row) => {
@@ -346,6 +538,9 @@ const GoalsAndQuotas = () => {
             <div className="w-24 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
               Notes
             </div>
+            <div className="w-24 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              Notes Count
+            </div>
             {/* <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
               <div>Goals</div>
               <div className="text-xs font-normal text-gray-500">Quotas</div>
@@ -426,6 +621,15 @@ const GoalsAndQuotas = () => {
                     />
                   </div>
 
+                  {/* Notes Count Column */}
+                  <div className="w-24 p-3 border-r border-gray-300 text-sm text-gray-700 text-center">
+                    {isLoadingNotes ? (
+                      <span className="text-gray-400">...</span>
+                    ) : (
+                      row.notesCount || 0
+                    )}
+                  </div>
+
               {/* Notes - Goals/Quotas */}
               {/* <div className="w-20 p-3 border-r border-gray-300">
                 <div className="flex space-x-2">
@@ -478,20 +682,7 @@ const GoalsAndQuotas = () => {
 
                   {/* Inbound emails Column */}
                   <div className="w-28 p-3 border-r border-gray-300">
-                    <input
-                      type="number"
-                      value={row.inboundEmails || ""}
-                      onChange={(e) => {
-                        const updated = goalsQuotasData.map((item) =>
-                          item.userId === row.userId && item.category === row.category
-                            ? { ...item, inboundEmails: parseInt(e.target.value) || 0 }
-                            : item
-                        );
-                        setGoalsQuotasData(updated);
-                      }}
-                      className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                      placeholder=""
-                    />
+                    <span className="text-sm text-gray-700">0</span>
                   </div>
 
               {/* Inbound emails - Goals/Quotas */}
@@ -512,20 +703,7 @@ const GoalsAndQuotas = () => {
 
                   {/* Outbound emails Column */}
                   <div className="w-28 p-3 border-r border-gray-300">
-                    <input
-                      type="number"
-                      value={row.outboundEmails || ""}
-                      onChange={(e) => {
-                        const updated = goalsQuotasData.map((item) =>
-                          item.userId === row.userId && item.category === row.category
-                            ? { ...item, outboundEmails: parseInt(e.target.value) || 0 }
-                            : item
-                        );
-                        setGoalsQuotasData(updated);
-                      }}
-                      className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                      placeholder=""
-                    />
+                    <span className="text-sm text-gray-700">0</span>
                   </div>
 
               {/* Outbound emails - Goals/Quotas */}
@@ -546,20 +724,7 @@ const GoalsAndQuotas = () => {
 
                   {/* Calls Column */}
                   <div className="w-16 p-3 border-r border-gray-300">
-                    <input
-                      type="number"
-                      value={row.calls || ""}
-                      onChange={(e) => {
-                        const updated = goalsQuotasData.map((item) =>
-                          item.userId === row.userId && item.category === row.category
-                            ? { ...item, calls: parseInt(e.target.value) || 0 }
-                            : item
-                        );
-                        setGoalsQuotasData(updated);
-                      }}
-                      className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                      placeholder=""
-                    />
+                    <span className="text-sm text-gray-700">0</span>
                   </div>
 
               {/* Calls - Goals/Quotas */}
@@ -580,20 +745,7 @@ const GoalsAndQuotas = () => {
 
                   {/* Texts Column */}
                   <div className="w-16 p-3">
-                    <input
-                      type="number"
-                      value={row.texts || ""}
-                      onChange={(e) => {
-                        const updated = goalsQuotasData.map((item) =>
-                          item.userId === row.userId && item.category === row.category
-                            ? { ...item, texts: parseInt(e.target.value) || 0 }
-                            : item
-                        );
-                        setGoalsQuotasData(updated);
-                      }}
-                      className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                      placeholder=""
-                    />
+                    <span className="text-sm text-gray-700">0</span>
                   </div>
                 </div>
               );
@@ -601,6 +753,114 @@ const GoalsAndQuotas = () => {
           )}
         </div>
       </div>
+
+      {/* Records Modal */}
+      {showRecordsModal && selectedRecords && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">
+                {selectedRecords.category} Records - {users.find(u => u.id === selectedRecords.userId)?.name || selectedRecords.userId}
+              </h2>
+              <button
+                onClick={() => {
+                  setShowRecordsModal(false);
+                  setSelectedRecords(null);
+                }}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="p-6">
+              {selectedRecords.records.length === 0 ? (
+                <p className="text-gray-500 text-center py-8">No records found</p>
+              ) : (
+                <div className="space-y-4">
+                  {selectedRecords.records.map((record, index) => (
+                    <div
+                      key={record.id || index}
+                      className="border border-gray-200 rounded p-4 hover:bg-gray-50"
+                    >
+                      <div className="flex justify-between items-start">
+                        <div className="flex-1">
+                          {/* Display record based on category */}
+                          {selectedRecords.category === "Organization" && (
+                            <>
+                              <h3 className="font-medium text-gray-900">{record.name || `Organization #${record.id}`}</h3>
+                              {record.website && <p className="text-sm text-gray-600">{record.website}</p>}
+                              {record.phone && <p className="text-sm text-gray-600">{record.phone}</p>}
+                            </>
+                          )}
+                          {selectedRecords.category === "Jobs" && (
+                            <>
+                              <h3 className="font-medium text-gray-900">{record.job_title || `Job #${record.id}`}</h3>
+                              {record.organization_name && <p className="text-sm text-gray-600">{record.organization_name}</p>}
+                              {record.category && <p className="text-sm text-gray-600">Category: {record.category}</p>}
+                            </>
+                          )}
+                          {selectedRecords.category === "Job Seekers" && (
+                            <>
+                              <h3 className="font-medium text-gray-900">{record.full_name || `${record.first_name} ${record.last_name}` || `Job Seeker #${record.id}`}</h3>
+                              {record.email && <p className="text-sm text-gray-600">{record.email}</p>}
+                              {record.phone && <p className="text-sm text-gray-600">{record.phone}</p>}
+                            </>
+                          )}
+                          {selectedRecords.category === "Hiring Managers" && (
+                            <>
+                              <h3 className="font-medium text-gray-900">{record.full_name || `${record.first_name} ${record.last_name}` || `Hiring Manager #${record.id}`}</h3>
+                              {record.email && <p className="text-sm text-gray-600">{record.email}</p>}
+                              {record.title && <p className="text-sm text-gray-600">{record.title}</p>}
+                            </>
+                          )}
+                          {selectedRecords.category === "Placements" && (
+                            <>
+                              <h3 className="font-medium text-gray-900">
+                                {record.job_seeker_name || record.jobSeekerName || `Placement #${record.id}`}
+                              </h3>
+                              {record.job_title && <p className="text-sm text-gray-600">{record.job_title}</p>}
+                              {record.status && <p className="text-sm text-gray-600">Status: {record.status}</p>}
+                            </>
+                          )}
+                          {selectedRecords.category === "Leads" && (
+                            <>
+                              <h3 className="font-medium text-gray-900">{record.full_name || `${record.first_name} ${record.last_name}` || `Lead #${record.id}`}</h3>
+                              {record.email && <p className="text-sm text-gray-600">{record.email}</p>}
+                              {record.title && <p className="text-sm text-gray-600">{record.title}</p>}
+                            </>
+                          )}
+                          {record.created_at && (
+                            <p className="text-xs text-gray-500 mt-2">
+                              Created: {new Date(record.created_at).toLocaleDateString()}
+                            </p>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          ID: {record.id}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
+              <div className="text-sm text-gray-600">
+                Total: {selectedRecords.records.length} record(s)
+              </div>
+              <button
+                onClick={() => {
+                  setShowRecordsModal(false);
+                  setSelectedRecords(null);
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

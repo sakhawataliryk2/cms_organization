@@ -1,31 +1,24 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
+import CustomFieldRenderer, {
+  useCustomFields,
+} from "@/components/CustomFieldRenderer";
 
-// Define field type for typesafety
-interface FormField {
+interface CustomFieldDefinition {
   id: string;
-  name: string;
-  label: string;
-  type:
-    | "text"
-    | "email"
-    | "tel"
-    | "date"
-    | "select"
-    | "textarea"
-    | "file"
-    | "number";
-  required: boolean;
-  visible: boolean;
-  options?: string[]; // For select fields
+  field_name: string;
+  field_label: string;
+  field_type: string;
+  is_required: boolean;
+  is_hidden: boolean;
+  options?: string[];
   placeholder?: string;
-  value: string;
-  locked?: boolean; // For locked fields
-  sortOrder?: number;
+  default_value?: string;
+  sort_order: number;
 }
 
 interface User {
@@ -45,12 +38,18 @@ export default function AddHiringManager() {
   const [isEditMode, setIsEditMode] = useState(!!hiringManagerId);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeUsers, setActiveUsers] = useState<User[]>([]);
+  const hasFetchedRef = useRef(false); // Track if we've already fetched hiring manager data
 
-  // Custom fields state
-  const [customFields, setCustomFields] = useState<FormField[]>([]);
-  
-  // Ref to track if initial load has happened
-  const hasInitialLoad = useRef(false);
+  // Use the useCustomFields hook
+  const {
+    customFields,
+    customFieldValues,
+    setCustomFieldValues,
+    isLoading: customFieldsLoading,
+    handleCustomFieldChange,
+    validateCustomFields,
+    getCustomFieldsForSubmission,
+  } = useCustomFields("hiring-managers");
 
   const [formData, setFormData] = useState({
     firstName: "",
@@ -90,39 +89,7 @@ export default function AddHiringManager() {
 
     // Fetch active users for owner dropdown
     fetchActiveUsers();
-
-    // Fetch custom fields for hiring managers first
-    fetchCustomFields().then(() => {
-      // After custom fields are loaded, fetch hiring manager data if in edit mode
-      if (hiringManagerId) {
-        fetchHiringManager(hiringManagerId);
-      }
-    });
   }, []);
-
-  // If hiringManagerId changes after initial load, fetch the hiring manager data
-  useEffect(() => {
-    // Skip initial mount - handled by first useEffect
-    if (!hasInitialLoad.current) {
-      hasInitialLoad.current = true;
-      return;
-    }
-    
-    // Only run if hiringManagerId changes after initial load
-    if (!hiringManagerId) return;
-    
-    // Ensure custom fields are loaded first, then fetch hiring manager
-    const loadData = async () => {
-      let fields = customFields;
-      if (customFields.length === 0) {
-        fields = await fetchCustomFields();
-      }
-      // Fetch hiring manager with the updated custom fields
-      await fetchHiringManager(hiringManagerId);
-    };
-    
-    loadData();
-  }, [hiringManagerId]);
 
   // Fetch active users
   const fetchActiveUsers = async () => {
@@ -137,47 +104,8 @@ export default function AddHiringManager() {
     }
   };
 
-  // Fetch custom fields for hiring managers
-  const fetchCustomFields = async () => {
-    try {
-      const response = await fetch(
-        "/api/admin/field-management/hiring-managers"
-      );
-      if (response.ok) {
-        const data = await response.json();
-        const fields = data.customFields || [];
-
-        // Convert to form fields format
-        const customFormFields: FormField[] = fields
-          .filter((field: any) => !field.is_hidden)
-          .map((field: any) => ({
-            id: `custom_${field.field_name}`,
-            name: field.field_name,
-            label: field.field_label,
-            type: field.field_type as any,
-            required: field.is_required,
-            visible: true,
-            options: field.options || [],
-            placeholder: field.placeholder || "",
-            value: "",
-            sortOrder: field.sort_order,
-          }));
-
-        const sortedFields = customFormFields.sort(
-          (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)
-        );
-        
-        setCustomFields(sortedFields);
-        return sortedFields;
-      }
-      return [];
-    } catch (error) {
-      console.error("Error fetching custom fields:", error);
-      return [];
-    }
-  };
-
-  const fetchHiringManager = async (id: string) => {
+  // Memoize fetchHiringManager to prevent it from being recreated on every render
+  const fetchHiringManager = useCallback(async (id: string) => {
     setIsLoading(true);
     setError(null);
 
@@ -218,72 +146,110 @@ export default function AddHiringManager() {
         address: hm.address || "",
       });
 
-      // Load custom field values if they exist
-      // First ensure custom fields are loaded - always fetch fresh to avoid state issues
-      let fieldsToUpdate = await fetchCustomFields();
-      
-      if (hm.custom_fields && fieldsToUpdate.length > 0) {
+      // Parse existing custom fields from the hiring manager
+      let existingCustomFields: Record<string, any> = {};
+      if (hm.custom_fields) {
         try {
-          const customFieldValues =
+          existingCustomFields =
             typeof hm.custom_fields === "string"
               ? JSON.parse(hm.custom_fields)
               : hm.custom_fields;
-
-          console.log("Custom field values from API:", customFieldValues);
-          console.log("Custom fields structure:", fieldsToUpdate);
-
-          // Update custom fields with values from the API
-          // Try matching by field.name first (most common), then by other formats
-          const updatedFields = fieldsToUpdate.map((field) => {
-            // Try multiple possible key formats to match the custom field value
-            let value = "";
-            
-            // First try exact match with field.name
-            if (customFieldValues[field.name]) {
-              value = customFieldValues[field.name];
-            } 
-            // Try without 'custom_' prefix
-            else if (field.id && customFieldValues[field.id.replace('custom_', '')]) {
-              value = customFieldValues[field.id.replace('custom_', '')];
-            }
-            // Try with field label (case-insensitive)
-            else if (field.label) {
-              const labelKey = Object.keys(customFieldValues).find(
-                key => key.toLowerCase() === field.label.toLowerCase()
-              );
-              if (labelKey) {
-                value = customFieldValues[labelKey];
-              }
-            }
-            // Try matching by field_name from the API response
-            else {
-              // Check if there's a field_name property and try matching
-              const fieldNameKey = Object.keys(customFieldValues).find(
-                key => key.toLowerCase() === (field.name || '').toLowerCase()
-              );
-              if (fieldNameKey) {
-                value = customFieldValues[fieldNameKey];
-              }
-            }
-            
-            console.log(`Setting field ${field.name} (label: ${field.label}) to value:`, value);
-            
-            return {
-              ...field,
-              value: value || "",
-            };
-          });
-          
-          setCustomFields(updatedFields);
         } catch (e) {
-          console.error("Error parsing custom fields:", e);
-          // Even if parsing fails, set the fields without values
-          setCustomFields(fieldsToUpdate);
+          console.error("Error parsing existing custom fields:", e);
         }
-      } else {
-        // If no custom fields in response, just set the fields without values
-        setCustomFields(fieldsToUpdate);
       }
+
+      // Map custom fields from field_label (database key) to field_name (form key)
+      const mappedCustomFieldValues: Record<string, any> = {};
+
+      // First, map any existing custom field values from the database
+      if (customFields.length > 0 && Object.keys(existingCustomFields).length > 0) {
+        customFields.forEach((field) => {
+          // Try to find the value by field_label (as stored in DB)
+          const value = existingCustomFields[field.field_label];
+          if (value !== undefined) {
+            // Map to field_name for the form
+            mappedCustomFieldValues[field.field_name] = value;
+          }
+        });
+      }
+
+      // Second, map standard hiring manager fields to custom fields based on field labels
+      if (customFields.length > 0) {
+        const standardFieldMapping: Record<string, string> = {
+          // First Name variations
+          "First Name": hm.first_name || "",
+          "First": hm.first_name || "",
+          "FName": hm.first_name || "",
+          // Last Name variations
+          "Last Name": hm.last_name || "",
+          "Last": hm.last_name || "",
+          "LName": hm.last_name || "",
+          // Email variations
+          "Email": hm.email || "",
+          "Email 1": hm.email || "",
+          "Email Address": hm.email || "",
+          "E-mail": hm.email || "",
+          "Email 2": hm.email2 || "",
+          // Phone variations
+          "Phone": hm.phone || "",
+          "Phone Number": hm.phone || "",
+          "Telephone": hm.phone || "",
+          "Mobile Phone": hm.mobile_phone || "",
+          "Mobile": hm.mobile_phone || "",
+          "Cell Phone": hm.mobile_phone || "",
+          "Direct Line": hm.direct_line || "",
+          // Status variations
+          "Status": hm.status || "Active",
+          "Current Status": hm.status || "Active",
+          // Title variations
+          "Title": hm.title || "",
+          "Job Title": hm.title || "",
+          "Position": hm.title || "",
+          // Organization variations
+          "Organization": hm.organization_name || "",
+          "Organization Name": hm.organization_name || "",
+          "Company": hm.organization_name || "",
+          // Department variations
+          "Department": hm.department || "",
+          "Dept": hm.department || "",
+          // Reports To variations
+          "Reports To": hm.reports_to || "",
+          "Manager": hm.reports_to || "",
+          // Owner variations
+          "Owner": hm.owner || "",
+          "Assigned To": hm.owner || "",
+          "Assigned Owner": hm.owner || "",
+          // Secondary Owners variations
+          "Secondary Owners": hm.secondary_owners || "",
+          "Secondary Owner": hm.secondary_owners || "",
+          // Address variations
+          "Address": hm.address || "",
+          "Street Address": hm.address || "",
+          // LinkedIn variations
+          "LinkedIn URL": hm.linkedin_url || "",
+          "LinkedIn": hm.linkedin_url || "",
+          "LinkedIn Profile": hm.linkedin_url || "",
+          // Nickname variations
+          "Nickname": hm.nickname || "",
+          "Nick Name": hm.nickname || "",
+        };
+
+        // For each custom field, try to populate from mapped values or standard fields
+        customFields.forEach((field) => {
+          // First check if we have a value from existing custom fields
+          if (mappedCustomFieldValues[field.field_name] === undefined) {
+            // Try to get value from standard field mapping using field_label
+            const standardValue = standardFieldMapping[field.field_label];
+            if (standardValue !== undefined) {
+              mappedCustomFieldValues[field.field_name] = standardValue;
+            }
+          }
+        });
+      }
+
+      // Set the mapped custom field values
+      setCustomFieldValues(mappedCustomFieldValues);
     } catch (err) {
       console.error("Error fetching hiring manager:", err);
       setError(
@@ -294,7 +260,22 @@ export default function AddHiringManager() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [customFields, setCustomFieldValues]);
+
+  // If hiringManagerId is present, fetch the hiring manager data
+  // Wait for customFields to load before fetching to ensure proper mapping
+  useEffect(() => {
+    // Only fetch if we have a hiringManagerId, customFields are loaded, and we haven't fetched yet
+    if (hiringManagerId && !customFieldsLoading && customFields.length > 0 && !hasFetchedRef.current) {
+      hasFetchedRef.current = true;
+      fetchHiringManager(hiringManagerId);
+    }
+    // Reset the ref when hiringManagerId changes or is removed
+    if (!hiringManagerId) {
+      hasFetchedRef.current = false;
+    }
+  }, [hiringManagerId, customFieldsLoading, customFields.length, fetchHiringManager]);
+
 
   const handleChange = (
     e: React.ChangeEvent<
@@ -308,11 +289,57 @@ export default function AddHiringManager() {
     }));
   };
 
-  const handleCustomFieldChange = (fieldId: string, value: string) => {
-    setCustomFields((prev) =>
-      prev.map((field) => (field.id === fieldId ? { ...field, value } : field))
-    );
-  };
+  // Real-time sync: When formFields change, update corresponding custom fields
+  useEffect(() => {
+    if (customFields.length === 0) return;
+
+    // Map standard field changes to custom fields
+    const fieldMappings: Record<string, string[]> = {
+      firstName: ["First Name", "First", "FName"],
+      lastName: ["Last Name", "Last", "LName"],
+      email: ["Email", "Email 1", "Email Address", "E-mail"],
+      email2: ["Email 2"],
+      phone: ["Phone", "Phone Number", "Telephone"],
+      mobilePhone: ["Mobile Phone", "Mobile", "Cell Phone"],
+      directLine: ["Direct Line"],
+      status: ["Status", "Current Status"],
+      title: ["Title", "Job Title", "Position"],
+      organizationId: ["Organization", "Organization Name", "Company"],
+      department: ["Department", "Dept"],
+      reportsTo: ["Reports To", "Manager"],
+      owner: ["Owner", "Assigned To", "Assigned Owner"],
+      secondaryOwners: ["Secondary Owners", "Secondary Owner"],
+      address: ["Address", "Street Address"],
+      linkedinUrl: ["LinkedIn URL", "LinkedIn", "LinkedIn Profile"],
+      nickname: ["Nickname", "Nick Name"],
+    };
+
+    // Update custom fields when formData changes
+    customFields.forEach((field) => {
+      const fieldLabel = field.field_label;
+      let shouldUpdate = false;
+      let newValue: any = undefined;
+
+      // Check each form field mapping
+      Object.entries(fieldMappings).forEach(([formKey, labels]) => {
+        if (labels.includes(fieldLabel)) {
+          const formValue = formData[formKey as keyof typeof formData];
+          if (formValue !== undefined && formValue !== null && formValue !== "") {
+            shouldUpdate = true;
+            newValue = formValue;
+          }
+        }
+      });
+
+      // Only update if value is different to prevent infinite loops
+      if (shouldUpdate && newValue !== undefined) {
+        const currentValue = customFieldValues[field.field_name];
+        if (currentValue !== newValue) {
+          handleCustomFieldChange(field.field_name, newValue);
+        }
+      }
+    });
+  }, [formData, customFields, customFieldValues, handleCustomFieldChange]);
 
   // const validateForm = () => {
     
@@ -369,16 +396,11 @@ export default function AddHiringManager() {
     setError(null);
 
     try {
-      // Collect custom field values
-      const customFieldValues: Record<string, string> = {};
-      customFields.forEach((field) => {
-        if (field.value) {
-          customFieldValues[field.name] = field.value;
-        }
-      });
-      
+      // Get custom fields for submission
+      const customFieldsToSend = getCustomFieldsForSubmission();
 
-      const apiData = {
+      // Map custom fields to API payload for standard fields
+      const apiData: any = {
         firstName: formData.firstName,
         lastName: formData.lastName,
         status: formData.status,
@@ -397,8 +419,53 @@ export default function AddHiringManager() {
         directLine: formData.directLine,
         linkedinUrl: formData.linkedinUrl,
         address: formData.address,
-        customFields: customFieldValues,
       };
+
+      // Map custom fields to standard fields if they exist
+      const fieldMappings: Record<string, string[]> = {
+        firstName: ["First Name", "First", "FName"],
+        lastName: ["Last Name", "Last", "LName"],
+        email: ["Email", "Email 1", "Email Address", "E-mail"],
+        email2: ["Email 2"],
+        phone: ["Phone", "Phone Number", "Telephone"],
+        mobilePhone: ["Mobile Phone", "Mobile", "Cell Phone"],
+        directLine: ["Direct Line"],
+        status: ["Status", "Current Status"],
+        title: ["Title", "Job Title", "Position"],
+        organizationId: ["Organization", "Organization Name", "Company"],
+        department: ["Department", "Dept"],
+        reportsTo: ["Reports To", "Manager"],
+        owner: ["Owner", "Assigned To", "Assigned Owner"],
+        secondaryOwners: ["Secondary Owners", "Secondary Owner"],
+        address: ["Address", "Street Address"],
+        linkedinUrl: ["LinkedIn URL", "LinkedIn", "LinkedIn Profile"],
+        nickname: ["Nickname", "Nick Name"],
+      };
+
+      // Override standard fields with custom field values if they exist
+      Object.entries(fieldMappings).forEach(([apiKey, labels]) => {
+        labels.forEach((label) => {
+          if (customFieldsToSend[label] !== undefined && customFieldsToSend[label] !== null && customFieldsToSend[label] !== "") {
+            apiData[apiKey] = customFieldsToSend[label];
+          }
+        });
+      });
+
+      // Prepare custom_fields for database (clean object with all custom field values)
+      const customFieldsForDB: Record<string, any> = {};
+      customFields.forEach((field) => {
+        const value = customFieldValues[field.field_name];
+        if (value !== undefined && value !== null && value !== "") {
+          customFieldsForDB[field.field_label] = value;
+        }
+      });
+
+      // Add custom_fields to API data
+      apiData.custom_fields = customFieldsForDB;
+
+      console.log("Custom Fields to Send:", customFieldsToSend);
+      console.log("API Data:", apiData);
+      console.log("Custom Fields for DB:", customFieldsForDB);
 
       console.log(
         "Sending hiring manager data to API:",
@@ -864,66 +931,16 @@ export default function AddHiringManager() {
           {/* Custom Fields Section */}
           {customFields.length > 0 && (
             <div className="mt-8">
-              {/* <div className="bg-gray-100 p-2 mb-4">
-                <h2 className="font-medium flex items-center">
-                  <Image
-                    src="/file.svg"
-                    alt="Custom"
-                    width={16}
-                    height={16}
-                    className="mr-2"
-                  />
-                  Custom Fields
-                </h2>
-              </div> */}
-
               {customFields.map((field) => (
                 <div key={field.id} className="flex items-center mt-4">
-                  <label className="w-48 font-medium">{field.label}:</label>
+                  <label className="w-48 font-medium">{field.field_label}:</label>
                   <div className="flex-1 relative">
-                    {field.type === "select" ? (
-                      <select
-                        name={field.name}
-                        value={field.value}
-                        onChange={(e) =>
-                          handleCustomFieldChange(field.id, e.target.value)
-                        }
-                        className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
-                        required={field.required}
-                      >
-                        <option value="">Select {field.label}</option>
-                        {field.options?.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-                    ) : field.type === "textarea" ? (
-                      <textarea
-                        name={field.name}
-                        value={field.value}
-                        onChange={(e) =>
-                          handleCustomFieldChange(field.id, e.target.value)
-                        }
-                        rows={3}
-                        placeholder={field.placeholder}
-                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                        required={field.required}
-                      />
-                    ) : (
-                      <input
-                        type={field.type}
-                        name={field.name}
-                        value={field.value}
-                        onChange={(e) =>
-                          handleCustomFieldChange(field.id, e.target.value)
-                        }
-                        placeholder={field.placeholder}
-                        className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                        required={field.required}
-                      />
-                    )}
-                    {field.required && (
+                    <CustomFieldRenderer
+                      field={field}
+                      value={customFieldValues[field.field_name] || ""}
+                      onChange={handleCustomFieldChange}
+                    />
+                    {field.is_required && (
                       <span className="absolute text-red-500 left-[-10px] top-2">
                         *
                       </span>

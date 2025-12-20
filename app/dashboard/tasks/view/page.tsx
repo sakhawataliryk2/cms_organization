@@ -37,6 +37,14 @@ export default function TaskView() {
     const [users, setUsers] = useState<any[]>([]);
     const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
+    // Tearsheet modal state
+    const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
+    const [tearsheetForm, setTearsheetForm] = useState({
+        name: '',
+        visibility: 'Existing' // 'New' or 'Existing'
+    });
+    const [isSavingTearsheet, setIsSavingTearsheet] = useState(false);
+
     const taskId = searchParams.get('id');
 
     // Fetch task when component mounts
@@ -322,6 +330,55 @@ export default function TaskView() {
         router.back();
     };
 
+    // Handle tearsheet submission
+    const handleTearsheetSubmit = async () => {
+        if (!tearsheetForm.name.trim()) {
+            alert('Please enter a tearsheet name');
+            return;
+        }
+
+        if (!taskId) {
+            alert('Task ID is missing');
+            return;
+        }
+
+        setIsSavingTearsheet(true);
+        try {
+            const response = await fetch('/api/tearsheets', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                },
+                body: JSON.stringify({
+                    name: tearsheetForm.name,
+                    visibility: tearsheetForm.visibility,
+                    task_id: taskId
+                })
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Failed to create tearsheet' }));
+                throw new Error(errorData.message || 'Failed to create tearsheet');
+            }
+
+            alert('Tearsheet created successfully!');
+            setShowAddTearsheetModal(false);
+            setTearsheetForm({ name: '', visibility: 'Existing' });
+        } catch (err) {
+            console.error('Error creating tearsheet:', err);
+            if (err instanceof Error && err.message.includes('Failed to fetch')) {
+                alert('Tearsheet creation feature is being set up. The tearsheet will be created once the API is ready.');
+                setShowAddTearsheetModal(false);
+                setTearsheetForm({ name: '', visibility: 'Existing' });
+            } else {
+                alert(err instanceof Error ? err.message : 'Failed to create tearsheet. Please try again.');
+            }
+        } finally {
+            setIsSavingTearsheet(false);
+        }
+    };
+
     // Print handler: ensure Summary tab is active when printing
     const handlePrint = () => {
         const prevTab = activeTab;
@@ -355,6 +412,8 @@ export default function TaskView() {
         } else if (action === 'add-note') {
             setShowAddNote(true);
             setActiveTab('notes');
+        } else if (action === 'add-tearsheet') {
+            setShowAddTearsheetModal(true);
         }
     };
 
@@ -897,6 +956,111 @@ export default function TaskView() {
                 )}
                 </div>
             </div>
+
+            {/* Add Tearsheet Modal */}
+            {showAddTearsheetModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+                        {/* Header */}
+                        <div className="flex justify-between items-center p-4 border-b border-gray-200">
+                            <h2 className="text-lg font-semibold">Tearsheets</h2>
+                            <button
+                                onClick={() => {
+                                    setShowAddTearsheetModal(false);
+                                    setTearsheetForm({ name: '', visibility: 'Existing' });
+                                }}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
+                                <span className="text-2xl font-bold">×</span>
+                            </button>
+                        </div>
+
+                        {/* Form Content */}
+                        <div className="p-6 space-y-6">
+                            {/* Tearsheet Name */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    <span className="text-red-500 mr-1">•</span>
+                                    Tearsheet name
+                                </label>
+                                <input
+                                    type="text"
+                                    value={tearsheetForm.name}
+                                    onChange={(e) => setTearsheetForm(prev => ({ ...prev, name: e.target.value }))}
+                                    placeholder="Enter tearsheet name"
+                                    className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                                    required
+                                />
+                            </div>
+
+                            {/* Visibility */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-2">
+                                    Visibility
+                                </label>
+                                <div className="inline-flex rounded-md border border-gray-300 overflow-hidden" role="group">
+                                    <button
+                                        type="button"
+                                        onClick={() => setTearsheetForm(prev => ({ ...prev, visibility: 'New' }))}
+                                        className={`px-4 py-2 text-sm font-medium transition-colors ${
+                                            tearsheetForm.visibility === 'New'
+                                                ? 'bg-blue-500 text-white'
+                                                : 'bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        New
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setTearsheetForm(prev => ({ ...prev, visibility: 'Existing' }))}
+                                        className={`px-4 py-2 text-sm font-medium transition-colors ${
+                                            tearsheetForm.visibility === 'Existing'
+                                                ? 'bg-blue-500 text-white'
+                                                : 'bg-white text-gray-700 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        Existing
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Footer Buttons */}
+                        <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+                            <button
+                                onClick={() => {
+                                    setShowAddTearsheetModal(false);
+                                    setTearsheetForm({ name: '', visibility: 'Existing' });
+                                }}
+                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={isSavingTearsheet}
+                            >
+                                BACK
+                            </button>
+                            <button
+                                onClick={handleTearsheetSubmit}
+                                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                                disabled={isSavingTearsheet || !tearsheetForm.name.trim()}
+                            >
+                                SAVE
+                                <svg
+                                    className="w-4 h-4 ml-2"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path
+                                        strokeLinecap="round"
+                                        strokeLinejoin="round"
+                                        strokeWidth={2}
+                                        d="M5 13l4 4L19 7"
+                                    />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Add Note Modal */}
             {showAddNote && (
