@@ -34,6 +34,8 @@ const TearsheetsPage = () => {
     try {
       const res = await fetch("/api/tearsheets", { cache: "no-store" });
       const data = await res.json();
+      console.log('Tearsheets data:', data);
+
       if (!res.ok) {
         throw new Error(data.message || "Failed to fetch tearsheets");
       }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
-import { FiSearch, FiChevronDown, FiX, FiChevronLeft, FiChevronRight, FiCheckSquare, FiPlus, FiClock, FiCalendar, FiEdit2 } from 'react-icons/fi';
+import { FiSearch, FiChevronDown, FiX, FiChevronLeft, FiChevronRight, FiCheckSquare, FiPlus, FiClock, FiCalendar, FiEdit2, FiUpload, FiFile, FiMessageSquare, FiTrash2 } from 'react-icons/fi';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
@@ -54,6 +54,20 @@ export default function Dashboard() {
     const [isLoadingAppointments, setIsLoadingAppointments] = useState(true);
     const [appointmentsError, setAppointmentsError] = useState<string | null>(null);
     const [showGoalsQuotas, setShowGoalsQuotas] = useState(true);
+
+    // Shared Documents state
+    const [sharedDocuments, setSharedDocuments] = useState<any[]>([]);
+    const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+    const [showUploadModal, setShowUploadModal] = useState(false);
+    const [uploadFile, setUploadFile] = useState<File | null>(null);
+    const [uploadDescription, setUploadDescription] = useState('');
+    const [isUploading, setIsUploading] = useState(false);
+
+    // Broadcast Messages state
+    const [broadcastMessages, setBroadcastMessages] = useState<any[]>([]);
+    const [isLoadingMessages, setIsLoadingMessages] = useState(false);
+    const [newMessage, setNewMessage] = useState('');
+    const [isPostingMessage, setIsPostingMessage] = useState(false);
 
     // Activity Report (Goals & Quotas) - scoped to logged-in user + selected date range
     const toISODateInput = (d: Date) => d.toISOString().slice(0, 10);
@@ -270,6 +284,8 @@ export default function Dashboard() {
     useEffect(() => {
         fetchAllTasks();
         fetchAppointments();
+        fetchSharedDocuments();
+        fetchBroadcastMessages();
     }, []);
 
     // Fetch appointments (using mock data similar to planner page)
@@ -432,6 +448,182 @@ export default function Dashboard() {
     // Handle close/return to home
     const handleClose = () => {
         router.push('/dashboard');
+    };
+
+    // Fetch shared documents
+    const fetchSharedDocuments = async () => {
+        setIsLoadingDocuments(true);
+        try {
+            const response = await fetch('/api/shared-documents', {
+                headers: {
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setSharedDocuments(data.documents || []);
+            }
+        } catch (err) {
+            console.error('Error fetching shared documents:', err);
+        } finally {
+            setIsLoadingDocuments(false);
+        }
+    };
+
+    // Fetch broadcast messages
+    const fetchBroadcastMessages = async () => {
+        setIsLoadingMessages(true);
+        try {
+            const response = await fetch('/api/broadcast-messages?limit=10', {
+                headers: {
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                }
+            });
+            if (response.ok) {
+                const data = await response.json();
+                setBroadcastMessages(data.messages || []);
+            }
+        } catch (err) {
+            console.error('Error fetching broadcast messages:', err);
+        } finally {
+            setIsLoadingMessages(false);
+        }
+    };
+
+    // Handle file upload
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files[0]) {
+            setUploadFile(e.target.files[0]);
+        }
+    };
+
+    // Upload document
+    const handleUploadDocument = async () => {
+        if (!uploadFile) {
+            alert('Please select a file to upload');
+            return;
+        }
+
+        setIsUploading(true);
+        try {
+            // Store file metadata (in production, upload actual file to storage service)
+            const filePath = `uploads/shared/${Date.now()}_${uploadFile.name}`;
+
+            const response = await fetch('/api/shared-documents', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                },
+                body: JSON.stringify({
+                    file_name: uploadFile.name,
+                    file_path: filePath,
+                    file_size: uploadFile.size,
+                    mime_type: uploadFile.type,
+                    description: uploadDescription.trim() || null,
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.message || 'Failed to upload document');
+            }
+
+            setShowUploadModal(false);
+            setUploadFile(null);
+            setUploadDescription('');
+            fetchSharedDocuments();
+        } catch (err) {
+            console.error('Error uploading document:', err);
+            alert(err instanceof Error ? err.message : 'Failed to upload document');
+        } finally {
+            setIsUploading(false);
+        }
+    };
+
+    // Post broadcast message
+    const handlePostMessage = async () => {
+        if (!newMessage.trim()) {
+            alert('Please enter a message');
+            return;
+        }
+
+        setIsPostingMessage(true);
+        try {
+            const response = await fetch('/api/broadcast-messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                },
+                body: JSON.stringify({
+                    message: newMessage.trim(),
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.message || 'Failed to post message');
+            }
+
+            setNewMessage('');
+            fetchBroadcastMessages();
+        } catch (err) {
+            console.error('Error posting message:', err);
+            alert(err instanceof Error ? err.message : 'Failed to post message');
+        } finally {
+            setIsPostingMessage(false);
+        }
+    };
+
+    // Delete document
+    const handleDeleteDocument = async (id: number) => {
+        if (!confirm('Are you sure you want to delete this document?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/shared-documents/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to delete document');
+            }
+
+            fetchSharedDocuments();
+        } catch (err) {
+            console.error('Error deleting document:', err);
+            alert('Failed to delete document');
+        }
+    };
+
+    // Delete broadcast message
+    const handleDeleteMessage = async (id: number) => {
+        if (!confirm('Are you sure you want to delete this message?')) {
+            return;
+        }
+
+        try {
+            const response = await fetch(`/api/broadcast-messages/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to delete message');
+            }
+
+            fetchBroadcastMessages();
+        } catch (err) {
+            console.error('Error deleting message:', err);
+            alert('Failed to delete message');
+        }
     };
 
     return (
@@ -689,60 +881,116 @@ export default function Dashboard() {
                 <div className="bg-white rounded-md shadow overflow-hidden flex flex-col">
                     <div className="p-2 border-b border-gray-200 flex items-center justify-between">
                         <h2 className="text-lg font-semibold">Information:</h2>
-                        <button
-                            type="button"
-                            className="p-1.5 mr-8 text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
-                            aria-label="Edit information"
-                            onClick={() => {
-                                // Handle edit action
-                                console.log('Edit information');
-                            }}
-                        >
-                            <FiEdit2 size={18} />
-                        </button>
                     </div>
-                    <div className="p-4 flex-1 overflow-y-auto">
-                        {isLoadingAppointments ? (
-                            <div className="flex items-center justify-center py-8">
-                                <div className="text-gray-400 text-sm">Loading...</div>
+                    <div className="p-4 flex-1 overflow-y-auto space-y-4">
+                        {/* Shared Documents Section */}
+                        <div>
+                            <div className="flex items-center justify-between mb-2">
+                                <h3 className="text-sm font-semibold text-gray-700 flex items-center">
+                                    <FiFile className="mr-2" size={16} />
+                                    Shared Documents
+                                </h3>
+                                <button
+                                    onClick={() => setShowUploadModal(true)}
+                                    className="text-xs text-blue-600 hover:text-blue-800 flex items-center"
+                                >
+                                    <FiUpload size={12} className="mr-1" />
+                                    Upload
+                                </button>
                             </div>
-                        ) : appointmentsError ? (
-                            <div className="text-center py-8">
-                                <p className="text-red-600 text-sm mb-2">Error loading information</p>
-                                <p className="text-gray-400 text-xs">{appointmentsError}</p>
-                            </div>
-                        ) : (
-                            <div className="space-y-3">
-                                {appointments.slice(0, 3).map((appointment) => (
-                                    <div
-                                        key={appointment.id}
-                                        className="border border-gray-200 rounded-lg p-3 hover:bg-gray-50 cursor-pointer transition-colors"
-                                    >
-                                        <div className="flex items-start justify-between mb-2">
-                                            <div className="flex items-start space-x-2 flex-1">
-                                                <div className="mt-1 text-blue-600">
-                                                    <FiCalendar size={16} />
+                            {isLoadingDocuments ? (
+                                <div className="text-xs text-gray-400 py-2">Loading documents...</div>
+                            ) : sharedDocuments.length === 0 ? (
+                                <div className="text-xs text-gray-400 py-2">No documents shared yet</div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {sharedDocuments.slice(0, 5).map((doc) => (
+                                        <div
+                                            key={doc.id}
+                                            className="flex items-center justify-between p-2 bg-gray-50 rounded text-xs hover:bg-gray-100"
+                                        >
+                                            <div className="flex-1 min-w-0">
+                                                <div className="font-medium text-gray-700 truncate">
+                                                    {doc.file_name}
                                                 </div>
+                                                {doc.uploaded_by_name && (
+                                                    <div className="text-gray-500 text-xs">
+                                                        by {doc.uploaded_by_name}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            <button
+                                                onClick={() => handleDeleteDocument(doc.id)}
+                                                className="ml-2 text-red-600 hover:text-red-800"
+                                                title="Delete"
+                                            >
+                                                <FiTrash2 size={12} />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Broadcast Messages Section */}
+                        <div className="border-t border-gray-200 pt-4">
+                            <h3 className="text-sm font-semibold text-gray-700 mb-2 flex items-center">
+                                <FiMessageSquare className="mr-2" size={16} />
+                                Broadcast Messages
+                            </h3>
+                            
+                            {/* Post Message Form */}
+                            <div className="mb-3">
+                                <textarea
+                                    value={newMessage}
+                                    onChange={(e) => setNewMessage(e.target.value)}
+                                    placeholder="Write a message for all users..."
+                                    className="w-full p-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                    rows={2}
+                                />
+                                <button
+                                    onClick={handlePostMessage}
+                                    disabled={!newMessage.trim() || isPostingMessage}
+                                    className="mt-1 w-full px-3 py-1.5 bg-blue-500 text-white text-xs rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isPostingMessage ? 'Posting...' : 'Post Message'}
+                                </button>
+                            </div>
+
+                            {/* Messages List */}
+                            {isLoadingMessages ? (
+                                <div className="text-xs text-gray-400 py-2">Loading messages...</div>
+                            ) : broadcastMessages.length === 0 ? (
+                                <div className="text-xs text-gray-400 py-2">No messages yet</div>
+                            ) : (
+                                <div className="space-y-2 max-h-48 overflow-y-auto">
+                                    {broadcastMessages.map((msg) => (
+                                        <div
+                                            key={msg.id}
+                                            className="p-2 bg-gray-50 rounded text-xs"
+                                        >
+                                            <div className="flex items-start justify-between">
                                                 <div className="flex-1 min-w-0">
-                                                    <h3 className="text-sm font-medium text-gray-900">
-                                                        {appointment.type} - {appointment.client}
-                                                    </h3>
-                                                    <p className="text-xs text-gray-500 mt-1">
-                                                        {appointment.job}
+                                                    <p className="text-gray-700 whitespace-pre-wrap break-words">
+                                                        {msg.message}
                                                     </p>
+                                                    <div className="text-gray-500 mt-1">
+                                                        {msg.created_by_name || 'Unknown'} • {new Date(msg.created_at).toLocaleDateString()}
+                                                    </div>
                                                 </div>
+                                                <button
+                                                    onClick={() => handleDeleteMessage(msg.id)}
+                                                    className="ml-2 text-red-600 hover:text-red-800 flex-shrink-0"
+                                                    title="Delete"
+                                                >
+                                                    <FiTrash2 size={12} />
+                                                </button>
                                             </div>
                                         </div>
-                                        <div className="flex items-center justify-between mt-2 flex-wrap gap-2">
-                                            <div className="flex items-center text-xs text-gray-500">
-                                                <FiClock size={12} className="mr-1" />
-                                                {appointment.time}
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
+                                    ))}
+                                </div>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1095,6 +1343,79 @@ export default function Dashboard() {
                     </button>
                 </div>
             </div>
+
+            {/* Upload Document Modal */}
+            {showUploadModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+                        <div className="flex justify-between items-center p-4 border-b border-gray-200">
+                            <h2 className="text-lg font-semibold">Upload Shared Document</h2>
+                            <button
+                                onClick={() => {
+                                    setShowUploadModal(false);
+                                    setUploadFile(null);
+                                    setUploadDescription('');
+                                }}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
+                                <span className="text-2xl font-bold">×</span>
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    File <span className="text-red-500">*</span>
+                                </label>
+                                <input
+                                    type="file"
+                                    onChange={handleFileSelect}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
+                                />
+                                {uploadFile && (
+                                    <div className="mt-2 text-xs text-gray-600">
+                                        Selected: {uploadFile.name} ({(uploadFile.size / 1024).toFixed(2)} KB)
+                                    </div>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Description (Optional)
+                                </label>
+                                <textarea
+                                    value={uploadDescription}
+                                    onChange={(e) => setUploadDescription(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm resize-none"
+                                    rows={3}
+                                    placeholder="Add a description for this document..."
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+                            <button
+                                onClick={() => {
+                                    setShowUploadModal(false);
+                                    setUploadFile(null);
+                                    setUploadDescription('');
+                                }}
+                                className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50 text-sm"
+                                disabled={isUploading}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleUploadDocument}
+                                disabled={!uploadFile || isUploading}
+                                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isUploading ? 'Uploading...' : 'Upload'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
