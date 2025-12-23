@@ -287,11 +287,203 @@ export default function PlacementView() {
     router.push("/dashboard/placements");
   };
 
+  // Print handler: ensure Summary tab is active when printing (same behavior as Jobs view)
+  const handlePrint = () => {
+    const prevTab = activeTab;
+    if (prevTab !== "summary") {
+      setActiveTab("summary");
+      setTimeout(() => {
+        window.print();
+        setActiveTab(prevTab);
+      }, 300);
+    } else {
+      window.print();
+    }
+  };
+
+  const handleEmailJobSeeker = async () => {
+    const jobSeekerId = placement?.candidateId;
+    if (!jobSeekerId) {
+      alert("Job Seeker not available for this placement.");
+      return;
+    }
+
+    // Try to open a window immediately to avoid popup blockers (then redirect it)
+    const popup = window.open("about:blank", "_blank");
+
+    try {
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      const response = await fetch(`/api/job-seekers/${jobSeekerId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+
+      // Handle non-JSON responses
+      const responseText = await response.text();
+      let data: any;
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to fetch job seeker details");
+      }
+
+      const email: string | undefined =
+        data?.jobSeeker?.email ||
+        data?.job_seeker?.email ||
+        data?.jobseeker?.email;
+
+      if (!email || email === "No email provided") {
+        alert("Job seeker email not available");
+        if (popup) popup.close();
+        return;
+      }
+
+      // Outlook web compose deep link (Office 365)
+      const composeUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(
+        email
+      )}`;
+
+      if (popup) {
+        popup.location.href = composeUrl;
+      } else {
+        window.open(composeUrl, "_blank");
+      }
+    } catch (err) {
+      console.error("Error opening email compose:", err);
+      alert(err instanceof Error ? err.message : "Failed to open email compose");
+      if (popup) popup.close();
+    }
+  };
+
+  const handleEmailBillingContacts = async () => {
+    const extractEmails = (input: unknown): string[] => {
+      const emails: string[] = [];
+      const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+
+      const collect = (val: unknown) => {
+        if (val === null || val === undefined) return;
+        if (typeof val === "string") {
+          const matches = val.match(emailRegex);
+          if (matches) emails.push(...matches);
+          return;
+        }
+        if (Array.isArray(val)) {
+          val.forEach(collect);
+          return;
+        }
+        if (typeof val === "object") {
+          // Try common email properties first
+          const anyVal = val as any;
+          if (typeof anyVal.email === "string") collect(anyVal.email);
+          if (typeof anyVal.email_address === "string") collect(anyVal.email_address);
+          // Walk values to find embedded emails
+          Object.values(anyVal).forEach(collect);
+        }
+      };
+
+      collect(input);
+
+      // Normalize + unique
+      const normalized = emails
+        .map((e) => e.trim())
+        .filter(Boolean)
+        .map((e) => e.toLowerCase());
+      return Array.from(new Set(normalized));
+    };
+
+    const extractBillingEmailsFromCustomFields = (
+      customFields: Record<string, any> | undefined | null
+    ) => {
+      if (!customFields) return [];
+      const keys = Object.keys(customFields);
+      const billingKeys = keys.filter((k) => k.toLowerCase().includes("billing"));
+      // Prefer billing-specific keys; if none exist, return empty to avoid pulling unrelated emails.
+      const targetKeys = billingKeys.length > 0 ? billingKeys : [];
+      const emails: string[] = [];
+      targetKeys.forEach((k) => {
+        emails.push(...extractEmails(customFields[k]));
+      });
+      return Array.from(new Set(emails));
+    };
+
+    // Try placement custom fields first (if present)
+    let emails = extractBillingEmailsFromCustomFields(placement?.customFields);
+
+    // Fallback: pull from job custom_fields (common place for billing contacts)
+    if (emails.length === 0 && placement?.jobId) {
+      try {
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        );
+        const res = await fetch(`/api/jobs/${placement.jobId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        const text = await res.text();
+        let data: any = null;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = null;
+        }
+
+        if (res.ok) {
+          let jobCustom: any = data?.job?.custom_fields ?? data?.job?.customFields;
+          if (typeof jobCustom === "string") {
+            try {
+              jobCustom = JSON.parse(jobCustom);
+            } catch {
+              // ignore
+            }
+          }
+          if (jobCustom && typeof jobCustom === "object") {
+            emails = extractBillingEmailsFromCustomFields(jobCustom);
+          }
+        }
+      } catch (e) {
+        // Non-blocking: if fallback fetch fails we'll just show "not available"
+      }
+    }
+
+    if (emails.length === 0) {
+      alert("Billing contact email(s) not available");
+      return;
+    }
+
+    // Semicolon-separated for Outlook
+    const to = emails.join(";");
+    const popup = window.open("about:blank", "_blank");
+    const composeUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(
+      to
+    )}`;
+
+    if (popup) {
+      popup.location.href = composeUrl;
+    } else {
+      window.open(composeUrl, "_blank");
+    }
+  };
+
   const handleActionSelected = (action: string) => {
     if (action === "edit" && placementId) {
       router.push(`/dashboard/placements/add?id=${placementId}`);
     } else if (action === "delete" && placementId) {
       handleDelete(placementId);
+    } else if (action === "add-task" && placementId) {
+      // Navigate to add task page with placement context (same behavior as Jobs -> Add Task)
+      router.push(
+        `/dashboard/tasks/add?relatedEntity=placement&relatedEntityId=${placementId}`
+      );
+    } else if (action === "email-job-seeker") {
+      handleEmailJobSeeker();
+    } else if (action === "email-billing-contact") {
+      handleEmailBillingContacts();
     } else if (action === "add-note") {
       setShowAddNote(true);
       setActiveTab("notes");
@@ -659,11 +851,15 @@ export default function PlacementView() {
     { id: "notes", label: "Notes" },
     { id: "history", label: "History" },
   ];
-
+  
   const actionOptions = [
-    { label: "Edit", action: () => handleActionSelected("edit") },
-    { label: "Delete", action: () => handleActionSelected("delete") },
     { label: "Add Note", action: () => handleActionSelected("add-note") },
+    { label: "Add Task", action: () => handleActionSelected("add-task") },
+    { label: "Email Job Seeker", action: () => handleActionSelected("email-job-seeker") },
+    { label: "Email Billing Contact(s)", action: () => handleActionSelected("email-billing-contact") },
+    { label: "Email Time Card Approver(s)", action: () => handleActionSelected("email-time-card-approver") },
+    // { label: "Edit", action: () => handleActionSelected("edit") },
+    { label: "Delete", action: () => handleActionSelected("delete") },
   ];
 
   if (isLoading) {
@@ -710,26 +906,7 @@ export default function PlacementView() {
             {placement.id} {placement.candidateName} - {placement.jobTitle}
           </h1>
         </div>
-        <div className="ml-auto flex items-center space-x-2">
-          <ActionDropdown label="Actions" options={actionOptions} />
-          <button className="p-1 hover:bg-gray-200 rounded" aria-label="Print">
-            <Image src="/print.svg" alt="Print" width={20} height={20} />
-          </button>
-          <button
-            className="p-1 hover:bg-gray-200 rounded"
-            aria-label="Reload"
-            onClick={() => placementId && fetchPlacementData(placementId)}
-          >
-            <Image src="/reload.svg" alt="Reload" width={20} height={20} />
-          </button>
-          <button
-            onClick={handleGoBack}
-            className="p-1 hover:bg-gray-200 rounded"
-            aria-label="Close"
-          >
-            <Image src="/x.svg" alt="Close" width={20} height={20} />
-          </button>
-        </div>
+        
       </div>
 
       {/* Status and Owner section */}
@@ -743,6 +920,33 @@ export default function PlacementView() {
             <h2 className="text-gray-600">Owner</h2>
             <p className="font-medium">{placement.owner || 'Unassigned'}</p>
           </div>
+        </div>
+        <div className="ml-auto flex items-center space-x-2">
+          <ActionDropdown label="Actions" options={actionOptions} />
+          <button
+            onClick={handlePrint}
+            className="p-1 hover:bg-gray-200 rounded"
+            aria-label="Print"
+            type="button"
+          >
+            <Image src="/print.svg" alt="Print" width={20} height={20} />
+          </button>
+          <button
+            className="p-1 hover:bg-gray-200 rounded"
+            aria-label="Reload"
+            onClick={() => placementId && fetchPlacementData(placementId)}
+            type="button"
+          >
+            <Image src="/reload.svg" alt="Reload" width={20} height={20} />
+          </button>
+          <button
+            onClick={handleGoBack}
+            className="p-1 hover:bg-gray-200 rounded"
+            aria-label="Close"
+            type="button"
+          >
+            <Image src="/x.svg" alt="Close" width={20} height={20} />
+          </button>
         </div>
       </div>
 

@@ -117,6 +117,16 @@ const GoalsAndQuotas = () => {
   const [selectedRecords, setSelectedRecords] = useState<{userId: string, category: string, records: any[]} | null>(null);
   const [showRecordsModal, setShowRecordsModal] = useState(false);
 
+  // Date range filter (used for Notes Count + Added to System)
+  const toISODateInput = (d: Date) => d.toISOString().slice(0, 10);
+  const getMonthStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
+  const [dateRange, setDateRange] = useState<{ start: string; end: string }>(() => ({
+    start: toISODateInput(getMonthStart(new Date())),
+    end: toISODateInput(new Date()),
+  }));
+  const [isApplyingRange, setIsApplyingRange] = useState(false);
+  const [rangeError, setRangeError] = useState<string | null>(null);
+
   const calendarData = getCalendarData();
   const selectedDayAppointments = mockAppointments; // In real app, filter by selected date
 
@@ -201,8 +211,8 @@ const GoalsAndQuotas = () => {
           setGoalsQuotasData(initialData);
           
           // Fetch notes count and records count for each category and user
-          fetchNotesCount(data.users || []);
-          fetchRecordsCount(data.users || []);
+          fetchNotesCount(data.users || [], dateRange);
+          fetchRecordsCount(data.users || [], dateRange);
         }
       } catch (error) {
         console.error("Error fetching users:", error);
@@ -213,7 +223,10 @@ const GoalsAndQuotas = () => {
   }, []);
 
   // Fetch notes count for each category and user
-  const fetchNotesCount = async (usersList: User[]) => {
+  const fetchNotesCount = async (
+    usersList: User[],
+    range: { start: string; end: string }
+  ) => {
     setIsLoadingNotes(true);
     try {
       const categoryApiMap: Record<string, string> = {
@@ -226,6 +239,17 @@ const GoalsAndQuotas = () => {
       };
 
       const notesCountMap: Record<string, number> = {}; // Key: `${userId}-${category}`
+
+      const rangeStart = range.start ? new Date(`${range.start}T00:00:00`) : null;
+      const rangeEnd = range.end ? new Date(`${range.end}T23:59:59.999`) : null;
+      const isInRange = (dateString: string | undefined) => {
+        if (!dateString) return false;
+        const d = new Date(dateString);
+        if (Number.isNaN(d.getTime())) return false;
+        if (rangeStart && d < rangeStart) return false;
+        if (rangeEnd && d > rangeEnd) return false;
+        return true;
+      };
 
       // Fetch notes for each category
       for (const category of categories) {
@@ -274,7 +298,7 @@ const GoalsAndQuotas = () => {
 
                 // Count notes by created_by user
                 notes.forEach((note: any) => {
-                  if (note.created_by) {
+                  if (note.created_by && isInRange(note.created_at)) {
                     const key = `${note.created_by}-${category}`;
                     notesCountMap[key] = (notesCountMap[key] || 0) + 1;
                   }
@@ -307,7 +331,10 @@ const GoalsAndQuotas = () => {
   };
 
   // Fetch records count for each category and user
-  const fetchRecordsCount = async (usersList: User[]) => {
+  const fetchRecordsCount = async (
+    usersList: User[],
+    range: { start: string; end: string }
+  ) => {
     setIsLoadingRecords(true);
     try {
       const categoryApiMap: Record<string, string> = {
@@ -330,6 +357,18 @@ const GoalsAndQuotas = () => {
 
       const recordsMap: Record<string, any[]> = {}; // Key: `${userId}-${category}`, Value: array of records
 
+      const rangeStart = range.start ? new Date(`${range.start}T00:00:00`) : null;
+      const rangeEnd = range.end ? new Date(`${range.end}T23:59:59.999`) : null;
+      const isEntityInRange = (entity: any) => {
+        const dateString = entity?.created_at;
+        if (!dateString) return false;
+        const d = new Date(dateString);
+        if (Number.isNaN(d.getTime())) return false;
+        if (rangeStart && d < rangeStart) return false;
+        if (rangeEnd && d > rangeEnd) return false;
+        return true;
+      };
+
       // Fetch records for each category
       for (const category of categories) {
         const apiEndpoint = categoryApiMap[category];
@@ -351,7 +390,7 @@ const GoalsAndQuotas = () => {
 
           // Group entities by created_by user
           entities.forEach((entity: any) => {
-            if (entity.created_by) {
+            if (entity.created_by && isEntityInRange(entity)) {
               const key = `${entity.created_by}-${category}`;
               if (!recordsMap[key]) {
                 recordsMap[key] = [];
@@ -434,9 +473,113 @@ const GoalsAndQuotas = () => {
     }
   };
 
+  const applyDateRange = async () => {
+    setRangeError(null);
+    if (!dateRange.start || !dateRange.end) {
+      setRangeError("Please select both start and end dates.");
+      return;
+    }
+    if (dateRange.start > dateRange.end) {
+      setRangeError("Start date must be before or equal to end date.");
+      return;
+    }
+    if (users.length === 0) return;
+
+    setIsApplyingRange(true);
+    try {
+      await Promise.all([
+        fetchNotesCount(users, dateRange),
+        fetchRecordsCount(users, dateRange),
+      ]);
+    } finally {
+      setIsApplyingRange(false);
+    }
+  };
+
+  const resetToThisMonth = async () => {
+    const now = new Date();
+    const next = {
+      start: toISODateInput(getMonthStart(now)),
+      end: toISODateInput(now),
+    };
+    setDateRange(next);
+    setRangeError(null);
+    if (users.length === 0) return;
+
+    setIsApplyingRange(true);
+    try {
+      await Promise.all([fetchNotesCount(users, next), fetchRecordsCount(users, next)]);
+    } finally {
+      setIsApplyingRange(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-white">
-      
+      {/* Date range filter */}
+      <div className="px-6 pt-6">
+        <div className="border border-gray-300 rounded-lg bg-white p-4">
+          <div className="flex flex-col lg:flex-row lg:items-end gap-3 justify-between">
+            <div>
+              <div className="text-sm font-semibold text-gray-900">Date range</div>
+              <div className="text-xs text-gray-500">
+                Used for Notes Count and Added to System totals.
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Start
+                </label>
+                <input
+                  type="date"
+                  value={dateRange.start}
+                  onChange={(e) =>
+                    setDateRange((prev) => ({ ...prev, start: e.target.value }))
+                  }
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm w-full"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  End
+                </label>
+                <input
+                  type="date"
+                  value={dateRange.end}
+                  onChange={(e) =>
+                    setDateRange((prev) => ({ ...prev, end: e.target.value }))
+                  }
+                  className="px-3 py-2 border border-gray-300 rounded-md text-sm w-full"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={applyDateRange}
+                  disabled={isApplyingRange}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm font-medium hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isApplyingRange ? "Applying..." : "Apply"}
+                </button>
+                <button
+                  type="button"
+                  onClick={resetToThisMonth}
+                  disabled={isApplyingRange}
+                  className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  This Month
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {rangeError && (
+            <div className="mt-2 text-sm text-red-600">{rangeError}</div>
+          )}
+        </div>
+      </div>
 
       {/* Activity Report Section */}
       <div className="px-6 pb-6 mt-8">

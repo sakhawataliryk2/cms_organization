@@ -550,6 +550,9 @@ export default function LeadView() {
       }
     } else if (action === "add-tearsheet") {
       setShowAddTearsheetModal(true);
+    } else if (action === "convert" && leadId) {
+      // Convert lead -> create a job
+      router.push(`/dashboard/jobs/add?leadId=${leadId}`);
     } else if (action === "email") {
       // Handle send email
       if (lead?.email) {

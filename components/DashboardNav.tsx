@@ -55,6 +55,12 @@ export default function DashboardNav() {
   const [isFileUploadOpen, setIsFileUploadOpen] = useState<boolean>(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState<boolean>(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState<boolean>(false);
+
+  type ChromeTabId = "tbi" | "from-office";
+  type ChromeTab = { id: ChromeTabId; label: string };
+  const [chromeTabsVisible, setChromeTabsVisible] = useState(false);
+  const [chromeTabs, setChromeTabs] = useState<ChromeTab[]>([]);
+  const [activeChromeTabId, setActiveChromeTabId] = useState<ChromeTabId>("tbi");
   const pathname = usePathname();
   const router = useRouter();
   const addMenuRef = useRef<HTMLDivElement>(null);
@@ -108,6 +114,17 @@ export default function DashboardNav() {
       setUser(userData);
     }
   }, []);
+
+  // Keep layout padding in sync with whether the tab strip is visible
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const nextOffset = chromeTabsVisible ? "88px" : "48px"; // 40px tab strip + 48px top bar
+    document.documentElement.style.setProperty("--dashboard-top-offset", nextOffset);
+    return () => {
+      // Restore default when component unmounts
+      document.documentElement.style.setProperty("--dashboard-top-offset", "48px");
+    };
+  }, [chromeTabsVisible]);
 
   // Global search with debouncing
   useEffect(() => {
@@ -387,6 +404,32 @@ export default function DashboardNav() {
     router.push("/dashboard");
   };
 
+  const openChromeTabs = () => {
+    setChromeTabsVisible(true);
+    setChromeTabs([
+      { id: "tbi", label: "T.B.I" },
+      { id: "from-office", label: "From Office" },
+    ]);
+    setActiveChromeTabId("tbi");
+  };
+
+  const closeChromeTab = (tabId: ChromeTabId) => {
+    setChromeTabs((prev) => {
+      if (prev.length <= 1) return prev; // keep at least one tab open
+      const next = prev.filter((t) => t.id !== tabId);
+      // If we closed the active tab, activate the remaining tab
+      if (activeChromeTabId === tabId) {
+        const fallback = next[0]?.id || "tbi";
+        setActiveChromeTabId(fallback);
+      }
+      // If we somehow ended up with zero tabs (shouldn't), hide strip
+      if (next.length === 0) {
+        setChromeTabsVisible(false);
+      }
+      return next;
+    });
+  };
+
   // All navigation items without role-based filtering
   const navItems = [
     { name: "Home", path: "/home", icon: <FiHome size={20} /> },
@@ -448,8 +491,63 @@ export default function DashboardNav() {
   return (
     <>
       {/* Top Navigation Bar */}
-      <div className="fixed top-0 left-0 right-0 h-12 bg-slate-800 flex items-center justify-between z-10 pl-60 pr-4">
-        <div className="flex items-center ml-4 space-x-4">
+      <div className="fixed top-0 left-0 right-0 z-10 pl-60 pr-4">
+        {/* Chrome-style tab strip (shown after clicking T.B.I) */}
+        {chromeTabsVisible && (
+          <div className="h-10 bg-slate-700 border-b border-slate-600 flex items-end">
+            <div className="flex items-end gap-1 px-3 overflow-x-auto w-full">
+              {chromeTabs.map((tab) => {
+                const isActive = tab.id === activeChromeTabId;
+                const isTbi = tab.id === "tbi";
+
+                const activeClasses = isTbi
+                  ? "bg-green-600 text-white border-green-700"
+                  : "bg-white text-slate-900 border-slate-300";
+                const inactiveClasses = "bg-slate-200 text-slate-700 border-slate-300 hover:bg-slate-100";
+
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveChromeTabId(tab.id)}
+                    className={[
+                      "flex items-center gap-2 px-3 h-9 rounded-t-md border",
+                      "min-w-[160px] max-w-[240px] -mb-px",
+                      "transition-colors",
+                      isActive ? activeClasses : inactiveClasses,
+                    ].join(" ")}
+                    aria-selected={isActive}
+                    role="tab"
+                  >
+                    <span className="truncate text-sm font-semibold">{tab.label}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeChromeTab(tab.id);
+                      }}
+                      className={[
+                        "ml-auto p-1 rounded",
+                        isActive
+                          ? isTbi
+                            ? "hover:bg-green-700"
+                            : "hover:bg-slate-200"
+                          : "hover:bg-slate-300",
+                      ].join(" ")}
+                      aria-label={`Close ${tab.label} tab`}
+                      title="Close"
+                    >
+                      <FiX size={14} className={isActive && isTbi ? "text-white" : "text-slate-600"} />
+                    </button>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="h-12 bg-slate-800 flex items-center justify-between">
+          <div className="flex items-center ml-4 space-x-4">
           {isSearchOpen ? (
             <div className="relative" ref={searchRef}>
               <form onSubmit={handleSearch} className="flex items-center">
@@ -749,6 +847,7 @@ export default function DashboardNav() {
             )}
           </div>
         )}
+        </div>
       </div>
 
       {/* Side Navigation */}
@@ -795,8 +894,21 @@ export default function DashboardNav() {
           <button
             className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold text-2xl rounded transition-colors"
             onClick={() => {
-              // Add your T.B.I functionality here
-              console.log('T.B.I clicked');
+              // Show Chrome-style tabs (T.B.I active, From Office inactive)
+              if (!chromeTabsVisible) {
+                openChromeTabs();
+              } else {
+                // Ensure T.B.I is present and focus it
+                setChromeTabs((prev) => {
+                  const hasTbi = prev.some((t) => t.id === "tbi");
+                  const hasFromOffice = prev.some((t) => t.id === "from-office");
+                  const next = [...prev];
+                  if (!hasTbi) next.unshift({ id: "tbi", label: "T.B.I" });
+                  if (!hasFromOffice) next.push({ id: "from-office", label: "From Office" });
+                  return next;
+                });
+                setActiveChromeTabId("tbi");
+              }
             }}
           >
             T.B.I

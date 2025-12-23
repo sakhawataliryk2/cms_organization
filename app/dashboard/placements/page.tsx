@@ -272,7 +272,7 @@ export default function PlacementList() {
               Delete Selected ({selectedPlacements.length})
             </button>
           )}
-          {/* <button
+          <button
             onClick={handleAddPlacement}
             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
           >
@@ -289,7 +289,7 @@ export default function PlacementList() {
               />
             </svg>
             Add Placement
-          </button> */}
+          </button>
         </div>
       </div>
 

@@ -55,6 +55,51 @@ export default function Dashboard() {
     const [appointmentsError, setAppointmentsError] = useState<string | null>(null);
     const [showGoalsQuotas, setShowGoalsQuotas] = useState(true);
 
+    // Activity Report (Goals & Quotas) - scoped to logged-in user + selected date range
+    const toISODateInput = (d: Date) => d.toISOString().slice(0, 10);
+    const getMonthStart = (d: Date) => new Date(d.getFullYear(), d.getMonth(), 1);
+    const [activityRange, setActivityRange] = useState<{ start: string; end: string }>(() => ({
+        start: toISODateInput(getMonthStart(new Date())),
+        end: toISODateInput(new Date()),
+    }));
+    const [isLoadingActivityReport, setIsLoadingActivityReport] = useState(false);
+    const [activityReportError, setActivityReportError] = useState<string | null>(null);
+    const [activityReport, setActivityReport] = useState<any>(null);
+
+    const fetchActivityReport = async (range: { start: string; end: string }) => {
+        if (!user?.id) return;
+        if (!range.start || !range.end) return;
+        if (range.start > range.end) return;
+
+        setIsLoadingActivityReport(true);
+        setActivityReportError(null);
+        try {
+            const response = await fetch(
+                `/api/activity-report?userId=${encodeURIComponent(user.id)}&start=${range.start}&end=${range.end}`
+            );
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.message || 'Failed to fetch activity report');
+            }
+            setActivityReport(data);
+        } catch (err) {
+            console.error('Error fetching activity report:', err);
+            setActivityReportError(err instanceof Error ? err.message : 'Failed to fetch activity report');
+            setActivityReport(null);
+        } finally {
+            setIsLoadingActivityReport(false);
+        }
+    };
+
+    // Refresh whenever date range changes
+    useEffect(() => {
+        const handle = setTimeout(() => {
+            fetchActivityReport(activityRange);
+        }, 250);
+        return () => clearTimeout(handle);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activityRange.start, activityRange.end, user?.id]);
+
     // Navigation handlers
     const handleNextClick = () => {
         router.push('/dashboard/candidate-flow');
@@ -798,10 +843,42 @@ export default function Dashboard() {
             {/* Activity Report Section */}
             <div className="px-6 pb-6 mt-8">
                 {/* Activity Report Header */}
-                <div className="mb-4">
-                    <h2 className="text-lg font-semibold text-gray-900">
-                        ACTIVITY REPORT
-                    </h2>
+                <div className="mb-4 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+                    <div>
+                        <h2 className="text-lg font-semibold text-gray-900">
+                            ACTIVITY REPORT
+                        </h2>
+                        <div className="text-xs text-gray-500">
+                            Counts are filtered to <span className="font-medium">{user?.name || user?.email || 'current user'}</span> and the selected date range.
+                        </div>
+                        {activityReportError && (
+                            <div className="text-xs text-red-600 mt-1">{activityReportError}</div>
+                        )}
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Start</label>
+                            <input
+                                type="date"
+                                value={activityRange.start}
+                                onChange={(e) => setActivityRange(prev => ({ ...prev, start: e.target.value }))}
+                                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">End</label>
+                            <input
+                                type="date"
+                                value={activityRange.end}
+                                onChange={(e) => setActivityRange(prev => ({ ...prev, end: e.target.value }))}
+                                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
+                            />
+                        </div>
+                        <div className="text-xs text-gray-500 pb-1">
+                            {isLoadingActivityReport ? 'Refreshing…' : (activityReport?.range ? `Range: ${activityReport.range.start} → ${activityReport.range.end}` : '')}
+                        </div>
+                    </div>
                 </div>
 
                 {/* Activity Report Grid */}
@@ -851,12 +928,12 @@ export default function Dashboard() {
 
                     {/* Data Rows */}
                     {[
-                        { category: "Organization", rowClass: "bg-white" },
-                        { category: "Jobs", rowClass: "bg-gray-50" },
-                        { category: "Job Seekers", rowClass: "bg-white" },
-                        { category: "Hiring Managers", rowClass: "bg-gray-50" },
-                        { category: "Placements", rowClass: "bg-white" },
-                        { category: "Leads", rowClass: "bg-gray-50" },
+                        { key: "organizations", category: "Organization", rowClass: "bg-white" },
+                        { key: "jobs", category: "Jobs", rowClass: "bg-gray-50" },
+                        { key: "job-seekers", category: "Job Seekers", rowClass: "bg-white" },
+                        { key: "hiring-managers", category: "Hiring Managers", rowClass: "bg-gray-50" },
+                        { key: "placements", category: "Placements", rowClass: "bg-white" },
+                        { key: "leads", category: "Leads", rowClass: "bg-gray-50" },
                     ].map((row, index) => (
                         <div
                             key={index}
@@ -869,11 +946,11 @@ export default function Dashboard() {
 
                             {/* Notes Column */}
                             <div className="w-24 p-3 border-r border-gray-300">
-                                <input
-                                    type="text"
-                                    className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                                    placeholder=""
-                                />
+                                <div className="text-sm text-gray-800 text-center">
+                                    {isLoadingActivityReport
+                                        ? "…"
+                                        : (activityReport?.categories?.[row.key]?.notesCount ?? 0)}
+                                </div>
                             </div>
 
                             {/* Notes - Goals/Quotas */}
@@ -894,11 +971,11 @@ export default function Dashboard() {
 
                             {/* Added to System Column */}
                             <div className="w-32 p-3 border-r border-gray-300">
-                                <input
-                                    type="number"
-                                    className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                                    placeholder=""
-                                />
+                                <div className="text-sm text-gray-800 text-center">
+                                    {isLoadingActivityReport
+                                        ? "…"
+                                        : (activityReport?.categories?.[row.key]?.addedToSystem ?? 0)}
+                                </div>
                             </div>
 
                             {/* Added to System - Goals/Quotas */}

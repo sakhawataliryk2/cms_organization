@@ -1,7 +1,7 @@
 // app/dashboard/jobs/add/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -35,6 +35,8 @@ export default function AddJob() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const jobId = searchParams.get("id"); // Get job ID from URL if present
+  const leadId = searchParams.get("leadId") || searchParams.get("lead_id");
+  const hasPrefilledFromLeadRef = useRef(false);
 
   // Add these state variables
   const [isEditMode, setIsEditMode] = useState(!!jobId);
@@ -62,6 +64,101 @@ export default function AddJob() {
   useEffect(() => {
     initializeFields();
   }, []);
+
+  // Prefill from lead when coming via Leads -> Convert (create mode only)
+  useEffect(() => {
+    if (jobId) return; // don't override edit mode
+    if (!leadId) return;
+    if (hasPrefilledFromLeadRef.current) return;
+    if (formFields.length === 0) return;
+
+    hasPrefilledFromLeadRef.current = true;
+
+    const token = document.cookie.replace(
+      /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+      "$1"
+    );
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/leads/${leadId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const lead = data.lead;
+        if (!lead) return;
+
+        const orgValue =
+          lead.organization_id?.toString?.() ||
+          lead.organization_id ||
+          lead.organization_name_from_org ||
+          "";
+
+        const hiringManagerValue =
+          lead.full_name ||
+          `${lead.first_name || ""} ${lead.last_name || ""}`.trim() ||
+          "";
+
+        const addressParts = [
+          lead.address,
+          [lead.city, lead.state].filter(Boolean).join(", "),
+          lead.zip,
+        ].filter(Boolean);
+        const addressValue = addressParts.join(", ");
+
+        // Prefill standard fields (only if empty)
+        setFormFields((prev) =>
+          prev.map((f) => {
+            if (f.name === "organizationId" && !f.value) {
+              return { ...f, value: orgValue };
+            }
+            if (f.name === "hiringManager" && !f.value) {
+              return { ...f, value: hiringManagerValue };
+            }
+            if (f.name === "worksiteLocation" && !f.value) {
+              return { ...f, value: addressValue };
+            }
+            return f;
+          })
+        );
+
+        // Also prefill custom fields if present (labels-based)
+        if (!customFieldsLoading && customFields.length > 0) {
+          setCustomFieldValues((prev) => {
+            const next = { ...prev };
+            customFields.forEach((field) => {
+              if (
+                (field.field_label === "Organization" ||
+                  field.field_label === "Organization ID") &&
+                !next[field.field_name]
+              ) {
+                next[field.field_name] = orgValue;
+              }
+              if (
+                field.field_label === "Hiring Manager" &&
+                !next[field.field_name]
+              ) {
+                next[field.field_name] = hiringManagerValue;
+              }
+            });
+            return next;
+          });
+        }
+      } catch (e) {
+        // Non-blocking prefill; ignore errors
+        console.error("Lead prefill failed:", e);
+      }
+    })();
+  }, [
+    jobId,
+    leadId,
+    formFields.length,
+    customFieldsLoading,
+    customFields,
+    setCustomFieldValues,
+  ]);
 
   const initializeFields = () => {
     // These are the standard fields

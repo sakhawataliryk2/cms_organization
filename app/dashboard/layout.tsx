@@ -36,7 +36,10 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             <DashboardNav />
 
             {/* Main content */}
-            <div className="ml-60 pt-12 p-6">
+            <div
+                className="ml-60 p-6"
+                style={{ paddingTop: "var(--dashboard-top-offset, 48px)" }}
+            >
                 {children}
             </div>
         </div>
