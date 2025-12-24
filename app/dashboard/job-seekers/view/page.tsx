@@ -14,6 +14,8 @@ import { formatRecordId } from '@/lib/recordIdFormatter';
 export default function JobSeekerView() {
   const router = useRouter();
   const searchParams = useSearchParams();
+    const jobSeekerId = searchParams.get("id");
+
   const [activeTab, setActiveTab] = useState("summary");
   const [activeQuickTab, setActiveQuickTab] = useState("prescreen");
 
@@ -28,16 +30,18 @@ export default function JobSeekerView() {
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
-  
+
   // Add Note form state
   const [noteForm, setNoteForm] = useState({
-    text: '',
-    about: jobSeeker ? `${formatRecordId(jobSeeker.id, 'jobSeeker')} ${jobSeeker.fullName}` : '',
-    copyNote: 'No',
+    text: "",
+    about: jobSeeker
+      ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
+      : "",
+    copyNote: "No",
     replaceGeneralContactComments: false,
-    additionalReferences: '',
-    scheduleNextAction: 'None',
-    emailNotification: 'Internal User'
+    additionalReferences: "",
+    scheduleNextAction: "None",
+    emailNotification: "Internal User",
   });
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
@@ -46,9 +50,216 @@ export default function JobSeekerView() {
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
-    resume: ['profile', 'skills', 'experience'],
-    jobSeekerDetails: ['status', 'currentOrganization', 'title', 'email', 'mobilePhone', 'address', 'desiredSalary', 'dateAdded', 'lastContactDate', 'owner']
+    resume: ["profile", "skills", "experience"],
+    jobSeekerDetails: [
+      "status",
+      "currentOrganization",
+      "title",
+      "email",
+      "mobilePhone",
+      "address",
+      "desiredSalary",
+      "dateAdded",
+      "lastContactDate",
+      "owner",
+    ],
   });
+  // ===== PENCIL-HEADER-MODAL (Job Seeker Header Fields) =====
+
+  type HeaderFieldDef = {
+    key: string;
+    label: string;
+    type: "standard" | "custom";
+  };
+
+  type SavedHeaderField = {
+    key: string;
+    visible: boolean;
+  };
+
+  const HEADER_STORAGE_KEY = (id: string) => `jobSeeker_header_fields_${id}`;
+
+  // Standard fields you want to allow in the header row
+  const STANDARD_HEADER_FIELDS: HeaderFieldDef[] = [
+    { key: "phone", label: "Phone", type: "standard" },
+    { key: "email", label: "Email", type: "standard" },
+    { key: "status", label: "Status", type: "standard" },
+    { key: "currentOrganization", label: "Current Org", type: "standard" },
+    { key: "title", label: "Title", type: "standard" },
+    { key: "mobilePhone", label: "Mobile", type: "standard" },
+    { key: "fullAddress", label: "Address", type: "standard" },
+    { key: "desiredSalary", label: "Desired Salary", type: "standard" },
+    { key: "dateAdded", label: "Date Added", type: "standard" },
+    { key: "lastContactDate", label: "Last Contact", type: "standard" },
+    { key: "owner", label: "Owner", type: "standard" },
+  ];
+
+  // default layout if nothing saved in localStorage
+  const DEFAULT_HEADER_FIELDS: SavedHeaderField[] = [
+    { key: "phone", visible: true },
+    { key: "email", visible: true },
+    { key: "status", visible: true },
+    { key: "currentOrganization", visible: true },
+    { key: "title", visible: true },
+  ];
+
+  const [headerFields, setHeaderFields] = useState<SavedHeaderField[]>(
+    DEFAULT_HEADER_FIELDS
+  );
+  const [showHeaderFieldsModal, setShowHeaderFieldsModal] = useState(false);
+
+  // Build definitions list (standard + custom from availableFields/jobSeeker.customFields)
+  const headerFieldDefs: HeaderFieldDef[] = (() => {
+    const customKeys = new Set<string>();
+
+    // Prefer availableFields (from modify page)
+    (availableFields || []).forEach((f: any) => {
+      const k = f.field_name || f.field_label || f.id;
+      if (k) customKeys.add(String(k));
+    });
+
+    // Also include any custom keys present on the record
+    if (jobSeeker?.customFields) {
+      Object.keys(jobSeeker.customFields).forEach((k) =>
+        customKeys.add(String(k))
+      );
+    }
+
+    const customDefs: HeaderFieldDef[] = Array.from(customKeys).map((k) => {
+      const found = (availableFields || []).find((f: any) => {
+        const fk = f.field_name || f.field_label || f.id;
+        return String(fk) === k;
+      });
+      const label = found?.field_label || found?.field_name || k;
+      return { key: k, label, type: "custom" };
+    });
+
+    // keep stable ordering
+    customDefs.sort((a, b) => a.label.localeCompare(b.label));
+
+    return [...STANDARD_HEADER_FIELDS, ...customDefs];
+  })();
+
+  // Load saved header fields (per record)
+  useEffect(() => {
+    if (!jobSeekerId) return;
+    try {
+      const raw = localStorage.getItem(HEADER_STORAGE_KEY(jobSeekerId));
+      if (!raw) {
+        setHeaderFields(DEFAULT_HEADER_FIELDS);
+        return;
+      }
+      const parsed = JSON.parse(raw) as SavedHeaderField[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setHeaderFields(parsed);
+      } else {
+        setHeaderFields(DEFAULT_HEADER_FIELDS);
+      }
+    } catch {
+      setHeaderFields(DEFAULT_HEADER_FIELDS);
+    }
+  }, [jobSeekerId]);
+
+  // Ensure: any newly discovered defs (especially custom) exist in state (hidden by default)
+  useEffect(() => {
+    if (!jobSeekerId) return;
+    if (!headerFieldDefs.length) return;
+
+    setHeaderFields((prev) => {
+      const existing = new Set(prev.map((p) => p.key));
+      const missing = headerFieldDefs
+        .filter((d) => !existing.has(d.key))
+        .map((d) => ({ key: d.key, visible: false }));
+
+      if (!missing.length) return prev;
+      const next = [...prev, ...missing];
+
+      // persist
+      try {
+        localStorage.setItem(
+          HEADER_STORAGE_KEY(jobSeekerId),
+          JSON.stringify(next)
+        );
+      } catch {}
+      return next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobSeekerId, headerFieldDefs.length]);
+
+  const persistHeaderFields = (next: SavedHeaderField[]) => {
+    setHeaderFields(next);
+    if (!jobSeekerId) return;
+    try {
+      localStorage.setItem(
+        HEADER_STORAGE_KEY(jobSeekerId),
+        JSON.stringify(next)
+      );
+    } catch {}
+  };
+
+  const getHeaderValue = (key: string): string => {
+    if (!jobSeeker) return "-";
+
+    // standard keys live on jobSeeker directly
+    const std = (jobSeeker as any)[key];
+    if (std !== undefined && std !== null && String(std).trim() !== "")
+      return String(std);
+
+    // custom keys live in jobSeeker.customFields
+    const custom = jobSeeker.customFields?.[key];
+    if (custom !== undefined && custom !== null && String(custom).trim() !== "")
+      return String(custom);
+
+    return "-";
+  };
+
+  const labelForHeaderKey = (key: string) => {
+    const def = headerFieldDefs.find((d) => d.key === key);
+    return def?.label || key;
+  };
+
+  const toggleHeaderField = (key: string) => {
+    const next = headerFields.map((f) =>
+      f.key === key ? { ...f, visible: !f.visible } : f
+    );
+    persistHeaderFields(next);
+  };
+
+const moveHeaderField = (key: string, dir: "up" | "down") => {
+  const visible = headerFields.filter((f) => f.visible);
+  const visibleIdx = visible.findIndex((f) => f.key === key);
+  if (visibleIdx === -1) return;
+
+  const swapVisibleIdx = dir === "up" ? visibleIdx - 1 : visibleIdx + 1;
+  if (swapVisibleIdx < 0 || swapVisibleIdx >= visible.length) return;
+
+  const aKey = visible[visibleIdx].key;
+  const bKey = visible[swapVisibleIdx].key;
+
+  const idxA = headerFields.findIndex((f) => f.key === aKey);
+  const idxB = headerFields.findIndex((f) => f.key === bKey);
+
+  const next = [...headerFields];
+  [next[idxA], next[idxB]] = [next[idxB], next[idxA]];
+  persistHeaderFields(next);
+};
+
+
+  const addHeaderFieldIfMissing = (key: string) => {
+    if (headerFields.some((f) => f.key === key)) return;
+    const next = [...headerFields, { key, visible: true }];
+    persistHeaderFields(next);
+  };
+
+  const removeHeaderField = (key: string) => {
+    const next = headerFields.filter((f) => f.key !== key);
+    persistHeaderFields(next);
+  };
+
+  const resetHeaderFields = () => {
+    persistHeaderFields(DEFAULT_HEADER_FIELDS);
+  };
+
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
 
@@ -64,8 +275,8 @@ export default function JobSeekerView() {
   // Tearsheet modal state
   const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
   const [tearsheetForm, setTearsheetForm] = useState({
-    name: '',
-    visibility: 'Existing' // 'New' or 'Existing'
+    name: "",
+    visibility: "Existing", // 'New' or 'Existing'
   });
   const [isSavingTearsheet, setIsSavingTearsheet] = useState(false);
 
@@ -73,14 +284,30 @@ export default function JobSeekerView() {
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [selectedDocs, setSelectedDocs] = useState<Record<string, boolean>>({});
   const onboardingDocs = [
-    { id: "w4", name: "W-4 (Employee's Withholding Certificate)", url: "/docs/onboarding/W-4.pdf" },
-    { id: "i9", name: "I-9 (Employment Eligibility Verification)", url: "/docs/onboarding/I-9.pdf" },
-    { id: "dd", name: "Direct Deposit Authorization", url: "/docs/onboarding/Direct-Deposit.pdf" },
-    { id: "policy", name: "Company Policies Acknowledgement", url: "/docs/onboarding/Policies.pdf" }
+    {
+      id: "w4",
+      name: "W-4 (Employee's Withholding Certificate)",
+      url: "/docs/onboarding/W-4.pdf",
+    },
+    {
+      id: "i9",
+      name: "I-9 (Employment Eligibility Verification)",
+      url: "/docs/onboarding/I-9.pdf",
+    },
+    {
+      id: "dd",
+      name: "Direct Deposit Authorization",
+      url: "/docs/onboarding/Direct-Deposit.pdf",
+    },
+    {
+      id: "policy",
+      name: "Company Policies Acknowledgement",
+      url: "/docs/onboarding/Policies.pdf",
+    },
   ];
 
   const toggleDoc = (id: string) => {
-    setSelectedDocs(prev => ({ ...prev, [id]: !prev[id] }));
+    setSelectedDocs((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   const handleSendOnboarding = async () => {
@@ -88,13 +315,19 @@ export default function JobSeekerView() {
       alert("Job seeker email is missing");
       return;
     }
-    
-    const chosen = onboardingDocs.filter(d => selectedDocs[d.id]);
+
+    const chosen = onboardingDocs.filter((d) => selectedDocs[d.id]);
     const subject = "Onboarding Documents";
-    const links = chosen.length > 0
-      ? "\n\nDocuments:\n" + chosen.map(d => `- ${d.name}: ${window.location.origin}${d.url}`).join("\n")
-      : "";
-    const body = "Here are your onboarding documents. Please fill these out and return promptly." + links;
+    const links =
+      chosen.length > 0
+        ? "\n\nDocuments:\n" +
+          chosen
+            .map((d) => `- ${d.name}: ${window.location.origin}${d.url}`)
+            .join("\n")
+        : "";
+    const body =
+      "Here are your onboarding documents. Please fill these out and return promptly." +
+      links;
 
     // Use Office 365 if connected, otherwise use mailto
     if (isOffice365Connected) {
@@ -103,14 +336,16 @@ export default function JobSeekerView() {
           to: [jobSeeker.email],
           subject: subject,
           body: body,
-          bodyType: 'text',
+          bodyType: "text",
         };
         await sendEmailViaOffice365(emailMessage);
-        alert('Onboarding documents sent successfully via Office 365!');
+        alert("Onboarding documents sent successfully via Office 365!");
         setShowOnboardingModal(false);
         setSelectedDocs({});
       } catch (error: any) {
-        alert(`Failed to send via Office 365: ${error.message}. Falling back to mailto.`);
+        alert(
+          `Failed to send via Office 365: ${error.message}. Falling back to mailto.`
+        );
         const encodedSubject = encodeURIComponent(subject);
         const encodedBody = encodeURIComponent(body);
         window.location.href = `mailto:${jobSeeker.email}?subject=${encodedSubject}&body=${encodedBody}`;
@@ -128,16 +363,30 @@ export default function JobSeekerView() {
 
   // Reference form send modal state
   const [showReferenceModal, setShowReferenceModal] = useState(false);
-  const [selectedReferenceDocs, setSelectedReferenceDocs] = useState<Record<string, boolean>>({});
+  const [selectedReferenceDocs, setSelectedReferenceDocs] = useState<
+    Record<string, boolean>
+  >({});
   const [referenceEmail, setReferenceEmail] = useState("");
   const referenceDocs = [
-    { id: "reference-form", name: "Reference Request Form", url: "/docs/references/Reference-Form.pdf" },
-    { id: "background-check", name: "Background Check Authorization", url: "/docs/references/Background-Check.pdf" },
-    { id: "employment-verification", name: "Employment Verification Form", url: "/docs/references/Employment-Verification.pdf" }
+    {
+      id: "reference-form",
+      name: "Reference Request Form",
+      url: "/docs/references/Reference-Form.pdf",
+    },
+    {
+      id: "background-check",
+      name: "Background Check Authorization",
+      url: "/docs/references/Background-Check.pdf",
+    },
+    {
+      id: "employment-verification",
+      name: "Employment Verification Form",
+      url: "/docs/references/Employment-Verification.pdf",
+    },
   ];
 
   const toggleReferenceDoc = (id: string) => {
-    setSelectedReferenceDocs(prev => ({ ...prev, [id]: !prev[id] }));
+    setSelectedReferenceDocs((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
   const handleSendReferenceForm = async () => {
@@ -153,14 +402,20 @@ export default function JobSeekerView() {
       return;
     }
 
-    const chosen = referenceDocs.filter(d => selectedReferenceDocs[d.id]);
+    const chosen = referenceDocs.filter((d) => selectedReferenceDocs[d.id]);
     const subject = "Reference Request";
-    const links = chosen.length > 0
-      ? "\n\nPlease review and complete the following documents:\n" + chosen.map(d => `- ${d.name}: ${window.location.origin}${d.url}`).join("\n")
-      : "";
+    const links =
+      chosen.length > 0
+        ? "\n\nPlease review and complete the following documents:\n" +
+          chosen
+            .map((d) => `- ${d.name}: ${window.location.origin}${d.url}`)
+            .join("\n")
+        : "";
     const body = `Dear Reference,
 
-We are requesting a reference for ${jobSeeker?.fullName || "a candidate"}. Please review and complete the attached reference documents at your earliest convenience.${links}
+We are requesting a reference for ${
+      jobSeeker?.fullName || "a candidate"
+    }. Please review and complete the attached reference documents at your earliest convenience.${links}
 
 Thank you for your time and assistance.
 
@@ -173,15 +428,17 @@ Best regards`;
           to: [referenceEmail.trim()],
           subject: subject,
           body: body,
-          bodyType: 'text',
+          bodyType: "text",
         };
         await sendEmailViaOffice365(emailMessage);
-        alert('Reference form sent successfully via Office 365!');
+        alert("Reference form sent successfully via Office 365!");
         setShowReferenceModal(false);
         setReferenceEmail("");
         setSelectedReferenceDocs({});
       } catch (error: any) {
-        alert(`Failed to send via Office 365: ${error.message}. Falling back to mailto.`);
+        alert(
+          `Failed to send via Office 365: ${error.message}. Falling back to mailto.`
+        );
         const encodedSubject = encodeURIComponent(subject);
         const encodedBody = encodeURIComponent(body);
         window.location.href = `mailto:${referenceEmail.trim()}?subject=${encodedSubject}&body=${encodedBody}`;
@@ -199,7 +456,6 @@ Best regards`;
     }
   };
 
-  const jobSeekerId = searchParams.get("id");
 
   // Fetch job seeker when component mounts
   useEffect(() => {
@@ -213,7 +469,10 @@ Best regards`;
     if (jobSeeker && jobSeekerId) {
       fetchAvailableFields();
       // Update note form about field when job seeker is loaded
-      setNoteForm(prev => ({ ...prev, about: `${jobSeeker.id} ${jobSeeker.fullName}` }));
+      setNoteForm((prev) => ({
+        ...prev,
+        about: `${jobSeeker.id} ${jobSeeker.fullName}`,
+      }));
       // Fetch documents when job seeker is loaded
       fetchDocuments(jobSeekerId);
     }
@@ -230,17 +489,20 @@ Best regards`;
   const fetchUsers = async () => {
     setIsLoadingUsers(true);
     try {
-      const response = await fetch('/api/users/active', {
+      const response = await fetch("/api/users/active", {
         headers: {
-          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
-        }
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
       });
       if (response.ok) {
         const data = await response.json();
         setUsers(data.users || []);
       }
     } catch (err) {
-      console.error('Error fetching users:', err);
+      console.error("Error fetching users:", err);
     } finally {
       setIsLoadingUsers(false);
     }
@@ -250,27 +512,27 @@ Best regards`;
   const fetchAvailableFields = async () => {
     setIsLoadingFields(true);
     try {
-      const response = await fetch('/api/admin/field-management/job-seekers');
+      const response = await fetch("/api/admin/field-management/job-seekers");
       if (response.ok) {
         const data = await response.json();
         const fields = data.fields || [];
         setAvailableFields(fields);
-        
+
         // Add custom fields to visible fields if they have values
         if (jobSeeker && jobSeeker.customFields) {
           const customFieldKeys = Object.keys(jobSeeker.customFields);
-          customFieldKeys.forEach(fieldKey => {
+          customFieldKeys.forEach((fieldKey) => {
             if (!visibleFields.jobSeekerDetails.includes(fieldKey)) {
-              setVisibleFields(prev => ({
+              setVisibleFields((prev) => ({
                 ...prev,
-                jobSeekerDetails: [...prev.jobSeekerDetails, fieldKey]
+                jobSeekerDetails: [...prev.jobSeekerDetails, fieldKey],
               }));
             }
           });
         }
       }
     } catch (err) {
-      console.error('Error fetching available fields:', err);
+      console.error("Error fetching available fields:", err);
     } finally {
       setIsLoadingFields(false);
     }
@@ -278,17 +540,17 @@ Best regards`;
 
   // Toggle field visibility
   const toggleFieldVisibility = (panelId: string, fieldKey: string) => {
-    setVisibleFields(prev => {
+    setVisibleFields((prev) => {
       const panelFields = prev[panelId] || [];
       if (panelFields.includes(fieldKey)) {
         return {
           ...prev,
-          [panelId]: panelFields.filter(f => f !== fieldKey)
+          [panelId]: panelFields.filter((f) => f !== fieldKey),
         };
       } else {
         return {
           ...prev,
-          [panelId]: [...panelFields, fieldKey]
+          [panelId]: [...panelFields, fieldKey],
         };
       }
     });
@@ -374,7 +636,7 @@ Best regards`;
 
     // Validate file
     if (file.size > 10 * 1024 * 1024) {
-      setUploadError('File size should be less than 10MB');
+      setUploadError("File size should be less than 10MB");
       return;
     }
 
@@ -383,40 +645,46 @@ Best regards`;
 
     try {
       const formData = new FormData();
-      formData.append('file', file);
-      formData.append('document_name', file.name);
-      formData.append('document_type', 'General');
+      formData.append("file", file);
+      formData.append("document_name", file.name);
+      formData.append("document_type", "General");
 
-      const response = await fetch(`/api/job-seekers/${jobSeekerId}/documents`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
-        body: formData,
-      });
+      const response = await fetch(
+        `/api/job-seekers/${jobSeekerId}/documents`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+          body: formData,
+        }
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to upload document');
+        throw new Error(errorData.message || "Failed to upload document");
       }
 
       const data = await response.json();
-      
+
       // Add the new document to the list
       setDocuments([data.document, ...documents]);
 
       // Reset file input
       if (fileInputRef.current) {
-        fileInputRef.current.value = '';
+        fileInputRef.current.value = "";
       }
 
-      alert('Document uploaded successfully');
+      alert("Document uploaded successfully");
     } catch (err) {
-      console.error('Error uploading document:', err);
-      const errorMessage = err instanceof Error ? err.message : 'An error occurred while uploading the document';
+      console.error("Error uploading document:", err);
+      const errorMessage =
+        err instanceof Error
+          ? err.message
+          : "An error occurred while uploading the document";
       setUploadError(errorMessage);
       alert(errorMessage);
     } finally {
@@ -429,15 +697,18 @@ Best regards`;
     if (!confirm("Are you sure you want to delete this document?")) return;
 
     try {
-      const response = await fetch(`/api/job-seekers/${jobSeekerId}/documents/${documentId}`, {
-        method: "DELETE",
-        headers: {
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
-      });
+      const response = await fetch(
+        `/api/job-seekers/${jobSeekerId}/documents/${documentId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        }
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -669,23 +940,27 @@ Best regards`;
 
     try {
       const response = await fetch(`/api/job-seekers/${jobSeekerId}/notes`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           text: noteForm.text,
-          copy_note: noteForm.copyNote === 'Yes',
-          replace_general_contact_comments: noteForm.replaceGeneralContactComments,
+          copy_note: noteForm.copyNote === "Yes",
+          replace_general_contact_comments:
+            noteForm.replaceGeneralContactComments,
           additional_references: noteForm.additionalReferences,
           schedule_next_action: noteForm.scheduleNextAction,
-          email_notification: noteForm.emailNotification
-        })
+          email_notification: noteForm.emailNotification,
+        }),
       });
 
       if (!response.ok) {
-        throw new Error('Failed to add note');
+        throw new Error("Failed to add note");
       }
 
       const data = await response.json();
@@ -695,21 +970,23 @@ Best regards`;
 
       // Clear the form
       setNoteForm({
-        text: '',
-        about: jobSeeker ? `${formatRecordId(jobSeeker.id, 'jobSeeker')} ${jobSeeker.fullName}` : '',
-        copyNote: 'No',
+        text: "",
+        about: jobSeeker
+          ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
+          : "",
+        copyNote: "No",
         replaceGeneralContactComments: false,
-        additionalReferences: '',
-        scheduleNextAction: 'None',
-        emailNotification: 'Internal User'
+        additionalReferences: "",
+        scheduleNextAction: "None",
+        emailNotification: "Internal User",
       });
       setShowAddNote(false);
 
       // Refresh history
       fetchHistory(jobSeekerId);
     } catch (err) {
-      console.error('Error adding note:', err);
-      alert('Failed to add note. Please try again.');
+      console.error("Error adding note:", err);
+      alert("Failed to add note. Please try again.");
     }
   };
 
@@ -717,13 +994,15 @@ Best regards`;
   const handleCloseAddNoteModal = () => {
     setShowAddNote(false);
     setNoteForm({
-      text: '',
-      about: jobSeeker ? `${formatRecordId(jobSeeker.id, 'jobSeeker')} ${jobSeeker.fullName}` : '',
-      copyNote: 'No',
+      text: "",
+      about: jobSeeker
+        ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
+        : "",
+      copyNote: "No",
       replaceGeneralContactComments: false,
-      additionalReferences: '',
-      scheduleNextAction: 'None',
-      emailNotification: 'Internal User'
+      additionalReferences: "",
+      scheduleNextAction: "None",
+      emailNotification: "Internal User",
     });
   };
 
@@ -744,8 +1023,8 @@ Best regards`;
       setIsOffice365Connected(connected);
     };
     checkConnection();
-    if (typeof window !== 'undefined') {
-      const token = sessionStorage.getItem('msal_access_token');
+    if (typeof window !== "undefined") {
+      const token = sessionStorage.getItem("msal_access_token");
       if (token) setIsOffice365Connected(true);
     }
   }, []);
@@ -767,10 +1046,12 @@ Best regards`;
       // Open Office 365 compose window with recipient pre-filled
       if (jobSeeker?.email) {
         // Use Outlook web compose deep link
-        const composeUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(jobSeeker.email)}`;
-        window.open(composeUrl, '_blank');
+        const composeUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(
+          jobSeeker.email
+        )}`;
+        window.open(composeUrl, "_blank");
       } else {
-        alert('Job seeker email not available');
+        alert("Job seeker email not available");
       }
     } else if (action === "add-tearsheet") {
       setShowAddTearsheetModal(true);
@@ -780,46 +1061,57 @@ Best regards`;
   // Handle tearsheet submission
   const handleTearsheetSubmit = async () => {
     if (!tearsheetForm.name.trim()) {
-      alert('Please enter a tearsheet name');
+      alert("Please enter a tearsheet name");
       return;
     }
 
     if (!jobSeekerId) {
-      alert('Job Seeker ID is missing');
+      alert("Job Seeker ID is missing");
       return;
     }
 
     setIsSavingTearsheet(true);
     try {
-      const response = await fetch('/api/tearsheets', {
-        method: 'POST',
+      const response = await fetch("/api/tearsheets", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
         },
         body: JSON.stringify({
           name: tearsheetForm.name,
           visibility: tearsheetForm.visibility,
-          job_seeker_id: jobSeekerId
-        })
+          job_seeker_id: jobSeekerId,
+        }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Failed to create tearsheet' }));
-        throw new Error(errorData.message || 'Failed to create tearsheet');
+        const errorData = await response
+          .json()
+          .catch(() => ({ message: "Failed to create tearsheet" }));
+        throw new Error(errorData.message || "Failed to create tearsheet");
       }
 
-      alert('Tearsheet created successfully!');
+      alert("Tearsheet created successfully!");
       setShowAddTearsheetModal(false);
-      setTearsheetForm({ name: '', visibility: 'Existing' });
+      setTearsheetForm({ name: "", visibility: "Existing" });
     } catch (err) {
-      console.error('Error creating tearsheet:', err);
-      if (err instanceof Error && err.message.includes('Failed to fetch')) {
-        alert('Tearsheet creation feature is being set up. The tearsheet will be created once the API is ready.');
+      console.error("Error creating tearsheet:", err);
+      if (err instanceof Error && err.message.includes("Failed to fetch")) {
+        alert(
+          "Tearsheet creation feature is being set up. The tearsheet will be created once the API is ready."
+        );
         setShowAddTearsheetModal(false);
-        setTearsheetForm({ name: '', visibility: 'Existing' });
+        setTearsheetForm({ name: "", visibility: "Existing" });
       } else {
-        alert(err instanceof Error ? err.message : 'Failed to create tearsheet. Please try again.');
+        alert(
+          err instanceof Error
+            ? err.message
+            : "Failed to create tearsheet. Please try again."
+        );
       }
     } finally {
       setIsSavingTearsheet(false);
@@ -879,10 +1171,19 @@ Best regards`;
   const actionOptions = [
     { label: "Add Note", action: () => setShowAddNote(true) },
     { label: "Send Email", action: () => handleActionSelected("email") },
-    { label: "Add Appointment", action: () => handleActionSelected("add-appointment") },
+    {
+      label: "Add Appointment",
+      action: () => handleActionSelected("add-appointment"),
+    },
     { label: "Add Task", action: () => handleActionSelected("add-task") },
-    { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
-    { label: "Password Reset", action: () => handleActionSelected("password-reset") },
+    {
+      label: "Add Tearsheet",
+      action: () => handleActionSelected("add-tearsheet"),
+    },
+    {
+      label: "Password Reset",
+      action: () => handleActionSelected("password-reset"),
+    },
     // { label: "Edit", action: () => handleActionSelected("edit") },
     { label: "Transfer", action: () => handleActionSelected("transfer") },
     { label: "Delete", action: () => handleActionSelected("delete") },
@@ -914,7 +1215,10 @@ Best regards`;
     <div className="bg-white p-4 rounded shadow-sm">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-lg font-semibold">
-          Job Seeker Notes {notes.length > 0 && <span className="text-gray-500 font-normal">({notes.length})</span>}
+          Job Seeker Notes{" "}
+          {notes.length > 0 && (
+            <span className="text-gray-500 font-normal">({notes.length})</span>
+          )}
         </h2>
         <button
           onClick={() => setShowAddNote(true)}
@@ -1046,7 +1350,9 @@ Best regards`;
   const renderModifyTab = () => (
     <div className="bg-white p-4 rounded shadow-sm">
       <h2 className="text-lg font-semibold mb-4">Edit Job Seeker</h2>
-      <p className="text-gray-600 mb-4">Click the button below to edit this job seeker's details.</p>
+      <p className="text-gray-600 mb-4">
+        Click the button below to edit this job seeker's details.
+      </p>
       <button
         onClick={handleEdit}
         className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
@@ -1103,55 +1409,97 @@ Best regards`;
             <FiUsers size={20} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
-            {formatRecordId(jobSeeker.id, 'jobSeeker')} {jobSeeker.fullName}
+            {formatRecordId(jobSeeker.id, "jobSeeker")} {jobSeeker.fullName}
           </h1>
         </div>
       </div>
 
-      {/* Phone and Email section */}
-      <div className="bg-white border-b border-gray-300 p-3 flex justify-between items-center">
-        <div className="flex space-x-8">
-          <div>
-            <h2 className="text-gray-600">Phone</h2>
-            <p className="font-medium">{jobSeeker.phone || "Not provided"}</p>
-          </div>
-          <div>
-            <h2 className="text-gray-600">Email</h2>
-            {jobSeeker.email && jobSeeker.email !== "No email provided" ? (
-              <a
-                href={`mailto:${jobSeeker.email}`}
-                className="font-medium text-blue-600 hover:underline"
-              >
-                {jobSeeker.email}
-              </a>
+      <div className="bg-white border-b border-gray-300 px-3 py-2">
+        <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
+          {/* LEFT: dynamic fields */}
+          <div className="flex flex-wrap gap-x-10 gap-y-2 flex-1 min-w-0">
+            {headerFields.filter((f) => f.visible).length === 0 ? (
+              <span className="text-sm text-gray-500">
+                No header fields selected
+              </span>
             ) : (
-              <p className="font-medium">Not provided</p>
+              headerFields
+                .filter((f) => f.visible)
+                .map((f) => (
+                  <div key={f.key} className="min-w-[140px]">
+                    <div className="text-xs text-gray-500">
+                      {labelForHeaderKey(f.key)}
+                    </div>
+
+                    {/* Special case: email clickable */}
+                    {f.key === "email" && getHeaderValue("email") !== "-" ? (
+                      <a
+                        href={`mailto:${getHeaderValue("email")}`}
+                        className="text-sm font-medium text-blue-600 hover:underline"
+                      >
+                        {getHeaderValue("email")}
+                      </a>
+                    ) : (
+                      <div className="text-sm font-medium text-gray-900">
+                        {getHeaderValue(f.key)}
+                      </div>
+                    )}
+                  </div>
+                ))
             )}
           </div>
-        </div>
-        <div className="flex items-center space-x-2">
-          <ActionDropdown label="Actions" options={actionOptions} />
-          <button
-            onClick={handlePrint}
-            className="p-1 hover:bg-gray-200 rounded"
-            aria-label="Print"
-          >
-            <Image src="/print.svg" alt="Print" width={20} height={20} />
-          </button>
-          <button
-            className="p-1 hover:bg-gray-200 rounded"
-            aria-label="Reload"
-            onClick={() => jobSeekerId && fetchJobSeeker(jobSeekerId)}
-          >
-            <Image src="/reload.svg" alt="Reload" width={20} height={20} />
-          </button>
-          <button
-            onClick={handleGoBack}
-            className="p-1 hover:bg-gray-200 rounded"
-            aria-label="Close"
-          >
-            <Image src="/x.svg" alt="Close" width={20} height={20} />
-          </button>
+
+          {/* RIGHT: pencil + existing actions */}
+          <div className="flex items-center space-x-2 shrink-0">
+            <button
+              onClick={() => setShowHeaderFieldsModal(true)}
+              className="p-2 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
+              aria-label="Edit header fields"
+              title="Edit header fields"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M12 20h9"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+
+            <ActionDropdown label="Actions" options={actionOptions} />
+
+            <button
+              onClick={handlePrint}
+              className="p-1 hover:bg-gray-200 rounded"
+              aria-label="Print"
+            >
+              <Image src="/print.svg" alt="Print" width={20} height={20} />
+            </button>
+
+            <button
+              className="p-1 hover:bg-gray-200 rounded"
+              aria-label="Reload"
+              onClick={() => jobSeekerId && fetchJobSeeker(jobSeekerId)}
+            >
+              <Image src="/reload.svg" alt="Reload" width={20} height={20} />
+            </button>
+
+            <button
+              onClick={handleGoBack}
+              className="p-1 hover:bg-gray-200 rounded"
+              aria-label="Close"
+            >
+              <Image src="/x.svg" alt="Close" width={20} height={20} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1183,10 +1531,11 @@ Best regards`;
         {quickTabs.map((action) => (
           <button
             key={action.id}
-            className={`${activeQuickTab === action.id
-              ? 'bg-white text-blue-600 font-medium'
-              : 'bg-white text-gray-700 hover:bg-gray-100'
-              } px-4 py-1 rounded-full shadow`}
+            className={`${
+              activeQuickTab === action.id
+                ? "bg-white text-blue-600 font-medium"
+                : "bg-white text-gray-700 hover:bg-gray-100"
+            } px-4 py-1 rounded-full shadow`}
             onClick={() => setActiveQuickTab(action.id)}
           >
             {action.label}
@@ -1197,158 +1546,230 @@ Best regards`;
       {/* Main Content Area */}
       <div className="p-4">
         <div className="grid grid-cols-7 gap-4">
-        {/* Display content based on active tab */}
-        {activeTab === "summary" && (
-          <>
-            {/* Left Column - Resume Section (4/7 width) */}
-            <div className="col-span-4">
-              <PanelWithHeader
-                title="Resume"
-                onEdit={() => handleEditPanel('resume')}
-              >
-                <div className="space-y-0 border border-gray-200 rounded">
-                  {visibleFields.resume.includes('profile') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Profile:</div>
-                      <div className="flex-1 p-2 text-sm">{jobSeeker.resume.profile}</div>
-                    </div>
-                  )}
-                  {visibleFields.resume.includes('skills') && jobSeeker.skills && jobSeeker.skills.length > 0 && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Skills:</div>
-                      <div className="flex-1 p-2">
-                        <div className="flex flex-wrap gap-2">
-                          {jobSeeker.skills.map((skill: string, index: number) => (
-                            <span
-                              key={index}
-                              className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm"
-                            >
-                              {skill}
-                            </span>
-                          ))}
+          {/* Display content based on active tab */}
+          {activeTab === "summary" && (
+            <>
+              {/* Left Column - Resume Section (4/7 width) */}
+              <div className="col-span-4">
+                <PanelWithHeader
+                  title="Resume"
+                  onEdit={() => handleEditPanel("resume")}
+                >
+                  <div className="space-y-0 border border-gray-200 rounded">
+                    {visibleFields.resume.includes("profile") && (
+                      <div className="flex border-b border-gray-200 last:border-b-0">
+                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                          Profile:
+                        </div>
+                        <div className="flex-1 p-2 text-sm">
+                          {jobSeeker.resume.profile}
                         </div>
                       </div>
-                    </div>
-                  )}
-                  {visibleFields.resume.includes('experience') && jobSeeker.resume.experience && jobSeeker.resume.experience.length > 0 && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Work Experience:</div>
-                      <div className="flex-1 p-2">
-                        {jobSeeker.resume.experience.map((exp: any, index: number) => (
-                          <div key={index} className="mb-4 last:mb-0">
-                            <div className="flex justify-between mb-1">
-                              <div className="font-bold text-sm">
-                                {exp.title} {exp.location}
-                              </div>
-                              <div className="text-sm">{exp.period}</div>
-                            </div>
-                            <ul className="list-disc pl-5 mt-1">
-                              {exp.responsibilities.map((resp: string, respIndex: number) => (
-                                <li key={respIndex} className="text-sm mb-1">
-                                  {resp}
-                                </li>
-                              ))}
-                            </ul>
+                    )}
+                    {visibleFields.resume.includes("skills") &&
+                      jobSeeker.skills &&
+                      jobSeeker.skills.length > 0 && (
+                        <div className="flex border-b border-gray-200 last:border-b-0">
+                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                            Skills:
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </PanelWithHeader>
-            </div>
-
-            {/* Right Column - Job Seeker Details */}
-            <div className="col-span-3">
-              <PanelWithHeader
-                title="Job Seeker Details"
-                onEdit={() => handleEditPanel('jobSeekerDetails')}
-              >
-                <div className="space-y-0 border border-gray-200 rounded">
-                  {visibleFields.jobSeekerDetails.includes('status') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
-                      <div className="flex-1 p-2">
-                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                          {jobSeeker.status}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.jobSeekerDetails.includes('currentOrganization') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Current Organization:</div>
-                      <div className="flex-1 p-2 text-blue-600">{jobSeeker.currentOrganization}</div>
-                    </div>
-                  )}
-                  {visibleFields.jobSeekerDetails.includes('title') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Title:</div>
-                      <div className="flex-1 p-2">{jobSeeker.title}</div>
-                    </div>
-                  )}
-                  {visibleFields.jobSeekerDetails.includes('email') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Email:</div>
-                      <div className="flex-1 p-2 text-blue-600">{jobSeeker.email}</div>
-                    </div>
-                  )}
-                  {visibleFields.jobSeekerDetails.includes('mobilePhone') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Mobile Phone:</div>
-                      <div className="flex-1 p-2">{jobSeeker.mobilePhone}</div>
-                    </div>
-                  )}
-                  {visibleFields.jobSeekerDetails.includes('address') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Address:</div>
-                      <div className="flex-1 p-2">{jobSeeker.fullAddress}</div>
-                    </div>
-                  )}
-                  {visibleFields.jobSeekerDetails.includes('desiredSalary') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Desired Salary:</div>
-                      <div className="flex-1 p-2">{jobSeeker.desiredSalary}</div>
-                    </div>
-                  )}
-                  {visibleFields.jobSeekerDetails.includes('dateAdded') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
-                      <div className="flex-1 p-2">{jobSeeker.dateAdded}</div>
-                    </div>
-                  )}
-                  {visibleFields.jobSeekerDetails.includes('lastContactDate') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Last Contact:</div>
-                      <div className="flex-1 p-2">{jobSeeker.lastContactDate}</div>
-                    </div>
-                  )}
-                  {visibleFields.jobSeekerDetails.includes('owner') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">User Owner:</div>
-                      <div className="flex-1 p-2">{jobSeeker.owner}</div>
-                    </div>
-                  )}
-                  {/* Display custom fields */}
-                  {jobSeeker.customFields && Object.keys(jobSeeker.customFields).map((fieldKey) => {
-                    if (visibleFields.jobSeekerDetails.includes(fieldKey)) {
-                      const field = availableFields.find(f => (f.field_name || f.field_label || f.id) === fieldKey);
-                      const fieldLabel = field?.field_label || field?.field_name || fieldKey;
-                      const fieldValue = jobSeeker.customFields[fieldKey];
-                      return (
-                        <div key={fieldKey} className="flex border-b border-gray-200 last:border-b-0">
-                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
-                          <div className="flex-1 p-2">{String(fieldValue || "-")}</div>
+                          <div className="flex-1 p-2">
+                            <div className="flex flex-wrap gap-2">
+                              {jobSeeker.skills.map(
+                                (skill: string, index: number) => (
+                                  <span
+                                    key={index}
+                                    className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm"
+                                  >
+                                    {skill}
+                                  </span>
+                                )
+                              )}
+                            </div>
+                          </div>
                         </div>
-                      );
-                    }
-                    return null;
-                  })}
-                </div>
-              </PanelWithHeader>
+                      )}
+                    {visibleFields.resume.includes("experience") &&
+                      jobSeeker.resume.experience &&
+                      jobSeeker.resume.experience.length > 0 && (
+                        <div className="flex border-b border-gray-200 last:border-b-0">
+                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                            Work Experience:
+                          </div>
+                          <div className="flex-1 p-2">
+                            {jobSeeker.resume.experience.map(
+                              (exp: any, index: number) => (
+                                <div key={index} className="mb-4 last:mb-0">
+                                  <div className="flex justify-between mb-1">
+                                    <div className="font-bold text-sm">
+                                      {exp.title} {exp.location}
+                                    </div>
+                                    <div className="text-sm">{exp.period}</div>
+                                  </div>
+                                  <ul className="list-disc pl-5 mt-1">
+                                    {exp.responsibilities.map(
+                                      (resp: string, respIndex: number) => (
+                                        <li
+                                          key={respIndex}
+                                          className="text-sm mb-1"
+                                        >
+                                          {resp}
+                                        </li>
+                                      )
+                                    )}
+                                  </ul>
+                                </div>
+                              )
+                            )}
+                          </div>
+                        </div>
+                      )}
+                  </div>
+                </PanelWithHeader>
+              </div>
 
-              {/* Recent Notes Section */}
-              {/* <div className="bg-white rounded-lg shadow mt-4">
+              {/* Right Column - Job Seeker Details */}
+              <div className="col-span-3">
+                <PanelWithHeader
+                  title="Job Seeker Details"
+                  onEdit={() => handleEditPanel("jobSeekerDetails")}
+                >
+                  <div className="space-y-0 border border-gray-200 rounded">
+                    {visibleFields.jobSeekerDetails.includes("status") && (
+                      <div className="flex border-b border-gray-200 last:border-b-0">
+                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                          Status:
+                        </div>
+                        <div className="flex-1 p-2">
+                          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
+                            {jobSeeker.status}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                    {visibleFields.jobSeekerDetails.includes(
+                      "currentOrganization"
+                    ) && (
+                      <div className="flex border-b border-gray-200 last:border-b-0">
+                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                          Current Organization:
+                        </div>
+                        <div className="flex-1 p-2 text-blue-600">
+                          {jobSeeker.currentOrganization}
+                        </div>
+                      </div>
+                    )}
+                    {visibleFields.jobSeekerDetails.includes("title") && (
+                      <div className="flex border-b border-gray-200 last:border-b-0">
+                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                          Title:
+                        </div>
+                        <div className="flex-1 p-2">{jobSeeker.title}</div>
+                      </div>
+                    )}
+                    {visibleFields.jobSeekerDetails.includes("email") && (
+                      <div className="flex border-b border-gray-200 last:border-b-0">
+                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                          Email:
+                        </div>
+                        <div className="flex-1 p-2 text-blue-600">
+                          {jobSeeker.email}
+                        </div>
+                      </div>
+                    )}
+                    {visibleFields.jobSeekerDetails.includes("mobilePhone") && (
+                      <div className="flex border-b border-gray-200 last:border-b-0">
+                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                          Mobile Phone:
+                        </div>
+                        <div className="flex-1 p-2">
+                          {jobSeeker.mobilePhone}
+                        </div>
+                      </div>
+                    )}
+                    {visibleFields.jobSeekerDetails.includes("address") && (
+                      <div className="flex border-b border-gray-200 last:border-b-0">
+                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                          Address:
+                        </div>
+                        <div className="flex-1 p-2">
+                          {jobSeeker.fullAddress}
+                        </div>
+                      </div>
+                    )}
+                    {visibleFields.jobSeekerDetails.includes(
+                      "desiredSalary"
+                    ) && (
+                      <div className="flex border-b border-gray-200 last:border-b-0">
+                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                          Desired Salary:
+                        </div>
+                        <div className="flex-1 p-2">
+                          {jobSeeker.desiredSalary}
+                        </div>
+                      </div>
+                    )}
+                    {visibleFields.jobSeekerDetails.includes("dateAdded") && (
+                      <div className="flex border-b border-gray-200 last:border-b-0">
+                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                          Date Added:
+                        </div>
+                        <div className="flex-1 p-2">{jobSeeker.dateAdded}</div>
+                      </div>
+                    )}
+                    {visibleFields.jobSeekerDetails.includes(
+                      "lastContactDate"
+                    ) && (
+                      <div className="flex border-b border-gray-200 last:border-b-0">
+                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                          Last Contact:
+                        </div>
+                        <div className="flex-1 p-2">
+                          {jobSeeker.lastContactDate}
+                        </div>
+                      </div>
+                    )}
+                    {visibleFields.jobSeekerDetails.includes("owner") && (
+                      <div className="flex border-b border-gray-200 last:border-b-0">
+                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                          User Owner:
+                        </div>
+                        <div className="flex-1 p-2">{jobSeeker.owner}</div>
+                      </div>
+                    )}
+                    {/* Display custom fields */}
+                    {jobSeeker.customFields &&
+                      Object.keys(jobSeeker.customFields).map((fieldKey) => {
+                        if (visibleFields.jobSeekerDetails.includes(fieldKey)) {
+                          const field = availableFields.find(
+                            (f) =>
+                              (f.field_name || f.field_label || f.id) ===
+                              fieldKey
+                          );
+                          const fieldLabel =
+                            field?.field_label || field?.field_name || fieldKey;
+                          const fieldValue = jobSeeker.customFields[fieldKey];
+                          return (
+                            <div
+                              key={fieldKey}
+                              className="flex border-b border-gray-200 last:border-b-0"
+                            >
+                              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                {fieldLabel}:
+                              </div>
+                              <div className="flex-1 p-2">
+                                {String(fieldValue || "-")}
+                              </div>
+                            </div>
+                          );
+                        }
+                        return null;
+                      })}
+                  </div>
+                </PanelWithHeader>
+
+                {/* Recent Notes Section */}
+                {/* <div className="bg-white rounded-lg shadow mt-4">
                 <div className="border-b border-gray-300 p-2 font-medium">
                   Recent Notes
                 </div>
@@ -1449,195 +1870,220 @@ Best regards`;
                   )}
                 </div>
               </div> */}
-            </div>
-          </>
-        )}
-
-        {/* Notes Tab */}
-        {activeTab === "notes" && (
-          <div className="col-span-7">{renderNotesTab()}</div>
-        )}
-
-        {/* History Tab */}
-        {activeTab === "history" && (
-          <div className="col-span-7">{renderHistoryTab()}</div>
-        )}
-
-        {/* Modify Tab */}
-        {activeTab === "modify" && (
-          <div className="col-span-7">{renderModifyTab()}</div>
-        )}
-
-        {/* Docs Tab */}
-        {activeTab === "docs" && (
-          <div className="col-span-7">
-            <div className="bg-white p-4 rounded shadow-sm">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold">Documents</h2>
-                <button
-                  onClick={triggerFileInput}
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center space-x-2"
-                >
-                  <FiUpload size={16} />
-                  <span>Add Docs</span>
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  onChange={handleFileSelect}
-                  className="hidden"
-                  accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
-                />
               </div>
+            </>
+          )}
 
-              {/* Drag and Drop Area */}
-              <div
-                onDragOver={handleDragOver}
-                onDragLeave={handleDragLeave}
-                onDrop={handleDrop}
-                className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                  isDragging
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-300 bg-gray-50 hover:border-gray-400'
-                }`}
-              >
-                {isUploading ? (
-                  <div className="flex flex-col items-center">
-                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mb-2"></div>
-                    <p className="text-gray-600">Uploading document...</p>
+          {/* Notes Tab */}
+          {activeTab === "notes" && (
+            <div className="col-span-7">{renderNotesTab()}</div>
+          )}
+
+          {/* History Tab */}
+          {activeTab === "history" && (
+            <div className="col-span-7">{renderHistoryTab()}</div>
+          )}
+
+          {/* Modify Tab */}
+          {activeTab === "modify" && (
+            <div className="col-span-7">{renderModifyTab()}</div>
+          )}
+
+          {/* Docs Tab */}
+          {activeTab === "docs" && (
+            <div className="col-span-7">
+              <div className="bg-white p-4 rounded shadow-sm">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-lg font-semibold">Documents</h2>
+                  <button
+                    onClick={triggerFileInput}
+                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center space-x-2"
+                  >
+                    <FiUpload size={16} />
+                    <span>Add Docs</span>
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+                  />
+                </div>
+
+                {/* Drag and Drop Area */}
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                    isDragging
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-gray-300 bg-gray-50 hover:border-gray-400"
+                  }`}
+                >
+                  {isUploading ? (
+                    <div className="flex flex-col items-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mb-2"></div>
+                      <p className="text-gray-600">Uploading document...</p>
+                    </div>
+                  ) : (
+                    <>
+                      <FiUpload className="mx-auto text-4xl text-gray-400 mb-4" />
+                      <p className="text-gray-600 mb-2">
+                        Drag and drop files here, or click "Add Docs" button
+                        above
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        Supported formats: PDF, DOC, DOCX, TXT, JPG, PNG (Max
+                        10MB)
+                      </p>
+                      {uploadError && (
+                        <p className="text-red-500 text-sm mt-2">
+                          {uploadError}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Documents List */}
+                {isLoadingDocuments ? (
+                  <div className="flex justify-center py-4 mt-4">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                  </div>
+                ) : documentError ? (
+                  <div className="text-red-500 py-4 mt-4">{documentError}</div>
+                ) : documents.length > 0 ? (
+                  <div className="mt-6">
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-gray-100 border-b">
+                            <th className="text-left p-3 font-medium">
+                              Document Name
+                            </th>
+                            <th className="text-left p-3 font-medium">Type</th>
+                            <th className="text-left p-3 font-medium">Size</th>
+                            <th className="text-left p-3 font-medium">
+                              Created By
+                            </th>
+                            <th className="text-left p-3 font-medium">
+                              Created At
+                            </th>
+                            <th className="text-left p-3 font-medium">
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {documents.map((doc) => (
+                            <tr
+                              key={doc.id}
+                              className="border-b hover:bg-gray-50"
+                            >
+                              <td className="p-3">
+                                <div className="flex items-center space-x-2">
+                                  <FiFile className="text-gray-400" />
+                                  <span className="text-blue-600 hover:underline cursor-pointer">
+                                    {doc.document_name ||
+                                      doc.name ||
+                                      "Untitled Document"}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="p-3 text-gray-600">
+                                {doc.document_type || doc.type || "General"}
+                              </td>
+                              <td className="p-3 text-gray-600">
+                                {doc.file_size
+                                  ? `${(doc.file_size / 1024).toFixed(2)} KB`
+                                  : "-"}
+                              </td>
+                              <td className="p-3 text-gray-600">
+                                {doc.created_by_name || "Unknown"}
+                              </td>
+                              <td className="p-3 text-gray-600">
+                                {doc.created_at
+                                  ? new Date(
+                                      doc.created_at
+                                    ).toLocaleDateString()
+                                  : "-"}
+                              </td>
+                              <td className="p-3">
+                                <button
+                                  onClick={() => handleDeleteDocument(doc.id)}
+                                  className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
+                                  title="Delete document"
+                                >
+                                  <FiX size={18} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 ) : (
-                  <>
-                    <FiUpload className="mx-auto text-4xl text-gray-400 mb-4" />
-                    <p className="text-gray-600 mb-2">
-                      Drag and drop files here, or click "Add Docs" button above
+                  <div className="text-center py-8 mt-4">
+                    <p className="text-gray-500 italic">
+                      No documents have been uploaded yet.
                     </p>
-                    <p className="text-sm text-gray-500">
-                      Supported formats: PDF, DOC, DOCX, TXT, JPG, PNG (Max 10MB)
-                    </p>
-                    {uploadError && (
-                      <p className="text-red-500 text-sm mt-2">{uploadError}</p>
-                    )}
-                  </>
+                  </div>
                 )}
               </div>
-
-              {/* Documents List */}
-              {isLoadingDocuments ? (
-                <div className="flex justify-center py-4 mt-4">
-                  <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-                </div>
-              ) : documentError ? (
-                <div className="text-red-500 py-4 mt-4">{documentError}</div>
-              ) : documents.length > 0 ? (
-                <div className="mt-6">
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="bg-gray-100 border-b">
-                          <th className="text-left p-3 font-medium">Document Name</th>
-                          <th className="text-left p-3 font-medium">Type</th>
-                          <th className="text-left p-3 font-medium">Size</th>
-                          <th className="text-left p-3 font-medium">Created By</th>
-                          <th className="text-left p-3 font-medium">Created At</th>
-                          <th className="text-left p-3 font-medium">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {documents.map((doc) => (
-                          <tr key={doc.id} className="border-b hover:bg-gray-50">
-                            <td className="p-3">
-                              <div className="flex items-center space-x-2">
-                                <FiFile className="text-gray-400" />
-                                <span className="text-blue-600 hover:underline cursor-pointer">
-                                  {doc.document_name || doc.name || 'Untitled Document'}
-                                </span>
-                              </div>
-                            </td>
-                            <td className="p-3 text-gray-600">
-                              {doc.document_type || doc.type || 'General'}
-                            </td>
-                            <td className="p-3 text-gray-600">
-                              {doc.file_size ? `${(doc.file_size / 1024).toFixed(2)} KB` : '-'}
-                            </td>
-                            <td className="p-3 text-gray-600">
-                              {doc.created_by_name || 'Unknown'}
-                            </td>
-                            <td className="p-3 text-gray-600">
-                              {doc.created_at
-                                ? new Date(doc.created_at).toLocaleDateString()
-                                : '-'}
-                            </td>
-                            <td className="p-3">
-                              <button
-                                onClick={() => handleDeleteDocument(doc.id)}
-                                className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
-                                title="Delete document"
-                              >
-                                <FiX size={18} />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-8 mt-4">
-                  <p className="text-gray-500 italic">No documents have been uploaded yet.</p>
-                </div>
-              )}
             </div>
-          </div>
-        )}
+          )}
 
-        {activeTab === "references" && (
-          <div className="col-span-7">
-            <div className="bg-white p-4 rounded shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">References</h2>
-                <button
-                  onClick={() => setShowReferenceModal(true)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                >
-                  Send Reference Form
-                </button>
+          {activeTab === "references" && (
+            <div className="col-span-7">
+              <div className="bg-white p-4 rounded shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold">References</h2>
+                  <button
+                    onClick={() => setShowReferenceModal(true)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    Send Reference Form
+                  </button>
+                </div>
+                <p className="text-gray-600">
+                  Use the button above to send reference documents to a
+                  reference contact via email.
+                </p>
               </div>
-              <p className="text-gray-600">
-                Use the button above to send reference documents to a reference contact via email.
-              </p>
             </div>
-          </div>
-        )}
+          )}
 
-        {activeTab === "applications" && (
-          <div className="col-span-7">
-            <div className="bg-white p-4 rounded shadow-sm">
-              <h2 className="text-lg font-semibold mb-4">Applications</h2>
-              <p className="text-gray-500 italic">No applications found</p>
-            </div>
-          </div>
-        )}
-
-        {activeTab === "onboarding" && (
-          <div className="col-span-7">
-            <div className="bg-white p-4 rounded shadow-sm">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">Onboarding</h2>
-                <button
-                  onClick={() => setShowOnboardingModal(true)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                >
-                  Send Onboarding
-                </button>
+          {activeTab === "applications" && (
+            <div className="col-span-7">
+              <div className="bg-white p-4 rounded shadow-sm">
+                <h2 className="text-lg font-semibold mb-4">Applications</h2>
+                <p className="text-gray-500 italic">No applications found</p>
               </div>
-              <p className="text-gray-600">
-                Use the button above to send onboarding documents to the job seeker via Outlook.
-              </p>
             </div>
-          </div>
-        )}
+          )}
+
+          {activeTab === "onboarding" && (
+            <div className="col-span-7">
+              <div className="bg-white p-4 rounded shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold">Onboarding</h2>
+                  <button
+                    onClick={() => setShowOnboardingModal(true)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    Send Onboarding
+                  </button>
+                </div>
+                <p className="text-gray-600">
+                  Use the button above to send onboarding documents to the job
+                  seeker via Outlook.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -1646,13 +2092,22 @@ Best regards`;
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded shadow-lg w-full max-w-lg p-4">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-semibold">Send Onboarding Documents</h3>
-              <button className="text-gray-600 hover:text-gray-900" onClick={() => setShowOnboardingModal(false)}>✕</button>
+              <h3 className="text-lg font-semibold">
+                Send Onboarding Documents
+              </h3>
+              <button
+                className="text-gray-600 hover:text-gray-900"
+                onClick={() => setShowOnboardingModal(false)}
+              >
+                ✕
+              </button>
             </div>
             <div className="mb-3">
-              <div className="text-sm text-gray-700 mb-2">Select documents to include as links in the email:</div>
+              <div className="text-sm text-gray-700 mb-2">
+                Select documents to include as links in the email:
+              </div>
               <div className="space-y-2 max-h-60 overflow-auto">
-                {onboardingDocs.map(doc => (
+                {onboardingDocs.map((doc) => (
                   <label key={doc.id} className="flex items-start space-x-2">
                     <input
                       type="checkbox"
@@ -1669,14 +2124,30 @@ Best regards`;
               </div>
             </div>
             <div className="text-sm text-gray-700 mb-4">
-              Email will be pre-addressed to <span className="font-medium">{jobSeeker?.email}</span> with subject
-              <span className="font-medium"> "Onboarding Documents"</span> and body:
-              <pre className="bg-gray-50 border rounded p-2 mt-1 whitespace-pre-wrap">Here are your onboarding documents. Please fill these out and return promptly.</pre>
+              Email will be pre-addressed to{" "}
+              <span className="font-medium">{jobSeeker?.email}</span> with
+              subject
+              <span className="font-medium"> "Onboarding Documents"</span> and
+              body:
+              <pre className="bg-gray-50 border rounded p-2 mt-1 whitespace-pre-wrap">
+                Here are your onboarding documents. Please fill these out and
+                return promptly.
+              </pre>
             </div>
             <div className="flex justify-end space-x-2">
-              <button className="px-3 py-1 border rounded" onClick={() => setShowOnboardingModal(false)}>Cancel</button>
-              <button className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={handleSendOnboarding}>
-                {isOffice365Connected ? 'Send via Office 365' : 'Open in Outlook'}
+              <button
+                className="px-3 py-1 border rounded"
+                onClick={() => setShowOnboardingModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                onClick={handleSendOnboarding}
+              >
+                {isOffice365Connected
+                  ? "Send via Office 365"
+                  : "Open in Outlook"}
               </button>
             </div>
           </div>
@@ -1689,11 +2160,16 @@ Best regards`;
           <div className="bg-white rounded shadow-lg w-full max-w-lg p-4">
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-lg font-semibold">Send Reference Form</h3>
-              <button className="text-gray-600 hover:text-gray-900" onClick={() => {
-                setShowReferenceModal(false);
-                setReferenceEmail("");
-                setSelectedReferenceDocs({});
-              }}>✕</button>
+              <button
+                className="text-gray-600 hover:text-gray-900"
+                onClick={() => {
+                  setShowReferenceModal(false);
+                  setReferenceEmail("");
+                  setSelectedReferenceDocs({});
+                }}
+              >
+                ✕
+              </button>
             </div>
             <div className="mb-3">
               <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -1708,9 +2184,11 @@ Best regards`;
               />
             </div>
             <div className="mb-3">
-              <div className="text-sm text-gray-700 mb-2">Select documents to include as links in the email:</div>
+              <div className="text-sm text-gray-700 mb-2">
+                Select documents to include as links in the email:
+              </div>
               <div className="space-y-2 max-h-60 overflow-auto">
-                {referenceDocs.map(doc => (
+                {referenceDocs.map((doc) => (
                   <label key={doc.id} className="flex items-start space-x-2">
                     <input
                       type="checkbox"
@@ -1727,17 +2205,30 @@ Best regards`;
               </div>
             </div>
             <div className="text-sm text-gray-700 mb-4">
-              Email will be pre-addressed to the reference email address with subject
-              <span className="font-medium"> "Reference Request"</span> and a professional message requesting a reference for {jobSeeker?.fullName || "the candidate"}.
+              Email will be pre-addressed to the reference email address with
+              subject
+              <span className="font-medium"> "Reference Request"</span> and a
+              professional message requesting a reference for{" "}
+              {jobSeeker?.fullName || "the candidate"}.
             </div>
             <div className="flex justify-end space-x-2">
-              <button className="px-3 py-1 border rounded" onClick={() => {
-                setShowReferenceModal(false);
-                setReferenceEmail("");
-                setSelectedReferenceDocs({});
-              }}>Cancel</button>
-              <button className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" onClick={handleSendReferenceForm}>
-                {isOffice365Connected ? 'Send via Office 365' : 'Open in Outlook'}
+              <button
+                className="px-3 py-1 border rounded"
+                onClick={() => {
+                  setShowReferenceModal(false);
+                  setReferenceEmail("");
+                  setSelectedReferenceDocs({});
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                onClick={handleSendReferenceForm}
+              >
+                {isOffice365Connected
+                  ? "Send via Office 365"
+                  : "Open in Outlook"}
               </button>
             </div>
           </div>
@@ -1749,7 +2240,9 @@ Best regards`;
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Edit Fields - {editingPanel}</h2>
+              <h2 className="text-lg font-semibold">
+                Edit Fields - {editingPanel}
+              </h2>
               <button
                 onClick={handleCloseEditModal}
                 className="p-1 rounded hover:bg-gray-200"
@@ -1759,79 +2252,114 @@ Best regards`;
             </div>
             <div className="p-6">
               <div className="mb-4">
-                <h3 className="font-medium mb-3">Available Fields from Modify Page:</h3>
+                <h3 className="font-medium mb-3">
+                  Available Fields from Modify Page:
+                </h3>
                 <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
                   {isLoadingFields ? (
-                    <div className="text-center py-4 text-gray-500">Loading fields...</div>
+                    <div className="text-center py-4 text-gray-500">
+                      Loading fields...
+                    </div>
                   ) : availableFields.length > 0 ? (
                     availableFields.map((field) => {
-                      const fieldKey = field.field_name || field.field_label || field.id;
-                      const isVisible = visibleFields[editingPanel]?.includes(fieldKey) || false;
+                      const fieldKey =
+                        field.field_name || field.field_label || field.id;
+                      const isVisible =
+                        visibleFields[editingPanel]?.includes(fieldKey) ||
+                        false;
                       return (
-                        <div key={field.id || fieldKey} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                        <div
+                          key={field.id || fieldKey}
+                          className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                        >
                           <div className="flex items-center space-x-2">
                             <input
                               type="checkbox"
                               checked={isVisible}
-                              onChange={() => toggleFieldVisibility(editingPanel, fieldKey)}
+                              onChange={() =>
+                                toggleFieldVisibility(editingPanel, fieldKey)
+                              }
                               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                             />
                             <label className="text-sm text-gray-700">
-                              {field.field_label || field.field_name || fieldKey}
+                              {field.field_label ||
+                                field.field_name ||
+                                fieldKey}
                             </label>
                           </div>
-                          <span className="text-xs text-gray-500">{field.field_type || 'text'}</span>
+                          <span className="text-xs text-gray-500">
+                            {field.field_type || "text"}
+                          </span>
                         </div>
                       );
                     })
                   ) : (
                     <div className="text-center py-4 text-gray-500">
                       <p>No custom fields available</p>
-                      <p className="text-xs mt-1">Fields from the modify page will appear here</p>
+                      <p className="text-xs mt-1">
+                        Fields from the modify page will appear here
+                      </p>
                     </div>
                   )}
                 </div>
               </div>
-              
+
               <div className="mb-4">
                 <h3 className="font-medium mb-3">Standard Fields:</h3>
                 <div className="space-y-2 border border-gray-200 rounded p-3">
                   {(() => {
-                    const standardFieldsMap: Record<string, Array<{ key: string; label: string }>> = {
+                    const standardFieldsMap: Record<
+                      string,
+                      Array<{ key: string; label: string }>
+                    > = {
                       resume: [
-                        { key: 'profile', label: 'Profile' },
-                        { key: 'skills', label: 'Skills' },
-                        { key: 'experience', label: 'Work Experience' }
+                        { key: "profile", label: "Profile" },
+                        { key: "skills", label: "Skills" },
+                        { key: "experience", label: "Work Experience" },
                       ],
                       jobSeekerDetails: [
-                        { key: 'status', label: 'Status' },
-                        { key: 'currentOrganization', label: 'Current Organization' },
-                        { key: 'title', label: 'Title' },
-                        { key: 'email', label: 'Email' },
-                        { key: 'mobilePhone', label: 'Mobile Phone' },
-                        { key: 'address', label: 'Address' },
-                        { key: 'desiredSalary', label: 'Desired Salary' },
-                        { key: 'dateAdded', label: 'Date Added' },
-                        { key: 'lastContactDate', label: 'Last Contact' },
-                        { key: 'owner', label: 'User Owner' }
-                      ]
+                        { key: "status", label: "Status" },
+                        {
+                          key: "currentOrganization",
+                          label: "Current Organization",
+                        },
+                        { key: "title", label: "Title" },
+                        { key: "email", label: "Email" },
+                        { key: "mobilePhone", label: "Mobile Phone" },
+                        { key: "address", label: "Address" },
+                        { key: "desiredSalary", label: "Desired Salary" },
+                        { key: "dateAdded", label: "Date Added" },
+                        { key: "lastContactDate", label: "Last Contact" },
+                        { key: "owner", label: "User Owner" },
+                      ],
                     };
-                    
+
                     const fields = standardFieldsMap[editingPanel] || [];
                     return fields.map((field) => {
-                      const isVisible = visibleFields[editingPanel]?.includes(field.key) || false;
+                      const isVisible =
+                        visibleFields[editingPanel]?.includes(field.key) ||
+                        false;
                       return (
-                        <div key={field.key} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                        <div
+                          key={field.key}
+                          className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                        >
                           <div className="flex items-center space-x-2">
                             <input
                               type="checkbox"
                               checked={isVisible}
-                              onChange={() => toggleFieldVisibility(editingPanel, field.key)}
+                              onChange={() =>
+                                toggleFieldVisibility(editingPanel, field.key)
+                              }
                               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                             />
-                            <label className="text-sm text-gray-700">{field.label}</label>
+                            <label className="text-sm text-gray-700">
+                              {field.label}
+                            </label>
                           </div>
-                          <span className="text-xs text-gray-500">standard</span>
+                          <span className="text-xs text-gray-500">
+                            standard
+                          </span>
                         </div>
                       );
                     });
@@ -1862,7 +2390,7 @@ Best regards`;
               <button
                 onClick={() => {
                   setShowAddTearsheetModal(false);
-                  setTearsheetForm({ name: '', visibility: 'Existing' });
+                  setTearsheetForm({ name: "", visibility: "Existing" });
                 }}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -1881,7 +2409,12 @@ Best regards`;
                 <input
                   type="text"
                   value={tearsheetForm.name}
-                  onChange={(e) => setTearsheetForm(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) =>
+                    setTearsheetForm((prev) => ({
+                      ...prev,
+                      name: e.target.value,
+                    }))
+                  }
                   placeholder="Enter tearsheet name"
                   className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                   required
@@ -1893,25 +2426,38 @@ Best regards`;
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Visibility
                 </label>
-                <div className="inline-flex rounded-md border border-gray-300 overflow-hidden" role="group">
+                <div
+                  className="inline-flex rounded-md border border-gray-300 overflow-hidden"
+                  role="group"
+                >
                   <button
                     type="button"
-                    onClick={() => setTearsheetForm(prev => ({ ...prev, visibility: 'New' }))}
+                    onClick={() =>
+                      setTearsheetForm((prev) => ({
+                        ...prev,
+                        visibility: "New",
+                      }))
+                    }
                     className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === 'New'
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50'
+                      tearsheetForm.visibility === "New"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
                     }`}
                   >
                     New
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTearsheetForm(prev => ({ ...prev, visibility: 'Existing' }))}
+                    onClick={() =>
+                      setTearsheetForm((prev) => ({
+                        ...prev,
+                        visibility: "Existing",
+                      }))
+                    }
                     className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === 'Existing'
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-white text-gray-700 hover:bg-gray-50'
+                      tearsheetForm.visibility === "Existing"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white text-gray-700 hover:bg-gray-50"
                     }`}
                   >
                     Existing
@@ -1925,7 +2471,7 @@ Best regards`;
               <button
                 onClick={() => {
                   setShowAddTearsheetModal(false);
-                  setTearsheetForm({ name: '', visibility: 'Existing' });
+                  setTearsheetForm({ name: "", visibility: "Existing" });
                 }}
                 className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isSavingTearsheet}
@@ -1982,7 +2528,9 @@ Best regards`;
                   </label>
                   <textarea
                     value={noteForm.text}
-                    onChange={(e) => setNoteForm(prev => ({ ...prev, text: e.target.value }))}
+                    onChange={(e) =>
+                      setNoteForm((prev) => ({ ...prev, text: e.target.value }))
+                    }
                     placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
                     className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={6}
@@ -1999,7 +2547,9 @@ Best regards`;
                       <div className="w-6 h-6 rounded-full bg-orange-400 mr-2 flex-shrink-0"></div>
                       <span className="flex-1 text-sm">{noteForm.about}</span>
                       <button
-                        onClick={() => setNoteForm(prev => ({ ...prev, about: '' }))}
+                        onClick={() =>
+                          setNoteForm((prev) => ({ ...prev, about: "" }))
+                        }
                         className="ml-2 text-gray-500 hover:text-gray-700 text-xs"
                       >
                         CLEAR ALL X
@@ -2066,11 +2616,18 @@ Best regards`;
                     <input
                       type="text"
                       value={noteForm.additionalReferences}
-                      onChange={(e) => setNoteForm(prev => ({ ...prev, additionalReferences: e.target.value }))}
+                      onChange={(e) =>
+                        setNoteForm((prev) => ({
+                          ...prev,
+                          additionalReferences: e.target.value,
+                        }))
+                      }
                       placeholder="Reference other records using #"
                       className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
                     />
-                    <span className="absolute right-2 top-2 text-gray-400 text-sm">Q</span>
+                    <span className="absolute right-2 top-2 text-gray-400 text-sm">
+                      Q
+                    </span>
                   </div>
                 </div>
 
@@ -2082,33 +2639,48 @@ Best regards`;
                   <div className="flex space-x-2">
                     <button
                       type="button"
-                      onClick={() => setNoteForm(prev => ({ ...prev, scheduleNextAction: 'None' }))}
+                      onClick={() =>
+                        setNoteForm((prev) => ({
+                          ...prev,
+                          scheduleNextAction: "None",
+                        }))
+                      }
                       className={`px-4 py-2 rounded text-sm ${
-                        noteForm.scheduleNextAction === 'None'
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                        noteForm.scheduleNextAction === "None"
+                          ? "bg-blue-500 text-white"
+                          : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
                       }`}
                     >
                       None
                     </button>
                     <button
                       type="button"
-                      onClick={() => setNoteForm(prev => ({ ...prev, scheduleNextAction: 'Appointment' }))}
+                      onClick={() =>
+                        setNoteForm((prev) => ({
+                          ...prev,
+                          scheduleNextAction: "Appointment",
+                        }))
+                      }
                       className={`px-4 py-2 rounded text-sm ${
-                        noteForm.scheduleNextAction === 'Appointment'
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                        noteForm.scheduleNextAction === "Appointment"
+                          ? "bg-blue-500 text-white"
+                          : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
                       }`}
                     >
                       Appointment
                     </button>
                     <button
                       type="button"
-                      onClick={() => setNoteForm(prev => ({ ...prev, scheduleNextAction: 'Task' }))}
+                      onClick={() =>
+                        setNoteForm((prev) => ({
+                          ...prev,
+                          scheduleNextAction: "Task",
+                        }))
+                      }
                       className={`px-4 py-2 rounded text-sm ${
-                        noteForm.scheduleNextAction === 'Task'
-                          ? 'bg-blue-500 text-white'
-                          : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
+                        noteForm.scheduleNextAction === "Task"
+                          ? "bg-blue-500 text-white"
+                          : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
                       }`}
                     >
                       Task
@@ -2126,7 +2698,12 @@ Best regards`;
                     <input
                       type="text"
                       value={noteForm.emailNotification}
-                      onChange={(e) => setNoteForm(prev => ({ ...prev, emailNotification: e.target.value }))}
+                      onChange={(e) =>
+                        setNoteForm((prev) => ({
+                          ...prev,
+                          emailNotification: e.target.value,
+                        }))
+                      }
                       placeholder="Internal User"
                       className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
@@ -2149,6 +2726,152 @@ Best regards`;
                 >
                   SAVE
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Header Fields Modal (PENCIL-HEADER-MODAL) */}
+      {/* Header Fields Modal (Organization-style UI) */}
+      {showHeaderFieldsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded shadow-xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
+            {/* Top bar */}
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <div>
+                <h2 className="text-lg font-semibold">
+                  Customize Header Fields
+                </h2>
+                <p className="text-xs text-gray-600">
+                  Select fields, reorder them, and it saves per Job Seeker.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowHeaderFieldsModal(false)}
+                className="p-1 rounded hover:bg-gray-200"
+                aria-label="Close"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* LEFT: Available Fields (checkbox list) */}
+              <div>
+                <h3 className="font-medium mb-3">Available Fields</h3>
+
+                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                  {headerFieldDefs.map((d) => {
+                    const checked = headerFields.some(
+                      (h) => h.key === d.key && h.visible
+                    );
+
+                    return (
+                      <label
+                        key={d.key}
+                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            // If field isn't in selected list, add it (visible true).
+                            // If already present, toggle visibility.
+                            const exists = headerFields.some(
+                              (h) => h.key === d.key
+                            );
+                            if (!exists) {
+                              addHeaderFieldIfMissing(d.key); // adds visible: true
+                            } else {
+                              toggleHeaderField(d.key); // toggles visible
+                            }
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <div className="flex-1">
+                          <div className="text-sm text-gray-800">{d.label}</div>
+                          <div className="text-xs text-gray-500">{d.type}</div>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* RIGHT: Header Order (only visible ones) */}
+              <div>
+                <h3 className="font-medium mb-3">Header Order</h3>
+
+                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                  {headerFields.filter((f) => f.visible).length === 0 ? (
+                    <div className="text-sm text-gray-500 italic">
+                      No fields selected
+                    </div>
+                  ) : (
+                    headerFields
+                      .filter((f) => f.visible)
+                      .map((f, idx, visibleList) => (
+                        <div
+                          key={f.key}
+                          className="flex items-center justify-between p-2 border rounded"
+                        >
+                          <div>
+                            <div className="text-sm font-medium">
+                              {labelForHeaderKey(f.key)}
+                            </div>
+                            <div className="text-xs text-gray-500">{f.key}</div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                              disabled={idx === 0}
+                              onClick={() => moveHeaderField(f.key, "up")}
+                              title="Move up"
+                            >
+                              ↑
+                            </button>
+
+                            <button
+                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                              disabled={idx === visibleList.length - 1}
+                              onClick={() => moveHeaderField(f.key, "down")}
+                              title="Move down"
+                            >
+                              ↓
+                            </button>
+
+                            <button
+                              className="px-2 py-1 border rounded text-xs hover:bg-red-50 text-red-600"
+                              onClick={() => removeHeaderField(f.key)}
+                              title="Remove"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                  )}
+                </div>
+
+                {/* Footer buttons (Reset + Done) */}
+                <div className="flex justify-end gap-2 mt-4">
+                  <button
+                    className="px-4 py-2 border rounded hover:bg-gray-50"
+                    onClick={resetHeaderFields}
+                  >
+                    Reset
+                  </button>
+
+                  <button
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    onClick={() => setShowHeaderFieldsModal(false)}
+                  >
+                    Done
+                  </button>
+                </div>
               </div>
             </div>
           </div>

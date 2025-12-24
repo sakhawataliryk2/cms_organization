@@ -38,13 +38,13 @@ export default function OrganizationView() {
   const [showAddNote, setShowAddNote] = useState(false);
   // Add Note form state - matching jobs view structure
   const [noteForm, setNoteForm] = useState({
-    text: '',
-    about: organization ? `${organization.id} ${organization.name}` : '',
-    copyNote: 'No',
+    text: "",
+    about: organization ? `${organization.id} ${organization.name}` : "",
+    copyNote: "No",
     replaceGeneralContactComments: false,
-    additionalReferences: '',
-    scheduleNextAction: 'None',
-    emailNotification: 'Internal User'
+    additionalReferences: "",
+    scheduleNextAction: "None",
+    emailNotification: "Internal User",
   });
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
@@ -62,7 +62,9 @@ export default function OrganizationView() {
   // Hiring Managers (Contacts) state
   const [hiringManagers, setHiringManagers] = useState<Array<any>>([]);
   const [isLoadingHiringManagers, setIsLoadingHiringManagers] = useState(false);
-  const [hiringManagersError, setHiringManagersError] = useState<string | null>(null);
+  const [hiringManagersError, setHiringManagersError] = useState<string | null>(
+    null
+  );
 
   // Tasks state
   const [tasks, setTasks] = useState<Array<any>>([]);
@@ -72,8 +74,8 @@ export default function OrganizationView() {
   // Tearsheet modal state
   const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
   const [tearsheetForm, setTearsheetForm] = useState({
-    name: '',
-    visibility: 'Existing' // 'New' or 'Existing'
+    name: "",
+    visibility: "Existing", // 'New' or 'Existing'
   });
   const [isSavingTearsheet, setIsSavingTearsheet] = useState(false);
 
@@ -85,12 +87,120 @@ export default function OrganizationView() {
 
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
+  useEffect(() => {
+    console.log("availableFields:", availableFields);
+    console.log("availableFields count:", availableFields?.length);
+  }, [availableFields]);
+
+  useEffect(() => {
+    console.log("organization.customFields:", organization?.customFields);
+  }, [organization]);
+
+  // =====================
+  // HEADER FIELDS (Top Row)
+  // =====================
+  const DEFAULT_HEADER_FIELDS = ["phone", "website"]; // start simple
+
+  const [headerFields, setHeaderFields] = useState<string[]>(
+    DEFAULT_HEADER_FIELDS
+  );
+  const [showHeaderFieldModal, setShowHeaderFieldModal] = useState(false);
+
+  // Build field list: Standard + Custom(from Modify page)
+const buildHeaderFieldCatalog = () => {
+  const standard = [
+    { key: "phone", label: "Phone" },
+    { key: "website", label: "Website" },
+    { key: "name", label: "Name" },
+    { key: "nickname", label: "Nickname" },
+    { key: "address", label: "Address" },
+  ];
+
+  
+  const apiCustom = (availableFields || []).map((f: any) => {
+    const k = f.field_name || f.field_key || f.field_label || f.id;
+    return {
+      key: `custom:${k}`,
+      label: f.field_label || f.field_name || String(k),
+    };
+  });
+
+  const orgCustom = Object.keys(organization?.customFields || {}).map((k) => ({
+    key: `custom:${k}`,
+    label: k,
+  }));
+
+  const merged = [...standard, ...apiCustom, ...orgCustom];
+  const seen = new Set<string>();
+  return merged.filter((x) => {
+    if (seen.has(x.key)) return false;
+    seen.add(x.key);
+    return true;
+  });
+};
+
+
+  const headerFieldCatalog = buildHeaderFieldCatalog();
+
+  const getHeaderFieldValue = (key: string) => {
+    if (!organization) return "-";
+
+    // custom fields
+    if (key.startsWith("custom:")) {
+      const rawKey = key.replace("custom:", "");
+      const val = organization.customFields?.[rawKey];
+      return val === undefined || val === null || val === ""
+        ? "-"
+        : String(val);
+    }
+
+    // standard fields
+    switch (key) {
+      case "phone":
+        return organization.phone || "(Not provided)";
+      case "website":
+        return organization.website || "-";
+      case "name":
+        return organization.name || "-";
+      case "nickname":
+        return organization.nicknames || "-";
+      case "address":
+        return organization.address || "-";
+      default:
+        return "-";
+    }
+  };
+
+  const getHeaderFieldLabel = (key: string) => {
+    const found = headerFieldCatalog.find((f) => f.key === key);
+    return found?.label || key;
+  };
+
+  // Save per-organization in localStorage
+  useEffect(() => {
+    if (!organizationId) return;
+    const storageKey = `org_header_fields_${organizationId}`;
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) setHeaderFields(parsed);
+      } catch {}
+    }
+  }, [organizationId]);
+
+  useEffect(() => {
+    if (!organizationId) return;
+    const storageKey = `org_header_fields_${organizationId}`;
+    localStorage.setItem(storageKey, JSON.stringify(headerFields));
+  }, [organizationId, headerFields]);
+
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
-    contactInfo: ['name', 'nickname', 'phone', 'address', 'website'],
-    about: ['about'],
-    recentNotes: ['notes'],
-    websiteJobs: ['jobs'],
-    ourJobs: ['jobs']
+    contactInfo: ["name", "nickname", "phone", "address", "website"],
+    about: ["about"],
+    recentNotes: ["notes"],
+    websiteJobs: ["jobs"],
+    ourJobs: ["jobs"],
   });
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
@@ -104,10 +214,10 @@ export default function OrganizationView() {
 
   // Refresh hiring managers when returning from adding a hiring manager
   useEffect(() => {
-    const returnToOrgId = sessionStorage.getItem('returnToOrganizationId');
+    const returnToOrgId = sessionStorage.getItem("returnToOrganizationId");
     if (returnToOrgId && returnToOrgId === organizationId) {
       // Clear the flag
-      sessionStorage.removeItem('returnToOrganizationId');
+      sessionStorage.removeItem("returnToOrganizationId");
       // Refresh hiring managers
       if (organizationId) {
         fetchHiringManagers(organizationId);
@@ -127,7 +237,10 @@ export default function OrganizationView() {
     if (organization && organizationId) {
       fetchAvailableFields();
       // Update note form about field when organization is loaded
-      setNoteForm(prev => ({ ...prev, about: `${organization.id} ${organization.name}` }));
+      setNoteForm((prev) => ({
+        ...prev,
+        about: `${organization.id} ${organization.name}`,
+      }));
     }
   }, [organization, organizationId]);
 
@@ -142,17 +255,20 @@ export default function OrganizationView() {
   const fetchUsers = async () => {
     setIsLoadingUsers(true);
     try {
-      const response = await fetch('/api/users/active', {
+      const response = await fetch("/api/users/active", {
         headers: {
-          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
-        }
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
       });
       if (response.ok) {
         const data = await response.json();
         setUsers(data.users || []);
       }
     } catch (err) {
-      console.error('Error fetching users:', err);
+      console.error("Error fetching users:", err);
     } finally {
       setIsLoadingUsers(false);
     }
@@ -162,22 +278,47 @@ export default function OrganizationView() {
   const fetchAvailableFields = async () => {
     setIsLoadingFields(true);
     try {
-      const response = await fetch('/api/admin/field-management/organizations');
+const token = document.cookie.replace(
+  /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+  "$1"
+);
+
+const response = await fetch("/api/admin/field-management/organizations", {
+  headers: { Authorization: `Bearer ${token}` },
+});
+
+console.log("field-management status:", response.status);
+
+const raw = await response.text();
+console.log("field-management raw:", raw);
+
+let data: any = {};
+try {
+  data = JSON.parse(raw);
+} catch {}
+
+const fields =
+  data.fields || data.data?.fields || data.organizationFields || [];
+setAvailableFields(fields);
       if (response.ok) {
         const data = await response.json();
         const fields = data.fields || [];
         setAvailableFields(fields);
-        
+
         // Add custom fields to visible fields if they have values
         if (organization && organization.customFields) {
           const customFieldKeys = Object.keys(organization.customFields);
-          customFieldKeys.forEach(fieldKey => {
+          customFieldKeys.forEach((fieldKey) => {
             // Add to appropriate panel based on field name
-            if (fieldKey.toLowerCase().includes('contact') || fieldKey.toLowerCase().includes('phone') || fieldKey.toLowerCase().includes('address')) {
+            if (
+              fieldKey.toLowerCase().includes("contact") ||
+              fieldKey.toLowerCase().includes("phone") ||
+              fieldKey.toLowerCase().includes("address")
+            ) {
               if (!visibleFields.contactInfo.includes(fieldKey)) {
-                setVisibleFields(prev => ({
+                setVisibleFields((prev) => ({
                   ...prev,
-                  contactInfo: [...prev.contactInfo, fieldKey]
+                  contactInfo: [...prev.contactInfo, fieldKey],
                 }));
               }
             }
@@ -185,7 +326,7 @@ export default function OrganizationView() {
         }
       }
     } catch (err) {
-      console.error('Error fetching available fields:', err);
+      console.error("Error fetching available fields:", err);
     } finally {
       setIsLoadingFields(false);
     }
@@ -193,17 +334,17 @@ export default function OrganizationView() {
 
   // Toggle field visibility
   const toggleFieldVisibility = (panelId: string, fieldKey: string) => {
-    setVisibleFields(prev => {
+    setVisibleFields((prev) => {
       const panelFields = prev[panelId] || [];
       if (panelFields.includes(fieldKey)) {
         return {
           ...prev,
-          [panelId]: panelFields.filter(f => f !== fieldKey)
+          [panelId]: panelFields.filter((f) => f !== fieldKey),
         };
       } else {
         return {
           ...prev,
-          [panelId]: [...panelFields, fieldKey]
+          [panelId]: [...panelFields, fieldKey],
         };
       }
     });
@@ -274,13 +415,13 @@ export default function OrganizationView() {
       let customFieldsObj = {};
       if (data.organization.custom_fields) {
         try {
-          if (typeof data.organization.custom_fields === 'string') {
+          if (typeof data.organization.custom_fields === "string") {
             customFieldsObj = JSON.parse(data.organization.custom_fields);
-          } else if (typeof data.organization.custom_fields === 'object') {
+          } else if (typeof data.organization.custom_fields === "object") {
             customFieldsObj = data.organization.custom_fields;
           }
         } catch (e) {
-          console.error('Error parsing custom fields:', e);
+          console.error("Error parsing custom fields:", e);
         }
       }
 
@@ -423,8 +564,11 @@ export default function OrganizationView() {
     try {
       const response = await fetch(`/api/hiring-managers`, {
         headers: {
-          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
-        }
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
       });
 
       if (!response.ok) {
@@ -434,8 +578,9 @@ export default function OrganizationView() {
 
       const data = await response.json();
       // Filter hiring managers by organization ID
-      const orgHiringManagers = (data.hiringManagers || []).filter((hm: any) => 
-        hm.organization_id?.toString() === organizationId.toString()
+      const orgHiringManagers = (data.hiringManagers || []).filter(
+        (hm: any) =>
+          hm.organization_id?.toString() === organizationId.toString()
       );
       setHiringManagers(orgHiringManagers);
     } catch (err) {
@@ -457,27 +602,36 @@ export default function OrganizationView() {
 
     try {
       // First, get organization's hiring manager IDs
-      const hiringManagerIds = hiringManagers.map(hm => hm.id);
-      
+      const hiringManagerIds = hiringManagers.map((hm) => hm.id);
+
       // Fetch jobs for this organization
       const jobsResponse = await fetch(`/api/jobs`, {
         headers: {
-          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
-        }
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
       });
       let jobIds: number[] = [];
       if (jobsResponse.ok) {
         const jobsData = await jobsResponse.json();
         jobIds = (jobsData.jobs || [])
-          .filter((job: any) => job.organization_id?.toString() === organizationId.toString())
+          .filter(
+            (job: any) =>
+              job.organization_id?.toString() === organizationId.toString()
+          )
           .map((job: any) => job.id);
       }
 
       // Fetch all tasks
       const tasksResponse = await fetch(`/api/tasks`, {
         headers: {
-          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
-        }
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
       });
 
       if (!tasksResponse.ok) {
@@ -486,7 +640,7 @@ export default function OrganizationView() {
       }
 
       const tasksData = await tasksResponse.json();
-      
+
       // Filter tasks:
       // 1. Not completed (status !== "Completed" and is_completed !== true)
       // 2. Related to this organization (through hiring_manager_id, job_id, or organization_id)
@@ -495,12 +649,14 @@ export default function OrganizationView() {
         if (task.is_completed === true || task.status === "Completed") {
           return false;
         }
-        
+
         // Check if task is related to this organization
         return (
-          (task.hiring_manager_id && hiringManagerIds.includes(parseInt(task.hiring_manager_id))) ||
+          (task.hiring_manager_id &&
+            hiringManagerIds.includes(parseInt(task.hiring_manager_id))) ||
           (task.job_id && jobIds.includes(parseInt(task.job_id))) ||
-          (task.organization_id && task.organization_id.toString() === organizationId.toString())
+          (task.organization_id &&
+            task.organization_id.toString() === organizationId.toString())
         );
       });
 
@@ -649,7 +805,7 @@ export default function OrganizationView() {
       // Navigate to add hiring manager page with organization context
       if (organizationId) {
         // Store organizationId in sessionStorage to refresh contacts when returning
-        sessionStorage.setItem('returnToOrganizationId', organizationId);
+        sessionStorage.setItem("returnToOrganizationId", organizationId);
         router.push(
           `/dashboard/hiring-managers/add?organizationId=${organizationId}`
         );
@@ -821,15 +977,19 @@ export default function OrganizationView() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
           },
-          body: JSON.stringify({ 
+          body: JSON.stringify({
             text: noteForm.text,
-            copy_note: noteForm.copyNote === 'Yes',
-            replace_general_contact_comments: noteForm.replaceGeneralContactComments,
+            copy_note: noteForm.copyNote === "Yes",
+            replace_general_contact_comments:
+              noteForm.replaceGeneralContactComments,
             additional_references: noteForm.additionalReferences,
             schedule_next_action: noteForm.scheduleNextAction,
-            email_notification: noteForm.emailNotification
+            email_notification: noteForm.emailNotification,
           }),
         }
       );
@@ -846,13 +1006,17 @@ export default function OrganizationView() {
 
       // Clear the form
       setNoteForm({
-        text: '',
-        about: organization ? `${formatRecordId(organization.id, 'organization')} ${organization.name}` : '',
-        copyNote: 'No',
+        text: "",
+        about: organization
+          ? `${formatRecordId(organization.id, "organization")} ${
+              organization.name
+            }`
+          : "",
+        copyNote: "No",
         replaceGeneralContactComments: false,
-        additionalReferences: '',
-        scheduleNextAction: 'None',
-        emailNotification: 'Internal User'
+        additionalReferences: "",
+        scheduleNextAction: "None",
+        emailNotification: "Internal User",
       });
       setShowAddNote(false);
 
@@ -875,59 +1039,70 @@ export default function OrganizationView() {
   const handleCloseAddNoteModal = () => {
     setShowAddNote(false);
     setNoteForm({
-      text: '',
-      about: organization ? `${organization.id} ${organization.name}` : '',
-      copyNote: 'No',
+      text: "",
+      about: organization ? `${organization.id} ${organization.name}` : "",
+      copyNote: "No",
       replaceGeneralContactComments: false,
-      additionalReferences: '',
-      scheduleNextAction: 'None',
-      emailNotification: 'Internal User'
+      additionalReferences: "",
+      scheduleNextAction: "None",
+      emailNotification: "Internal User",
     });
   };
 
   // Handle tearsheet submission
   const handleTearsheetSubmit = async () => {
     if (!tearsheetForm.name.trim()) {
-      alert('Please enter a tearsheet name');
+      alert("Please enter a tearsheet name");
       return;
     }
 
     if (!organizationId) {
-      alert('Organization ID is missing');
+      alert("Organization ID is missing");
       return;
     }
 
     setIsSavingTearsheet(true);
     try {
-      const response = await fetch('/api/tearsheets', {
-        method: 'POST',
+      const response = await fetch("/api/tearsheets", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
         },
         body: JSON.stringify({
           name: tearsheetForm.name,
           visibility: tearsheetForm.visibility,
-          organization_id: organizationId
-        })
+          organization_id: organizationId,
+        }),
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Failed to create tearsheet' }));
-        throw new Error(errorData.message || 'Failed to create tearsheet');
+        const errorData = await response
+          .json()
+          .catch(() => ({ message: "Failed to create tearsheet" }));
+        throw new Error(errorData.message || "Failed to create tearsheet");
       }
 
-      alert('Tearsheet created successfully!');
+      alert("Tearsheet created successfully!");
       setShowAddTearsheetModal(false);
-      setTearsheetForm({ name: '', visibility: 'Existing' });
+      setTearsheetForm({ name: "", visibility: "Existing" });
     } catch (err) {
-      console.error('Error creating tearsheet:', err);
-      if (err instanceof Error && err.message.includes('Failed to fetch')) {
-        alert('Tearsheet creation feature is being set up. The tearsheet will be created once the API is ready.');
+      console.error("Error creating tearsheet:", err);
+      if (err instanceof Error && err.message.includes("Failed to fetch")) {
+        alert(
+          "Tearsheet creation feature is being set up. The tearsheet will be created once the API is ready."
+        );
         setShowAddTearsheetModal(false);
-        setTearsheetForm({ name: '', visibility: 'Existing' });
+        setTearsheetForm({ name: "", visibility: "Existing" });
       } else {
-        alert(err instanceof Error ? err.message : 'Failed to create tearsheet. Please try again.');
+        alert(
+          err instanceof Error
+            ? err.message
+            : "Failed to create tearsheet. Please try again."
+        );
       }
     } finally {
       setIsSavingTearsheet(false);
@@ -943,7 +1118,10 @@ export default function OrganizationView() {
     },
     { label: "Add Job", action: () => handleActionSelected("add-job") },
     { label: "Add Task", action: () => handleActionSelected("add-task") },
-    { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
+    {
+      label: "Add Tearsheet",
+      action: () => handleActionSelected("add-tearsheet"),
+    },
     { label: "Transfer", action: () => handleActionSelected("transfer") },
     { label: "Delete", action: () => handleActionSelected("delete") },
   ];
@@ -1176,13 +1354,14 @@ export default function OrganizationView() {
             <HiOutlineOfficeBuilding size={24} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
-            {formatRecordId(organization.id, 'organization')} {organization.name}
+            {formatRecordId(organization.id, "organization")}{" "}
+            {organization.name}
           </h1>
         </div>
       </div>
 
       {/* Phone and Website section */}
-      <div className="bg-white border-b border-gray-300 p-3 flex justify-between items-center">
+      {/* <div className="bg-white border-b border-gray-300 p-3 flex justify-between items-center">
         <div className="flex space-x-8">
           <div>
             <h2 className="text-gray-600">Phone</h2>
@@ -1225,6 +1404,93 @@ export default function OrganizationView() {
           >
             <Image src="/x.svg" alt="Close" width={20} height={20} />
           </button>
+        </div>
+      </div> */}
+
+      <div className="bg-white border-b border-gray-300 px-3 py-2">
+        <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
+          {/* LEFT: dynamic fields */}
+          <div className="flex flex-wrap gap-x-10 gap-y-2 flex-1 min-w-0">
+            {headerFields.length === 0 ? (
+              <span className="text-sm text-gray-500">
+                No header fields selected
+              </span>
+            ) : (
+              headerFields.map((fk) => (
+                <div key={fk} className="min-w-[140px]">
+                  <div className="text-xs text-gray-500">
+                    {getHeaderFieldLabel(fk)}
+                  </div>
+                  {fk === "website" ? (
+                    <a
+                      href={getHeaderFieldValue(fk)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm font-medium text-blue-600 hover:underline"
+                    >
+                      {getHeaderFieldValue(fk)}
+                    </a>
+                  ) : (
+                    <div className="text-sm font-medium text-gray-900">
+                      {getHeaderFieldValue(fk)}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* RIGHT: actions */}
+          <div className="flex items-center space-x-2 shrink-0">
+            <button
+              onClick={() => setShowHeaderFieldModal(true)}
+              className="p-1 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
+              title="Customize header fields"
+              aria-label="Customize header fields"
+            >
+              <svg
+                stroke="currentColor"
+                fill="none"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                height="16"
+                width="16"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+              </svg>
+            </button>
+
+            <ActionDropdown label="Actions" options={actionOptions} />
+
+            <button
+              onClick={handlePrint}
+              className="p-1 hover:bg-gray-200 rounded"
+              aria-label="Print"
+            >
+              <Image src="/print.svg" alt="Print" width={20} height={20} />
+            </button>
+
+            <button
+              className="p-1 hover:bg-gray-200 rounded"
+              aria-label="Reload"
+              onClick={() =>
+                organizationId && fetchOrganizationData(organizationId)
+              }
+            >
+              <Image src="/reload.svg" alt="Reload" width={20} height={20} />
+            </button>
+
+            <button
+              onClick={handleGoBack}
+              className="p-1 hover:bg-gray-200 rounded"
+              aria-label="Close"
+            >
+              <Image src="/x.svg" alt="Close" width={20} height={20} />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -1277,42 +1543,56 @@ export default function OrganizationView() {
               {/* Organization Contact Info */}
               <PanelWithHeader
                 title="Organization Contact Info:"
-                onEdit={() => handleEditPanel('contactInfo')}
+                onEdit={() => handleEditPanel("contactInfo")}
                 // onRefresh={() => refreshPanel('contact')}
                 // onClose={() => closePanel('contact')}
               >
                 <div className="space-y-0 border border-gray-200 rounded">
-                  {visibleFields.contactInfo.includes('name') && (
+                  {visibleFields.contactInfo.includes("name") && (
                     <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">Name:</div>
+                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                        Name:
+                      </div>
                       <div className="flex-1 p-2 text-blue-600">
                         {organization.contact.name}
                       </div>
                     </div>
                   )}
-                  {visibleFields.contactInfo.includes('nickname') && (
+                  {visibleFields.contactInfo.includes("nickname") && (
                     <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">Nickname:</div>
+                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                        Nickname:
+                      </div>
                       <div className="flex-1 p-2">
                         {organization.contact.nickname || "-"}
                       </div>
                     </div>
                   )}
-                  {visibleFields.contactInfo.includes('phone') && (
+                  {visibleFields.contactInfo.includes("phone") && (
                     <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">Phone:</div>
-                      <div className="flex-1 p-2">{organization.contact.phone}</div>
+                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                        Phone:
+                      </div>
+                      <div className="flex-1 p-2">
+                        {organization.contact.phone}
+                      </div>
                     </div>
                   )}
-                  {visibleFields.contactInfo.includes('address') && (
+                  {visibleFields.contactInfo.includes("address") && (
                     <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">Address:</div>
-                      <div className="flex-1 p-2">{organization.contact.address}</div>
+                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                        Address:
+                      </div>
+                      <div className="flex-1 p-2">
+                        {organization.contact.address}
+                      </div>
                     </div>
                   )}
-                  {visibleFields.contactInfo.includes('website') && (
+                  {visibleFields.contactInfo.includes("website") && (
                     <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">Website:</div>
+                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                        Website:
+                      </div>
                       <div className="flex-1 p-2 text-blue-600">
                         <a
                           href={organization.contact.website}
@@ -1325,32 +1605,44 @@ export default function OrganizationView() {
                     </div>
                   )}
                   {/* Display custom fields */}
-                  {organization.customFields && Object.keys(organization.customFields).map((fieldKey) => {
-                    if (visibleFields.contactInfo.includes(fieldKey)) {
-                      const field = availableFields.find(f => (f.field_name || f.field_label || f.id) === fieldKey);
-                      const fieldLabel = field?.field_label || field?.field_name || fieldKey;
-                      const fieldValue = organization.customFields[fieldKey];
-                      return (
-                        <div key={fieldKey} className="flex border-b border-gray-200 last:border-b-0">
-                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
-                          <div className="flex-1 p-2">{String(fieldValue || "-")}</div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })}
+                  {organization.customFields &&
+                    Object.keys(organization.customFields).map((fieldKey) => {
+                      if (visibleFields.contactInfo.includes(fieldKey)) {
+                        const field = availableFields.find(
+                          (f) =>
+                            (f.field_name || f.field_label || f.id) === fieldKey
+                        );
+                        const fieldLabel =
+                          field?.field_label || field?.field_name || fieldKey;
+                        const fieldValue = organization.customFields[fieldKey];
+                        return (
+                          <div
+                            key={fieldKey}
+                            className="flex border-b border-gray-200 last:border-b-0"
+                          >
+                            <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                              {fieldLabel}:
+                            </div>
+                            <div className="flex-1 p-2">
+                              {String(fieldValue || "-")}
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })}
                 </div>
               </PanelWithHeader>
 
               {/* About the Organization */}
               <PanelWithHeader
                 title="About the Organization:"
-                onEdit={() => handleEditPanel('about')}
+                onEdit={() => handleEditPanel("about")}
                 // onRefresh={() => refreshPanel('about')}
                 // onClose={() => closePanel('about')}
               >
                 <div className="border border-gray-200 rounded">
-                  {visibleFields.about.includes('about') && (
+                  {visibleFields.about.includes("about") && (
                     <div className="p-2">
                       <p className="text-gray-700">{organization.about}</p>
                     </div>
@@ -1369,7 +1661,7 @@ export default function OrganizationView() {
                 // onClose={() => closePanel('notes')}
               >
                 <div className="border border-gray-200 rounded">
-                  {visibleFields.recentNotes.includes('notes') && (
+                  {visibleFields.recentNotes.includes("notes") && (
                     <div className="p-2">
                       {notes.length > 0 ? (
                         <div>
@@ -1413,12 +1705,12 @@ export default function OrganizationView() {
               {/* Open Jobs from Website */}
               <PanelWithHeader
                 title="Open Jobs from Website:"
-                onEdit={() => handleEditPanel('websiteJobs')}
+                onEdit={() => handleEditPanel("websiteJobs")}
                 // onRefresh={() => refreshPanel('website-jobs')}
                 // onClose={() => closePanel('website-jobs')}
               >
                 <div className="border border-gray-200 rounded">
-                  {visibleFields.websiteJobs.includes('jobs') && (
+                  {visibleFields.websiteJobs.includes("jobs") && (
                     <div className="p-2">
                       <p className="text-gray-500 italic">No open jobs found</p>
                     </div>
@@ -1434,7 +1726,7 @@ export default function OrganizationView() {
                 // onClose={() => closePanel('our-jobs')}
               >
                 <div className="border border-gray-200 rounded">
-                  {visibleFields.ourJobs.includes('jobs') && (
+                  {visibleFields.ourJobs.includes("jobs") && (
                     <div className="p-2">
                       <p className="text-gray-500 italic">No open jobs</p>
                     </div>
@@ -1443,9 +1735,7 @@ export default function OrganizationView() {
               </PanelWithHeader>
 
               {/* Open Tasks */}
-              <PanelWithHeader
-                title="Open Tasks:"
-              >
+              <PanelWithHeader title="Open Tasks:">
                 <div className="border border-gray-200 rounded">
                   {isLoadingTasks ? (
                     <div className="flex justify-center py-4">
@@ -1459,7 +1749,9 @@ export default function OrganizationView() {
                         <div
                           key={task.id}
                           className="p-3 hover:bg-gray-50 cursor-pointer"
-                          onClick={() => router.push(`/dashboard/tasks/view?id=${task.id}`)}
+                          onClick={() =>
+                            router.push(`/dashboard/tasks/view?id=${task.id}`)
+                          }
                         >
                           <div className="flex justify-between items-start mb-1">
                             <h4 className="font-medium text-blue-600 hover:underline">
@@ -1488,15 +1780,20 @@ export default function OrganizationView() {
                             <div className="flex space-x-3">
                               {task.due_date && (
                                 <span>
-                                  Due: {new Date(task.due_date).toLocaleDateString()}
+                                  Due:{" "}
+                                  {new Date(task.due_date).toLocaleDateString()}
                                 </span>
                               )}
                               {task.assigned_to_name && (
-                                <span>Assigned to: {task.assigned_to_name}</span>
+                                <span>
+                                  Assigned to: {task.assigned_to_name}
+                                </span>
                               )}
                             </div>
                             {task.status && (
-                              <span className="text-gray-600">{task.status}</span>
+                              <span className="text-gray-600">
+                                {task.status}
+                              </span>
                             )}
                           </div>
                         </div>
@@ -1540,7 +1837,9 @@ export default function OrganizationView() {
         {activeTab === "contacts" && (
           <div className="bg-white p-4 rounded shadow-sm">
             <div className="flex justify-between items-center mb-4">
-              <h2 className="text-lg font-semibold">Organization Contacts (Hiring Managers)</h2>
+              <h2 className="text-lg font-semibold">
+                Organization Contacts (Hiring Managers)
+              </h2>
               <button
                 onClick={() => handleActionSelected("add-hiring-manager")}
                 className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
@@ -1573,7 +1872,11 @@ export default function OrganizationView() {
                       <tr key={hm.id} className="border-b hover:bg-gray-50">
                         <td className="p-3">
                           <button
-                            onClick={() => router.push(`/dashboard/hiring-managers/view?id=${hm.id}`)}
+                            onClick={() =>
+                              router.push(
+                                `/dashboard/hiring-managers/view?id=${hm.id}`
+                              )
+                            }
                             className="text-blue-600 hover:underline font-medium"
                           >
                             {hm.full_name || `${hm.first_name} ${hm.last_name}`}
@@ -1581,7 +1884,10 @@ export default function OrganizationView() {
                         </td>
                         <td className="p-3">{hm.title || "-"}</td>
                         <td className="p-3">
-                          <a href={`mailto:${hm.email}`} className="text-blue-600 hover:underline">
+                          <a
+                            href={`mailto:${hm.email}`}
+                            className="text-blue-600 hover:underline"
+                          >
                             {hm.email || "-"}
                           </a>
                         </td>
@@ -1599,7 +1905,11 @@ export default function OrganizationView() {
                         </td>
                         <td className="p-3">
                           <button
-                            onClick={() => router.push(`/dashboard/hiring-managers/view?id=${hm.id}`)}
+                            onClick={() =>
+                              router.push(
+                                `/dashboard/hiring-managers/view?id=${hm.id}`
+                              )
+                            }
                             className="text-blue-500 hover:text-blue-700 text-sm"
                           >
                             View
@@ -1612,7 +1922,9 @@ export default function OrganizationView() {
               </div>
             ) : (
               <div className="text-center py-8">
-                <p className="text-gray-500 italic mb-4">No hiring managers have been added to this organization yet.</p>
+                <p className="text-gray-500 italic mb-4">
+                  No hiring managers have been added to this organization yet.
+                </p>
                 <button
                   onClick={() => handleActionSelected("add-hiring-manager")}
                   className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
@@ -1821,7 +2133,9 @@ export default function OrganizationView() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Edit Fields - {editingPanel}</h2>
+              <h2 className="text-lg font-semibold">
+                Edit Fields - {editingPanel}
+              </h2>
               <button
                 onClick={handleCloseEditModal}
                 className="p-1 rounded hover:bg-gray-200"
@@ -1831,73 +2145,105 @@ export default function OrganizationView() {
             </div>
             <div className="p-6">
               <div className="mb-4">
-                <h3 className="font-medium mb-3">Available Fields from Modify Page:</h3>
+                <h3 className="font-medium mb-3">
+                  Available Fields from Modify Page:
+                </h3>
                 <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
                   {isLoadingFields ? (
-                    <div className="text-center py-4 text-gray-500">Loading fields...</div>
+                    <div className="text-center py-4 text-gray-500">
+                      Loading fields...
+                    </div>
                   ) : availableFields.length > 0 ? (
                     availableFields.map((field) => {
-                      const fieldKey = field.field_name || field.field_label || field.id;
-                      const isVisible = visibleFields[editingPanel]?.includes(fieldKey) || false;
+                      const fieldKey =
+                        field.field_name || field.field_label || field.id;
+                      const isVisible =
+                        visibleFields[editingPanel]?.includes(fieldKey) ||
+                        false;
                       return (
-                        <div key={field.id || fieldKey} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                        <div
+                          key={field.id || fieldKey}
+                          className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                        >
                           <div className="flex items-center space-x-2">
                             <input
                               type="checkbox"
                               checked={isVisible}
-                              onChange={() => toggleFieldVisibility(editingPanel, fieldKey)}
+                              onChange={() =>
+                                toggleFieldVisibility(editingPanel, fieldKey)
+                              }
                               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                             />
                             <label className="text-sm text-gray-700">
-                              {field.field_label || field.field_name || fieldKey}
+                              {field.field_label ||
+                                field.field_name ||
+                                fieldKey}
                             </label>
                           </div>
-                          <span className="text-xs text-gray-500">{field.field_type || 'text'}</span>
+                          <span className="text-xs text-gray-500">
+                            {field.field_type || "text"}
+                          </span>
                         </div>
                       );
                     })
                   ) : (
                     <div className="text-center py-4 text-gray-500">
                       <p>No custom fields available</p>
-                      <p className="text-xs mt-1">Fields from the modify page will appear here</p>
+                      <p className="text-xs mt-1">
+                        Fields from the modify page will appear here
+                      </p>
                     </div>
                   )}
                 </div>
               </div>
-              
+
               <div className="mb-4">
                 <h3 className="font-medium mb-3">Standard Fields:</h3>
                 <div className="space-y-2 border border-gray-200 rounded p-3">
                   {(() => {
-                    const standardFieldsMap: Record<string, Array<{ key: string; label: string }>> = {
+                    const standardFieldsMap: Record<
+                      string,
+                      Array<{ key: string; label: string }>
+                    > = {
                       contactInfo: [
-                        { key: 'name', label: 'Name' },
-                        { key: 'nickname', label: 'Nickname' },
-                        { key: 'phone', label: 'Phone' },
-                        { key: 'address', label: 'Address' },
-                        { key: 'website', label: 'Website' }
+                        { key: "name", label: "Name" },
+                        { key: "nickname", label: "Nickname" },
+                        { key: "phone", label: "Phone" },
+                        { key: "address", label: "Address" },
+                        { key: "website", label: "Website" },
                       ],
-                      about: [{ key: 'about', label: 'About' }],
-                      recentNotes: [{ key: 'notes', label: 'Notes' }],
-                      websiteJobs: [{ key: 'jobs', label: 'Jobs' }],
-                      ourJobs: [{ key: 'jobs', label: 'Jobs' }]
+                      about: [{ key: "about", label: "About" }],
+                      recentNotes: [{ key: "notes", label: "Notes" }],
+                      websiteJobs: [{ key: "jobs", label: "Jobs" }],
+                      ourJobs: [{ key: "jobs", label: "Jobs" }],
                     };
-                    
+
                     const fields = standardFieldsMap[editingPanel] || [];
                     return fields.map((field) => {
-                      const isVisible = visibleFields[editingPanel]?.includes(field.key) || false;
+                      const isVisible =
+                        visibleFields[editingPanel]?.includes(field.key) ||
+                        false;
                       return (
-                        <div key={field.key} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                        <div
+                          key={field.key}
+                          className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                        >
                           <div className="flex items-center space-x-2">
                             <input
                               type="checkbox"
                               checked={isVisible}
-                              onChange={() => toggleFieldVisibility(editingPanel, field.key)}
+                              onChange={() =>
+                                toggleFieldVisibility(editingPanel, field.key)
+                              }
                               className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                             />
-                            <label className="text-sm text-gray-700">{field.label}</label>
+                            <label className="text-sm text-gray-700">
+                              {field.label}
+                            </label>
                           </div>
-                          <span className="text-xs text-gray-500">standard</span>
+                          <span className="text-xs text-gray-500">
+                            standard
+                          </span>
                         </div>
                       );
                     });
@@ -1943,7 +2289,9 @@ export default function OrganizationView() {
                   </label>
                   <textarea
                     value={noteForm.text}
-                    onChange={(e) => setNoteForm(prev => ({ ...prev, text: e.target.value }))}
+                    onChange={(e) =>
+                      setNoteForm((prev) => ({ ...prev, text: e.target.value }))
+                    }
                     placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
                     className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={6}
@@ -1960,7 +2308,9 @@ export default function OrganizationView() {
                       <div className="w-6 h-6 rounded-full bg-orange-400 mr-2 flex-shrink-0"></div>
                       <span className="flex-1 text-sm">{noteForm.about}</span>
                       <button
-                        onClick={() => setNoteForm(prev => ({ ...prev, about: '' }))}
+                        onClick={() =>
+                          setNoteForm((prev) => ({ ...prev, about: "" }))
+                        }
                         className="ml-2 text-gray-500 hover:text-gray-700 text-xs"
                       >
                         CLEAR ALL X
@@ -1978,11 +2328,18 @@ export default function OrganizationView() {
                     <input
                       type="text"
                       value={noteForm.additionalReferences}
-                      onChange={(e) => setNoteForm(prev => ({ ...prev, additionalReferences: e.target.value }))}
+                      onChange={(e) =>
+                        setNoteForm((prev) => ({
+                          ...prev,
+                          additionalReferences: e.target.value,
+                        }))
+                      }
                       placeholder="Reference other records using #"
                       className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
                     />
-                    <span className="absolute right-2 top-2 text-gray-400 text-sm">Q</span>
+                    <span className="absolute right-2 top-2 text-gray-400 text-sm">
+                      Q
+                    </span>
                   </div>
                 </div>
 
@@ -1996,7 +2353,12 @@ export default function OrganizationView() {
                     <input
                       type="text"
                       value={noteForm.emailNotification}
-                      onChange={(e) => setNoteForm(prev => ({ ...prev, emailNotification: e.target.value }))}
+                      onChange={(e) =>
+                        setNoteForm((prev) => ({
+                          ...prev,
+                          emailNotification: e.target.value,
+                        }))
+                      }
                       placeholder="Internal User"
                       className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     />
@@ -2035,7 +2397,7 @@ export default function OrganizationView() {
               <button
                 onClick={() => {
                   setShowAddTearsheetModal(false);
-                  setTearsheetForm({ name: '', visibility: 'Existing' });
+                  setTearsheetForm({ name: "", visibility: "Existing" });
                 }}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -2054,7 +2416,12 @@ export default function OrganizationView() {
                 <input
                   type="text"
                   value={tearsheetForm.name}
-                  onChange={(e) => setTearsheetForm(prev => ({ ...prev, name: e.target.value }))}
+                  onChange={(e) =>
+                    setTearsheetForm((prev) => ({
+                      ...prev,
+                      name: e.target.value,
+                    }))
+                  }
                   placeholder="Enter tearsheet name"
                   className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                   required
@@ -2066,25 +2433,38 @@ export default function OrganizationView() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Visibility
                 </label>
-                <div className="inline-flex rounded-md border border-gray-300 overflow-hidden" role="group">
+                <div
+                  className="inline-flex rounded-md border border-gray-300 overflow-hidden"
+                  role="group"
+                >
                   <button
                     type="button"
-                    onClick={() => setTearsheetForm(prev => ({ ...prev, visibility: 'New' }))}
+                    onClick={() =>
+                      setTearsheetForm((prev) => ({
+                        ...prev,
+                        visibility: "New",
+                      }))
+                    }
                     className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === 'New'
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50'
+                      tearsheetForm.visibility === "New"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
                     }`}
                   >
                     New
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTearsheetForm(prev => ({ ...prev, visibility: 'Existing' }))}
+                    onClick={() =>
+                      setTearsheetForm((prev) => ({
+                        ...prev,
+                        visibility: "Existing",
+                      }))
+                    }
                     className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === 'Existing'
-                        ? 'bg-blue-500 text-white'
-                        : 'bg-white text-gray-700 hover:bg-gray-50'
+                      tearsheetForm.visibility === "Existing"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white text-gray-700 hover:bg-gray-50"
                     }`}
                   >
                     Existing
@@ -2098,7 +2478,7 @@ export default function OrganizationView() {
               <button
                 onClick={() => {
                   setShowAddTearsheetModal(false);
-                  setTearsheetForm({ name: '', visibility: 'Existing' });
+                  setTearsheetForm({ name: "", visibility: "Existing" });
                 }}
                 className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isSavingTearsheet}
@@ -2125,6 +2505,142 @@ export default function OrganizationView() {
                   />
                 </svg>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Header Fields Modal */}
+      {showHeaderFieldModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Customize Header Fields</h2>
+              <button
+                onClick={() => setShowHeaderFieldModal(false)}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            <div className="p-6 grid grid-cols-2 gap-6">
+              {/* Left: available fields */}
+              <div>
+                <h3 className="font-medium mb-3">Available Fields</h3>
+                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                  {headerFieldCatalog.map((f) => {
+                    const checked = headerFields.includes(f.key);
+                    return (
+                      <label
+                        key={f.key}
+                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setHeaderFields((prev) => {
+                              if (prev.includes(f.key))
+                                return prev.filter((x) => x !== f.key);
+                              return [...prev, f.key];
+                            });
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-800">{f.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Right: selected + reorder */}
+              <div>
+                <h3 className="font-medium mb-3">Header Order</h3>
+                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                  {headerFields.length === 0 ? (
+                    <div className="text-sm text-gray-500 italic">
+                      No fields selected
+                    </div>
+                  ) : (
+                    headerFields.map((key, idx) => (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between p-2 border rounded"
+                      >
+                        <div>
+                          <div className="text-sm font-medium">
+                            {getHeaderFieldLabel(key)}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Value: {getHeaderFieldValue(key)}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                            disabled={idx === 0}
+                            onClick={() => {
+                              setHeaderFields((prev) => {
+                                const copy = [...prev];
+                                [copy[idx - 1], copy[idx]] = [
+                                  copy[idx],
+                                  copy[idx - 1],
+                                ];
+                                return copy;
+                              });
+                            }}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                            disabled={idx === headerFields.length - 1}
+                            onClick={() => {
+                              setHeaderFields((prev) => {
+                                const copy = [...prev];
+                                [copy[idx], copy[idx + 1]] = [
+                                  copy[idx + 1],
+                                  copy[idx],
+                                ];
+                                return copy;
+                              });
+                            }}
+                          >
+                            ↓
+                          </button>
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50"
+                            onClick={() =>
+                              setHeaderFields((prev) =>
+                                prev.filter((x) => x !== key)
+                              )
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-2 mt-4">
+                  <button
+                    className="px-4 py-2 border rounded hover:bg-gray-50"
+                    onClick={() => setHeaderFields(DEFAULT_HEADER_FIELDS)}
+                  >
+                    Reset
+                  </button>
+                  <button
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    onClick={() => setShowHeaderFieldModal(false)}
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
