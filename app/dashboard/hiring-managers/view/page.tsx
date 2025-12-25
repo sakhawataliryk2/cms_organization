@@ -618,6 +618,31 @@ const fetchAvailableFields = async () => {
     }
   };
 
+  // Handle Send Email - Opens default email application using mailto link
+  const handleSendEmail = () => {
+    // Get email from hiring manager
+    const email = hiringManager?.email;
+
+    // Validate email - check if exists and not placeholder
+    if (!email || email.trim() === "" || email === "(Not provided)" || email === "No email provided") {
+      alert("Hiring manager email address is not available. Please add an email address to this record.");
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      alert("The email address format is invalid. Please check the email address and try again.");
+      return;
+    }
+
+    const recipientEmail = email.trim();
+
+    // Open default email application using mailto link
+    // This will open Outlook Desktop if it's set as the default mail app on Windows
+    window.location.href = `mailto:${recipientEmail}`;
+  };
+
   const handleActionSelected = (action: string) => {
     console.log(`Action selected: ${action}`);
     if (action === "edit") {
@@ -637,16 +662,7 @@ const fetchAvailableFields = async () => {
     } else if (action === "add-tearsheet") {
       setShowAddTearsheetModal(true);
     } else if (action === "send-email") {
-      // Handle send email - use Outlook web compose deep link
-      if (hiringManager?.email && hiringManager.email !== "(Not provided)") {
-        const recipientEmail = hiringManager.email;
-        const outlookComposeUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(
-          recipientEmail
-        )}`;
-        window.open(outlookComposeUrl, "_blank");
-      } else {
-        alert("Hiring manager email not available");
-      }
+      handleSendEmail();
     }
   };
 
