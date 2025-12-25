@@ -40,6 +40,8 @@ export default function AddJob() {
   const hasPrefilledFromLeadRef = useRef(false);
   const hasPrefilledOrgRef = useRef(false);
   const [organizationName, setOrganizationName] = useState<string>("");
+  const [leadPrefillData, setLeadPrefillData] = useState<any>(null);
+
 
   // Add these state variables
   const [isEditMode, setIsEditMode] = useState(!!jobId);
@@ -133,6 +135,7 @@ export default function AddJob() {
         const data = await res.json();
         const lead = data.lead;
         if (!lead) return;
+        setLeadPrefillData(lead);
 
         const orgValue =
           lead.organization_id?.toString?.() ||
@@ -203,6 +206,51 @@ export default function AddJob() {
     customFields,
     setCustomFieldValues,
   ]);
+useEffect(() => {
+  if (jobId) return; // edit mode me kuch override nahi
+  if (!leadPrefillData) return;
+  if (customFieldsLoading) return;
+  if (customFields.length === 0) return;
+
+  const lead = leadPrefillData;
+
+  const orgValue =
+    lead.organization_id?.toString?.() ||
+    lead.organization_id ||
+    lead.organization_name_from_org ||
+    "";
+
+  const hiringManagerValue =
+    lead.full_name ||
+    `${lead.first_name || ""} ${lead.last_name || ""}`.trim() ||
+    "";
+
+  setCustomFieldValues((prev) => {
+    const next = { ...prev };
+
+    customFields.forEach((field) => {
+      if (
+        (field.field_label === "Organization" ||
+          field.field_label === "Organization ID") &&
+        !next[field.field_name]
+      ) {
+        next[field.field_name] = orgValue;
+      }
+
+      if (field.field_label === "Hiring Manager" && !next[field.field_name]) {
+        next[field.field_name] = hiringManagerValue;
+      }
+    });
+
+    return next;
+  });
+}, [
+  jobId,
+  leadPrefillData,
+  customFieldsLoading,
+  customFields,
+  setCustomFieldValues,
+]);
 
   const initializeFields = () => {
     // These are the standard fields
