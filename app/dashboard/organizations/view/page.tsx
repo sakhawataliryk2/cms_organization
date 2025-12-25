@@ -71,6 +71,11 @@ export default function OrganizationView() {
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
   const [tasksError, setTasksError] = useState<string | null>(null);
 
+  // Jobs state
+  const [jobs, setJobs] = useState<Array<any>>([]);
+  const [isLoadingJobs, setIsLoadingJobs] = useState(false);
+  const [jobsError, setJobsError] = useState<string | null>(null);
+
   // Tearsheet modal state
   const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
   const [tearsheetForm, setTearsheetForm] = useState({
@@ -212,15 +217,16 @@ const buildHeaderFieldCatalog = () => {
     }
   }, [organizationId]);
 
-  // Refresh hiring managers when returning from adding a hiring manager
+  // Refresh hiring managers and jobs when returning from adding a hiring manager or job
   useEffect(() => {
     const returnToOrgId = sessionStorage.getItem("returnToOrganizationId");
     if (returnToOrgId && returnToOrgId === organizationId) {
       // Clear the flag
       sessionStorage.removeItem("returnToOrganizationId");
-      // Refresh hiring managers
+      // Refresh hiring managers and jobs
       if (organizationId) {
         fetchHiringManagers(organizationId);
+        fetchJobs(organizationId);
       }
     }
   }, [organizationId]);
@@ -595,6 +601,45 @@ setAvailableFields(fields);
     }
   };
 
+  // Fetch jobs for organization
+  const fetchJobs = async (organizationId: string) => {
+    setIsLoadingJobs(true);
+    setJobsError(null);
+
+    try {
+      const response = await fetch(`/api/jobs`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to fetch jobs");
+      }
+
+      const data = await response.json();
+      // Filter jobs by organization ID
+      const orgJobs = (data.jobs || []).filter(
+        (job: any) =>
+          job.organization_id?.toString() === organizationId.toString()
+      );
+      setJobs(orgJobs);
+    } catch (err) {
+      console.error("Error fetching jobs:", err);
+      setJobsError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while fetching jobs"
+      );
+    } finally {
+      setIsLoadingJobs(false);
+    }
+  };
+
   // Fetch tasks for organization (only non-completed tasks)
   const fetchTasks = async (organizationId: string) => {
     setIsLoadingTasks(true);
@@ -792,8 +837,14 @@ setAvailableFields(fields);
       setShowAddNote(true);
       setActiveTab("notes");
     } else if (action === "add-job") {
-      // Navigate to add job page
-      router.push("/dashboard/jobs/add");
+      // Navigate to add job page with organization context
+      if (organizationId) {
+        // Store organizationId in sessionStorage to refresh jobs when returning
+        sessionStorage.setItem("returnToOrganizationId", organizationId);
+        router.push(`/dashboard/jobs/add?organizationId=${organizationId}`);
+      } else {
+        router.push("/dashboard/jobs/add");
+      }
     } else if (action === "add-task") {
       // Navigate to add task page with organization context
       if (organizationId) {
@@ -1523,14 +1574,32 @@ setAvailableFields(fields);
 
       {/* Quick Action Buttons */}
       <div className="flex bg-gray-300 p-2 space-x-2">
-        {quickActions.map((action) => (
-          <button
-            key={action.id}
-            className="bg-white px-4 py-1 rounded-full shadow"
-          >
-            {action.label}
-          </button>
-        ))}
+        {quickActions.map((action) => {
+          // Special styling for Jobs action with count
+          if (action.id === "jobs") {
+            return (
+              <button
+                key={action.id}
+                className="bg-green-500 text-white px-4 py-1 rounded-full shadow font-medium"
+                onClick={() => setActiveTab("jobs")}
+              >
+                {isLoadingJobs ? (
+                  "Loading..."
+                ) : (
+                  `${jobs.length} ${jobs.length === 1 ? "Job" : "Jobs"}`
+                )}
+              </button>
+            );
+          }
+          return (
+            <button
+              key={action.id}
+              className="bg-white px-4 py-1 rounded-full shadow"
+            >
+              {action.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Main Content Area */}
@@ -2115,6 +2184,99 @@ setAvailableFields(fields);
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "jobs" && (
+          <div className="bg-white p-4 rounded shadow-sm">
+            <div className="flex justify-between items-center mb-4">
+              <h2 className="text-lg font-semibold">Organization Jobs</h2>
+              <button
+                onClick={() => handleActionSelected("add-job")}
+                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+              >
+                Add Job
+              </button>
+            </div>
+
+            {isLoadingJobs ? (
+              <div className="flex justify-center py-4">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+              </div>
+            ) : jobsError ? (
+              <div className="text-red-500 py-2">{jobsError}</div>
+            ) : jobs.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100 border-b">
+                      <th className="text-left p-3 font-medium">Job Title</th>
+                      <th className="text-left p-3 font-medium">Category</th>
+                      <th className="text-left p-3 font-medium">Status</th>
+                      <th className="text-left p-3 font-medium">Location</th>
+                      <th className="text-left p-3 font-medium">Employment Type</th>
+                      <th className="text-left p-3 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {jobs.map((job: any) => (
+                      <tr key={job.id} className="border-b hover:bg-gray-50">
+                        <td className="p-3">
+                          <button
+                            onClick={() =>
+                              router.push(`/dashboard/jobs/view?id=${job.id}`)
+                            }
+                            className="text-blue-600 hover:underline font-medium"
+                          >
+                            {job.job_title || "Untitled Job"}
+                          </button>
+                        </td>
+                        <td className="p-3">{job.category || "-"}</td>
+                        <td className="p-3">
+                          <span
+                            className={`px-2 py-1 rounded text-xs ${
+                              job.status === "Open"
+                                ? "bg-green-100 text-green-800"
+                                : job.status === "On Hold"
+                                ? "bg-yellow-100 text-yellow-800"
+                                : job.status === "Filled"
+                                ? "bg-blue-100 text-blue-800"
+                                : "bg-gray-100 text-gray-800"
+                            }`}
+                          >
+                            {job.status || "Open"}
+                          </span>
+                        </td>
+                        <td className="p-3">{job.worksite_location || "-"}</td>
+                        <td className="p-3">{job.employment_type || "-"}</td>
+                        <td className="p-3">
+                          <button
+                            onClick={() =>
+                              router.push(`/dashboard/jobs/view?id=${job.id}`)
+                            }
+                            className="text-blue-500 hover:text-blue-700 text-sm"
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p className="text-gray-500 italic mb-4">
+                  No jobs have been added to this organization yet.
+                </p>
+                <button
+                  onClick={() => handleActionSelected("add-job")}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  Add First Job
+                </button>
               </div>
             )}
           </div>

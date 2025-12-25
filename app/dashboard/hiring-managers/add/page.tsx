@@ -31,6 +31,7 @@ export default function AddHiringManager() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const hiringManagerId = searchParams.get("id");
+  const organizationIdFromUrl = searchParams.get("organizationId");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(!!hiringManagerId);
@@ -38,7 +39,9 @@ export default function AddHiringManager() {
   const [isEditMode, setIsEditMode] = useState(!!hiringManagerId);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeUsers, setActiveUsers] = useState<User[]>([]);
+  const [organizationName, setOrganizationName] = useState<string>("");
   const hasFetchedRef = useRef(false); // Track if we've already fetched hiring manager data
+  const hasPrefilledOrgRef = useRef(false); // Track if we've prefilled organization
 
   // Use the useCustomFields hook
   const {
@@ -71,6 +74,30 @@ export default function AddHiringManager() {
     address: "",
   });
 
+  // Fetch organization name if organizationId is provided
+  const fetchOrganizationName = useCallback(async (orgId: string) => {
+    try {
+      const response = await fetch(`/api/organizations/${orgId}`);
+      if (response.ok) {
+        const data = await response.json();
+        const orgName = data.organization?.name || "";
+        setOrganizationName(orgName);
+        // Prefill organizationId in form
+        setFormData(prev => ({
+          ...prev,
+          organizationId: orgId
+        }));
+      }
+    } catch (error) {
+      console.error("Error fetching organization:", error);
+      // Still set the organizationId even if fetch fails
+      setFormData(prev => ({
+        ...prev,
+        organizationId: orgId
+      }));
+    }
+  }, []);
+
   // Initialize with current user and fetch data
   useEffect(() => {
     // Get current user from cookies
@@ -89,7 +116,13 @@ export default function AddHiringManager() {
 
     // Fetch active users for owner dropdown
     fetchActiveUsers();
-  }, []);
+
+    // Prefill organizationId from URL if provided (and not in edit mode)
+    if (organizationIdFromUrl && !hiringManagerId && !hasPrefilledOrgRef.current) {
+      hasPrefilledOrgRef.current = true;
+      fetchOrganizationName(organizationIdFromUrl);
+    }
+  }, [organizationIdFromUrl, hiringManagerId, fetchOrganizationName]);
 
   // Fetch active users
   const fetchActiveUsers = async () => {
@@ -400,14 +433,18 @@ export default function AddHiringManager() {
       const customFieldsToSend = getCustomFieldsForSubmission();
 
       // Map custom fields to API payload for standard fields
+      // Use organizationId from URL if available, otherwise use form data
+      const finalOrganizationId = organizationIdFromUrl || formData.organizationId;
+      const finalOrganizationName = organizationName || formData.organizationId;
+      
       const apiData: any = {
         firstName: formData.firstName,
         lastName: formData.lastName,
         status: formData.status,
         nickname: formData.nickname,
         title: formData.title,
-        organizationId: formData.organizationId,
-        organizationName: formData.organizationId, // In case it's a string name
+        organizationId: finalOrganizationId,
+        organizationName: finalOrganizationName,
         department: formData.department,
         reportsTo: formData.reportsTo,
         owner: formData.owner || currentUser?.name || "",
@@ -516,9 +553,16 @@ export default function AddHiringManager() {
         );
       }
 
-      // Navigate to the hiring manager view page
+      // Navigate based on where we came from
       const id = isEditMode ? hiringManagerId : data.hiringManager.id;
-      router.push(`/dashboard/hiring-managers/view?id=${id}`);
+      
+      // If we came from organization page, navigate back there
+      if (organizationIdFromUrl && !isEditMode) {
+        router.push(`/dashboard/organizations/view?id=${organizationIdFromUrl}`);
+      } else {
+        // Otherwise navigate to the hiring manager view page
+        router.push(`/dashboard/hiring-managers/view?id=${id}`);
+      }
     } catch (err) {
       console.error(
         `Error ${isEditMode ? "updating" : "creating"} hiring manager:`,
@@ -698,10 +742,11 @@ export default function AddHiringManager() {
                 <input
                   type="text"
                   name="organizationId"
-                  value={formData.organizationId}
+                  value={organizationName || formData.organizationId}
                   onChange={handleChange}
                   className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                   placeholder="Organization name or ID"
+                  readOnly={!!organizationIdFromUrl}
                 />
                 <button type="button" className="absolute right-2 top-2">
                   <Image

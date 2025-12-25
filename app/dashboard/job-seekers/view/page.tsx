@@ -1043,16 +1043,14 @@ Best regards`;
         );
       }
     } else if (action === "email") {
-      // Open Office 365 compose window with recipient pre-filled
-      if (jobSeeker?.email) {
-        // Use Outlook web compose deep link
-        const composeUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(
-          jobSeeker.email
-        )}`;
-        window.open(composeUrl, "_blank");
-      } else {
+      // Open default email application with mailto link
+      if (!jobSeeker?.email || jobSeeker.email === "No email provided") {
         alert("Job seeker email not available");
+        return;
       }
+
+      // Use mailto link to open default email application (e.g., Outlook Desktop)
+      window.location.href = `mailto:${jobSeeker.email}`;
     } else if (action === "add-tearsheet") {
       setShowAddTearsheetModal(true);
     }

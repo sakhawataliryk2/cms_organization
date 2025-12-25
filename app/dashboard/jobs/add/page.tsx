@@ -36,7 +36,10 @@ export default function AddJob() {
   const searchParams = useSearchParams();
   const jobId = searchParams.get("id"); // Get job ID from URL if present
   const leadId = searchParams.get("leadId") || searchParams.get("lead_id");
+  const organizationIdFromUrl = searchParams.get("organizationId");
   const hasPrefilledFromLeadRef = useRef(false);
+  const hasPrefilledOrgRef = useRef(false);
+  const [organizationName, setOrganizationName] = useState<string>("");
 
   // Add these state variables
   const [isEditMode, setIsEditMode] = useState(!!jobId);
@@ -64,6 +67,47 @@ export default function AddJob() {
   useEffect(() => {
     initializeFields();
   }, []);
+
+  // Fetch organization name if organizationId is provided
+  const fetchOrganizationName = async (orgId: string) => {
+    try {
+      const response = await fetch(`/api/organizations/${orgId}`);
+      if (response.ok) {
+        const data = await response.json();
+        const orgName = data.organization?.name || "";
+        setOrganizationName(orgName);
+        // Prefill organizationId in form with organization name for display
+        setFormFields((prev) =>
+          prev.map((f) =>
+            f.name === "organizationId"
+              ? { ...f, value: orgName || orgId, locked: true }
+              : f
+          )
+        );
+      }
+    } catch (error) {
+      console.error("Error fetching organization:", error);
+      // Still set the organizationId even if fetch fails
+      setFormFields((prev) =>
+        prev.map((f) =>
+          f.name === "organizationId"
+            ? { ...f, value: orgId, locked: true }
+            : f
+        )
+      );
+    }
+  };
+
+  // Prefill organizationId from URL if provided (create mode only)
+  useEffect(() => {
+    if (jobId) return; // don't override edit mode
+    if (!organizationIdFromUrl) return;
+    if (hasPrefilledOrgRef.current) return;
+    if (formFields.length === 0) return;
+
+    hasPrefilledOrgRef.current = true;
+    fetchOrganizationName(organizationIdFromUrl);
+  }, [organizationIdFromUrl, jobId, formFields.length]);
 
   // Prefill from lead when coming via Leads -> Convert (create mode only)
   useEffect(() => {
@@ -612,7 +656,10 @@ export default function AddJob() {
       const mappedStatus = allowedStatus.includes(mappedStatusRaw)
         ? mappedStatusRaw
         : "Open";
-  
+
+      // Use organizationId from URL if available, otherwise use form value
+      const finalOrganizationId = organizationIdFromUrl || payload.organizationId || "";
+
       // 5) Final payload (✅ Use snake_case custom_fields like Organizations)
       const finalPayload: Record<string, any> = {
         ...payload,
@@ -620,6 +667,8 @@ export default function AddJob() {
         hiringManager: mappedHiringManager,
         jobDescription: mappedJobDescription,
         status: mappedStatus,
+        // Ensure organizationId is included (use URL param if available, otherwise form value)
+        organizationId: finalOrganizationId,
 
         // ✅ Use snake_case custom_fields to match Organizations pattern
         custom_fields: customFieldsForDB,
@@ -648,7 +697,13 @@ export default function AddJob() {
       }
   
       const resultId = isEditMode ? jobId : data.job?.id;
-      router.push(resultId ? `/dashboard/jobs/view?id=${resultId}` : "/dashboard/jobs");
+      // Navigate based on where we came from
+      // If we came from organization page, navigate back there
+      if (organizationIdFromUrl && !isEditMode) {
+        router.push(`/dashboard/organizations/view?id=${organizationIdFromUrl}`);
+      } else {
+        router.push(resultId ? `/dashboard/jobs/view?id=${resultId}` : "/dashboard/jobs");
+      }
     } catch (err) {
       console.error(`Error ${isEditMode ? "updating" : "creating"} job:`, err);
       setError(err instanceof Error ? err.message : "An error occurred");
@@ -757,6 +812,8 @@ export default function AddJob() {
                                                 placeholder={field.placeholder}
                                                 className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                                                 required={field.required}
+                                                readOnly={field.locked}
+                                                disabled={field.locked}
                                             />
                                         ) : field.type === 'number' ? (
                                             <input

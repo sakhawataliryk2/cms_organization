@@ -470,6 +470,124 @@ export default function PlacementView() {
     }
   };
 
+  const handleEmailTimeCardApprovers = async () => {
+    const extractEmails = (input: unknown): string[] => {
+      const emails: string[] = [];
+      const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
+
+      const collect = (val: unknown) => {
+        if (val === null || val === undefined) return;
+        if (typeof val === "string") {
+          const matches = val.match(emailRegex);
+          if (matches) emails.push(...matches);
+          return;
+        }
+        if (Array.isArray(val)) {
+          val.forEach(collect);
+          return;
+        }
+        if (typeof val === "object") {
+          // Try common email properties first
+          const anyVal = val as any;
+          if (typeof anyVal.email === "string") collect(anyVal.email);
+          if (typeof anyVal.email_address === "string") collect(anyVal.email_address);
+          // Walk values to find embedded emails
+          Object.values(anyVal).forEach(collect);
+        }
+      };
+
+      collect(input);
+
+      // Normalize + unique
+      const normalized = emails
+        .map((e) => e.trim())
+        .filter(Boolean)
+        .map((e) => e.toLowerCase());
+      return Array.from(new Set(normalized));
+    };
+
+    const extractTimeCardApproverEmailsFromCustomFields = (
+      customFields: Record<string, any> | undefined | null
+    ) => {
+      if (!customFields) return [];
+      const keys = Object.keys(customFields);
+      // Look for fields with "timecard", "time card", "approver", or "approval" in the name
+      const approverKeys = keys.filter((k) => {
+        const lowerKey = k.toLowerCase();
+        return (
+          lowerKey.includes("timecard") ||
+          lowerKey.includes("time card") ||
+          lowerKey.includes("approver") ||
+          lowerKey.includes("approval")
+        );
+      });
+      // Prefer timecard/approver-specific keys; if none exist, return empty to avoid pulling unrelated emails.
+      const targetKeys = approverKeys.length > 0 ? approverKeys : [];
+      const emails: string[] = [];
+      targetKeys.forEach((k) => {
+        emails.push(...extractEmails(customFields[k]));
+      });
+      return Array.from(new Set(emails));
+    };
+
+    // Try placement custom fields first (if present)
+    let emails = extractTimeCardApproverEmailsFromCustomFields(placement?.customFields);
+
+    // Fallback: pull from job custom_fields (common place for timecard approver contacts)
+    if (emails.length === 0 && placement?.jobId) {
+      try {
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        );
+        const res = await fetch(`/api/jobs/${placement.jobId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        const text = await res.text();
+        let data: any = null;
+        try {
+          data = JSON.parse(text);
+        } catch {
+          data = null;
+        }
+
+        if (res.ok) {
+          let jobCustom: any = data?.job?.custom_fields ?? data?.job?.customFields;
+          if (typeof jobCustom === "string") {
+            try {
+              jobCustom = JSON.parse(jobCustom);
+            } catch {
+              // ignore
+            }
+          }
+          if (jobCustom && typeof jobCustom === "object") {
+            emails = extractTimeCardApproverEmailsFromCustomFields(jobCustom);
+          }
+        }
+      } catch (e) {
+        // Non-blocking: if fallback fetch fails we'll just show "not available"
+      }
+    }
+
+    if (emails.length === 0) {
+      alert("Timecard approver email(s) not available");
+      return;
+    }
+
+    // Semicolon-separated for Outlook
+    const to = emails.join(";");
+    const popup = window.open("about:blank", "_blank");
+    const composeUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(
+      to
+    )}`;
+
+    if (popup) {
+      popup.location.href = composeUrl;
+    } else {
+      window.open(composeUrl, "_blank");
+    }
+  };
+
   const handleActionSelected = (action: string) => {
     if (action === "edit" && placementId) {
       router.push(`/dashboard/placements/add?id=${placementId}`);
@@ -484,6 +602,8 @@ export default function PlacementView() {
       handleEmailJobSeeker();
     } else if (action === "email-billing-contact") {
       handleEmailBillingContacts();
+    } else if (action === "email-time-card-approver") {
+      handleEmailTimeCardApprovers();
     } else if (action === "add-note") {
       setShowAddNote(true);
       setActiveTab("notes");

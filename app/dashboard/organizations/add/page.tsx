@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
+import { getCookie } from "cookies-next";
 import CustomFieldRenderer, {
   useCustomFields,
 } from "@/components/CustomFieldRenderer";
@@ -202,6 +203,43 @@ export default function AddOrganization() {
       hasFetchedRef.current = false;
     }
   }, [organizationId, customFieldsLoading, customFields.length, fetchOrganization]);
+
+  // Auto-populate Owner field in UI when customFields are loaded (create mode only)
+  useEffect(() => {
+    // Only in create mode (not edit mode)
+    if (isEditMode || organizationId) return;
+    // Wait for customFields to load
+    if (customFieldsLoading || customFields.length === 0) return;
+    
+    // Check if Owner field exists and is not already set
+    const ownerField = customFields.find(f => 
+      f.field_label === "Owner" || 
+      f.field_name === "Owner" ||
+      f.field_label?.toLowerCase().includes("owner")
+    );
+    
+    if (ownerField) {
+      const currentOwnerValue = customFieldValues[ownerField.field_name];
+      // Only set if Owner field is empty or not set
+      if (!currentOwnerValue || currentOwnerValue.trim() === "") {
+        try {
+          const userDataStr = getCookie("user");
+          if (userDataStr) {
+            const userData = JSON.parse(userDataStr as string);
+            if (userData.name) {
+              setCustomFieldValues(prev => ({
+                ...prev,
+                [ownerField.field_name]: userData.name
+              }));
+              console.log("Auto-populated Owner field in UI with current user:", userData.name);
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing user data from cookie:", e);
+        }
+      }
+    }
+  }, [customFields, customFieldsLoading, customFieldValues, isEditMode, organizationId, setCustomFieldValues]);
   
   // Removed console.logs from component level to prevent excessive logging on every render
   //console.log("Custom Fields:", customFields);
@@ -306,6 +344,22 @@ export default function AddOrganization() {
           customFieldsForDB[key] = value;
         }
       });
+
+      // Auto-populate Owner field if not set (only in create mode)
+      if (!isEditMode && (!customFieldsForDB["Owner"] || customFieldsForDB["Owner"].trim() === "")) {
+        try {
+          const userDataStr = getCookie("user");
+          if (userDataStr) {
+            const userData = JSON.parse(userDataStr as string);
+            if (userData.name) {
+              customFieldsForDB["Owner"] = userData.name;
+              console.log("Auto-populated Owner with current user:", userData.name);
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing user data from cookie:", e);
+        }
+      }
 
       const apiData: Record<string, any> = {
         name: name,
