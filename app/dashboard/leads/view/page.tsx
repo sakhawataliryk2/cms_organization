@@ -8,6 +8,10 @@ import ActionDropdown from "@/components/ActionDropdown";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import LoadingScreen from "@/components/LoadingScreen";
 import { FiTarget } from "react-icons/fi";
+import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+
+// Default header fields for Leads module - defined outside component to ensure stable reference
+const LEAD_DEFAULT_HEADER_FIELDS = ["phone", "email"];
 
 export default function LeadView() {
   const router = useRouter();
@@ -73,16 +77,16 @@ export default function LeadView() {
   // PENCIL-HEADER-MODAL (Lead Header Fields Row)
   // =========================
  
-  const entityKey = "lead";
-  const headerStorageKey = leadId ? `${entityKey}_header_fields_${leadId}` : "";
-
-  const [showHeaderFieldsModal, setShowHeaderFieldsModal] = useState(false);
-
-  // Ordered list of visible header fields
-  const [headerFields, setHeaderFields] = useState<string[]>([
-    "phone",
-    "email",
-  ]);
+  const {
+    headerFields,
+    setHeaderFields,
+    showHeaderFieldModal,
+    setShowHeaderFieldModal,
+    saveHeaderConfig,
+  } = useHeaderConfig({
+    entityType: "LEAD",
+    defaultFields: LEAD_DEFAULT_HEADER_FIELDS,
+  });
 
   // Standard fields allowed in header row
   const standardHeaderFieldDefs: Array<{
@@ -153,57 +157,30 @@ export default function LeadView() {
     return <span className="font-medium">{String(v)}</span>;
   };
 
-  const saveHeaderFields = (next: string[]) => {
-    setHeaderFields(next);
-    if (headerStorageKey) {
-      try {
-        localStorage.setItem(headerStorageKey, JSON.stringify(next));
-      } catch (e) {
-        console.error("Failed to save header fields", e);
-      }
-    }
-  };
-
   const toggleHeaderField = (fieldKey: string) => {
-    const exists = headerFields.includes(fieldKey);
-    const next = exists
-      ? headerFields.filter((k) => k !== fieldKey)
-      : [...headerFields, fieldKey];
-    saveHeaderFields(next);
+    setHeaderFields((prev) => {
+      if (prev.includes(fieldKey)) {
+        return prev.filter((k) => k !== fieldKey);
+      }
+      return [...prev, fieldKey];
+    });
   };
 
   const moveHeaderField = (fieldKey: string, dir: "up" | "down") => {
-    const idx = headerFields.indexOf(fieldKey);
-    if (idx === -1) return;
+    setHeaderFields((prev) => {
+      const idx = prev.indexOf(fieldKey);
+      if (idx === -1) return prev;
 
-    const targetIdx = dir === "up" ? idx - 1 : idx + 1;
-    if (targetIdx < 0 || targetIdx >= headerFields.length) return;
+      const targetIdx = dir === "up" ? idx - 1 : idx + 1;
+      if (targetIdx < 0 || targetIdx >= prev.length) return prev;
 
-    const next = [...headerFields];
-    const temp = next[idx];
-    next[idx] = next[targetIdx];
-    next[targetIdx] = temp;
-    saveHeaderFields(next);
+      const next = [...prev];
+      const temp = next[idx];
+      next[idx] = next[targetIdx];
+      next[targetIdx] = temp;
+      return next;
+    });
   };
-
-  // Load from localStorage when lead changes
-  useEffect(() => {
-    if (!leadId) return;
-
-    try {
-      const raw = localStorage.getItem(`${entityKey}_header_fields_${leadId}`);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) setHeaderFields(parsed);
-        return;
-      }
-    } catch (e) {
-      console.warn("Header fields localStorage parse failed", e);
-    }
-
-    
-    setHeaderFields(["phone", "email", "status"]);
-  }, [leadId]);
 
   // Fetch lead data when component mounts
   useEffect(() => {
@@ -1104,7 +1081,7 @@ export default function LeadView() {
           {/* RIGHT: existing actions */}
           <div className="flex items-center space-x-2 shrink-0">
             <button
-              onClick={() => setShowHeaderFieldsModal(true)}
+              onClick={() => setShowHeaderFieldModal(true)}
               className="p-1 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
               title="Customize header fields"
               aria-label="Customize header fields"
@@ -1851,13 +1828,13 @@ export default function LeadView() {
         </div>
       )}
 
-      {showHeaderFieldsModal && (
+      {showHeaderFieldModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">Customize Header Fields</h2>
               <button
-                onClick={() => setShowHeaderFieldsModal(false)}
+                onClick={() => setShowHeaderFieldModal(false)}
                 className="p-1 rounded hover:bg-gray-200"
               >
                 <span className="text-2xl font-bold">×</span>
@@ -1941,13 +1918,18 @@ export default function LeadView() {
                 <div className="flex justify-end gap-2 mt-4">
                   <button
                     className="px-4 py-2 border rounded hover:bg-gray-50"
-                    // onClick={() => setHeaderFields(DEFAULT_HEADER_FIELDS)}
+                    onClick={() => setHeaderFields(LEAD_DEFAULT_HEADER_FIELDS)}
                   >
                     Reset
                   </button>
                   <button
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                    onClick={() => setShowHeaderFieldsModal(false)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={async () => {
+                      const success = await saveHeaderConfig();
+                      if (success) {
+                        setShowHeaderFieldModal(false);
+                      }
+                    }}
                   >
                     Done
                   </button>

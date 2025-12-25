@@ -7,6 +7,10 @@ import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
 import { FiCheckSquare } from 'react-icons/fi';
 import { formatRecordId } from '@/lib/recordIdFormatter';
+import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+
+// Default header fields for Tasks module - defined outside component to ensure stable reference
+const TASK_DEFAULT_HEADER_FIELDS = ["dueDate", "assignedTo"];
 
 export default function TaskView() {
     const router = useRouter();
@@ -46,6 +50,125 @@ export default function TaskView() {
     const [isSavingTearsheet, setIsSavingTearsheet] = useState(false);
 
     const taskId = searchParams.get('id');
+
+    // =====================
+    // HEADER FIELDS (Top Row)
+    // =====================
+
+    const {
+        headerFields,
+        setHeaderFields,
+        showHeaderFieldModal,
+        setShowHeaderFieldModal,
+        saveHeaderConfig,
+        isSaving: isSavingHeaderConfig,
+    } = useHeaderConfig({
+        entityType: "TASK",
+        defaultFields: TASK_DEFAULT_HEADER_FIELDS,
+    });
+
+    // Build field list: Standard + Custom
+    const buildHeaderFieldCatalog = () => {
+        const standard = [
+            { key: "dueDate", label: "Due Date" },
+            { key: "assignedTo", label: "Assigned To" },
+            { key: "priority", label: "Priority" },
+            { key: "status", label: "Status" },
+            { key: "owner", label: "Owner" },
+            { key: "jobSeeker", label: "Job Seeker" },
+            { key: "hiringManager", label: "Hiring Manager" },
+            { key: "job", label: "Job" },
+            { key: "lead", label: "Lead" },
+            { key: "dateCreated", label: "Date Created" },
+            { key: "createdBy", label: "Created By" },
+        ];
+
+        const taskCustom = Object.keys(task?.customFields || {}).map((k) => ({
+            key: `custom:${k}`,
+            label: k,
+        }));
+
+        const merged = [...standard, ...taskCustom];
+        const seen = new Set<string>();
+        return merged.filter((x) => {
+            if (seen.has(x.key)) return false;
+            seen.add(x.key);
+            return true;
+        });
+    };
+
+    const headerFieldCatalog = buildHeaderFieldCatalog();
+
+    const getHeaderFieldValue = (key: string) => {
+        if (!task) return "-";
+
+        // custom fields
+        if (key.startsWith("custom:")) {
+            const rawKey = key.replace("custom:", "");
+            const val = task.customFields?.[rawKey];
+            return val === undefined || val === null || val === ""
+                ? "-"
+                : String(val);
+        }
+
+        // standard fields
+        switch (key) {
+            case "dueDate":
+                return task.dueDateTimeFormatted || "Not set";
+            case "assignedTo":
+                return task.assignedTo || "Not assigned";
+            case "priority":
+                return task.priority || "-";
+            case "status":
+                return task.status || "-";
+            case "owner":
+                return task.owner || "-";
+            case "jobSeeker":
+                return task.jobSeeker || "-";
+            case "hiringManager":
+                return task.hiringManager || "-";
+            case "job":
+                return task.job || "-";
+            case "lead":
+                return task.lead || "-";
+            case "dateCreated":
+                return task.dateCreated || "-";
+            case "createdBy":
+                return task.createdBy || "-";
+            default:
+                return "-";
+        }
+    };
+
+    const getHeaderFieldLabel = (key: string) => {
+        const found = headerFieldCatalog.find((f) => f.key === key);
+        return found?.label || key;
+    };
+
+    const toggleHeaderField = (fieldKey: string) => {
+        setHeaderFields((prev) => {
+            if (prev.includes(fieldKey)) {
+                return prev.filter((k) => k !== fieldKey);
+            }
+            return [...prev, fieldKey];
+        });
+    };
+
+    const moveHeaderField = (fieldKey: string, dir: "up" | "down") => {
+        setHeaderFields((prev) => {
+            const idx = prev.indexOf(fieldKey);
+            if (idx === -1) return prev;
+
+            const targetIdx = dir === "up" ? idx - 1 : idx + 1;
+            if (targetIdx < 0 || targetIdx >= prev.length) return prev;
+
+            const next = [...prev];
+            const temp = next[idx];
+            next[idx] = next[targetIdx];
+            next[targetIdx] = temp;
+            return next;
+        });
+    };
 
     // Fetch task when component mounts
     useEffect(() => {
@@ -677,41 +800,75 @@ export default function TaskView() {
                 </div>
             </div>
 
-            {/* Due Date and Assigned To section */}
-            <div className="bg-white border-b border-gray-300 p-3 flex justify-between items-center">
-                <div className="flex space-x-8">
-                    <div>
-                        <h2 className="text-gray-600">Due Date</h2>
-                        <p className="font-medium">{task.dueDateTimeFormatted || "Not set"}</p>
+            {/* Header Fields Row */}
+            <div className="bg-white border-b border-gray-300 px-3 py-2">
+                <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
+                    {/* LEFT: dynamic fields */}
+                    <div className="flex flex-wrap gap-x-10 gap-y-2 flex-1 min-w-0">
+                        {headerFields.length === 0 ? (
+                            <span className="text-sm text-gray-500">
+                                No header fields selected
+                            </span>
+                        ) : (
+                            headerFields.map((fk) => (
+                                <div key={fk} className="min-w-[140px]">
+                                    <div className="text-xs text-gray-500">
+                                        {getHeaderFieldLabel(fk)}
+                                    </div>
+                                    <div className="text-sm font-medium text-gray-900">
+                                        {getHeaderFieldValue(fk)}
+                                    </div>
+                                </div>
+                            ))
+                        )}
                     </div>
-                    <div>
-                        <h2 className="text-gray-600">Assigned To</h2>
-                        <p className="font-medium">{task.assignedTo || "Not assigned"}</p>
+
+                    {/* RIGHT: actions */}
+                    <div className="flex items-center space-x-2 shrink-0">
+                        <button
+                            onClick={() => setShowHeaderFieldModal(true)}
+                            className="p-1 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
+                            title="Customize header fields"
+                            aria-label="Customize header fields"
+                        >
+                            <svg
+                                stroke="currentColor"
+                                fill="none"
+                                strokeWidth="2"
+                                viewBox="0 0 24 24"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                height="16"
+                                width="16"
+                                xmlns="http://www.w3.org/2000/svg"
+                            >
+                                <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                            </svg>
+                        </button>
+
+                        <ActionDropdown label="Actions" options={actionOptions} />
+                        <button
+                            onClick={handlePrint}
+                            className="p-1 hover:bg-gray-200 rounded"
+                            aria-label="Print"
+                        >
+                            <Image src="/print.svg" alt="Print" width={20} height={20} />
+                        </button>
+                        <button
+                            className="p-1 hover:bg-gray-200 rounded"
+                            aria-label="Reload"
+                            onClick={() => taskId && fetchTask(taskId)}
+                        >
+                            <Image src="/reload.svg" alt="Reload" width={20} height={20} />
+                        </button>
+                        <button
+                            onClick={handleGoBack}
+                            className="p-1 hover:bg-gray-200 rounded"
+                            aria-label="Close"
+                        >
+                            <Image src="/x.svg" alt="Close" width={20} height={20} />
+                        </button>
                     </div>
-                </div>
-                <div className="flex items-center space-x-2">
-                    <ActionDropdown label="Actions" options={actionOptions} />
-                    <button
-                        onClick={handlePrint}
-                        className="p-1 hover:bg-gray-200 rounded"
-                        aria-label="Print"
-                    >
-                        <Image src="/print.svg" alt="Print" width={20} height={20} />
-                    </button>
-                    <button
-                        className="p-1 hover:bg-gray-200 rounded"
-                        aria-label="Reload"
-                        onClick={() => taskId && fetchTask(taskId)}
-                    >
-                        <Image src="/reload.svg" alt="Reload" width={20} height={20} />
-                    </button>
-                    <button
-                        onClick={handleGoBack}
-                        className="p-1 hover:bg-gray-200 rounded"
-                        aria-label="Close"
-                    >
-                        <Image src="/x.svg" alt="Close" width={20} height={20} />
-                    </button>
                 </div>
             </div>
 
@@ -1163,6 +1320,119 @@ export default function TaskView() {
                                 >
                                     SAVE
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Header Fields Customization Modal */}
+            {showHeaderFieldModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                        <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                            <h2 className="text-lg font-semibold">Customize Header Fields</h2>
+                            <button
+                                onClick={() => setShowHeaderFieldModal(false)}
+                                className="p-1 rounded hover:bg-gray-200"
+                            >
+                                <span className="text-2xl font-bold">×</span>
+                            </button>
+                        </div>
+
+                        <div className="p-6 grid grid-cols-2 gap-6">
+                            {/* Left: available fields */}
+                            <div>
+                                <h3 className="font-medium mb-3">Available Fields</h3>
+                                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                                    {headerFieldCatalog.map((f) => {
+                                        const checked = headerFields.includes(f.key);
+                                        return (
+                                            <label
+                                                key={f.key}
+                                                className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={checked}
+                                                    onChange={() => toggleHeaderField(f.key)}
+                                                    className="w-4 h-4"
+                                                />
+                                                <span className="text-sm text-gray-800">{f.label}</span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* Right: selected + reorder */}
+                            <div>
+                                <h3 className="font-medium mb-3">Header Order</h3>
+                                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                                    {headerFields.length === 0 ? (
+                                        <div className="text-sm text-gray-500 italic">
+                                            No fields selected
+                                        </div>
+                                    ) : (
+                                        headerFields.map((key, idx) => (
+                                            <div
+                                                key={key}
+                                                className="flex items-center justify-between p-2 border rounded"
+                                            >
+                                                <div>
+                                                    <div className="text-sm font-medium">
+                                                        {getHeaderFieldLabel(key)}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500">{key}</div>
+                                                </div>
+
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                                                        disabled={idx === 0}
+                                                        onClick={() => moveHeaderField(key, "up")}
+                                                    >
+                                                        ↑
+                                                    </button>
+                                                    <button
+                                                        className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                                                        disabled={idx === headerFields.length - 1}
+                                                        onClick={() => moveHeaderField(key, "down")}
+                                                    >
+                                                        ↓
+                                                    </button>
+                                                    <button
+                                                        className="px-2 py-1 border rounded text-xs hover:bg-gray-50 text-red-600"
+                                                        onClick={() => toggleHeaderField(key)}
+                                                    >
+                                                        Remove
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+
+                                <div className="flex justify-end gap-2 mt-4">
+                                    <button
+                                        className="px-4 py-2 border rounded hover:bg-gray-50"
+                                        onClick={() => setHeaderFields(TASK_DEFAULT_HEADER_FIELDS)}
+                                    >
+                                        Reset
+                                    </button>
+                                    <button
+                                        className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                                        onClick={async () => {
+                                            const success = await saveHeaderConfig();
+                                            if (success) {
+                                                setShowHeaderFieldModal(false);
+                                            }
+                                        }}
+                                        disabled={isSavingHeaderConfig}
+                                    >
+                                        {isSavingHeaderConfig ? "Saving..." : "Done"}
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>

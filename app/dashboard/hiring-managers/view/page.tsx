@@ -8,6 +8,10 @@ import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
 import { FiUserCheck } from 'react-icons/fi';
 import { formatRecordId } from '@/lib/recordIdFormatter';
+import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+
+// Default header fields for Hiring Managers module - defined outside component to ensure stable reference
+const HIRING_MANAGER_DEFAULT_HEADER_FIELDS = ["phone", "email"];
 
 export default function HiringManagerView() {
   const router = useRouter();
@@ -55,10 +59,18 @@ export default function HiringManagerView() {
   // =====================
   // HEADER FIELDS (Top Row)
   // =====================
-  const DEFAULT_HEADER_FIELDS = ["phone", "email"];
 
-  const [headerFields, setHeaderFields] = useState<string[]>([]);
-  const [showHeaderFieldModal, setShowHeaderFieldModal] = useState(false);
+  const {
+    headerFields,
+    setHeaderFields,
+    showHeaderFieldModal,
+    setShowHeaderFieldModal,
+    saveHeaderConfig,
+    isSaving: isSavingHeaderConfig,
+  } = useHeaderConfig({
+    entityType: "HIRING_MANAGER",
+    defaultFields: HIRING_MANAGER_DEFAULT_HEADER_FIELDS,
+  });
 
   const buildHeaderFieldCatalog = () => {
     const standard = [
@@ -123,30 +135,6 @@ export default function HiringManagerView() {
     }
   };
 
-  // ✅ Load header fields from localStorage (or defaults)
-  useEffect(() => {
-    if (!hiringManagerId) return;
-    const storageKey = `hiringManager_header_fields_${hiringManagerId}`;
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          setHeaderFields(parsed);
-          return;
-        }
-      } catch {}
-    }
-    // fallback to defaults
-    setHeaderFields(DEFAULT_HEADER_FIELDS);
-  }, [hiringManagerId]);
-
-  // ✅ Save header fields to localStorage
-  useEffect(() => {
-    if (!hiringManagerId) return;
-    const storageKey = `hiringManager_header_fields_${hiringManagerId}`;
-    localStorage.setItem(storageKey, JSON.stringify(headerFields));
-  }, [hiringManagerId, headerFields]);
 
   const isHeaderFieldEnabled = (key: string) => headerFields.includes(key);
   const toggleHeaderField = (key: string) => {
@@ -1960,16 +1948,22 @@ const fetchAvailableFields = async () => {
                 {/* Footer buttons */}
                 <div className="flex justify-end gap-2 mt-4">
                   <button
-                    onClick={() => setHeaderFields(DEFAULT_HEADER_FIELDS)}
-                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    onClick={() => setHeaderFields(HIRING_MANAGER_DEFAULT_HEADER_FIELDS)}
+                    className="px-4 py-2 border rounded hover:bg-gray-50"
                   >
                     Reset
                   </button>
                   <button
-                    onClick={() => setShowHeaderFieldModal(false)}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={async () => {
+                      const success = await saveHeaderConfig();
+                      if (success) {
+                        setShowHeaderFieldModal(false);
+                      }
+                    }}
+                    disabled={isSavingHeaderConfig}
                   >
-                    Done
+                    {isSavingHeaderConfig ? "Saving..." : "Done"}
                   </button>
                 </div>
               </div>
