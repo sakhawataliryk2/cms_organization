@@ -10,6 +10,7 @@ import { FaLinkedin, FaFacebookSquare } from "react-icons/fa";
 import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, type EmailMessage } from "@/lib/office365";
 import { FiUsers, FiUpload, FiFile, FiX } from "react-icons/fi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
+import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 
 export default function JobSeekerView() {
   const router = useRouter();
@@ -72,13 +73,6 @@ export default function JobSeekerView() {
     type: "standard" | "custom";
   };
 
-  type SavedHeaderField = {
-    key: string;
-    visible: boolean;
-  };
-
-  const HEADER_STORAGE_KEY = (id: string) => `jobSeeker_header_fields_${id}`;
-
   // Standard fields you want to allow in the header row
   const STANDARD_HEADER_FIELDS: HeaderFieldDef[] = [
     { key: "phone", label: "Phone", type: "standard" },
@@ -94,19 +88,25 @@ export default function JobSeekerView() {
     { key: "owner", label: "Owner", type: "standard" },
   ];
 
-  // default layout if nothing saved in localStorage
-  const DEFAULT_HEADER_FIELDS: SavedHeaderField[] = [
-    { key: "phone", visible: true },
-    { key: "email", visible: true },
-    { key: "status", visible: true },
-    { key: "currentOrganization", visible: true },
-    { key: "title", visible: true },
+  // default layout if nothing saved
+  const DEFAULT_HEADER_FIELDS = [
+    "phone",
+    "email",
+    "status",
+    "currentOrganization",
+    "title",
   ];
 
-  const [headerFields, setHeaderFields] = useState<SavedHeaderField[]>(
-    DEFAULT_HEADER_FIELDS
-  );
-  const [showHeaderFieldsModal, setShowHeaderFieldsModal] = useState(false);
+  const {
+    headerFields,
+    setHeaderFields,
+    showHeaderFieldModal,
+    setShowHeaderFieldModal,
+    saveHeaderConfig,
+  } = useHeaderConfig({
+    entityType: "JOB_SEEKER",
+    defaultFields: DEFAULT_HEADER_FIELDS,
+  });
 
   // Build definitions list (standard + custom from availableFields/jobSeeker.customFields)
   const headerFieldDefs: HeaderFieldDef[] = (() => {
@@ -140,62 +140,6 @@ export default function JobSeekerView() {
     return [...STANDARD_HEADER_FIELDS, ...customDefs];
   })();
 
-  // Load saved header fields (per record)
-  useEffect(() => {
-    if (!jobSeekerId) return;
-    try {
-      const raw = localStorage.getItem(HEADER_STORAGE_KEY(jobSeekerId));
-      if (!raw) {
-        setHeaderFields(DEFAULT_HEADER_FIELDS);
-        return;
-      }
-      const parsed = JSON.parse(raw) as SavedHeaderField[];
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        setHeaderFields(parsed);
-      } else {
-        setHeaderFields(DEFAULT_HEADER_FIELDS);
-      }
-    } catch {
-      setHeaderFields(DEFAULT_HEADER_FIELDS);
-    }
-  }, [jobSeekerId]);
-
-  // Ensure: any newly discovered defs (especially custom) exist in state (hidden by default)
-  useEffect(() => {
-    if (!jobSeekerId) return;
-    if (!headerFieldDefs.length) return;
-
-    setHeaderFields((prev) => {
-      const existing = new Set(prev.map((p) => p.key));
-      const missing = headerFieldDefs
-        .filter((d) => !existing.has(d.key))
-        .map((d) => ({ key: d.key, visible: false }));
-
-      if (!missing.length) return prev;
-      const next = [...prev, ...missing];
-
-      // persist
-      try {
-        localStorage.setItem(
-          HEADER_STORAGE_KEY(jobSeekerId),
-          JSON.stringify(next)
-        );
-      } catch {}
-      return next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobSeekerId, headerFieldDefs.length]);
-
-  const persistHeaderFields = (next: SavedHeaderField[]) => {
-    setHeaderFields(next);
-    if (!jobSeekerId) return;
-    try {
-      localStorage.setItem(
-        HEADER_STORAGE_KEY(jobSeekerId),
-        JSON.stringify(next)
-      );
-    } catch {}
-  };
 
   const getHeaderValue = (key: string): string => {
     if (!jobSeeker) return "-";
@@ -219,45 +163,35 @@ export default function JobSeekerView() {
   };
 
   const toggleHeaderField = (key: string) => {
-    const next = headerFields.map((f) =>
-      f.key === key ? { ...f, visible: !f.visible } : f
-    );
-    persistHeaderFields(next);
+    setHeaderFields((prev) => {
+      if (prev.includes(key)) {
+        return prev.filter((k) => k !== key);
+      } else {
+        return [...prev, key];
+      }
+    });
   };
 
-const moveHeaderField = (key: string, dir: "up" | "down") => {
-  const visible = headerFields.filter((f) => f.visible);
-  const visibleIdx = visible.findIndex((f) => f.key === key);
-  if (visibleIdx === -1) return;
+  const moveHeaderField = (key: string, dir: "up" | "down") => {
+    setHeaderFields((prev) => {
+      const idx = prev.indexOf(key);
+      if (idx === -1) return prev;
 
-  const swapVisibleIdx = dir === "up" ? visibleIdx - 1 : visibleIdx + 1;
-  if (swapVisibleIdx < 0 || swapVisibleIdx >= visible.length) return;
+      const newIdx = dir === "up" ? idx - 1 : idx + 1;
+      if (newIdx < 0 || newIdx >= prev.length) return prev;
 
-  const aKey = visible[visibleIdx].key;
-  const bKey = visible[swapVisibleIdx].key;
-
-  const idxA = headerFields.findIndex((f) => f.key === aKey);
-  const idxB = headerFields.findIndex((f) => f.key === bKey);
-
-  const next = [...headerFields];
-  [next[idxA], next[idxB]] = [next[idxB], next[idxA]];
-  persistHeaderFields(next);
-};
-
-
-  const addHeaderFieldIfMissing = (key: string) => {
-    if (headerFields.some((f) => f.key === key)) return;
-    const next = [...headerFields, { key, visible: true }];
-    persistHeaderFields(next);
+      const copy = [...prev];
+      [copy[idx], copy[newIdx]] = [copy[newIdx], copy[idx]];
+      return copy;
+    });
   };
 
   const removeHeaderField = (key: string) => {
-    const next = headerFields.filter((f) => f.key !== key);
-    persistHeaderFields(next);
+    setHeaderFields((prev) => prev.filter((k) => k !== key));
   };
 
   const resetHeaderFields = () => {
-    persistHeaderFields(DEFAULT_HEADER_FIELDS);
+    setHeaderFields(DEFAULT_HEADER_FIELDS);
   };
 
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
@@ -1416,21 +1350,19 @@ Best regards`;
         <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
           {/* LEFT: dynamic fields */}
           <div className="flex flex-wrap gap-x-10 gap-y-2 flex-1 min-w-0">
-            {headerFields.filter((f) => f.visible).length === 0 ? (
+            {headerFields.length === 0 ? (
               <span className="text-sm text-gray-500">
                 No header fields selected
               </span>
             ) : (
-              headerFields
-                .filter((f) => f.visible)
-                .map((f) => (
-                  <div key={f.key} className="min-w-[140px]">
+              headerFields.map((key) => (
+                  <div key={key} className="min-w-[140px]">
                     <div className="text-xs text-gray-500">
-                      {labelForHeaderKey(f.key)}
+                      {labelForHeaderKey(key)}
                     </div>
 
                     {/* Special case: email clickable */}
-                    {f.key === "email" && getHeaderValue("email") !== "-" ? (
+                    {key === "email" && getHeaderValue("email") !== "-" ? (
                       <a
                         href={`mailto:${getHeaderValue("email")}`}
                         className="text-sm font-medium text-blue-600 hover:underline"
@@ -1439,7 +1371,7 @@ Best regards`;
                       </a>
                     ) : (
                       <div className="text-sm font-medium text-gray-900">
-                        {getHeaderValue(f.key)}
+                        {getHeaderValue(key)}
                       </div>
                     )}
                   </div>
@@ -1450,7 +1382,7 @@ Best regards`;
           {/* RIGHT: pencil + existing actions */}
           <div className="flex items-center space-x-2 shrink-0">
             <button
-              onClick={() => setShowHeaderFieldsModal(true)}
+              onClick={() => setShowHeaderFieldModal(true)}
               className="p-2 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
               aria-label="Edit header fields"
               title="Edit header fields"
@@ -2731,7 +2663,7 @@ Best regards`;
       )}
       {/* Header Fields Modal (PENCIL-HEADER-MODAL) */}
       {/* Header Fields Modal (Organization-style UI) */}
-      {showHeaderFieldsModal && (
+      {showHeaderFieldModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded shadow-xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
             {/* Top bar */}
@@ -2746,7 +2678,7 @@ Best regards`;
               </div>
 
               <button
-                onClick={() => setShowHeaderFieldsModal(false)}
+                onClick={() => setShowHeaderFieldModal(false)}
                 className="p-1 rounded hover:bg-gray-200"
                 aria-label="Close"
               >
@@ -2762,9 +2694,7 @@ Best regards`;
 
                 <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
                   {headerFieldDefs.map((d) => {
-                    const checked = headerFields.some(
-                      (h) => h.key === d.key && h.visible
-                    );
+                    const checked = headerFields.includes(d.key);
 
                     return (
                       <label
@@ -2775,16 +2705,7 @@ Best regards`;
                           type="checkbox"
                           checked={checked}
                           onChange={() => {
-                            // If field isn't in selected list, add it (visible true).
-                            // If already present, toggle visibility.
-                            const exists = headerFields.some(
-                              (h) => h.key === d.key
-                            );
-                            if (!exists) {
-                              addHeaderFieldIfMissing(d.key); // adds visible: true
-                            } else {
-                              toggleHeaderField(d.key); // toggles visible
-                            }
+                            toggleHeaderField(d.key);
                           }}
                           className="w-4 h-4"
                         />
@@ -2803,54 +2724,52 @@ Best regards`;
                 <h3 className="font-medium mb-3">Header Order</h3>
 
                 <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
-                  {headerFields.filter((f) => f.visible).length === 0 ? (
+                  {headerFields.length === 0 ? (
                     <div className="text-sm text-gray-500 italic">
                       No fields selected
                     </div>
                   ) : (
-                    headerFields
-                      .filter((f) => f.visible)
-                      .map((f, idx, visibleList) => (
-                        <div
-                          key={f.key}
-                          className="flex items-center justify-between p-2 border rounded"
-                        >
-                          <div>
-                            <div className="text-sm font-medium">
-                              {labelForHeaderKey(f.key)}
-                            </div>
-                            <div className="text-xs text-gray-500">{f.key}</div>
+                    headerFields.map((key, idx) => (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between p-2 border rounded"
+                      >
+                        <div>
+                          <div className="text-sm font-medium">
+                            {labelForHeaderKey(key)}
                           </div>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
-                              disabled={idx === 0}
-                              onClick={() => moveHeaderField(f.key, "up")}
-                              title="Move up"
-                            >
-                              ↑
-                            </button>
-
-                            <button
-                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
-                              disabled={idx === visibleList.length - 1}
-                              onClick={() => moveHeaderField(f.key, "down")}
-                              title="Move down"
-                            >
-                              ↓
-                            </button>
-
-                            <button
-                              className="px-2 py-1 border rounded text-xs hover:bg-red-50 text-red-600"
-                              onClick={() => removeHeaderField(f.key)}
-                              title="Remove"
-                            >
-                              Remove
-                            </button>
-                          </div>
+                          <div className="text-xs text-gray-500">{key}</div>
                         </div>
-                      ))
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                            disabled={idx === 0}
+                            onClick={() => moveHeaderField(key, "up")}
+                            title="Move up"
+                          >
+                            ↑
+                          </button>
+
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                            disabled={idx === headerFields.length - 1}
+                            onClick={() => moveHeaderField(key, "down")}
+                            title="Move down"
+                          >
+                            ↓
+                          </button>
+
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-red-50 text-red-600"
+                            onClick={() => removeHeaderField(key)}
+                            title="Remove"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))
                   )}
                 </div>
 
@@ -2864,8 +2783,13 @@ Best regards`;
                   </button>
 
                   <button
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                    onClick={() => setShowHeaderFieldsModal(false)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={async () => {
+                      const success = await saveHeaderConfig();
+                      if (success) {
+                        setShowHeaderFieldModal(false);
+                      }
+                    }}
                   >
                     Done
                   </button>

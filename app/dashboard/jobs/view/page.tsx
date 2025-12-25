@@ -8,6 +8,10 @@ import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
 import { FiBriefcase } from "react-icons/fi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
+import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+
+// Move DEFAULT_HEADER_FIELDS outside component to ensure stable reference
+const DEFAULT_HEADER_FIELDS = ["phone", "website"];
 
 export default function JobView() {
   const router = useRouter();
@@ -71,16 +75,16 @@ export default function JobView() {
     hiringManager: ["name", "phone", "email"],
     recentNotes: ["notes"],
   });
-  const [showHeaderModal, setShowHeaderModal] = useState(false);
-  const [headerOrder, setHeaderOrder] = useState<string[]>([
-    "phone",
-    "website",
-  ]);
-  const [selectedHeaderFields, setSelectedHeaderFields] = useState<
-    Record<string, boolean>
-  >({
-    phone: true,
-    website: true,
+  
+  const {
+    headerFields,
+    setHeaderFields,
+    showHeaderFieldModal,
+    setShowHeaderFieldModal,
+    saveHeaderConfig,
+  } = useHeaderConfig({
+    entityType: "JOB",
+    defaultFields: DEFAULT_HEADER_FIELDS,
   });
 
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
@@ -490,7 +494,7 @@ export default function JobView() {
   };
 
   const moveHeaderField = (fromIndex: number, toIndex: number) => {
-    setHeaderOrder((prev) => {
+    setHeaderFields((prev) => {
       const copy = [...prev];
       const [moved] = copy.splice(fromIndex, 1);
       copy.splice(toIndex, 0, moved);
@@ -499,41 +503,16 @@ export default function JobView() {
   };
 
   const removeHeaderField = (key: string) => {
-    setSelectedHeaderFields((prev) => ({ ...prev, [key]: false }));
-    setHeaderOrder((prev) => prev.filter((k) => k !== key));
+    setHeaderFields((prev) => prev.filter((k) => k !== key));
   };
 
   const toggleHeaderField = (key: string, enabled: boolean) => {
-    setSelectedHeaderFields((prev) => ({ ...prev, [key]: enabled }));
-
-    setHeaderOrder((prev) => {
+    setHeaderFields((prev) => {
       if (enabled && !prev.includes(key)) return [...prev, key];
       if (!enabled) return prev.filter((k) => k !== key);
       return prev;
     });
   };
-
-  // When job loads, create keys for standard+custom
-  useEffect(() => {
-    if (!job) return;
-
-    const keys = getHeaderFieldOptions().map((f) => f.key);
-
-    setSelectedHeaderFields((prev) => {
-      const next = { ...prev };
-      keys.forEach((k) => {
-        if (next[k] === undefined) next[k] = false;
-      });
-      return next;
-    });
-
-    setHeaderOrder((prev) => {
-      const filtered = prev.filter((k) => keys.includes(k));
-      const defaults = ["phone", "website"].filter((k) => keys.includes(k));
-      return Array.from(new Set([...defaults, ...filtered]));
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [job]);
 
   // Handle edit panel click
   const handleEditPanel = (panelId: string) => {
@@ -1500,14 +1479,12 @@ export default function JobView() {
         <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
           {/* LEFT: dynamic fields */}
           <div className="flex flex-wrap gap-x-10 gap-y-2 flex-1 min-w-0">
-            {headerOrder.filter((k) => selectedHeaderFields[k]).length === 0 ? (
+            {headerFields.length === 0 ? (
               <span className="text-sm text-gray-500">
                 No header fields selected
               </span>
             ) : (
-              headerOrder
-                .filter((k) => selectedHeaderFields[k])
-                .map((key) => {
+              headerFields.map((key) => {
                   const field = getHeaderFieldOptions().find(
                     (f) => f.key === key
                   );
@@ -1557,7 +1534,7 @@ export default function JobView() {
           {/* RIGHT: actions */}
           <div className="flex items-center space-x-2 shrink-0">
             <button
-              onClick={() => setShowHeaderModal(true)}
+              onClick={() => setShowHeaderFieldModal(true)}
               className="p-1 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
               aria-label="Customize Header Fields"
               title="Customize Header Fields"
@@ -3022,13 +2999,13 @@ export default function JobView() {
           </div>
         </div>
       )}
-      {showHeaderModal && (
+      {showHeaderFieldModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4">
             <div className="flex justify-between items-center p-4 border-b">
               <h2 className="text-lg font-semibold">Customize Header Fields</h2>
               <button
-                onClick={() => setShowHeaderModal(false)}
+                onClick={() => setShowHeaderFieldModal(false)}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <span className="text-2xl font-bold">×</span>
@@ -3046,7 +3023,7 @@ export default function JobView() {
                     >
                       <input
                         type="checkbox"
-                        checked={!!selectedHeaderFields[f.key]}
+                        checked={headerFields.includes(f.key)}
                         onChange={(e) =>
                           toggleHeaderField(f.key, e.target.checked)
                         }
@@ -3061,9 +3038,7 @@ export default function JobView() {
               <div>
                 <h3 className="font-medium mb-3">Header Order</h3>
                 <div className="border rounded p-3 max-h-80 overflow-y-auto space-y-3">
-                  {headerOrder
-                    .filter((k) => selectedHeaderFields[k])
-                    .map((key, idx) => {
+                  {headerFields.map((key, idx) => {
                       const f = getHeaderFieldOptions().find(
                         (x) => x.key === key
                       );
@@ -3093,7 +3068,7 @@ export default function JobView() {
                               ↑
                             </button>
                             <button
-                              disabled={idx === headerOrder.length - 1}
+                              disabled={idx === headerFields.length - 1}
                               onClick={() => moveHeaderField(idx, idx + 1)}
                               className="px-2 py-1 border rounded disabled:opacity-40"
                             >
@@ -3116,16 +3091,20 @@ export default function JobView() {
             <div className="flex justify-end gap-2 p-4 border-t">
               <button
                 onClick={() => {
-                  setSelectedHeaderFields({ phone: true, website: true });
-                  setHeaderOrder(["phone", "website"]);
+                  setHeaderFields(DEFAULT_HEADER_FIELDS);
                 }}
                 className="px-4 py-2 border rounded"
               >
                 Reset
               </button>
               <button
-                onClick={() => setShowHeaderModal(false)}
-                className="px-4 py-2 bg-blue-500 text-white rounded"
+                onClick={async () => {
+                  const success = await saveHeaderConfig();
+                  if (success) {
+                    setShowHeaderFieldModal(false);
+                  }
+                }}
+                className="px-4 py-2 bg-blue-500 text-white rounded disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Done
               </button>

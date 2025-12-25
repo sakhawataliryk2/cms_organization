@@ -9,6 +9,10 @@ import PanelWithHeader from "@/components/PanelWithHeader";
 import LoadingScreen from "@/components/LoadingScreen";
 import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
+import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+
+// Default header fields for Organizations module - defined outside component to ensure stable reference
+const ORG_DEFAULT_HEADER_FIELDS = ["phone", "website"];
 
 export default function OrganizationView() {
   const router = useRouter();
@@ -104,12 +108,17 @@ export default function OrganizationView() {
   // =====================
   // HEADER FIELDS (Top Row)
   // =====================
-  const DEFAULT_HEADER_FIELDS = ["phone", "website"]; // start simple
 
-  const [headerFields, setHeaderFields] = useState<string[]>(
-    DEFAULT_HEADER_FIELDS
-  );
-  const [showHeaderFieldModal, setShowHeaderFieldModal] = useState(false);
+  const {
+    headerFields,
+    setHeaderFields,
+    showHeaderFieldModal,
+    setShowHeaderFieldModal,
+    saveHeaderConfig,
+  } = useHeaderConfig({
+    entityType: "ORGANIZATION",
+    defaultFields: ORG_DEFAULT_HEADER_FIELDS,
+  });
 
   // Build field list: Standard + Custom(from Modify page)
 const buildHeaderFieldCatalog = () => {
@@ -181,24 +190,6 @@ const buildHeaderFieldCatalog = () => {
     return found?.label || key;
   };
 
-  // Save per-organization in localStorage
-  useEffect(() => {
-    if (!organizationId) return;
-    const storageKey = `org_header_fields_${organizationId}`;
-    const saved = localStorage.getItem(storageKey);
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) setHeaderFields(parsed);
-      } catch {}
-    }
-  }, [organizationId]);
-
-  useEffect(() => {
-    if (!organizationId) return;
-    const storageKey = `org_header_fields_${organizationId}`;
-    localStorage.setItem(storageKey, JSON.stringify(headerFields));
-  }, [organizationId, headerFields]);
 
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
     contactInfo: ["name", "nickname", "phone", "address", "website"],
@@ -2791,13 +2782,18 @@ setAvailableFields(fields);
                 <div className="flex justify-end gap-2 mt-4">
                   <button
                     className="px-4 py-2 border rounded hover:bg-gray-50"
-                    onClick={() => setHeaderFields(DEFAULT_HEADER_FIELDS)}
+                    onClick={() => setHeaderFields(ORG_DEFAULT_HEADER_FIELDS)}
                   >
                     Reset
                   </button>
                   <button
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                    onClick={() => setShowHeaderFieldModal(false)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={async () => {
+                      const success = await saveHeaderConfig();
+                      if (success) {
+                        setShowHeaderFieldModal(false);
+                      }
+                    }}
                   >
                     Done
                   </button>
