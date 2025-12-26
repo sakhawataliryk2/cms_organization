@@ -256,9 +256,11 @@ export default function AddTask() {
             // Handle assignedTo - convert option text or user name to numeric user ID
             if (camelKey === "assignedTo") {
               let assignedToId: number | null = null;
-              
+
               // Strategy 1: Try to find user by exact name match
-              const userByName = activeUsers.find(u => u.name === value || u.email === value);
+              const userByName = activeUsers.find(
+                (u) => u.name === value || u.email === value
+              );
               if (userByName) {
                 assignedToId = Number(userByName.id);
               } else {
@@ -276,14 +278,16 @@ export default function AddTask() {
                   const parsed = Number(value);
                   if (!isNaN(parsed) && parsed > 0) {
                     // Verify it's a valid user ID
-                    const userById = activeUsers.find(u => Number(u.id) === parsed);
+                    const userById = activeUsers.find(
+                      (u) => Number(u.id) === parsed
+                    );
                     if (userById) {
                       assignedToId = parsed;
                     }
                   }
                 }
               }
-              
+
               // Only set assignedTo if we found a valid user ID
               if (assignedToId !== null) {
                 apiData.assignedTo = assignedToId;
@@ -309,26 +313,32 @@ export default function AddTask() {
       // Add customFields to API data (backend expects camelCase)
       apiData.customFields = customFieldsForDB;
 
-      // Map relatedEntity to appropriate ID field based on entity type
       if (relatedEntity && relatedEntityId) {
+        const rid = Number(relatedEntityId);
+
         switch (relatedEntity) {
           case "organization":
-            apiData.organizationId = Number(relatedEntityId);
+            apiData.organization_id = rid;
             break;
+
           case "job":
-            apiData.jobId = Number(relatedEntityId);
+            apiData.job_id = rid;
             break;
+
           case "lead":
-            apiData.leadId = Number(relatedEntityId);
+            apiData.lead_id = rid;
             break;
+
           case "hiring_manager":
-            apiData.hiringManagerId = Number(relatedEntityId);
+            apiData.hiring_manager_id = rid;
             break;
+
           case "job_seeker":
-            apiData.jobSeekerId = Number(relatedEntityId);
+            apiData.job_seeker_id = rid;
             break;
+
           case "placement":
-            apiData.placementId = Number(relatedEntityId);
+            apiData.placement_id = rid;
             break;
         }
       }
@@ -340,7 +350,10 @@ export default function AddTask() {
       console.log("Custom Fields to Send:", customFieldsToSend);
       console.log("Custom Fields for DB:", customFieldsForDB);
       console.log("Active Users:", activeUsers);
-      console.log("Final API Data (camelCase):", JSON.stringify(apiData, null, 2));
+      console.log(
+        "Final API Data (camelCase):",
+        JSON.stringify(apiData, null, 2)
+      );
 
       const formData = apiData;
 
