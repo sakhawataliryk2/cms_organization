@@ -3,11 +3,13 @@ import { useState, useEffect } from "react";
 interface UseHeaderConfigOptions {
   entityType: string;
   defaultFields: string[];
+  configType?: "header" | "columns"; 
 }
 
 export function useHeaderConfig({
   entityType,
   defaultFields,
+  configType = "header",
 }: UseHeaderConfigOptions) {
   const [headerFields, setHeaderFields] = useState<string[]>(defaultFields);
   const [showHeaderFieldModal, setShowHeaderFieldModal] = useState(false);
@@ -31,12 +33,12 @@ export function useHeaderConfig({
           return;
         }
 
-        const response = await fetch(
-          `/api/header-config?entityType=${encodeURIComponent(entityType)}`,
+       const response = await fetch(
+          `/api/header-config?entityType=${encodeURIComponent(
+            entityType
+          )}&configType=${encodeURIComponent(configType)}`, // NEW
           {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
+            headers: { Authorization: `Bearer ${token}` },
           }
         );
 
@@ -83,17 +85,19 @@ export function useHeaderConfig({
         return false;
       }
 
-      const response = await fetch(
-        `/api/header-config?entityType=${encodeURIComponent(entityType)}`,
-        {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ fields: headerFields }),
-        }
-      );
+     const response = await fetch(
+       `/api/header-config?entityType=${encodeURIComponent(
+         entityType
+       )}&configType=${encodeURIComponent(configType)}`, // NEW
+       {
+         method: "PUT",
+         headers: {
+           "Content-Type": "application/json",
+           Authorization: `Bearer ${token}`,
+         },
+         body: JSON.stringify({ fields: headerFields }),
+       }
+     );
 
       if (response.ok) {
         const data = await response.json();
