@@ -31,6 +31,8 @@ export default function AddTask() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const taskId = searchParams.get("id");
+  const relatedEntity = searchParams.get("relatedEntity");
+  const relatedEntityId = searchParams.get("relatedEntityId");
 
   const [isEditMode, setIsEditMode] = useState(!!taskId);
   const [isLoadingTask, setIsLoadingTask] = useState(!!taskId);
@@ -228,44 +230,74 @@ export default function AddTask() {
     setError(null);
 
     try {
-      // Get custom fields for submission
+      // Get custom fields for submission (returns object with field_label as keys)
       const customFieldsToSend = getCustomFieldsForSubmission();
 
-      // Map custom fields to API payload for standard fields
+      // Build API payload with camelCase keys as expected by backend
       const apiData: any = {};
 
-      // Map custom fields to standard fields if they exist
+      // Map custom field labels to camelCase API field names
       const fieldMappings: Record<string, string[]> = {
         title: ["Task Title", "Title"],
+        description: ["Description", "Task Description", "Details"],
+        owner: ["Owner"],
         status: ["Status", "Current Status", "Task Status"],
         priority: ["Priority", "Task Priority"],
-        assigned_to: ["Assigned To", "Assigned", "Assignee"],
-        due_date: ["Due Date", "Due"],
-        due_time: ["Due Time", "Time"],
-        description: ["Description", "Task Description", "Details"],
-        notes: ["Notes", "Task Notes"],
-        type: ["Type", "Task Type"],
-        related_entity: ["Related Entity", "Related"],
-        related_entity_id: ["Related Entity ID", "Related ID"],
+        assignedTo: ["Assigned To", "Assigned", "Assignee"],
+        dueDate: ["Due Date", "Due"],
+        dueTime: ["Due Time", "Time"],
       };
 
-      // Map custom field values to standard API fields
-      Object.entries(fieldMappings).forEach(([apiKey, labels]) => {
-        labels.forEach((label) => {
-          if (customFieldsToSend[label] !== undefined && customFieldsToSend[label] !== null && customFieldsToSend[label] !== "") {
-            // Handle special case for assigned_to - convert name to user ID if needed
-            if (apiKey === "assigned_to") {
-              const assignedName = customFieldsToSend[label];
-              const assignedUser = activeUsers.find(u => u.name === assignedName);
-              apiData[apiKey] = assignedUser ? assignedUser.id : assignedName;
+      // Extract standard fields from custom fields using camelCase keys
+      Object.entries(fieldMappings).forEach(([camelKey, labels]) => {
+        for (const label of labels) {
+          const value = customFieldsToSend[label];
+          if (value !== undefined && value !== null && value !== "") {
+            // Handle assignedTo - convert option text or user name to numeric user ID
+            if (camelKey === "assignedTo") {
+              let assignedToId: number | null = null;
+              
+              // Strategy 1: Try to find user by exact name match
+              const userByName = activeUsers.find(u => u.name === value || u.email === value);
+              if (userByName) {
+                assignedToId = Number(userByName.id);
+              } else {
+                // Strategy 2: If value looks like "Option 2", try to extract number and use as index
+                const optionMatch = value.match(/Option\s*(\d+)/i);
+                if (optionMatch && activeUsers.length > 0) {
+                  const optionNumber = parseInt(optionMatch[1]);
+                  // Option 1 = index 0, Option 2 = index 1, etc.
+                  const userIndex = optionNumber - 1;
+                  if (userIndex >= 0 && userIndex < activeUsers.length) {
+                    assignedToId = Number(activeUsers[userIndex].id);
+                  }
+                } else {
+                  // Strategy 3: Try to parse as number directly (if it's already a user ID)
+                  const parsed = Number(value);
+                  if (!isNaN(parsed) && parsed > 0) {
+                    // Verify it's a valid user ID
+                    const userById = activeUsers.find(u => Number(u.id) === parsed);
+                    if (userById) {
+                      assignedToId = parsed;
+                    }
+                  }
+                }
+              }
+              
+              // Only set assignedTo if we found a valid user ID
+              if (assignedToId !== null) {
+                apiData.assignedTo = assignedToId;
+              }
+              // If we couldn't map it, don't set assignedTo (let backend handle null)
             } else {
-              apiData[apiKey] = customFieldsToSend[label];
+              apiData[camelKey] = value;
             }
+            break; // Use first matching label
           }
-        });
+        }
       });
 
-      // Prepare custom_fields for database (clean object with all custom field values)
+      // Prepare customFields object for database (all custom field values)
       const customFieldsForDB: Record<string, any> = {};
       customFields.forEach((field) => {
         const value = customFieldValues[field.field_name];
@@ -274,24 +306,43 @@ export default function AddTask() {
         }
       });
 
-      // Add custom_fields to API data
-      apiData.custom_fields = customFieldsForDB;
+      // Add customFields to API data (backend expects camelCase)
+      apiData.customFields = customFieldsForDB;
 
+      // Map relatedEntity to appropriate ID field based on entity type
+      if (relatedEntity && relatedEntityId) {
+        switch (relatedEntity) {
+          case "organization":
+            apiData.organizationId = Number(relatedEntityId);
+            break;
+          case "job":
+            apiData.jobId = Number(relatedEntityId);
+            break;
+          case "lead":
+            apiData.leadId = Number(relatedEntityId);
+            break;
+          case "hiring_manager":
+            apiData.hiringManagerId = Number(relatedEntityId);
+            break;
+          case "job_seeker":
+            apiData.jobSeekerId = Number(relatedEntityId);
+            break;
+          case "placement":
+            apiData.placementId = Number(relatedEntityId);
+            break;
+        }
+      }
+
+      console.log("=== TASK SUBMISSION DEBUG ===");
+      console.log("Related Entity:", relatedEntity);
+      console.log("Related Entity ID:", relatedEntityId);
+      console.log("Custom Fields Values:", customFieldValues);
       console.log("Custom Fields to Send:", customFieldsToSend);
-      console.log("API Data:", apiData);
       console.log("Custom Fields for DB:", customFieldsForDB);
+      console.log("Active Users:", activeUsers);
+      console.log("Final API Data (camelCase):", JSON.stringify(apiData, null, 2));
 
       const formData = apiData;
-
-      console.log(
-        `${isEditMode ? "Updating" : "Creating"} task data:`,
-        formData
-      );
-
-      // Ensure custom_fields is always a plain object (not stringified)
-      if (formData.custom_fields && typeof formData.custom_fields === 'string') {
-        formData.custom_fields = JSON.parse(formData.custom_fields);
-      }
 
       const url = isEditMode ? `/api/tasks/${taskId}` : "/api/tasks";
       const method = isEditMode ? "PUT" : "POST";
