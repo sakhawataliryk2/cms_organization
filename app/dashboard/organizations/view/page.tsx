@@ -222,12 +222,12 @@ const buildHeaderFieldCatalog = () => {
     }
   }, [organizationId]);
 
-  // Refresh tasks when hiring managers are loaded (since tasks are filtered by hiring manager IDs)
+  // Refresh tasks when organization changes or when hiring managers/jobs are updated
   useEffect(() => {
-    if (organizationId && !isLoadingHiringManagers) {
+    if (organizationId && !isLoadingHiringManagers && !isLoadingJobs) {
       fetchTasks(organizationId);
     }
-  }, [hiringManagers, organizationId, isLoadingHiringManagers]);
+  }, [organizationId, isLoadingHiringManagers, isLoadingJobs]);
 
   // Fetch available fields after organization is loaded
   useEffect(() => {
@@ -637,8 +637,25 @@ setAvailableFields(fields);
     setTasksError(null);
 
     try {
-      // First, get organization's hiring manager IDs
-      const hiringManagerIds = hiringManagers.map((hm) => hm.id);
+      // Fetch hiring managers for this organization
+      const hiringManagersResponse = await fetch(`/api/hiring-managers`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+      
+      let hiringManagerIds: number[] = [];
+      if (hiringManagersResponse.ok) {
+        const hiringManagersData = await hiringManagersResponse.json();
+        const orgHiringManagers = (hiringManagersData.hiringManagers || []).filter(
+          (hm: any) =>
+            hm.organization_id?.toString() === organizationId.toString()
+        );
+        hiringManagerIds = orgHiringManagers.map((hm: any) => parseInt(hm.id));
+      }
 
       // Fetch jobs for this organization
       const jobsResponse = await fetch(`/api/jobs`, {
@@ -649,6 +666,7 @@ setAvailableFields(fields);
           )}`,
         },
       });
+      
       let jobIds: number[] = [];
       if (jobsResponse.ok) {
         const jobsData = await jobsResponse.json();
@@ -657,7 +675,7 @@ setAvailableFields(fields);
             (job: any) =>
               job.organization_id?.toString() === organizationId.toString()
           )
-          .map((job: any) => job.id);
+          .map((job: any) => parseInt(job.id));
       }
 
       // Fetch all tasks
@@ -679,7 +697,10 @@ setAvailableFields(fields);
 
       // Filter tasks:
       // 1. Not completed (status !== "Completed" and is_completed !== true)
-      // 2. Related to this organization (through hiring_manager_id, job_id, or organization_id)
+      // 2. Related to this organization by:
+      //    - task.organization_id == organizationId OR
+      //    - task.job_id belongs to a job under this organization OR
+      //    - task.hiring_manager_id belongs to a hiring manager under this organization
       const orgTasks = (tasksData.tasks || []).filter((task: any) => {
         // Exclude completed tasks
         if (task.is_completed === true || task.status === "Completed") {
@@ -687,12 +708,14 @@ setAvailableFields(fields);
         }
 
         // Check if task is related to this organization
+        const taskOrgId = task.organization_id?.toString();
+        const taskJobId = task.job_id ? parseInt(task.job_id) : null;
+        const taskHiringManagerId = task.hiring_manager_id ? parseInt(task.hiring_manager_id) : null;
+
         return (
-          (task.hiring_manager_id &&
-            hiringManagerIds.includes(parseInt(task.hiring_manager_id))) ||
-          (task.job_id && jobIds.includes(parseInt(task.job_id))) ||
-          (task.organization_id &&
-            task.organization_id.toString() === organizationId.toString())
+          (taskOrgId && taskOrgId === organizationId.toString()) ||
+          (taskJobId && jobIds.includes(taskJobId)) ||
+          (taskHiringManagerId && hiringManagerIds.includes(taskHiringManagerId))
         );
       });
 

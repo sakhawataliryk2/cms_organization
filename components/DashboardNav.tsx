@@ -275,6 +275,29 @@ export default function DashboardNav() {
       setIsAddMenuOpen(false);
     }
   };
+  const tabToPath: Record<ChromeTabId, string> = {
+    tbi: "/dashboard/tbi",
+    "from-office": "/dashboard/from-office",
+  };
+
+ const goToTab = (tabId: ChromeTabId) => {
+   setChromeTabsVisible(true);
+
+   setChromeTabs((prev) => {
+     const hasTbi = prev.some((t) => t.id === "tbi");
+     const hasFromOffice = prev.some((t) => t.id === "from-office");
+
+     let next = [...prev];
+     if (!hasTbi) next = [{ id: "tbi", label: "T.B.I" }, ...next];
+     if (!hasFromOffice)
+       next = [...next, { id: "from-office", label: "From Office" }];
+     return next;
+   });
+
+   setActiveChromeTabId(tabId);
+   router.push(tabToPath[tabId]); // ✅ IMPORTANT
+ };
+
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -413,22 +436,28 @@ export default function DashboardNav() {
     setActiveChromeTabId("tbi");
   };
 
-  const closeChromeTab = (tabId: ChromeTabId) => {
-    setChromeTabs((prev) => {
-      if (prev.length <= 1) return prev; // keep at least one tab open
-      const next = prev.filter((t) => t.id !== tabId);
-      // If we closed the active tab, activate the remaining tab
-      if (activeChromeTabId === tabId) {
-        const fallback = next[0]?.id || "tbi";
-        setActiveChromeTabId(fallback);
-      }
-      // If we somehow ended up with zero tabs (shouldn't), hide strip
-      if (next.length === 0) {
-        setChromeTabsVisible(false);
-      }
-      return next;
-    });
-  };
+ const closeChromeTab = (tabId: ChromeTabId) => {
+   setChromeTabs((prev) => {
+     const next = prev.filter((t) => t.id !== tabId);
+
+     // if no tabs left -> hide strip and optionally go somewhere
+     if (next.length === 0) {
+       setChromeTabsVisible(false);
+       // router.push("/dashboard"); // optional
+       return [];
+     }
+
+     // if we closed the active tab -> switch to another + route
+     if (activeChromeTabId === tabId) {
+       const fallbackId = next[0].id;
+       setActiveChromeTabId(fallbackId);
+       router.push(tabToPath[fallbackId]); // ✅ IMPORTANT
+     }
+
+     return next;
+   });
+ };
+
 
   // All navigation items without role-based filtering
   const navItems = [
@@ -494,51 +523,43 @@ export default function DashboardNav() {
       <div className="fixed top-0 left-0 right-0 z-10 pl-60 pr-4">
         {/* Chrome-style tab strip (shown after clicking T.B.I) */}
         {chromeTabsVisible && (
-          <div className="h-10 bg-slate-700 border-b border-slate-600 flex items-end">
-            <div className="flex items-end gap-1 px-3 overflow-x-auto w-full">
+          <div className="sd-tabs sd-tabs-bar">
+            <div className="sd-tabs-row">
               {chromeTabs.map((tab) => {
                 const isActive = tab.id === activeChromeTabId;
                 const isTbi = tab.id === "tbi";
 
-                const activeClasses = isTbi
-                  ? "bg-green-600 text-white border-green-700"
-                  : "bg-white text-slate-900 border-slate-300";
-                const inactiveClasses = "bg-slate-200 text-slate-700 border-slate-300 hover:bg-slate-100";
+                
+                const activeBg = isTbi ? "#16a34a" : "rgb(233 233 233)";
+                const activeText = isTbi ? "#ffffff" : "rgb(0, 0,0)";
 
                 return (
                   <button
                     key={tab.id}
                     type="button"
-                    onClick={() => setActiveChromeTabId(tab.id)}
-                    className={[
-                      "flex items-center gap-2 px-3 h-9 rounded-t-md border",
-                      "min-w-[160px] max-w-[240px] -mb-px",
-                      "transition-colors",
-                      isActive ? activeClasses : inactiveClasses,
-                    ].join(" ")}
-                    aria-selected={isActive}
-                    role="tab"
+                    className={`sd-tab-label ${isActive ? "is-active" : ""}`}
+                    style={
+                      isActive
+                        ? ({
+                            ["--tabs-selected-bg-color" as any]: activeBg,
+                            ["--tabs-selected-text-color" as any]: activeText,
+                          } as React.CSSProperties)
+                        : undefined
+                    }
+                    onClick={() => goToTab(tab.id)} 
                   >
-                    <span className="truncate text-sm font-semibold">{tab.label}</span>
-                    <button
-                      type="button"
+                    <div className="sd-tab-desc">{tab.label}</div>
+
+                    <span
+                      className="sd-tab-icon sd-tab-close"
                       onClick={(e) => {
                         e.stopPropagation();
                         closeChromeTab(tab.id);
                       }}
-                      className={[
-                        "ml-auto p-1 rounded",
-                        isActive
-                          ? isTbi
-                            ? "hover:bg-green-700"
-                            : "hover:bg-slate-200"
-                          : "hover:bg-slate-300",
-                      ].join(" ")}
-                      aria-label={`Close ${tab.label} tab`}
                       title="Close"
                     >
-                      <FiX size={14} className={isActive && isTbi ? "text-white" : "text-slate-600"} />
-                    </button>
+                      <FiX size={14} />
+                    </span>
                   </button>
                 );
               })}
@@ -548,305 +569,371 @@ export default function DashboardNav() {
 
         <div className="h-12 bg-slate-800 flex items-center justify-between">
           <div className="flex items-center ml-4 space-x-4">
-          {isSearchOpen ? (
-            <div className="relative" ref={searchRef}>
-              <form onSubmit={handleSearch} className="flex items-center">
-                <div className="relative flex items-center">
-                  <input
-                    type="text"
-                    placeholder="Search all records..."
-                    className="bg-slate-700 text-white pl-8 pr-8 py-1 rounded w-96 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    autoFocus
-                  />
-                  <FiSearch className="absolute left-2 text-gray-400" />
-                  <button
-                    type="button"
-                    className="absolute right-2 text-gray-400 hover:text-white"
-                    onClick={toggleSearch}
-                  >
-                    <FiX />
-                  </button>
-                </div>
-              </form>
-              
-              {/* Global search results dropdown */}
-              {searchQuery.trim() && searchQuery.trim().length >= 1 && (
-                <div className="absolute top-full left-0 mt-1 w-96 bg-slate-800 rounded shadow-lg z-30 max-h-96 overflow-y-auto">
-                  {isSearching ? (
-                    <div className="px-4 py-8 text-center">
-                      <div className="text-gray-400 text-sm">Searching...</div>
-                    </div>
-                  ) : searchResults && getTotalResultsCount(searchResults) > 0 ? (
-                    <div className="py-1">
-                      {/* Jobs */}
-                      {searchResults.jobs.length > 0 && (
-                        <div>
-                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
-                            Jobs ({searchResults.jobs.length})
-                          </div>
-                          {searchResults.jobs.slice(0, 5).map((job) => (
-                            <button
-                              key={`job-${job.id}`}
-                              type="button"
-                              className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
-                              onClick={() => navigateToResult('job', job.id)}
-                            >
-                              <span className="mr-3 text-blue-400">{getResultIcon('job')}</span>
-                              <span className="flex-1 text-left truncate">{getResultDisplayName(job, 'job')}</span>
-                            </button>
-                          ))}
-                          {searchResults.jobs.length > 5 && (
-                            <div className="px-4 py-2 text-xs text-gray-400 text-center">
-                              +{searchResults.jobs.length - 5} more jobs
-                            </div>
-                          )}
-                        </div>
-                      )}
+            {isSearchOpen ? (
+              <div className="relative" ref={searchRef}>
+                <form onSubmit={handleSearch} className="flex items-center">
+                  <div className="relative flex items-center">
+                    <input
+                      type="text"
+                      placeholder="Search all records..."
+                      className="bg-slate-700 text-white pl-8 pr-8 py-1 rounded w-96 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      autoFocus
+                    />
+                    <FiSearch className="absolute left-2 text-gray-400" />
+                    <button
+                      type="button"
+                      className="absolute right-2 text-gray-400 hover:text-white"
+                      onClick={toggleSearch}
+                    >
+                      <FiX />
+                    </button>
+                  </div>
+                </form>
 
-                      {/* Leads */}
-                      {searchResults.leads.length > 0 && (
-                        <div>
-                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
-                            Leads ({searchResults.leads.length})
-                          </div>
-                          {searchResults.leads.slice(0, 5).map((lead) => (
-                            <button
-                              key={`lead-${lead.id}`}
-                              type="button"
-                              className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
-                              onClick={() => navigateToResult('lead', lead.id)}
-                            >
-                              <span className="mr-3 text-orange-400">{getResultIcon('lead')}</span>
-                              <span className="flex-1 text-left truncate">{getResultDisplayName(lead, 'lead')}</span>
-                            </button>
-                          ))}
-                          {searchResults.leads.length > 5 && (
-                            <div className="px-4 py-2 text-xs text-gray-400 text-center">
-                              +{searchResults.leads.length - 5} more leads
-                            </div>
-                          )}
+                {/* Global search results dropdown */}
+                {searchQuery.trim() && searchQuery.trim().length >= 1 && (
+                  <div className="absolute top-full left-0 mt-1 w-96 bg-slate-800 rounded shadow-lg z-30 max-h-96 overflow-y-auto">
+                    {isSearching ? (
+                      <div className="px-4 py-8 text-center">
+                        <div className="text-gray-400 text-sm">
+                          Searching...
                         </div>
-                      )}
-
-                      {/* Job Seekers */}
-                      {searchResults.jobSeekers.length > 0 && (
-                        <div>
-                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
-                            Job Seekers ({searchResults.jobSeekers.length})
-                          </div>
-                          {searchResults.jobSeekers.slice(0, 5).map((js) => (
-                            <button
-                              key={`jobSeeker-${js.id}`}
-                              type="button"
-                              className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
-                              onClick={() => navigateToResult('jobSeeker', js.id)}
-                            >
-                              <span className="mr-3 text-green-400">{getResultIcon('jobSeeker')}</span>
-                              <span className="flex-1 text-left truncate">{getResultDisplayName(js, 'jobSeeker')}</span>
-                            </button>
-                          ))}
-                          {searchResults.jobSeekers.length > 5 && (
-                            <div className="px-4 py-2 text-xs text-gray-400 text-center">
-                              +{searchResults.jobSeekers.length - 5} more job seekers
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Organizations */}
-                      {searchResults.organizations.length > 0 && (
-                        <div>
-                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
-                            Organizations ({searchResults.organizations.length})
-                          </div>
-                          {searchResults.organizations.slice(0, 5).map((org) => (
-                            <button
-                              key={`organization-${org.id}`}
-                              type="button"
-                              className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
-                              onClick={() => navigateToResult('organization', org.id)}
-                            >
-                              <span className="mr-3 text-purple-400">{getResultIcon('organization')}</span>
-                              <span className="flex-1 text-left truncate">{getResultDisplayName(org, 'organization')}</span>
-                            </button>
-                          ))}
-                          {searchResults.organizations.length > 5 && (
-                            <div className="px-4 py-2 text-xs text-gray-400 text-center">
-                              +{searchResults.organizations.length - 5} more organizations
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Tasks */}
-                      {searchResults.tasks.length > 0 && (
-                        <div>
-                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
-                            Tasks ({searchResults.tasks.length})
-                          </div>
-                          {searchResults.tasks.slice(0, 5).map((task) => (
-                            <button
-                              key={`task-${task.id}`}
-                              type="button"
-                              className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
-                              onClick={() => navigateToResult('task', task.id)}
-                            >
-                              <span className="mr-3 text-cyan-400">{getResultIcon('task')}</span>
-                              <span className="flex-1 text-left truncate">{getResultDisplayName(task, 'task')}</span>
-                            </button>
-                          ))}
-                          {searchResults.tasks.length > 5 && (
-                            <div className="px-4 py-2 text-xs text-gray-400 text-center">
-                              +{searchResults.tasks.length - 5} more tasks
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Hiring Managers */}
-                      {searchResults.hiringManagers && searchResults.hiringManagers.length > 0 && (
-                        <div>
-                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
-                            Hiring Managers ({searchResults.hiringManagers.length})
-                          </div>
-                          {searchResults.hiringManagers.slice(0, 5).map((hm) => (
-                            <button
-                              key={`hiringManager-${hm.id}`}
-                              type="button"
-                              className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
-                              onClick={() => navigateToResult('hiringManager', hm.id)}
-                            >
-                              <span className="mr-3 text-yellow-400">{getResultIcon('hiringManager')}</span>
-                              <span className="flex-1 text-left truncate">{getResultDisplayName(hm, 'hiringManager')}</span>
-                            </button>
-                          ))}
-                          {searchResults.hiringManagers.length > 5 && (
-                            <div className="px-4 py-2 text-xs text-gray-400 text-center">
-                              +{searchResults.hiringManagers.length - 5} more hiring managers
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Placements */}
-                      {searchResults.placements && searchResults.placements.length > 0 && (
-                        <div>
-                          <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
-                            Placements ({searchResults.placements.length})
-                          </div>
-                          {searchResults.placements.slice(0, 5).map((placement) => (
-                            <button
-                              key={`placement-${placement.id}`}
-                              type="button"
-                              className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
-                              onClick={() => navigateToResult('placement', placement.id)}
-                            >
-                              <span className="mr-3 text-pink-400">{getResultIcon('placement')}</span>
-                              <span className="flex-1 text-left truncate">{getResultDisplayName(placement, 'placement')}</span>
-                            </button>
-                          ))}
-                          {searchResults.placements.length > 5 && (
-                            <div className="px-4 py-2 text-xs text-gray-400 text-center">
-                              +{searchResults.placements.length - 5} more placements
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  ) : searchQuery.trim().length >= 1 ? (
-                    <div className="px-4 py-8 text-center">
-                      <div className="text-gray-400 text-sm">
-                        {/* <p>No results found for</p>
-                        <p className="font-medium mt-1">"{searchQuery}"</p> */}
                       </div>
-                    </div>
-                  ) : null}
+                    ) : searchResults &&
+                      getTotalResultsCount(searchResults) > 0 ? (
+                      <div className="py-1">
+                        {/* Jobs */}
+                        {searchResults.jobs.length > 0 && (
+                          <div>
+                            <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                              Jobs ({searchResults.jobs.length})
+                            </div>
+                            {searchResults.jobs.slice(0, 5).map((job) => (
+                              <button
+                                key={`job-${job.id}`}
+                                type="button"
+                                className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                                onClick={() => navigateToResult("job", job.id)}
+                              >
+                                <span className="mr-3 text-blue-400">
+                                  {getResultIcon("job")}
+                                </span>
+                                <span className="flex-1 text-left truncate">
+                                  {getResultDisplayName(job, "job")}
+                                </span>
+                              </button>
+                            ))}
+                            {searchResults.jobs.length > 5 && (
+                              <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                                +{searchResults.jobs.length - 5} more jobs
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Leads */}
+                        {searchResults.leads.length > 0 && (
+                          <div>
+                            <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                              Leads ({searchResults.leads.length})
+                            </div>
+                            {searchResults.leads.slice(0, 5).map((lead) => (
+                              <button
+                                key={`lead-${lead.id}`}
+                                type="button"
+                                className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                                onClick={() =>
+                                  navigateToResult("lead", lead.id)
+                                }
+                              >
+                                <span className="mr-3 text-orange-400">
+                                  {getResultIcon("lead")}
+                                </span>
+                                <span className="flex-1 text-left truncate">
+                                  {getResultDisplayName(lead, "lead")}
+                                </span>
+                              </button>
+                            ))}
+                            {searchResults.leads.length > 5 && (
+                              <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                                +{searchResults.leads.length - 5} more leads
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Job Seekers */}
+                        {searchResults.jobSeekers.length > 0 && (
+                          <div>
+                            <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                              Job Seekers ({searchResults.jobSeekers.length})
+                            </div>
+                            {searchResults.jobSeekers.slice(0, 5).map((js) => (
+                              <button
+                                key={`jobSeeker-${js.id}`}
+                                type="button"
+                                className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                                onClick={() =>
+                                  navigateToResult("jobSeeker", js.id)
+                                }
+                              >
+                                <span className="mr-3 text-green-400">
+                                  {getResultIcon("jobSeeker")}
+                                </span>
+                                <span className="flex-1 text-left truncate">
+                                  {getResultDisplayName(js, "jobSeeker")}
+                                </span>
+                              </button>
+                            ))}
+                            {searchResults.jobSeekers.length > 5 && (
+                              <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                                +{searchResults.jobSeekers.length - 5} more job
+                                seekers
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Organizations */}
+                        {searchResults.organizations.length > 0 && (
+                          <div>
+                            <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                              Organizations (
+                              {searchResults.organizations.length})
+                            </div>
+                            {searchResults.organizations
+                              .slice(0, 5)
+                              .map((org) => (
+                                <button
+                                  key={`organization-${org.id}`}
+                                  type="button"
+                                  className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                                  onClick={() =>
+                                    navigateToResult("organization", org.id)
+                                  }
+                                >
+                                  <span className="mr-3 text-purple-400">
+                                    {getResultIcon("organization")}
+                                  </span>
+                                  <span className="flex-1 text-left truncate">
+                                    {getResultDisplayName(org, "organization")}
+                                  </span>
+                                </button>
+                              ))}
+                            {searchResults.organizations.length > 5 && (
+                              <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                                +{searchResults.organizations.length - 5} more
+                                organizations
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Tasks */}
+                        {searchResults.tasks.length > 0 && (
+                          <div>
+                            <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                              Tasks ({searchResults.tasks.length})
+                            </div>
+                            {searchResults.tasks.slice(0, 5).map((task) => (
+                              <button
+                                key={`task-${task.id}`}
+                                type="button"
+                                className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                                onClick={() =>
+                                  navigateToResult("task", task.id)
+                                }
+                              >
+                                <span className="mr-3 text-cyan-400">
+                                  {getResultIcon("task")}
+                                </span>
+                                <span className="flex-1 text-left truncate">
+                                  {getResultDisplayName(task, "task")}
+                                </span>
+                              </button>
+                            ))}
+                            {searchResults.tasks.length > 5 && (
+                              <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                                +{searchResults.tasks.length - 5} more tasks
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Hiring Managers */}
+                        {searchResults.hiringManagers &&
+                          searchResults.hiringManagers.length > 0 && (
+                            <div>
+                              <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                                Hiring Managers (
+                                {searchResults.hiringManagers.length})
+                              </div>
+                              {searchResults.hiringManagers
+                                .slice(0, 5)
+                                .map((hm) => (
+                                  <button
+                                    key={`hiringManager-${hm.id}`}
+                                    type="button"
+                                    className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                                    onClick={() =>
+                                      navigateToResult("hiringManager", hm.id)
+                                    }
+                                  >
+                                    <span className="mr-3 text-yellow-400">
+                                      {getResultIcon("hiringManager")}
+                                    </span>
+                                    <span className="flex-1 text-left truncate">
+                                      {getResultDisplayName(
+                                        hm,
+                                        "hiringManager"
+                                      )}
+                                    </span>
+                                  </button>
+                                ))}
+                              {searchResults.hiringManagers.length > 5 && (
+                                <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                                  +{searchResults.hiringManagers.length - 5}{" "}
+                                  more hiring managers
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                        {/* Placements */}
+                        {searchResults.placements &&
+                          searchResults.placements.length > 0 && (
+                            <div>
+                              <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                                Placements ({searchResults.placements.length})
+                              </div>
+                              {searchResults.placements
+                                .slice(0, 5)
+                                .map((placement) => (
+                                  <button
+                                    key={`placement-${placement.id}`}
+                                    type="button"
+                                    className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                                    onClick={() =>
+                                      navigateToResult(
+                                        "placement",
+                                        placement.id
+                                      )
+                                    }
+                                  >
+                                    <span className="mr-3 text-pink-400">
+                                      {getResultIcon("placement")}
+                                    </span>
+                                    <span className="flex-1 text-left truncate">
+                                      {getResultDisplayName(
+                                        placement,
+                                        "placement"
+                                      )}
+                                    </span>
+                                  </button>
+                                ))}
+                              {searchResults.placements.length > 5 && (
+                                <div className="px-4 py-2 text-xs text-gray-400 text-center">
+                                  +{searchResults.placements.length - 5} more
+                                  placements
+                                </div>
+                              )}
+                            </div>
+                          )}
+                      </div>
+                    ) : searchQuery.trim().length >= 1 ? (
+                      <div className="px-4 py-8 text-center">
+                        <div className="text-gray-400 text-sm">
+                          {/* <p>No results found for</p>
+                        <p className="font-medium mt-1">"{searchQuery}"</p> */}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                className="flex items-center text-gray-300 hover:text-white"
+                onClick={toggleSearch}
+              >
+                <FiSearch className="mr-1" />
+                Find
+              </button>
+            )}
+
+            {/* Add button with dropdown */}
+            <div className="relative" ref={addMenuRef}>
+              <button
+                className="flex items-center text-gray-300 hover:text-white"
+                onClick={toggleAddMenu}
+              >
+                <FiPlus className="mr-1" />
+                Add
+              </button>
+
+              {/* Add dropdown menu */}
+              {isAddMenuOpen && (
+                <div className="absolute top-full left-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-20">
+                  {addMenuItems.map((item) => (
+                    <button
+                      key={item.path}
+                      className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                      onClick={() => navigateToAddItem(item.path)}
+                    >
+                      <span className="mr-2">{item.icon}</span>
+                      {item.name}
+                    </button>
+                  ))}
                 </div>
               )}
             </div>
-          ) : (
-            <button
-              className="flex items-center text-gray-300 hover:text-white"
-              onClick={toggleSearch}
-            >
-              <FiSearch className="mr-1" />
-              Find
-            </button>
-          )}
-
-          {/* Add button with dropdown */}
-          <div className="relative" ref={addMenuRef}>
-            <button
-              className="flex items-center text-gray-300 hover:text-white"
-              onClick={toggleAddMenu}
-            >
-              <FiPlus className="mr-1" />
-              Add
-            </button>
-
-            {/* Add dropdown menu */}
-            {isAddMenuOpen && (
-              <div className="absolute top-full left-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-20">
-                {addMenuItems.map((item) => (
-                  <button
-                    key={item.path}
-                    className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
-                    onClick={() => navigateToAddItem(item.path)}
-                  >
-                    <span className="mr-2">{item.icon}</span>
-                    {item.name}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
-        </div>
 
-        {/* User profile with dropdown - Top Right */}
-        {user && (
-          <div className="relative" ref={userMenuRef}>
-            <button
-              className="flex items-center space-x-2 text-gray-300 hover:text-white"
-              onClick={toggleUserMenu}
-            >
-              <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center text-white font-medium text-sm">
-                {user.name.charAt(0)}
-              </div>
-              <span className="text-sm font-medium">{user.name}</span>
-            </button>
-
-            {/* User dropdown menu */}
-            {isUserMenuOpen && (
-              <div className="absolute top-full right-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-20">
-                <div className="px-4 py-2 border-b border-slate-700">
-                  <div className="font-medium text-white text-sm">
-                    {user.name}
-                  </div>
-                  <div className="text-xs text-gray-400 capitalize">
-                    {user.userType}
-                  </div>
+          {/* User profile with dropdown - Top Right */}
+          {user && (
+            <div className="relative" ref={userMenuRef}>
+              <button
+                className="flex items-center space-x-2 text-gray-300 hover:text-white"
+                onClick={toggleUserMenu}
+              >
+                <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center text-white font-medium text-sm">
+                  {user.name.charAt(0)}
                 </div>
-                <button
-                  className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
-                  onClick={handleCloseAllTabs}
-                >
-                  <FiX className="mr-2" size={16} />
-                  <span>Close All Tabs</span>
-                </button>
-                <button
-                  className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
-                  onClick={handleLogout}
-                  disabled={isLoggingOut}
-                >
-                  <FiLogOut className="mr-2" size={16} />
-                  <span>{isLoggingOut ? "Logging out..." : "Log Out"}</span>
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+                <span className="text-sm font-medium">{user.name}</span>
+              </button>
+
+              {/* User dropdown menu */}
+              {isUserMenuOpen && (
+                <div className="absolute top-full right-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-20">
+                  <div className="px-4 py-2 border-b border-slate-700">
+                    <div className="font-medium text-white text-sm">
+                      {user.name}
+                    </div>
+                    <div className="text-xs text-gray-400 capitalize">
+                      {user.userType}
+                    </div>
+                  </div>
+                  <button
+                    className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                    onClick={handleCloseAllTabs}
+                  >
+                    <FiX className="mr-2" size={16} />
+                    <span>Close All Tabs</span>
+                  </button>
+                  <button
+                    className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
+                    onClick={handleLogout}
+                    disabled={isLoggingOut}
+                  >
+                    <FiLogOut className="mr-2" size={16} />
+                    <span>{isLoggingOut ? "Logging out..." : "Log Out"}</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -892,23 +979,36 @@ export default function DashboardNav() {
         {/* T.B.I Button - Static, always visible */}
         <div className="p-4 border-t border-slate-700">
           <button
+            type="button"
             className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold text-2xl rounded transition-colors"
             onClick={() => {
-              // Show Chrome-style tabs (T.B.I active, From Office inactive)
+              // show tabs (if not visible)
               if (!chromeTabsVisible) {
                 openChromeTabs();
               } else {
-                // Ensure T.B.I is present and focus it
+                // Ensure both tabs exist
                 setChromeTabs((prev) => {
                   const hasTbi = prev.some((t) => t.id === "tbi");
-                  const hasFromOffice = prev.some((t) => t.id === "from-office");
-                  const next = [...prev];
-                  if (!hasTbi) next.unshift({ id: "tbi", label: "T.B.I" });
-                  if (!hasFromOffice) next.push({ id: "from-office", label: "From Office" });
+                  const hasFromOffice = prev.some(
+                    (t) => t.id === "from-office"
+                  );
+
+                  let next = [...prev];
+                  if (!hasTbi) next = [{ id: "tbi", label: "T.B.I" }, ...next];
+                  if (!hasFromOffice)
+                    next = [
+                      ...next,
+                      { id: "from-office", label: "From Office" },
+                    ];
+
                   return next;
                 });
+
                 setActiveChromeTabId("tbi");
               }
+
+              // go to TBI page
+              goToTab("tbi");
             }}
           >
             T.B.I
