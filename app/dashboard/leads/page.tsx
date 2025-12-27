@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
-
+import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 interface Lead {
   id: string;
   first_name: string;
@@ -46,6 +46,70 @@ export default function LeadList() {
     | null
   >(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+const DEFAULT_LEAD_COLUMNS: string[] = [
+  "name",
+  "status",
+  "email",
+  "phone",
+  "title",
+  "organization",
+  "owner",
+];
+
+// Column Catalog (field mappings like)
+const leadColumnsCatalog = [
+  { key: "name", label: "Name" },
+  { key: "status", label: "Status" },
+  { key: "email", label: "Email" },
+  { key: "phone", label: "Phone" },
+  { key: "title", label: "Title" },
+  { key: "organization", label: "Organization" },
+  { key: "owner", label: "Owner" },
+];
+
+const getColumnLabel = (key: string) =>
+  leadColumnsCatalog.find((c) => c.key === key)?.label ?? key;
+
+const getColumnValue = (lead: Lead, key: string) => {
+  const fullName =
+    lead.full_name ||
+    `${lead.last_name || ""}, ${lead.first_name || ""}`.trim();
+
+  switch (key) {
+    case "name":
+      return fullName || "N/A";
+    case "status":
+      return lead.status || "N/A";
+    case "email":
+      return lead.email || "N/A";
+    case "phone":
+      return lead.phone || "N/A";
+    case "title":
+      return lead.title || "N/A";
+    case "organization":
+      return lead.organization_name_from_org || "N/A";
+    case "owner":
+      return lead.owner || "N/A";
+    default:
+      return "—";
+  }
+};
+
+const [openActionId, setOpenActionId] = useState<string | null>(null);
+
+const {
+  columnFields, 
+  setColumnFields, 
+  showHeaderFieldModal: showColumnModal,
+  setShowHeaderFieldModal: setShowColumnModal,
+  saveHeaderConfig: saveColumnConfig,
+  isSaving: isSavingColumns,
+} = useHeaderConfig({
+  entityType: "LEAD",
+  configType: "columns",
+  defaultFields: DEFAULT_LEAD_COLUMNS,
+});
+
 
   // Fetch leads on component mount
   useEffect(() => {
@@ -294,6 +358,13 @@ export default function LeadList() {
             </button>
           )}
           <button
+            onClick={() => setShowColumnModal(true)}
+            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+          >
+            Columns
+          </button>
+
+          <button
             onClick={handleAddLead}
             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
           >
@@ -360,447 +431,177 @@ export default function LeadList() {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+              {/* Fixed checkbox header */}
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                  checked={selectAll}
+                  onChange={handleSelectAll}
+                />
+              </th>
+
+              {/* Fixed Actions header (LOCKED) */}
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Actions
+              </th>
+
+              {/* Fixed ID header */}
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <button
+                  onClick={() => handleSort("id")}
+                  className="hover:text-gray-700"
+                >
+                  ID
+                </button>
+              </th>
+
+              {/* Dynamic headers */}
+              {columnFields.map((key) => (
+                <th
+                  key={key}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                >
+                  {/* sorting optional: agar sorting chahiye to yahan button add kar dena */}
+                  {getColumnLabel(key)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+
+          <tbody className="bg-white divide-y divide-gray-200">
+            {sortedLeads.map((lead) => (
+              <tr
+                key={lead.id}
+                className="hover:bg-gray-50 cursor-pointer"
+                onClick={() => handleViewLead(lead.id)}
               >
-                <div className="flex items-center">
+                {/* Fixed checkbox */}
+                <td
+                  className="px-6 py-4 whitespace-nowrap"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <input
                     type="checkbox"
                     className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                    checked={selectAll}
-                    onChange={handleSelectAll}
+                    checked={selectedLeads.includes(lead.id)}
+                    onChange={() => {}}
+                    onClick={(e) => handleSelectLead(lead.id, e)}
                   />
-                </div>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                <button
-                  onClick={() => handleSort("id")}
-                  className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                </td>
+
+                {/* Fixed Actions (LOCKED dropdown) */}
+                <td
+                  className="px-6 py-4 whitespace-nowrap text-sm"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  <span>ID</span>
-                  <div className="flex flex-col">
-                    <svg
-                      className={`w-3 h-3 ${
-                        sortField === "id" && sortDirection === "asc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                    </svg>
-                    <svg
-                      className={`w-3 h-3 -mt-1 ${
-                        sortField === "id" && sortDirection === "desc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                    </svg>
-                  </div>
-                </button>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                <button
-                  onClick={() => handleSort("name")}
-                  className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
-                >
-                  <span>Name</span>
-                  <div className="flex flex-col">
-                    <svg
-                      className={`w-3 h-3 ${
-                        sortField === "name" && sortDirection === "asc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                    </svg>
-                    <svg
-                      className={`w-3 h-3 -mt-1 ${
-                        sortField === "name" && sortDirection === "desc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                    </svg>
-                  </div>
-                </button>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                <button
-                  onClick={() => handleSort("status")}
-                  className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
-                >
-                  <span>Status</span>
-                  <div className="flex flex-col">
-                    <svg
-                      className={`w-3 h-3 ${
-                        sortField === "status" && sortDirection === "asc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                    </svg>
-                    <svg
-                      className={`w-3 h-3 -mt-1 ${
-                        sortField === "status" && sortDirection === "desc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                    </svg>
-                  </div>
-                </button>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                <button
-                  onClick={() => handleSort("email")}
-                  className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
-                >
-                  <span>Email</span>
-                  <div className="flex flex-col">
-                    <svg
-                      className={`w-3 h-3 ${
-                        sortField === "email" && sortDirection === "asc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                    </svg>
-                    <svg
-                      className={`w-3 h-3 -mt-1 ${
-                        sortField === "email" && sortDirection === "desc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                    </svg>
-                  </div>
-                </button>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                <button
-                  onClick={() => handleSort("phone")}
-                  className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
-                >
-                  <span>Phone</span>
-                  <div className="flex flex-col">
-                    <svg
-                      className={`w-3 h-3 ${
-                        sortField === "phone" && sortDirection === "asc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                    </svg>
-                    <svg
-                      className={`w-3 h-3 -mt-1 ${
-                        sortField === "phone" && sortDirection === "desc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                    </svg>
-                  </div>
-                </button>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                <button
-                  onClick={() => handleSort("title")}
-                  className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
-                >
-                  <span>Title</span>
-                  <div className="flex flex-col">
-                    <svg
-                      className={`w-3 h-3 ${
-                        sortField === "title" && sortDirection === "asc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                    </svg>
-                    <svg
-                      className={`w-3 h-3 -mt-1 ${
-                        sortField === "title" && sortDirection === "desc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                    </svg>
-                  </div>
-                </button>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                <button
-                  onClick={() => handleSort("organization")}
-                  className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
-                >
-                  <span>Organization</span>
-                  <div className="flex flex-col">
-                    <svg
-                      className={`w-3 h-3 ${
-                        sortField === "organization" && sortDirection === "asc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                    </svg>
-                    <svg
-                      className={`w-3 h-3 -mt-1 ${
-                        sortField === "organization" &&
-                        sortDirection === "desc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                    </svg>
-                  </div>
-                </button>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                <button
-                  onClick={() => handleSort("owner")}
-                  className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
-                >
-                  <span>Owner</span>
-                  <div className="flex flex-col">
-                    <svg
-                      className={`w-3 h-3 ${
-                        sortField === "owner" && sortDirection === "asc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                    </svg>
-                    <svg
-                      className={`w-3 h-3 -mt-1 ${
-                        sortField === "owner" && sortDirection === "desc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                    </svg>
-                  </div>
-                </button>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {sortedLeads.length > 0 ? (
-              sortedLeads.map((lead) => {
-                const fullName =
-                  lead.full_name ||
-                  `${lead.last_name || ""}, ${lead.first_name || ""}`;
-                return (
-                  <tr
-                    key={lead.id}
-                    className="hover:bg-gray-50 cursor-pointer"
-                    onClick={() => handleViewLead(lead.id)}
+                  <div
+                    className="relative inline-block text-left"
+                    onClick={(e) => e.stopPropagation()}
                   >
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                          checked={selectedLeads.includes(lead.id)}
-                          onChange={() => {}}
-                          onClick={(e) => handleSelectLead(lead.id, e)}
-                        />
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        L {lead.id}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        {fullName}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span
-                        className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                          lead.status === "New Lead"
-                            ? "bg-blue-100 text-blue-800"
-                            : lead.status === "Contacted"
-                            ? "bg-yellow-100 text-yellow-800"
-                            : lead.status === "Qualified"
-                            ? "bg-green-100 text-green-800"
-                            : "bg-gray-100 text-gray-800"
-                        }`}
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenActionId((prev) =>
+                          prev === lead.id ? null : lead.id
+                        );
+                      }}
+                    >
+                      Actions ▾
+                    </button>
+
+                    {openActionId === lead.id && (
+                      <div
+                        className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
+                        onClick={(e) => e.stopPropagation()}
                       >
-                        {lead.status || "N/A"}
+                        <div className="flex flex-col">
+                          <button
+                            className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setOpenActionId(null);
+                              handleViewLead(lead.id);
+                            }}
+                          >
+                            View
+                          </button>
+
+                          <button
+                            className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-50"
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              setOpenActionId(null);
+
+                              if (
+                                !window.confirm(
+                                  "Are you sure you want to delete this lead?"
+                                )
+                              )
+                                return;
+
+                              setIsDeleting(true);
+                              try {
+                                const response = await fetch(
+                                  `/api/leads/${lead.id}`,
+                                  { method: "DELETE" }
+                                );
+                                if (!response.ok)
+                                  throw new Error("Failed to delete lead");
+                                await fetchLeads();
+                              } catch (err) {
+                                setDeleteError(
+                                  err instanceof Error
+                                    ? err.message
+                                    : "An error occurred"
+                                );
+                              } finally {
+                                setIsDeleting(false);
+                              }
+                            }}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </td>
+
+                {/* Fixed ID */}
+                <td className="px-6 py-4 whitespace-nowrap">
+                  <div className="text-sm font-medium text-gray-900">
+                    L {lead.id}
+                  </div>
+                </td>
+
+                {/* Dynamic cells */}
+                {columnFields.map((key) => (
+                  <td
+                    key={key}
+                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                  >
+                    {key === "status" ? (
+                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                        {getColumnValue(lead, key)}
                       </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    ) : key === "email" ? (
                       <a
                         href={`mailto:${lead.email}`}
                         className="text-blue-600 hover:underline"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        {lead.email || "N/A"}
+                        {getColumnValue(lead, key)}
                       </a>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {lead.phone || "N/A"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {lead.title || "N/A"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {lead.organization_name_from_org || "N/A"}
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      {lead.owner || "N/A"}
-                    </td>
-                    <td
-                      className="px-6 py-4 whitespace-nowrap text-sm"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        onClick={async (e) => {
-                          e.stopPropagation();
-                          if (
-                            window.confirm(
-                              "Are you sure you want to delete this lead?"
-                            )
-                          ) {
-                            setIsDeleting(true);
-                            try {
-                              const response = await fetch(
-                                `/api/leads/${lead.id}`,
-                                {
-                                  method: "DELETE",
-                                }
-                              );
-
-                              if (!response.ok) {
-                                throw new Error("Failed to delete lead");
-                              }
-
-                              await fetchLeads();
-                            } catch (err) {
-                              console.error("Error deleting lead:", err);
-                              setDeleteError(
-                                err instanceof Error
-                                  ? err.message
-                                  : "An error occurred"
-                              );
-                            } finally {
-                              setIsDeleting(false);
-                            }
-                          }
-                        }}
-                        className="text-blue-600 hover:text-blue-900 font-medium"
-                      >
-                        <svg
-                          xmlns="http://www.w3.org/2000/svg"
-                          className="h-5 w-5 mr-1"
-                          viewBox="0 0 20 20"
-                          fill="currentColor"
-                        >
-                          <path
-                            fillRule="evenodd"
-                            d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-                            clipRule="evenodd"
-                          />
-                        </svg>
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })
-            ) : (
-              <tr>
-                <td
-                  colSpan={10}
-                  className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
-                >
-                  {searchTerm
-                    ? "No leads found matching your search."
-                    : 'No leads found. Click "Add Lead" to create one.'}
-                </td>
+                    ) : (
+                      getColumnValue(lead, key)
+                    )}
+                  </td>
+                ))}
               </tr>
-            )}
+            ))}
           </tbody>
         </table>
       </div>
@@ -869,6 +670,143 @@ export default function LeadList() {
           )}
         </div>
       </div>
+      {showColumnModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Customize Columns</h2>
+              <button
+                onClick={() => setShowColumnModal(false)}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            <div className="p-6 grid grid-cols-2 gap-6">
+              {/* Available */}
+              <div>
+                <h3 className="font-medium mb-3">Available Columns</h3>
+                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                  {leadColumnsCatalog.map((c) => {
+                    const checked = columnFields.includes(c.key);
+                    return (
+                      <label
+                        key={c.key}
+                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setColumnFields((prev) => {
+                              if (prev.includes(c.key))
+                                return prev.filter((x) => x !== c.key);
+                              return [...prev, c.key];
+                            });
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-800">{c.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Order */}
+              <div>
+                <h3 className="font-medium mb-3">Column Order</h3>
+                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                  {columnFields.length === 0 ? (
+                    <div className="text-sm text-gray-500 italic">
+                      No columns selected
+                    </div>
+                  ) : (
+                    columnFields.map((key, idx) => (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between p-2 border rounded"
+                      >
+                        <div className="text-sm font-medium">
+                          {getColumnLabel(key)}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                            disabled={idx === 0}
+                            onClick={() => {
+                              setColumnFields((prev) => {
+                                const copy = [...prev];
+                                [copy[idx - 1], copy[idx]] = [
+                                  copy[idx],
+                                  copy[idx - 1],
+                                ];
+                                return copy;
+                              });
+                            }}
+                          >
+                            ↑
+                          </button>
+
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                            disabled={idx === columnFields.length - 1}
+                            onClick={() => {
+                              setColumnFields((prev) => {
+                                const copy = [...prev];
+                                [copy[idx], copy[idx + 1]] = [
+                                  copy[idx + 1],
+                                  copy[idx],
+                                ];
+                                return copy;
+                              });
+                            }}
+                          >
+                            ↓
+                          </button>
+
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50"
+                            onClick={() =>
+                              setColumnFields((prev) =>
+                                prev.filter((x) => x !== key)
+                              )
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-2 mt-4">
+                  <button
+                    className="px-4 py-2 border rounded hover:bg-gray-50"
+                    onClick={() => setColumnFields(DEFAULT_LEAD_COLUMNS)}
+                  >
+                    Reset
+                  </button>
+
+                  <button
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                    disabled={!!isSavingColumns}
+                    onClick={async () => {
+                      const ok = await saveColumnConfig(); // your hook method
+                      if (ok !== false) setShowColumnModal(false);
+                    }}
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

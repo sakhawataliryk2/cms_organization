@@ -3,20 +3,20 @@ import { useState, useEffect } from "react";
 interface UseHeaderConfigOptions {
   entityType: string;
   defaultFields: string[];
-  configType?: "header" | "columns"; 
+  configType: "header" | "columns"; 
 }
 
 export function useHeaderConfig({
   entityType,
   defaultFields,
-  configType = "header",
+  configType,
 }: UseHeaderConfigOptions) {
   const [headerFields, setHeaderFields] = useState<string[]>(defaultFields);
+  const [columnFields, setColumnFields] = useState<string[]>(defaultFields);
   const [showHeaderFieldModal, setShowHeaderFieldModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Load global header fields configuration from backend
   useEffect(() => {
     const fetchHeaderConfig = async () => {
       try {
@@ -27,52 +27,51 @@ export function useHeaderConfig({
           ?.split("=")[1];
 
         if (!token) {
-          console.warn("No token found, using default header fields");
-          setHeaderFields(defaultFields);
-          setIsLoading(false);
+          configType === "header"
+            ? setHeaderFields(defaultFields)
+            : setColumnFields(defaultFields);
           return;
         }
 
-       const response = await fetch(
-          `/api/header-config?entityType=${encodeURIComponent(
-            entityType
-          )}&configType=${encodeURIComponent(configType)}`, // NEW
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
+        const url = `/api/header-config?entityType=${encodeURIComponent(
+          entityType
+        )}&configType=${encodeURIComponent(configType)}`;
 
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && Array.isArray(data.headerFields)) {
-            if (data.headerFields.length > 0) {
-              setHeaderFields(data.headerFields);
-            } else {
-              // Empty config, use defaults
-              setHeaderFields(defaultFields);
-            }
-          } else {
-            console.error("Failed to fetch header config, using defaults");
-            setHeaderFields(defaultFields);
+        console.log("🔗 Fetching URL:", url);
+
+        const response = await fetch(url, {
+          headers: { Authorization: `Bearer ${token}` },
+          cache: "no-store",
+        });
+
+        const data = await response.json();
+        let receivedFields: string[] = defaultFields;
+
+        if (data?.success) {
+          if (configType === "header" && Array.isArray(data?.headerFields)) {
+            receivedFields = data.headerFields;
+          } else if (
+            configType === "columns" &&
+            Array.isArray(data?.listColumns)
+          ) {
+            receivedFields = data.listColumns;
           }
-        } else {
-          console.error("Failed to fetch header config, using defaults");
-          setHeaderFields(defaultFields);
         }
-      } catch (error) {
-        console.error("Error fetching header configuration:", error);
-        setHeaderFields(defaultFields);
+
+        configType === "header"
+          ? setHeaderFields(receivedFields)
+          : setColumnFields(receivedFields);
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchHeaderConfig();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entityType]); // Only depend on entityType, not defaultFields to avoid infinite loops
+  }, [entityType, configType]);
 
-  // Save header configuration to backend
   const saveHeaderConfig = async (): Promise<boolean> => {
+    if (!configType) return false;
+
     try {
       setIsSaving(true);
       const token = document.cookie
@@ -80,48 +79,29 @@ export function useHeaderConfig({
         .find((row) => row.startsWith("token="))
         ?.split("=")[1];
 
-      if (!token) {
-        alert("Authentication required. Please log in again.");
-        return false;
-      }
+      if (!token) return false;
 
-     const response = await fetch(
-       `/api/header-config?entityType=${encodeURIComponent(
-         entityType
-       )}&configType=${encodeURIComponent(configType)}`, // NEW
-       {
-         method: "PUT",
-         headers: {
-           "Content-Type": "application/json",
-           Authorization: `Bearer ${token}`,
-         },
-         body: JSON.stringify({ fields: headerFields }),
-       }
-     );
+      const fieldsToSave =
+        configType === "header" ? headerFields : columnFields;
 
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success) {
-          return true;
-        } else {
-          throw new Error(
-            data.message || "Failed to save header configuration"
-          );
-        }
-      } else {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(
-          errorData.message ||
-            `Failed to save: ${response.status} ${response.statusText}`
-        );
-      }
-    } catch (error) {
-      console.error("Error saving header configuration:", error);
-      alert(
-        `Failed to save header configuration: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
+      const url = `/api/header-config?entityType=${encodeURIComponent(
+        entityType
+      )}&configType=${encodeURIComponent(configType)}`;
+
+      console.log("🔗 Final URL:", url);
+
+      const response = await fetch(url, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ fields: fieldsToSave }),
+      });
+
+      const data = await response.json().catch(() => null);
+      return !!(response.ok && data?.success);
+    } catch {
       return false;
     } finally {
       setIsSaving(false);
@@ -131,6 +111,8 @@ export function useHeaderConfig({
   return {
     headerFields,
     setHeaderFields,
+    columnFields,
+    setColumnFields,
     showHeaderFieldModal,
     setShowHeaderFieldModal,
     isLoading,
@@ -138,4 +120,3 @@ export function useHeaderConfig({
     saveHeaderConfig,
   };
 }
-

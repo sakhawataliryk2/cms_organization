@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const entityType = searchParams.get("entityType");
+    const configType = searchParams.get("configType");
 
     if (!entityType) {
       return NextResponse.json(
@@ -23,8 +24,20 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    if (!configType || !["header", "columns"].includes(configType)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "configType is required (header | columns)",
+        },
+        { status: 400 }
+      );
+    }
+
     const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
-    const backendUrl = `${apiUrl}/api/header-config?entityType=${encodeURIComponent(entityType)}`;
+    const backendUrl = `${apiUrl}/api/header-config?entityType=${encodeURIComponent(
+      entityType
+    )}&configType=${encodeURIComponent(configType)}`;
 
     const response = await fetch(backendUrl, {
       method: "GET",
@@ -35,7 +48,6 @@ export async function GET(request: NextRequest) {
       cache: "no-store",
     });
 
-    // Check if response is JSON
     const contentType = response.headers.get("content-type");
     if (!contentType || !contentType.includes("application/json")) {
       const text = await response.text();
@@ -95,10 +107,21 @@ export async function PUT(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const entityType = searchParams.get("entityType");
+    const configType = searchParams.get("configType");
 
     if (!entityType) {
       return NextResponse.json(
         { success: false, message: "Entity type is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!configType || !["header", "columns"].includes(configType)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "configType is required (header | columns)",
+        },
         { status: 400 }
       );
     }
@@ -112,7 +135,6 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    // Support both 'headerFields' and 'fields' keys
     const headerFields = body.headerFields || body.fields || [];
 
     if (!Array.isArray(headerFields)) {
@@ -123,7 +145,9 @@ export async function PUT(request: NextRequest) {
     }
 
     const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
-    const backendUrl = `${apiUrl}/api/header-config?entityType=${encodeURIComponent(entityType)}`;
+    const backendUrl = `${apiUrl}/api/header-config?entityType=${encodeURIComponent(
+      entityType
+    )}&configType=${encodeURIComponent(configType)}`;
 
     const response = await fetch(backendUrl, {
       method: "PUT",
@@ -131,11 +155,10 @@ export async function PUT(request: NextRequest) {
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ headerFields }),
+      body: JSON.stringify({ fields: headerFields }),
       cache: "no-store",
     });
 
-    // Check if response is JSON
     const contentType = response.headers.get("content-type");
     if (!contentType || !contentType.includes("application/json")) {
       const text = await response.text();
@@ -182,7 +205,5 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  // POST is an alias for PUT (upsert)
   return PUT(request);
 }
-

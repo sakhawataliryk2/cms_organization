@@ -76,16 +76,18 @@ export default function JobView() {
     recentNotes: ["notes"],
   });
   
-  const {
-    headerFields,
-    setHeaderFields,
-    showHeaderFieldModal,
-    setShowHeaderFieldModal,
-    saveHeaderConfig,
-  } = useHeaderConfig({
-    entityType: "JOB",
-    defaultFields: DEFAULT_HEADER_FIELDS,
-  });
+const {
+  headerFields,
+  setHeaderFields,
+  showHeaderFieldModal,
+  setShowHeaderFieldModal,
+  saveHeaderConfig,
+} = useHeaderConfig({
+  entityType: "JOB",
+  configType: "header", 
+  defaultFields: DEFAULT_HEADER_FIELDS,
+});
+
 
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
@@ -995,8 +997,8 @@ export default function JobView() {
     }
 
     setIsSavingPlacement(true);
+
     try {
-      // Create placement via API
       const response = await fetch("/api/placements", {
         method: "POST",
         headers: {
@@ -1016,15 +1018,15 @@ export default function JobView() {
           )
             ? placementForm.internalEmailNotification.join(",")
             : placementForm.internalEmailNotification || null,
-          // Permanent Employment Info
+
           salary: placementForm.salary || null,
           placement_fee_percent: placementForm.placementFeePercent || null,
           placement_fee_flat: placementForm.placementFeeFlat || null,
           days_guaranteed: placementForm.daysGuaranteed || null,
-          // Contract Employment Info
+
           hours_per_day: placementForm.hoursPerDay || null,
           hours_of_operation: placementForm.hoursOfOperation || null,
-          // Pay Rate Information
+
           pay_rate: placementForm.payRate || null,
           pay_rate_checked: placementForm.payRateChecked,
           effective_date: placementForm.effectiveDate || null,
@@ -1033,40 +1035,33 @@ export default function JobView() {
         }),
       });
 
+      // ✅ Always parse JSON once
+      const data = await response.json().catch(() => null);
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to create placement");
+        throw new Error(data?.message || "Failed to create placement");
       }
 
-      // Success - close modal and reset form
-      alert("Placement created successfully!");
+      // ✅ Get placement ID from API response (support multiple shapes)
+      const placementId = data?.placement?.id || data?.placement_id || data?.id;
+
+      if (!placementId) {
+        // fallback: at least close modal + notify
+        alert("Placement created, but missing placement id in response.");
+        setShowAddPlacementModal(false);
+        return;
+      }
+
+      // ✅ Close modal (optional) and redirect to Modify page
       setShowAddPlacementModal(false);
-      setPlacementForm({
-        internalEmailNotification: [],
-        candidate: "",
-        status: "",
-        startDate: "",
-        salary: "",
-        placementFeePercent: "",
-        placementFeeFlat: "",
-        daysGuaranteed: "",
-        hoursPerDay: "",
-        hoursOfOperation: "",
-        payRate: "",
-        payRateChecked: false,
-        effectiveDate: "",
-        effectiveDateChecked: false,
-        overtimeExemption: "False",
-      });
-      setCandidateSearchQuery("");
-      setShowCandidateDropdown(false);
+
+      // IMPORTANT: update this route to your real placement modify page
+      router.push(`/dashboard/placements/add?id=${placementId}`);
+      // or if your modify route is edit:
+      // router.push(`/dashboard/placements/edit?id=${placementId}`);
     } catch (err) {
       console.error("Error creating placement:", err);
-      alert(
-        err instanceof Error
-          ? err.message
-          : "Failed to create placement. Please try again."
-      );
+      alert(err instanceof Error ? err.message : "Failed to create placement.");
     } finally {
       setIsSavingPlacement(false);
     }
@@ -1485,49 +1480,46 @@ export default function JobView() {
               </span>
             ) : (
               headerFields.map((key) => {
-                  const field = getHeaderFieldOptions().find(
-                    (f) => f.key === key
-                  );
-                  if (!field) return null;
+                const field = getHeaderFieldOptions().find(
+                  (f) => f.key === key
+                );
+                if (!field) return null;
 
-                  const value = field.getValue?.();
+                const value = field.getValue?.();
 
-                  if (key === "website") {
-                    const url = String(value || "");
-                    return (
-                      <div key={key} className="min-w-[140px]">
-                        <div className="text-xs text-gray-500">
-                          {field.label}
-                        </div>
-                        {url && url !== "Not provided" ? (
-                          <a
-                            href={
-                              url.startsWith("http") ? url : `https://${url}`
-                            }
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-sm font-medium text-blue-600 hover:underline"
-                          >
-                            {url}
-                          </a>
-                        ) : (
-                          <div className="text-sm font-medium text-gray-900">
-                            Not provided
-                          </div>
-                        )}
-                      </div>
-                    );
-                  }
-
+                if (key === "website") {
+                  const url = String(value || "");
                   return (
                     <div key={key} className="min-w-[140px]">
                       <div className="text-xs text-gray-500">{field.label}</div>
-                      <div className="text-sm font-medium text-gray-900">
-                        {value ? String(value) : "Not provided"}
-                      </div>
+
+                      {url && url !== "Not provided" ? (
+                        <a
+                          href={url.startsWith("http") ? url : `https://${url}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm font-medium text-blue-600 hover:underline"
+                        >
+                          {url}
+                        </a>
+                      ) : (
+                        <div className="text-sm font-medium text-gray-900">
+                          Not provided
+                        </div>
+                      )}
                     </div>
                   );
-                })
+                }
+
+                return (
+                  <div key={key} className="min-w-[140px]">
+                    <div className="text-xs text-gray-500">{field.label}</div>
+                    <div className="text-sm font-medium text-gray-900">
+                      {value ? String(value) : "Not provided"}
+                    </div>
+                  </div>
+                );
+              })
             )}
           </div>
 
@@ -3039,51 +3031,51 @@ export default function JobView() {
                 <h3 className="font-medium mb-3">Header Order</h3>
                 <div className="border rounded p-3 max-h-80 overflow-y-auto space-y-3">
                   {headerFields.map((key, idx) => {
-                      const f = getHeaderFieldOptions().find(
-                        (x) => x.key === key
-                      );
-                      if (!f) return null;
+                    const f = getHeaderFieldOptions().find(
+                      (x) => x.key === key
+                    );
+                    if (!f) return null;
 
-                      return (
-                        <div
-                          key={key}
-                          className="border rounded p-3 flex items-center justify-between"
-                        >
-                          <div>
-                            <div className="font-medium">{f.label}</div>
-                            <div className="text-xs text-gray-500">
-                              Value:{" "}
-                              {f.getValue?.()
-                                ? String(f.getValue?.())
-                                : "(Not provided)"}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              disabled={idx === 0}
-                              onClick={() => moveHeaderField(idx, idx - 1)}
-                              className="px-2 py-1 border rounded disabled:opacity-40"
-                            >
-                              ↑
-                            </button>
-                            <button
-                              disabled={idx === headerFields.length - 1}
-                              onClick={() => moveHeaderField(idx, idx + 1)}
-                              className="px-2 py-1 border rounded disabled:opacity-40"
-                            >
-                              ↓
-                            </button>
-                            <button
-                              onClick={() => removeHeaderField(key)}
-                              className="px-3 py-1 border rounded"
-                            >
-                              Remove
-                            </button>
+                    return (
+                      <div
+                        key={key}
+                        className="border rounded p-3 flex items-center justify-between"
+                      >
+                        <div>
+                          <div className="font-medium">{f.label}</div>
+                          <div className="text-xs text-gray-500">
+                            Value:{" "}
+                            {f.getValue?.()
+                              ? String(f.getValue?.())
+                              : "(Not provided)"}
                           </div>
                         </div>
-                      );
-                    })}
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            disabled={idx === 0}
+                            onClick={() => moveHeaderField(idx, idx - 1)}
+                            className="px-2 py-1 border rounded disabled:opacity-40"
+                          >
+                            ↑
+                          </button>
+                          <button
+                            disabled={idx === headerFields.length - 1}
+                            onClick={() => moveHeaderField(idx, idx + 1)}
+                            className="px-2 py-1 border rounded disabled:opacity-40"
+                          >
+                            ↓
+                          </button>
+                          <button
+                            onClick={() => removeHeaderField(key)}
+                            className="px-3 py-1 border rounded"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>

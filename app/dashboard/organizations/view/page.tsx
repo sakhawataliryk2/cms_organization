@@ -17,6 +17,8 @@ const ORG_DEFAULT_HEADER_FIELDS = ["phone", "website"];
 export default function OrganizationView() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const hmFilter = searchParams.get("hm");
+
   const organizationId = searchParams.get("id");
 
   const [organization, setOrganization] = useState<any>(null);
@@ -79,6 +81,9 @@ export default function OrganizationView() {
   const [jobs, setJobs] = useState<Array<any>>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
   const [jobsError, setJobsError] = useState<string | null>(null);
+const filteredJobs = hmFilter
+  ? jobs.filter((j: any) => norm(j.hiring_manager) === norm(hmFilter))
+  : jobs;
 
   // Tearsheet modal state
   const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
@@ -118,6 +123,7 @@ export default function OrganizationView() {
   } = useHeaderConfig({
     entityType: "ORGANIZATION",
     defaultFields: ORG_DEFAULT_HEADER_FIELDS,
+    configType: "header", // ✅ MUST ADD THIS
   });
 
   // Build field list: Standard + Custom(from Modify page)
@@ -459,6 +465,7 @@ setAvailableFields(fields);
       fetchHistory(id);
       fetchDocuments(id);
       fetchHiringManagers(id);
+      fetchJobs(id);
       fetchTasks(id);
     } catch (err) {
       console.error("Error fetching organization:", err);
@@ -471,6 +478,19 @@ setAvailableFields(fields);
       setIsLoading(false);
     }
   };
+  const norm = (s: string) =>
+    (s || "").toLowerCase().replace(/,/g, " ").replace(/\s+/g, " ").trim();
+
+  const hmName = (hm: any) =>
+    hm.full_name?.trim() ||
+    `${hm.first_name || ""} ${hm.last_name || ""}`.trim();
+
+  const jobsCountForHiringManager = (hm: any) => {
+    const name = norm(hmName(hm));
+    return (jobs || []).filter((j: any) => norm(j.hiring_manager) === name)
+      .length;
+  };
+
 
   // Fetch notes for organization
   const fetchNotes = async (id: string) => {
@@ -1597,11 +1617,9 @@ setAvailableFields(fields);
                 className="bg-green-500 text-white px-4 py-1 rounded-full shadow font-medium"
                 onClick={() => setActiveTab("jobs")}
               >
-                {isLoadingJobs ? (
-                  "Loading..."
-                ) : (
-                  `${jobs.length} ${jobs.length === 1 ? "Job" : "Jobs"}`
-                )}
+                {isLoadingJobs
+                  ? "Loading..."
+                  : `${jobs.length} ${jobs.length === 1 ? "Job" : "Jobs"}`}
               </button>
             );
           }
@@ -1946,6 +1964,7 @@ setAvailableFields(fields);
                       <th className="text-left p-3 font-medium">Title</th>
                       <th className="text-left p-3 font-medium">Email</th>
                       <th className="text-left p-3 font-medium">Phone</th>
+                      <th className="text-left p-3 font-medium">Jobs</th>
                       <th className="text-left p-3 font-medium">Status</th>
                       <th className="text-left p-3 font-medium">Actions</th>
                     </tr>
@@ -1976,6 +1995,21 @@ setAvailableFields(fields);
                         </td>
                         <td className="p-3">{hm.phone || "-"}</td>
                         <td className="p-3">
+                          <button
+                            className="px-2 py-1 rounded text-xs bg-green-100 text-green-800 hover:bg-green-200"
+                            onClick={() => {
+                              // Jobs tab pe jump + filter param
+                              const name = encodeURIComponent(hmName(hm));
+                              router.push(
+                                `/dashboard/organizations/view?id=${organizationId}&tab=jobs&hm=${name}`
+                              );
+                              setActiveTab("summary"); // optional
+                            }}
+                          >
+                            {jobsCountForHiringManager(hm)} Jobs
+                          </button>
+                        </td>
+                        <td className="p-3">
                           <span
                             className={`px-2 py-1 rounded text-xs ${
                               hm.status === "Active"
@@ -1986,6 +2020,7 @@ setAvailableFields(fields);
                             {hm.status || "Active"}
                           </span>
                         </td>
+
                         <td className="p-3">
                           <button
                             onClick={() =>
@@ -2230,7 +2265,9 @@ setAvailableFields(fields);
                       <th className="text-left p-3 font-medium">Category</th>
                       <th className="text-left p-3 font-medium">Status</th>
                       <th className="text-left p-3 font-medium">Location</th>
-                      <th className="text-left p-3 font-medium">Employment Type</th>
+                      <th className="text-left p-3 font-medium">
+                        Employment Type
+                      </th>
                       <th className="text-left p-3 font-medium">Actions</th>
                     </tr>
                   </thead>

@@ -41,18 +41,18 @@ export default function OrganizationList() {
     "placements_count",
   ];
 
-  const {
-    headerFields: columnFields,
-    setHeaderFields: setColumnFields,
-    showHeaderFieldModal: showColumnModal,
-    setShowHeaderFieldModal: setShowColumnModal,
-    saveHeaderConfig: saveColumnConfig,
-    isSaving: isSavingColumns,
-  } = useHeaderConfig({
-    entityType: "ORGANIZATION",
-    defaultFields: ORG_DEFAULT_COLUMNS,
-    configType: "columns", 
-  });
+const {
+  columnFields,
+  setColumnFields,
+  showHeaderFieldModal: showColumnModal,
+  setShowHeaderFieldModal: setShowColumnModal,
+  saveHeaderConfig: saveColumnConfig,
+  isSaving: isSavingColumns,
+} = useHeaderConfig({
+  entityType: "ORGANIZATION",
+  defaultFields: ORG_DEFAULT_COLUMNS,
+  configType: "columns",
+});
 
   const [searchTerm, setSearchTerm] = useState("");
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -343,6 +343,12 @@ export default function OrganizationList() {
             </button>
           )}
           <button
+            onClick={() => setShowColumnModal(true)}
+            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+          >
+            Columns
+          </button>
+          <button
             onClick={handleAddOrganization}
             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
           >
@@ -377,9 +383,8 @@ export default function OrganizationList() {
         </div>
       )}
 
-      {/* Search and Filter */}
       <div className="p-4 border-b border-gray-200 flex items-center gap-3">
-        <div className="relative flex-1 max-w-md">
+        <div className="relative w-full">
           <input
             type="text"
             placeholder="Search organizations..."
@@ -402,15 +407,6 @@ export default function OrganizationList() {
             </svg>
           </div>
         </div>
-
-        {/* Columns Dropdown Button */}
-        <button
-          type="button"
-          onClick={() => setShowColumnModal(true)}
-          className="px-3 py-2 border border-gray-300 rounded text-sm hover:bg-gray-50"
-        >
-          Columns
-        </button>
       </div>
 
       <div className="overflow-x-auto">
@@ -513,8 +509,6 @@ export default function OrganizationList() {
                           >
                             View
                           </button>
-
-                        
 
                           <button
                             className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-50"
