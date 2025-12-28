@@ -123,7 +123,7 @@ const filteredJobs = hmFilter
   } = useHeaderConfig({
     entityType: "ORGANIZATION",
     defaultFields: ORG_DEFAULT_HEADER_FIELDS,
-    configType: "header", // ✅ MUST ADD THIS
+    configType: "header", 
   });
 
   // Build field list: Standard + Custom(from Modify page)

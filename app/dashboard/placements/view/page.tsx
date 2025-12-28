@@ -70,6 +70,7 @@ export default function PlacementView() {
     isSaving: isSavingHeaderConfig,
   } = useHeaderConfig({
     entityType: "PLACEMENT",
+    configType: "header",
     defaultFields: PLACEMENT_DEFAULT_HEADER_FIELDS,
   });
 

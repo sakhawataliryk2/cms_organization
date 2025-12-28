@@ -56,15 +56,16 @@ export default function TaskView() {
     // =====================
 
     const {
-        headerFields,
-        setHeaderFields,
-        showHeaderFieldModal,
-        setShowHeaderFieldModal,
-        saveHeaderConfig,
-        isSaving: isSavingHeaderConfig,
+      headerFields,
+      setHeaderFields,
+      showHeaderFieldModal,
+      setShowHeaderFieldModal,
+      saveHeaderConfig,
+      isSaving: isSavingHeaderConfig,
     } = useHeaderConfig({
-        entityType: "TASK",
-        defaultFields: TASK_DEFAULT_HEADER_FIELDS,
+      entityType: "TASK",
+      configType: "header",
+      defaultFields: TASK_DEFAULT_HEADER_FIELDS,
     });
 
     // Build field list: Standard + Custom

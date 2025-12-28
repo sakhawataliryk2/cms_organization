@@ -85,6 +85,7 @@ export default function LeadView() {
     saveHeaderConfig,
   } = useHeaderConfig({
     entityType: "LEAD",
+    configType: "header",
     defaultFields: LEAD_DEFAULT_HEADER_FIELDS,
   });
 

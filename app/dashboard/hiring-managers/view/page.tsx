@@ -69,6 +69,7 @@ export default function HiringManagerView() {
     isSaving: isSavingHeaderConfig,
   } = useHeaderConfig({
     entityType: "HIRING_MANAGER",
+    configType: "header",
     defaultFields: HIRING_MANAGER_DEFAULT_HEADER_FIELDS,
   });
 
