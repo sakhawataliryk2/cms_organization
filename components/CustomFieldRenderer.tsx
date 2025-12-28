@@ -338,7 +338,7 @@ export default function CustomFieldRenderer({
           onClick={(e) => {
             // Only call showPicker on click (user gesture), not on focus
             const target = e.target as HTMLInputElement;
-            if (target.showPicker && typeof target.showPicker === 'function') {
+            if (target.showPicker && typeof target.showPicker === "function") {
               try {
                 target.showPicker();
               } catch (error) {
@@ -349,18 +349,18 @@ export default function CustomFieldRenderer({
           }}
         />
       );
-      case "datetime":
-        const inputType =
-  field.field_type === "datetime" ? "datetime-local" : field.field_type;
-  console.log("FIELD TYPE:", field.field_type);
-  return (
-    <input
-      {...fieldProps}
-      type={inputType}
-      value={value ? value.slice(0, 16) : ""}
-      onChange={(e) => onChange(field.field_name, e.target.value)}
-    />
-  );
+    case "datetime":
+      const inputType =
+        field.field_type === "datetime" ? "datetime-local" : field.field_type;
+      console.log("FIELD TYPE:", field.field_type);
+      return (
+        <input
+          {...fieldProps}
+          type={inputType}
+          value={value ? value.slice(0, 16) : ""}
+          onChange={(e) => onChange(field.field_name, e.target.value)}
+        />
+      );
     // case "datetime":
     //   // Handle datetime-local input for Date and Time fields
     //   // Convert ISO timestamp to datetime-local format (YYYY-MM-DDTHH:mm)
@@ -438,6 +438,47 @@ export default function CustomFieldRenderer({
           title="Phone number will be automatically formatted as (000) 000-0000"
         />
       );
+    case "currency":
+      return (
+        <div className="relative w-full">
+          {/* $ sign (static) */}
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 select-none">
+            $
+          </span>
+
+          <input
+            id={field.field_name}
+            type="text"
+            inputMode="decimal"
+            value={value ?? ""}
+            onChange={(e) => {
+              // Allow only digits + one dot, max 2 decimals
+              let v = e.target.value;
+
+              // remove everything except digits and dot
+              v = v.replace(/[^0-9.]/g, "");
+
+              // allow only one dot
+              const parts = v.split(".");
+              if (parts.length > 2) {
+                v = parts[0] + "." + parts.slice(1).join("");
+              }
+
+              // limit to 2 decimals
+              if (v.includes(".")) {
+                const [intPart, decPart] = v.split(".");
+                v = intPart + "." + (decPart ?? "").slice(0, 2);
+              }
+
+              onChange(field.field_name, v);
+            }}
+            placeholder={field.placeholder || "0.00"}
+            required={field.is_required}
+            className={`${className} pl-8`}
+          />
+        </div>
+      );
+
     case "url":
       return <input {...fieldProps} type="url" />;
     case "file":

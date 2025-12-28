@@ -35,7 +35,7 @@ export default function AddOrganization() {
   const {
     customFields,
     customFieldValues,
-    setCustomFieldValues, // ✅ Yeh bhi extract karein
+    setCustomFieldValues, 
     isLoading: customFieldsLoading,
     handleCustomFieldChange,
     validateCustomFields,

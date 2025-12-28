@@ -103,6 +103,7 @@ const FieldMapping = () => {
     "phone",
     "number",
     "date",
+    "currency",
     "datetime",
     "textarea",
     "select",
@@ -1126,7 +1127,9 @@ const FieldMapping = () => {
                   >
                     {editTypeOptions.map((option) => (
                       <option key={option} value={option}>
-                        {option.charAt(0).toUpperCase() + option.slice(1)}
+                        {option === "currency"
+                          ? "Currency ($)"
+                          : option.charAt(0).toUpperCase() + option.slice(1)}
                       </option>
                     ))}
                   </select>
