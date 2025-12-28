@@ -105,6 +105,7 @@ export default function JobSeekerView() {
     saveHeaderConfig,
   } = useHeaderConfig({
     entityType: "JOB_SEEKER",
+    configType: "header",
     defaultFields: DEFAULT_HEADER_FIELDS,
   });
 
