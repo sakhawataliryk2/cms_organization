@@ -32,7 +32,6 @@ type InternalUser = {
   email: string;
 };
 
-
 const DEFAULT_CATEGORIES = ["General", "Onboarding", "Healthcare", "HR"];
 
 const DocumentManagementPage = () => {
@@ -65,53 +64,51 @@ const DocumentManagementPage = () => {
     file: null as File | null,
   });
 
-const authHeaders = (): HeadersInit => {
-  const token =
-    typeof document !== "undefined"
-      ? document.cookie.replace(
-          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-          "$1"
-        )
-      : "";
+  const authHeaders = (): HeadersInit => {
+    const token =
+      typeof document !== "undefined"
+        ? document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )
+        : "";
 
-  if (!token) return {};
+    if (!token) return {};
 
-  return {
-    Authorization: `Bearer ${token}`,
+    return {
+      Authorization: `Bearer ${token}`,
+    };
   };
-};
 
-const API = process.env.NEXT_PUBLIC_API_URL!;
+  const API = process.env.NEXT_PUBLIC_API_URL!;
 
+  const fetchDocs = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/template-documents", {
+        method: "GET",
+        cache: "no-store",
+      });
 
-const fetchDocs = async () => {
-  setLoading(true);
-  try {
-    const res = await fetch("/api/template-documents", {
-      method: "GET",
-      cache: "no-store",
-    });
+      const data = await res.json();
+      if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
 
-    const data = await res.json();
-    if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
-
-    setDocs(
-      (data.documents || []).map((d: any) => ({
-        id: d.id,
-        document_name: d.document_name,
-        category: d.category,
-        created_at: d.created_at,
-        created_by_name: d.created_by_name,
-        file_path: d.file_path,
-      }))
-    );
-  } catch (e: any) {
-    alert(e.message || "Failed to load documents");
-  } finally {
-    setLoading(false);
-  }
-};
-
+      setDocs(
+        (data.documents || []).map((d: any) => ({
+          id: d.id,
+          document_name: d.document_name,
+          category: d.category,
+          created_at: d.created_at,
+          created_by_name: d.created_by_name,
+          file_path: d.file_path,
+        }))
+      );
+    } catch (e: any) {
+      alert(e.message || "Failed to load documents");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchInternalUsers = async () => {
     try {
@@ -243,14 +240,14 @@ const fetchDocs = async () => {
       );
       if (formData.file) fd.append("file", formData.file);
 
-    const url = editingDoc
-      ? `/api/template-documents/${editingDoc.id}`
-      : `/api/template-documents`;
+      const url = editingDoc
+        ? `/api/template-documents/${editingDoc.id}`
+        : `/api/template-documents`;
 
-    const res = await fetch(url, {
-      method: editingDoc ? "PUT" : "POST",
-      body: fd, 
-    });
+      const res = await fetch(url, {
+        method: editingDoc ? "PUT" : "POST",
+        body: fd,
+      });
 
       const data = await res.json();
       if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
@@ -264,7 +261,29 @@ const fetchDocs = async () => {
     }
   };
 
+  const handleDelete = async (id: number) => {
+    if (!confirm("Are you sure you want to delete this document?")) return;
 
+    try {
+      setLoading(true);
+      const res = await fetch(`${API}/api/template-documents/${id}`, {
+        method: "DELETE",
+        headers: { ...authHeaders() },
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
+      await fetchDocs();
+    } catch (e: any) {
+      alert(e.message || "Delete failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const actionOptions = (doc: Document) => [
+    { label: "Edit", action: () => openEditModal(doc) },
+    { label: "Delete", action: () => handleDelete(doc.id) },
+  ];
 
   const SortIcon = ({ field }: { field: "document_name" | "category" }) => {
     if (sortConfig.field !== field) {
