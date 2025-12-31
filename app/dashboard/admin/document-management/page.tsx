@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   FiSearch,
   FiRefreshCw,
@@ -16,6 +16,7 @@ type Document = {
   category: string;
   created_at?: string;
   created_by_name?: string;
+  file_path?: string | null;
 };
 
 type SortConfig = {
@@ -25,62 +26,24 @@ type SortConfig = {
 
 type YesNo = "Yes" | "No";
 
-// Static data matching the screenshot
-const STATIC_DOCUMENTS: Document[] = [
-  { id: 1, document_name: "1545 Home Health", category: "Healthcare" },
-  {
-    id: 2,
-    document_name: "2021-2022 Medical Declination Form",
-    category: "Healthcare",
-  },
-  {
-    id: 3,
-    document_name: "2023-2024 Holloway Agency Packet",
-    category: "Onboarding",
-  },
-  {
-    id: 4,
-    document_name: "Account Information Set up",
-    category: "Onboarding",
-  },
-  { id: 5, document_name: "ACI - Code of conduct", category: "Onboarding" },
-  {
-    id: 6,
-    document_name: "ACI - Drug Alcohol Free WP",
-    category: "Onboarding",
-  },
-  {
-    id: 7,
-    document_name: "ACI - Fingerprinting BGC Consent",
-    category: "Onboarding",
-  },
-  { id: 8, document_name: "ACI - Health Form", category: "Onboarding" },
-  {
-    id: 9,
-    document_name: "ACI - Request for Fingerprinting",
-    category: "Onboarding",
-  },
-  { id: 10, document_name: "ACI - Staff Exclusion", category: "Onboarding" },
-  {
-    id: 11,
-    document_name: "ACI - Statewide Central Register",
-    category: "Onboarding",
-  },
-  {
-    id: 12,
-    document_name: "ACKNOWLEDGMENT OF RECEIPT OF POLICIES AND PROCEDURES",
-    category: "Onboarding",
-  },
-  { id: 13, document_name: "Addendum C Suicide Risk", category: "Healthcare" },
-  { id: 14, document_name: "ADP Authorization Form", category: "Onboarding" },
-];
+type InternalUser = {
+  id: number;
+  name: string;
+  email: string;
+};
 
-const STATIC_TOTAL = 469; // Total count from screenshot
+
+const DEFAULT_CATEGORIES = ["General", "Onboarding", "Healthcare", "HR"];
 
 const DocumentManagementPage = () => {
   const [activeTab, setActiveTab] = useState<"packets" | "documents">(
     "documents"
   );
+
+  const [loading, setLoading] = useState(false);
+  const [docs, setDocs] = useState<Document[]>([]);
+  const [internalUsers, setInternalUsers] = useState<InternalUser[]>([]);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [pageSize, setPageSize] = useState(250);
   const [currentPage, setCurrentPage] = useState(1);
@@ -92,56 +55,112 @@ const DocumentManagementPage = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
 
-  // ✅ client wants category filter removed -> keep it commented out
-  // const [selectedCategory, setSelectedCategory] = useState<string>("");
-
   const [formData, setFormData] = useState({
     document_name: "",
     category: "",
     description: "",
     approvalRequired: "No" as YesNo,
     additionalDocsRequired: "No" as YesNo,
-    emails: "",
+    notification_user_ids: [] as number[],
     file: null as File | null,
   });
 
-  // Keep categories only for modal dropdown (not for filtering table)
-  const categories = useMemo(() => {
-    const cats = Array.from(new Set(STATIC_DOCUMENTS.map((d) => d.category)));
-    return cats.sort();
+const authHeaders = (): HeadersInit => {
+  const token =
+    typeof document !== "undefined"
+      ? document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        )
+      : "";
+
+  if (!token) return {};
+
+  return {
+    Authorization: `Bearer ${token}`,
+  };
+};
+
+const API = "http://localhost:8080";
+
+const fetchDocs = async () => {
+  setLoading(true);
+  try {
+    const res = await fetch(`${API}/api/template-documents`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
+
+    const mapped: Document[] = (data.documents || []).map((d: any) => ({
+      id: d.id,
+      document_name: d.document_name,
+      category: d.category,
+      created_at: d.created_at,
+      created_by_name: d.created_by_name,
+      file_path: d.file_path,
+    }));
+
+    setDocs(mapped);
+  } catch (e: any) {
+    alert(e.message || "Failed to load documents");
+  } finally {
+    setLoading(false);
+  }
+};
+
+
+  const fetchInternalUsers = async () => {
+    try {
+      const res = await fetch("/api/users", {
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
+      setInternalUsers(data.users || []);
+    } catch (e: any) {
+      // don't block UI
+      console.log("internal users load failed:", e.message);
+    }
+  };
+
+  useEffect(() => {
+    fetchDocs();
+    fetchInternalUsers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Filter and sort documents
-  const filteredAndSortedDocuments = useMemo(() => {
-    let filtered = STATIC_DOCUMENTS;
+  const categories = useMemo(() => DEFAULT_CATEGORIES, []);
 
-    // ✅ search by name
+  const filteredAndSortedDocuments = useMemo(() => {
+    let filtered = docs;
+
     if (searchQuery.trim()) {
-      const query = searchQuery.toLowerCase();
+      const q = searchQuery.toLowerCase();
       filtered = filtered.filter((doc) =>
-        doc.document_name.toLowerCase().includes(query)
+        doc.document_name.toLowerCase().includes(q)
       );
     }
 
-    // ❌ category filter removed
-    // if (selectedCategory) {
-    //   filtered = filtered.filter((doc) => doc.category === selectedCategory);
-    // }
-
     const sorted = [...filtered].sort((a, b) => {
-      const aValue = a[sortConfig.field].toLowerCase();
-      const bValue = b[sortConfig.field].toLowerCase();
+      const aValue = (a[sortConfig.field] || "").toLowerCase();
+      const bValue = (b[sortConfig.field] || "").toLowerCase();
       return sortConfig.order === "ASC"
         ? aValue.localeCompare(bValue)
         : bValue.localeCompare(aValue);
     });
 
     return sorted;
-  }, [searchQuery, sortConfig]);
+  }, [docs, searchQuery, sortConfig]);
 
-  const total = STATIC_TOTAL;
-  const totalPages = Math.ceil(total / pageSize);
-  const startIndex = (currentPage - 1) * pageSize + 1;
+  const total = filteredAndSortedDocuments.length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const startIndex = total === 0 ? 0 : (currentPage - 1) * pageSize + 1;
   const endIndex = Math.min(currentPage * pageSize, total);
 
   const displayedDocuments = useMemo(() => {
@@ -158,16 +177,6 @@ const DocumentManagementPage = () => {
     setCurrentPage(1);
   };
 
-  const handleSearch = (value: string) => {
-    setSearchQuery(value);
-    setCurrentPage(1);
-  };
-
-  const handlePageSizeChange = (size: number) => {
-    setPageSize(size);
-    setCurrentPage(1);
-  };
-
   const openCreateModal = () => {
     setEditingDoc(null);
     setFormData({
@@ -176,33 +185,13 @@ const DocumentManagementPage = () => {
       description: "",
       approvalRequired: "No",
       additionalDocsRequired: "No",
-      emails: "",
+      notification_user_ids: [],
       file: null,
     });
     setShowCreateModal(true);
   };
 
-  const handleCreate = () => {
-    if (!formData.document_name.trim() || !formData.category.trim()) {
-      alert("Please fill in all required fields");
-      return;
-    }
-
-    // Static mode
-    alert("Document creation is disabled in static mode");
-    setShowCreateModal(false);
-    setFormData({
-      document_name: "",
-      category: "",
-      description: "",
-      approvalRequired: "No",
-      additionalDocsRequired: "No",
-      emails: "",
-      file: null,
-    });
-  };
-
-  const handleEdit = (doc: Document) => {
+  const openEditModal = (doc: Document) => {
     setEditingDoc(doc);
     setFormData({
       document_name: doc.document_name,
@@ -210,24 +199,13 @@ const DocumentManagementPage = () => {
       description: "",
       approvalRequired: "No",
       additionalDocsRequired: "No",
-      emails: "",
+      notification_user_ids: [],
       file: null,
     });
     setShowCreateModal(true);
   };
 
-  const handleUpdate = () => {
-    if (
-      !editingDoc ||
-      !formData.document_name.trim() ||
-      !formData.category.trim()
-    ) {
-      alert("Please fill in all required fields");
-      return;
-    }
-
-    // Static mode
-    alert("Document update is disabled in static mode");
+  const closeModal = () => {
     setShowCreateModal(false);
     setEditingDoc(null);
     setFormData({
@@ -236,20 +214,82 @@ const DocumentManagementPage = () => {
       description: "",
       approvalRequired: "No",
       additionalDocsRequired: "No",
-      emails: "",
+      notification_user_ids: [],
       file: null,
     });
   };
 
-  const handleDelete = (id: number) => {
+  const handleCreateOrUpdate = async () => {
+    if (!formData.document_name.trim() || !formData.category.trim()) {
+      alert("Please fill in Document Name and Category");
+      return;
+    }
+    if (!editingDoc && !formData.file) {
+      alert("Please upload a PDF file");
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const fd = new FormData();
+      fd.append("document_name", formData.document_name);
+      fd.append("category", formData.category);
+      fd.append("description", formData.description);
+      fd.append("approvalRequired", formData.approvalRequired);
+      fd.append("additionalDocsRequired", formData.additionalDocsRequired);
+      fd.append(
+        "notification_user_ids",
+        JSON.stringify(formData.notification_user_ids)
+      );
+      if (formData.file) fd.append("file", formData.file);
+
+     const url = editingDoc
+       ? `${API}/api/template-documents/${editingDoc.id}`
+       : `${API}/api/template-documents`;
+
+      const res = await fetch(url, {
+        method: editingDoc ? "PUT" : "POST",
+        headers: {
+          ...authHeaders(),
+          // ❌ do not set Content-Type for FormData
+        },
+        body: fd,
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
+
+      closeModal();
+      await fetchDocs();
+    } catch (e: any) {
+      alert(e.message || "Failed");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
     if (!confirm("Are you sure you want to delete this document?")) return;
 
-    // Static mode
-    alert("Document deletion is disabled in static mode");
+    try {
+      setLoading(true);
+const res = await fetch(`${API}/api/template-documents/${id}`, {
+  method: "DELETE",
+  headers: { ...authHeaders() },
+});
+      const data = await res.json();
+      if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
+      await fetchDocs();
+    } catch (e: any) {
+      alert(e.message || "Delete failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const actionOptions = (doc: Document) => [
-    { label: "Edit", action: () => handleEdit(doc) },
+    { label: "Edit", action: () => openEditModal(doc) },
     { label: "Delete", action: () => handleDelete(doc.id) },
   ];
 
@@ -295,62 +335,47 @@ const DocumentManagementPage = () => {
         </button>
       </div>
 
-      {/* Search and Controls */}
+      {/* Controls */}
       <div className="bg-white p-4 rounded shadow-sm mb-4">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center space-x-4 flex-1">
-            {/* Search */}
             <div className="relative flex-1 max-w-md">
               <FiSearch className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search documents..."
                 value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
-            {/* Page Size Buttons */}
             <div className="flex items-center space-x-2">
-              <button
-                onClick={() => handlePageSizeChange(100)}
-                className={`px-3 py-1 text-sm rounded ${
-                  pageSize === 100
-                    ? "bg-blue-500 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                100
-              </button>
-              <button
-                onClick={() => handlePageSizeChange(250)}
-                className={`px-3 py-1 text-sm rounded ${
-                  pageSize === 250
-                    ? "bg-blue-500 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                250
-              </button>
-              <button
-                onClick={() => handlePageSizeChange(500)}
-                className={`px-3 py-1 text-sm rounded ${
-                  pageSize === 500
-                    ? "bg-blue-500 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                500
-              </button>
+              {[100, 250, 500].map((size) => (
+                <button
+                  key={size}
+                  onClick={() => {
+                    setPageSize(size);
+                    setCurrentPage(1);
+                  }}
+                  className={`px-3 py-1 text-sm rounded ${
+                    pageSize === size
+                      ? "bg-blue-500 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  {size}
+                </button>
+              ))}
             </div>
 
-            {/* Display Info */}
             <div className="text-sm text-gray-600">
               Displaying {startIndex} - {endIndex} of {total}
             </div>
 
-            {/* Pagination */}
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
@@ -371,11 +396,11 @@ const DocumentManagementPage = () => {
             </div>
           </div>
 
-          {/* Action Buttons */}
           <div className="flex items-center space-x-2 ml-4">
             <button
               onClick={openCreateModal}
               className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm font-medium"
+              disabled={loading}
             >
               Create New Doc
             </button>
@@ -383,26 +408,19 @@ const DocumentManagementPage = () => {
             <button
               onClick={() => {
                 setSearchQuery("");
-                // setSelectedCategory(""); // removed
                 setCurrentPage(1);
+                fetchDocs();
               }}
               className="p-2 border border-gray-300 rounded hover:bg-gray-50"
               title="Refresh"
+              disabled={loading}
             >
               <FiRefreshCw className="w-5 h-5 text-gray-600" />
             </button>
           </div>
         </div>
 
-        {/* Category Filter removed by client request */}
-        {/*
-        <div className="flex items-center space-x-2">
-          <span className="text-sm text-gray-600">Filter by Category:</span>
-          <select value={selectedCategory} onChange={(e) => setSelectedCategory(e.target.value)}>
-            ...
-          </select>
-        </div>
-        */}
+        {loading && <div className="text-sm text-gray-600">Loading...</div>}
       </div>
 
       {/* Table */}
@@ -411,10 +429,7 @@ const DocumentManagementPage = () => {
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
-                {/* empty column removed (pencil) */}
-                {/* <th className="px-6 py-3 w-12"></th> */}
-
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-24"></th>
+                <th className="px-6 py-3 w-24"></th>
 
                 <th
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100"
@@ -456,7 +471,6 @@ const DocumentManagementPage = () => {
                     key={doc.id}
                     className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}
                   >
-                    {/* ✅ ACTIONS - fixed overflow */}
                     <td className="px-6 py-4 whitespace-nowrap relative overflow-visible">
                       <div className="relative ml-7">
                         <ActionDropdown
@@ -468,6 +482,26 @@ const DocumentManagementPage = () => {
 
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {doc.document_name}
+
+                      {doc.file_path ? (
+                        <>
+                          <a
+                            className="ml-3 text-xs text-blue-600 underline"
+                            href={`${API}${doc.file_path}`}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            View PDF
+                          </a>
+
+                          <a
+                            className="ml-3 text-xs text-green-600 underline"
+                            href={`/dashboard/admin/document-management/${doc.id}/editor`}
+                          >
+                            Open Editor
+                          </a>
+                        </>
+                      ) : null}
                     </td>
 
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
@@ -481,7 +515,7 @@ const DocumentManagementPage = () => {
         </div>
       </div>
 
-      {/* Create/Edit Modal */}
+      {/* Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 z-50 bg-black/40">
           <div className="min-h-screen w-full flex items-start justify-center p-6 sm:p-10">
@@ -491,19 +525,7 @@ const DocumentManagementPage = () => {
                   {editingDoc ? "Edit Document" : "Create Document"}
                 </div>
                 <button
-                  onClick={() => {
-                    setShowCreateModal(false);
-                    setEditingDoc(null);
-                    setFormData({
-                      document_name: "",
-                      category: "",
-                      description: "",
-                      approvalRequired: "No",
-                      additionalDocsRequired: "No",
-                      emails: "",
-                      file: null,
-                    });
-                  }}
+                  onClick={closeModal}
                   className="w-7 h-7 grid place-items-center bg-white/10 hover:bg-white/20 rounded"
                   aria-label="Close"
                   title="Close"
@@ -612,18 +634,53 @@ const DocumentManagementPage = () => {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-gray-700 mb-1">
+                    <label className="block text-xs font-semibold text-gray-700 mb-2">
                       Select Users to receive Completed Notification Email(s):
                     </label>
-                    <input
-                      type="text"
-                      value={formData.emails}
-                      onChange={(e) =>
-                        setFormData((p) => ({ ...p, emails: e.target.value }))
-                      }
-                      className="w-full h-9 px-3 border border-gray-400 text-sm outline-none focus:border-gray-600"
-                      placeholder="Email(s)"
-                    />
+
+                    <div className="border border-gray-400 p-2 max-h-40 overflow-y-auto">
+                      {internalUsers.length === 0 ? (
+                        <div className="text-xs text-gray-500">
+                          No users loaded
+                        </div>
+                      ) : (
+                        internalUsers.map((u) => {
+                          const checked =
+                            formData.notification_user_ids.includes(u.id);
+                          return (
+                            <label
+                              key={u.id}
+                              className="flex items-center gap-2 text-sm py-1"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                  setFormData((p) => {
+                                    const exists =
+                                      p.notification_user_ids.includes(u.id);
+                                    return {
+                                      ...p,
+                                      notification_user_ids: exists
+                                        ? p.notification_user_ids.filter(
+                                            (x) => x !== u.id
+                                          )
+                                        : [...p.notification_user_ids, u.id],
+                                    };
+                                  });
+                                }}
+                              />
+                              <span>
+                                {u.name}{" "}
+                                <span className="text-xs text-gray-500">
+                                  ({u.email})
+                                </span>
+                              </span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
                   </div>
 
                   <div className="mt-4">
@@ -641,32 +698,24 @@ const DocumentManagementPage = () => {
                       }
                       className="text-sm mb-3"
                     />
+
                     <div className="flex items-center justify-center gap-2 mb-2">
                       <button
-                        onClick={editingDoc ? handleUpdate : handleCreate}
-                        className="px-4 py-1.5 bg-blue-600 text-white text-xs rounded"
+                        onClick={handleCreateOrUpdate}
+                        className="px-4 py-1.5 bg-blue-600 text-white text-xs rounded disabled:opacity-50"
+                        disabled={loading}
                       >
-                        Upload
+                        {editingDoc ? "Update" : "Upload"}
                       </button>
                       <button
-                        onClick={() => {
-                          setShowCreateModal(false);
-                          setEditingDoc(null);
-                          setFormData({
-                            document_name: "",
-                            category: "",
-                            description: "",
-                            approvalRequired: "No",
-                            additionalDocsRequired: "No",
-                            emails: "",
-                            file: null,
-                          });
-                        }}
+                        onClick={closeModal}
                         className="px-4 py-1.5 bg-blue-600 text-white text-xs rounded"
+                        disabled={loading}
                       >
                         Cancel
                       </button>
                     </div>
+
                     <div className="text-xs text-gray-600 text-center">
                       When Document is selected and click upload
                     </div>
