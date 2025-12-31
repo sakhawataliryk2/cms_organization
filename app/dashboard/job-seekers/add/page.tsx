@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -9,6 +9,7 @@ import { validateAddress } from "@/lib/validation/addressValidation";
 import CustomFieldRenderer, {
   useCustomFields,
 } from "@/components/CustomFieldRenderer";
+import AddressGroupRenderer, { getAddressFields } from "@/components/AddressGroupRenderer";
 
 interface CustomFieldDefinition {
   id: string;
@@ -51,6 +52,66 @@ interface User {
   email: string;
 }
 
+// Multi-value tag input component for Skills field
+interface MultiValueTagInputProps {
+  values: string[];
+  onChange: (values: string[]) => void;
+  placeholder?: string;
+}
+
+function MultiValueTagInput({ values, onChange, placeholder = "Type and press Enter" }: MultiValueTagInputProps) {
+  const [inputValue, setInputValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && inputValue.trim()) {
+      e.preventDefault();
+      const trimmedValue = inputValue.trim();
+      if (!values.includes(trimmedValue)) {
+        onChange([...values, trimmedValue]);
+        setInputValue("");
+      }
+    } else if (e.key === "Backspace" && inputValue === "" && values.length > 0) {
+      // Remove last tag when backspace is pressed on empty input
+      onChange(values.slice(0, -1));
+    }
+  };
+
+  const handleRemove = (index: number) => {
+    onChange(values.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="w-full min-h-[42px] p-2 border-b border-gray-300 focus-within:border-blue-500 flex flex-wrap gap-2 items-center">
+      {values.map((skill, index) => (
+        <span
+          key={index}
+          className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800"
+        >
+          {skill}
+          <button
+            type="button"
+            onClick={() => handleRemove(index)}
+            className="ml-2 text-blue-600 hover:text-blue-800 focus:outline-none"
+            aria-label={`Remove ${skill}`}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      <input
+        ref={inputRef}
+        type="text"
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={values.length === 0 ? placeholder : ""}
+        className="flex-1 min-w-[120px] outline-none border-none bg-transparent"
+      />
+    </div>
+  );
+}
+
 export default function AddJobSeeker() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -91,6 +152,9 @@ export default function AddJobSeeker() {
     validateCustomFields,
     getCustomFieldsForSubmission,
   } = useCustomFields("job-seekers");
+
+  // Calculate address fields once using useMemo
+  const addressFields = useMemo(() => getAddressFields(customFields), [customFields]);
 
   // Initialize with default fields
   useEffect(() => {
@@ -541,6 +605,45 @@ export default function AddJobSeeker() {
     }
   }, [jobSeekerId, customFieldsLoading, customFields.length, fetchJobSeeker]);
 
+  // Auto-populate Field_17 (Owner) field in UI when customFields are loaded
+  useEffect(() => {
+    // Wait for customFields to load
+    if (customFieldsLoading || customFields.length === 0) return;
+    
+    // Find Field_17 specifically - check both field_name and field_label
+    const ownerField = customFields.find(f => 
+      f.field_name === "Field_17" || 
+      f.field_name === "field_17" ||
+      f.field_name?.toLowerCase() === "field_17" ||
+      (f.field_label === "Owner" && (f.field_name?.includes("17") || f.field_name?.toLowerCase().includes("field_17")))
+    );
+    
+    if (ownerField) {
+      const currentOwnerValue = customFieldValues[ownerField.field_name];
+      // Only auto-populate if field is empty (works in both create and edit mode)
+      if (!currentOwnerValue || currentOwnerValue.trim() === "") {
+        try {
+          const userCookie = document.cookie.replace(
+            /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          );
+          if (userCookie) {
+            const userData = JSON.parse(decodeURIComponent(userCookie));
+            if (userData.name) {
+              setCustomFieldValues(prev => ({
+                ...prev,
+                [ownerField.field_name]: userData.name
+              }));
+              console.log("Auto-populated Field_17 (Owner) with current user:", userData.name);
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing user data from cookie:", e);
+        }
+      }
+    }
+  }, [customFields, customFieldsLoading, customFieldValues, setCustomFieldValues]);
+
   // ✅ Sync formFields changes to custom fields (two-way binding)
   // When user types in basic fields, update matching custom fields
   useEffect(() => {
@@ -859,6 +962,40 @@ export default function AddJobSeeker() {
           customFieldsForDB[key] = value;
         }
       });
+
+      // Auto-populate Field_17 (Owner) if not set (only in create mode)
+      if (!isEditMode) {
+        // Find Field_17 in customFields
+        const ownerField = customFields.find(f => 
+          f.field_name === "Field_17" || 
+          f.field_name === "field_17" ||
+          f.field_name?.toLowerCase() === "field_17" ||
+          (f.field_label === "Owner" && (f.field_name?.includes("17") || f.field_name?.toLowerCase().includes("field_17")))
+        );
+        
+        if (ownerField) {
+          const ownerValue = customFieldsForDB[ownerField.field_label] || 
+                            customFieldValues[ownerField.field_name];
+          
+          if (!ownerValue || ownerValue.trim() === "") {
+            try {
+              const userCookie = document.cookie.replace(
+                /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
+                "$1"
+              );
+              if (userCookie) {
+                const userData = JSON.parse(decodeURIComponent(userCookie));
+                if (userData.name) {
+                  customFieldsForDB[ownerField.field_label] = userData.name;
+                  console.log("Auto-populated Field_17 (Owner) with current user:", userData.name);
+                }
+              }
+            } catch (e) {
+              console.error("Error parsing user data from cookie:", e);
+            }
+          }
+        }
+      }
 
       const apiData: Record<string, any> = {
         firstName: firstName,
@@ -1209,11 +1346,70 @@ export default function AddJobSeeker() {
                                     </h3>
                                 </div> */}
 
+                {/* Address Group Renderer */}
+                {addressFields.length > 0 && (
+                  <AddressGroupRenderer
+                    fields={addressFields}
+                    values={customFieldValues}
+                    onChange={handleCustomFieldChange}
+                  />
+                )}
+
                 {customFields.map((field) => {
                   // Don't render hidden fields at all (neither label nor input)
                   if (field.is_hidden) return null;
 
+                  // Skip address fields if they're being rendered in the grouped layout
+                  // Compare by ID to ensure we filter correctly
+                  const addressFieldIds = addressFields.map(f => f.id);
+                  if (addressFieldIds.includes(field.id)) {
+                    return null;
+                  }
+
                   const fieldValue = customFieldValues[field.field_name] || "";
+
+                  // Special handling for Field_17 (Owner) - render as dropdown with active users
+                  const isOwnerField = field.field_name === "Field_17" || 
+                    field.field_name === "field_17" ||
+                    field.field_name?.toLowerCase() === "field_17" ||
+                    (field.field_label === "Owner" && (field.field_name?.includes("17") || field.field_name?.toLowerCase().includes("field_17")));
+
+                  // Special handling for Field_32 (Skills) - render as multi-value tag input
+                  const isSkillsField = field.field_name === "Field_32" || 
+                    field.field_name === "field_32" ||
+                    field.field_name?.toLowerCase() === "field_32" ||
+                    (field.field_label === "Skills" && (field.field_name?.includes("32") || field.field_name?.toLowerCase().includes("field_32")));
+
+                  // Special handling for Field_33 (Additional Skill) - render as multi-value tag input
+                  const isAdditionalSkillField = field.field_name === "Field_33" || 
+                    field.field_name === "field_33" ||
+                    field.field_name?.toLowerCase() === "field_33" ||
+                    (field.field_label === "Additional Skill" && (field.field_name?.includes("33") || field.field_name?.toLowerCase().includes("field_33")));
+
+                  // Special handling for Field_34 (Certifications) - render as multi-value tag input
+                  const isCertificationsField = field.field_name === "Field_34" || 
+                    field.field_name === "field_34" ||
+                    field.field_name?.toLowerCase() === "field_34" ||
+                    (field.field_label === "Certifications" && (field.field_name?.includes("34") || field.field_name?.toLowerCase().includes("field_34")));
+
+                  // Special handling for Field_35 (Softwares) - render as multi-value tag input
+                  const isSoftwaresField = field.field_name === "Field_35" || 
+                    field.field_name === "field_35" ||
+                    field.field_name?.toLowerCase() === "field_35" ||
+                    (field.field_label === "Softwares" && (field.field_name?.includes("35") || field.field_name?.toLowerCase().includes("field_35")));
+
+                  // Parse multi-value fields - handle both array and comma-separated string
+                  const parseMultiValue = (val: any): string[] => {
+                    if (!val) return [];
+                    if (Array.isArray(val)) return val.filter(s => s && s.trim());
+                    if (typeof val === "string") {
+                      return val.split(",").map(s => s.trim()).filter(s => s);
+                    }
+                    return [];
+                  };
+
+                  const isMultiValueField = isSkillsField || isAdditionalSkillField || isCertificationsField || isSoftwaresField;
+                  const multiValueArray = isMultiValueField ? parseMultiValue(fieldValue) : [];
 
                   return (
                     <div key={field.id} className="flex items-center mb-3">
@@ -1228,11 +1424,45 @@ export default function AddJobSeeker() {
                       </label>
 
                       <div className="flex-1 relative">
-                        <CustomFieldRenderer
-                          field={field}
-                          value={fieldValue}
-                          onChange={handleCustomFieldChange}
-                        />
+                        {isOwnerField ? (
+                          <select
+                            value={fieldValue}
+                            onChange={(e) => handleCustomFieldChange(field.field_name, e.target.value)}
+                            className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                          >
+                            <option value="">Select Owner</option>
+                            {activeUsers.map((user) => (
+                              <option key={user.id} value={user.name}>
+                                {user.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : isMultiValueField ? (
+                          <MultiValueTagInput
+                            values={multiValueArray}
+                            onChange={(newValues) => {
+                              // Store as comma-separated string
+                              handleCustomFieldChange(field.field_name, newValues.join(", "));
+                            }}
+                            placeholder={
+                              isSkillsField 
+                                ? "Type a skill and press Enter" 
+                                : isAdditionalSkillField 
+                                ? "Type an additional skill and press Enter"
+                                : isCertificationsField
+                                ? "Type a certification and press Enter"
+                                : isSoftwaresField
+                                ? "Type a software and press Enter"
+                                : "Type a value and press Enter"
+                            }
+                          />
+                        ) : (
+                          <CustomFieldRenderer
+                            field={field}
+                            value={fieldValue}
+                            onChange={handleCustomFieldChange}
+                          />
+                        )}
                       </div>
                     </div>
                   );

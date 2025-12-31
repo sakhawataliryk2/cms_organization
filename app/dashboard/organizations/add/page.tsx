@@ -32,6 +32,7 @@ export default function AddOrganization() {
   const [error, setError] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(!!organizationId);
   const hasFetchedRef = useRef(false); // Track if we've already fetched organization data
+  const [activeUsers, setActiveUsers] = useState<Array<{ id: string; name: string; email: string }>>([]);
   const {
     customFields,
     customFieldValues,
@@ -204,23 +205,45 @@ export default function AddOrganization() {
     }
   }, [organizationId, customFieldsLoading, customFields.length, fetchOrganization]);
 
-  // Auto-populate Owner field in UI when customFields are loaded (create mode only)
+  // Fetch active users for Owner dropdown
   useEffect(() => {
-    // Only in create mode (not edit mode)
-    if (isEditMode || organizationId) return;
+    const fetchActiveUsers = async () => {
+      try {
+        const response = await fetch("/api/users/active", {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setActiveUsers(data.users || []);
+        }
+      } catch (error) {
+        console.error("Error fetching active users:", error);
+      }
+    };
+    fetchActiveUsers();
+  }, []);
+
+  // Auto-populate Field_18 (Owner) field in UI when customFields are loaded
+  useEffect(() => {
     // Wait for customFields to load
     if (customFieldsLoading || customFields.length === 0) return;
     
-    // Check if Owner field exists and is not already set
+    // Find Field_18 specifically - check both field_name and field_label
     const ownerField = customFields.find(f => 
-      f.field_label === "Owner" || 
-      f.field_name === "Owner" ||
-      f.field_label?.toLowerCase().includes("owner")
+      f.field_name === "Field_18" || 
+      f.field_name === "field_18" ||
+      f.field_name?.toLowerCase() === "field_18" ||
+      (f.field_label === "Owner" && (f.field_name?.includes("18") || f.field_name?.toLowerCase().includes("field_18")))
     );
     
     if (ownerField) {
       const currentOwnerValue = customFieldValues[ownerField.field_name];
-      // Only set if Owner field is empty or not set
+      // Only auto-populate if field is empty (works in both create and edit mode)
       if (!currentOwnerValue || currentOwnerValue.trim() === "") {
         try {
           const userDataStr = getCookie("user");
@@ -231,7 +254,7 @@ export default function AddOrganization() {
                 ...prev,
                 [ownerField.field_name]: userData.name
               }));
-              console.log("Auto-populated Owner field in UI with current user:", userData.name);
+              console.log("Auto-populated Field_18 (Owner) with current user:", userData.name);
             }
           }
         } catch (e) {
@@ -239,7 +262,7 @@ export default function AddOrganization() {
         }
       }
     }
-  }, [customFields, customFieldsLoading, customFieldValues, isEditMode, organizationId, setCustomFieldValues]);
+  }, [customFields, customFieldsLoading, customFieldValues, setCustomFieldValues]);
   
   // Removed console.logs from component level to prevent excessive logging on every render
   //console.log("Custom Fields:", customFields);
@@ -345,19 +368,56 @@ export default function AddOrganization() {
         }
       });
 
-      // Auto-populate Owner field if not set (only in create mode)
-      if (!isEditMode && (!customFieldsForDB["Owner"] || customFieldsForDB["Owner"].trim() === "")) {
-        try {
-          const userDataStr = getCookie("user");
-          if (userDataStr) {
-            const userData = JSON.parse(userDataStr as string);
-            if (userData.name) {
-              customFieldsForDB["Owner"] = userData.name;
-              console.log("Auto-populated Owner with current user:", userData.name);
+      // Auto-populate Owner field (Field_18) if not set (only in create mode)
+      // Check both "Owner" label and Field_18 field_name
+      const ownerFieldKey = Object.keys(customFieldsForDB).find(
+        key => key === "Owner" || key.toLowerCase().includes("owner")
+      ) || Object.keys(customFieldsToSend).find(
+        key => {
+          const field = customFields.find(f => f.field_name === "Field_18" || f.field_name === "field_18");
+          return field && (customFieldsToSend[field.field_label] !== undefined);
+        }
+      );
+      
+      if (!isEditMode) {
+        // Find Field_18 in customFields
+        const ownerField = customFields.find(f => 
+          f.field_name === "Field_18" || f.field_name === "field_18" ||
+          (f.field_label === "Owner" && f.field_name?.includes("18"))
+        );
+        
+        if (ownerField) {
+          const ownerValue = customFieldsForDB[ownerField.field_label] || 
+                            customFieldValues[ownerField.field_name];
+          
+          if (!ownerValue || ownerValue.trim() === "") {
+            try {
+              const userDataStr = getCookie("user");
+              if (userDataStr) {
+                const userData = JSON.parse(userDataStr as string);
+                if (userData.name) {
+                  customFieldsForDB[ownerField.field_label] = userData.name;
+                  console.log("Auto-populated Field_18 (Owner) with current user:", userData.name);
+                }
+              }
+            } catch (e) {
+              console.error("Error parsing user data from cookie:", e);
             }
           }
-        } catch (e) {
-          console.error("Error parsing user data from cookie:", e);
+        } else if (ownerFieldKey && (!customFieldsForDB[ownerFieldKey] || customFieldsForDB[ownerFieldKey].trim() === "")) {
+          // Fallback to old "Owner" key logic
+          try {
+            const userDataStr = getCookie("user");
+            if (userDataStr) {
+              const userData = JSON.parse(userDataStr as string);
+              if (userData.name) {
+                customFieldsForDB[ownerFieldKey] = userData.name;
+                console.log("Auto-populated Owner with current user:", userData.name);
+              }
+            }
+          } catch (e) {
+            console.error("Error parsing user data from cookie:", e);
+          }
         }
       }
 
@@ -1139,6 +1199,12 @@ export default function AddOrganization() {
 
                   const fieldValue = customFieldValues[field.field_name] || "";
 
+                  // Special handling for Field_18 (Owner) - render as dropdown with active users
+                  const isOwnerField = field.field_name === "Field_18" || 
+                    field.field_name === "field_18" ||
+                    field.field_name?.toLowerCase() === "field_18" ||
+                    (field.field_label === "Owner" && (field.field_name?.includes("18") || field.field_name?.toLowerCase().includes("field_18")));
+
                   return (
                     <div key={field.id} className="flex items-center mb-3">
                       <label className="w-48 font-medium flex items-center">
@@ -1152,11 +1218,26 @@ export default function AddOrganization() {
                       </label>
 
                       <div className="flex-1 relative">
-                        <CustomFieldRenderer
-                          field={field}
-                          value={fieldValue}
-                          onChange={handleCustomFieldChange}
-                        />
+                        {isOwnerField ? (
+                          <select
+                            value={fieldValue}
+                            onChange={(e) => handleCustomFieldChange(field.field_name, e.target.value)}
+                            className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                          >
+                            <option value="">Select Owner</option>
+                            {activeUsers.map((user) => (
+                              <option key={user.id} value={user.name}>
+                                {user.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <CustomFieldRenderer
+                            field={field}
+                            value={fieldValue}
+                            onChange={handleCustomFieldChange}
+                          />
+                        )}
                       </div>
                     </div>
                   );
