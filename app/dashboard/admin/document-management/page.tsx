@@ -81,31 +81,30 @@ const authHeaders = (): HeadersInit => {
   };
 };
 
-const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
+const API = process.env.NEXT_PUBLIC_API_URL!;
+
 
 const fetchDocs = async () => {
   setLoading(true);
   try {
-    const res = await fetch(`${API}/api/template-documents`, {
+    const res = await fetch("/api/template-documents", {
       method: "GET",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      cache: "no-store",
     });
 
     const data = await res.json();
     if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
 
-    const mapped: Document[] = (data.documents || []).map((d: any) => ({
-      id: d.id,
-      document_name: d.document_name,
-      category: d.category,
-      created_at: d.created_at,
-      created_by_name: d.created_by_name,
-      file_path: d.file_path,
-    }));
-
-    setDocs(mapped);
+    setDocs(
+      (data.documents || []).map((d: any) => ({
+        id: d.id,
+        document_name: d.document_name,
+        category: d.category,
+        created_at: d.created_at,
+        created_by_name: d.created_by_name,
+        file_path: d.file_path,
+      }))
+    );
   } catch (e: any) {
     alert(e.message || "Failed to load documents");
   } finally {
@@ -244,18 +243,14 @@ const fetchDocs = async () => {
       );
       if (formData.file) fd.append("file", formData.file);
 
-     const url = editingDoc
-       ? `${API}/api/template-documents/${editingDoc.id}`
-       : `${API}/api/template-documents`;
+    const url = editingDoc
+      ? `/api/template-documents/${editingDoc.id}`
+      : `/api/template-documents`;
 
-      const res = await fetch(url, {
-        method: editingDoc ? "PUT" : "POST",
-        headers: {
-          ...authHeaders(),
-          // ❌ do not set Content-Type for FormData
-        },
-        body: fd,
-      });
+    const res = await fetch(url, {
+      method: editingDoc ? "PUT" : "POST",
+      body: fd, 
+    });
 
       const data = await res.json();
       if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
