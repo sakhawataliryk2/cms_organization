@@ -81,7 +81,7 @@ const authHeaders = (): HeadersInit => {
   };
 };
 
-const API = "http://localhost:8080";
+const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
 
 const fetchDocs = async () => {
   setLoading(true);
