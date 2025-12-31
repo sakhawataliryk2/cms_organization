@@ -1,55 +1,94 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-const API = process.env.API_BASE_URL || "http://localhost:8080";
-
-async function getToken() {
-  const cookieStore = await cookies();
-  return cookieStore.get("token")?.value || "";
-}
-
 export async function GET() {
-  const token = await getToken();
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("token")?.value;
 
-  if (!token) {
+    if (!token) {
+      return NextResponse.json(
+        { success: false, message: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
+
+    const response = await fetch(`${apiUrl}/api/template-documents`, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+      cache: "no-store",
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: data.message || "Failed to fetch documents",
+        },
+        { status: response.status }
+      );
+    }
+
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error("Error fetching template documents:", error);
     return NextResponse.json(
-      { success: false, message: "Authentication required" },
-      { status: 401 }
+      { success: false, message: "Internal server error" },
+      { status: 500 }
     );
   }
-
-  const res = await fetch(`${API}/api/template-documents`, {
-    method: "GET",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    cache: "no-store",
-  });
-
-  const data = await res.json().catch(() => ({}));
-  return NextResponse.json(data, { status: res.status });
 }
 
-export async function POST(req: NextRequest) {
-  const token = await getToken();
+export async function POST(request: NextRequest) {
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("token")?.value;
 
-  if (!token) {
+    if (!token) {
+      return NextResponse.json(
+        { success: false, message: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
+
+    // IMPORTANT: FormData for file upload
+    const formData = await request.formData();
+
+    const response = await fetch(`${apiUrl}/api/template-documents`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        // ❌ Do NOT set Content-Type for FormData
+      },
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: data.message || "Failed to create document",
+        },
+        { status: response.status }
+      );
+    }
+
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error("Error creating template document:", error);
     return NextResponse.json(
-      { success: false, message: "Authentication required" },
-      { status: 401 }
+      { success: false, message: "Internal server error" },
+      { status: 500 }
     );
   }
-
-  const formData = await req.formData();
-
-  const res = await fetch(`${API}/api/template-documents`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-    body: formData,
-  });
-
-  const data = await res.json().catch(() => ({}));
-  return NextResponse.json(data, { status: res.status });
 }

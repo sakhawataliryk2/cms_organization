@@ -264,29 +264,7 @@ const fetchDocs = async () => {
     }
   };
 
-  const handleDelete = async (id: number) => {
-    if (!confirm("Are you sure you want to delete this document?")) return;
 
-    try {
-      setLoading(true);
-const res = await fetch(`${API}/api/template-documents/${id}`, {
-  method: "DELETE",
-  headers: { ...authHeaders() },
-});
-      const data = await res.json();
-      if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
-      await fetchDocs();
-    } catch (e: any) {
-      alert(e.message || "Delete failed");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const actionOptions = (doc: Document) => [
-    { label: "Edit", action: () => openEditModal(doc) },
-    { label: "Delete", action: () => handleDelete(doc.id) },
-  ];
 
   const SortIcon = ({ field }: { field: "document_name" | "category" }) => {
     if (sortConfig.field !== field) {

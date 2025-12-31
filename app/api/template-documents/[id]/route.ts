@@ -1,54 +1,103 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
-const API = process.env.API_BASE_URL || "http://localhost:8080";
-
-async function getToken() {
-  const cookieStore = await cookies();
-  return cookieStore.get("token")?.value || "";
-}
-
 export async function PUT(
-  req: NextRequest,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const token = await getToken();
-  if (!token) {
+  try {
+    const { id } = await params;
+
+    const cookieStore = await cookies();
+    const token = cookieStore.get("token")?.value;
+
+    if (!token) {
+      return NextResponse.json(
+        { success: false, message: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
+
+    // FormData for file + fields
+    const formData = await request.formData();
+
+    const response = await fetch(`${apiUrl}/api/template-documents/${id}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        // ❌ Do NOT set Content-Type for FormData
+      },
+      body: formData,
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: data.message || "Failed to update document",
+        },
+        { status: response.status }
+      );
+    }
+
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error("Error updating template document:", error);
     return NextResponse.json(
-      { success: false, message: "Authentication required" },
-      { status: 401 }
+      { success: false, message: "Internal server error" },
+      { status: 500 }
     );
   }
-
-  const formData = await req.formData();
-
-  const res = await fetch(`${API}/api/template-documents/${params.id}`, {
-    method: "PUT",
-    headers: { Authorization: `Bearer ${token}` },
-    body: formData,
-  });
-
-  const data = await res.json().catch(() => ({}));
-  return NextResponse.json(data, { status: res.status });
 }
 
 export async function DELETE(
-  _req: NextRequest,
-  { params }: { params: { id: string } }
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const token = await getToken();
-  if (!token) {
+  try {
+    const { id } = await params;
+
+    const cookieStore = await cookies();
+    const token = cookieStore.get("token")?.value;
+
+    if (!token) {
+      return NextResponse.json(
+        { success: false, message: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
+
+    const response = await fetch(`${apiUrl}/api/template-documents/${id}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: data.message || "Failed to delete document",
+        },
+        { status: response.status }
+      );
+    }
+
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error("Error deleting template document:", error);
     return NextResponse.json(
-      { success: false, message: "Authentication required" },
-      { status: 401 }
+      { success: false, message: "Internal server error" },
+      { status: 500 }
     );
   }
-
-  const res = await fetch(`${API}/api/template-documents/${params.id}`, {
-    method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
-  });
-
-  const data = await res.json().catch(() => ({}));
-  return NextResponse.json(data, { status: res.status });
 }
