@@ -20,8 +20,7 @@ type OverlayField = {
   label?: string;
 };
 
-const API = "http://localhost:8080";
-
+const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
 export default function TemplateDocEditorPage() {
   const params = useParams();
   const id = String(params?.id || "");
