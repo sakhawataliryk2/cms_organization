@@ -80,7 +80,11 @@ const DocumentManagementPage = () => {
     };
   };
 
-  const API = process.env.NEXT_PUBLIC_API_URL!;
+  // Backend API base URL - must be set in .env.local
+  // Example: NEXT_PUBLIC_API_URL=http://localhost:8080
+  const API = process.env.API_BASE_URL || "http://localhost:8080";
+
+  console.log("API URL =>", API);
 
   const fetchDocs = async () => {
     setLoading(true);
@@ -479,19 +483,19 @@ const DocumentManagementPage = () => {
                         <>
                           <a
                             className="ml-3 text-xs text-blue-600 underline"
-                            href={`${API}${doc.file_path}`}
+                            href={`${API}${doc.file_path.startsWith('/') ? doc.file_path : '/' + doc.file_path}`}
                             target="_blank"
                             rel="noreferrer"
                           >
                             View PDF
                           </a>
 
-                          <a
+                          {/* <a
                             className="ml-3 text-xs text-green-600 underline"
                             href={`/dashboard/admin/document-management/${doc.id}/editor`}
                           >
                             Open Editor
-                          </a>
+                          </a> */}
                         </>
                       ) : null}
                     </td>

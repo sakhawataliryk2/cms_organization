@@ -20,7 +20,9 @@ type OverlayField = {
   label?: string;
 };
 
-const API = process.env.NEXT_PUBLIC_API_BASE_URL!;
+// Backend API base URL - must be set in .env.local
+// Example: NEXT_PUBLIC_API_URL=http://localhost:8080
+const API = process.env.API_BASE_URL || "http://localhost:8080";
 export default function TemplateDocEditorPage() {
   const params = useParams();
   const id = String(params?.id || "");
@@ -48,11 +50,14 @@ export default function TemplateDocEditorPage() {
       const fp = data.document?.file_path || data.document?.filePath;
       if (!fp) return setPdfUrl("");
 
-      setPdfUrl(encodeURI(`${API}${fp}`));
+      // Ensure file path starts with / and construct full backend URL
+      // Backend stores paths like /uploads/template-documents/filename.pdf
+      const normalizedPath = fp.startsWith('/') ? fp : '/' + fp;
+      setPdfUrl(encodeURI(`${API}${normalizedPath}`));
     };
 
     if (id) load();
-  }, [id]);
+  }, [id, API]);
 
   useEffect(() => {
     const raw = localStorage.getItem(storageKey);
