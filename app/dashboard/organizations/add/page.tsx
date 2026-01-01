@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -8,6 +8,8 @@ import { getCookie } from "cookies-next";
 import CustomFieldRenderer, {
   useCustomFields,
 } from "@/components/CustomFieldRenderer";
+import AddressGroupRenderer, { getAddressFields } from "@/components/AddressGroupRenderer";
+
 
 interface CustomFieldDefinition {
   id: string;
@@ -32,16 +34,34 @@ export default function AddOrganization() {
   const [error, setError] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(!!organizationId);
   const hasFetchedRef = useRef(false); // Track if we've already fetched organization data
-  const [activeUsers, setActiveUsers] = useState<Array<{ id: string; name: string; email: string }>>([]);
+  const [activeUsers, setActiveUsers] = useState<
+    Array<{ id: string; name: string; email: string }>
+  >([]);
   const {
     customFields,
     customFieldValues,
-    setCustomFieldValues, 
+    setCustomFieldValues,
     isLoading: customFieldsLoading,
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
   } = useCustomFields("organizations");
+  const addressFields = useMemo(
+    () => getAddressFields(customFields),
+    [customFields]
+  );
+  const sortedCustomFields = useMemo(() => {
+    return [...customFields].sort(
+      (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+    );
+  }, [customFields]);
+
+  const addressFieldIdSet = useMemo(() => {
+    return new Set(addressFields.map((f) => f.id));
+  }, [addressFields]);
+
+  const addressAnchorId = addressFields?.[0]?.id; // usually Field_20 (Address)
+
   const [formData, setFormData] = useState({
     name: "",
     nicknames: "",
@@ -63,139 +83,163 @@ export default function AddOrganization() {
   });
 
   // Memoize fetchOrganization to prevent it from being recreated on every render
-  const fetchOrganization = useCallback(async (id: string) => {
-    setIsLoading(true);
-    setError(null);
+  const fetchOrganization = useCallback(
+    async (id: string) => {
+      setIsLoading(true);
+      setError(null);
 
-    try {
-      const response = await fetch(`/api/organizations/${id}`);
+      try {
+        const response = await fetch(`/api/organizations/${id}`);
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(
-          errorData.message || "Failed to fetch organization details"
-        );
-      }
-
-      const data = await response.json();
-      console.log("API Response:", data); // Check if backend ne bheja ya nahi
-      const org = data.organization;
-
-      console.log("Received organization data:", org);
-
-      // Parse existing custom fields from the organization
-      let existingCustomFields: Record<string, any> = {};
-      if (org.custom_fields) {
-        try {
-          existingCustomFields =
-            typeof org.custom_fields === "string"
-              ? JSON.parse(org.custom_fields)
-              : org.custom_fields;
-        } catch (e) {
-          console.error("Error parsing existing custom fields:", e);
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(
+            errorData.message || "Failed to fetch organization details"
+          );
         }
-      }
 
-      // Map custom fields from field_label (database key) to field_name (form key)
-      // Custom fields are stored with field_label as keys, but form uses field_name
-      const mappedCustomFieldValues: Record<string, any> = {};
-      
-      // First, map any existing custom field values from the database
-      if (customFields.length > 0 && Object.keys(existingCustomFields).length > 0) {
-        customFields.forEach((field) => {
-          // Try to find the value by field_label (as stored in DB)
-          const value = existingCustomFields[field.field_label];
-          if (value !== undefined) {
-            // Map to field_name for the form
-            mappedCustomFieldValues[field.field_name] = value;
+        const data = await response.json();
+        console.log("API Response:", data); // Check if backend ne bheja ya nahi
+        const org = data.organization;
+
+        console.log("Received organization data:", org);
+
+        // Parse existing custom fields from the organization
+        let existingCustomFields: Record<string, any> = {};
+        if (org.custom_fields) {
+          try {
+            existingCustomFields =
+              typeof org.custom_fields === "string"
+                ? JSON.parse(org.custom_fields)
+                : org.custom_fields;
+          } catch (e) {
+            console.error("Error parsing existing custom fields:", e);
           }
-        });
-      }
+        }
 
-      // Second, map standard organization fields to custom fields based on field labels
-      // This ensures that standard fields like "name", "nicknames" etc. populate custom fields
-      // with matching labels like "Organization Name", "Nicknames", etc.
-      if (customFields.length > 0) {
-        const standardFieldMapping: Record<string, string> = {
-          "Organization Name": org.name || "",
-          "Name": org.name || "",
-          "Nicknames": org.nicknames || "",
-          "Parent Organization": org.parent_organization || "",
-          "Website": org.website || "",
-          "Organization Website": org.website || "",
-          "Contact Phone": org.contact_phone || "",
-          "Address": org.address || "",
-          "Status": org.status || "Active",
-          "Contract Signed on File": org.contract_on_file || "No",
-          "Contract Signed By": org.contract_signed_by || "",
-          "Date Contract Signed": org.date_contract_signed
+        // Map custom fields from field_label (database key) to field_name (form key)
+        // Custom fields are stored with field_label as keys, but form uses field_name
+        const mappedCustomFieldValues: Record<string, any> = {};
+
+        // First, map any existing custom field values from the database
+        if (
+          customFields.length > 0 &&
+          Object.keys(existingCustomFields).length > 0
+        ) {
+          customFields.forEach((field) => {
+            // Try to find the value by field_label (as stored in DB)
+            const value = existingCustomFields[field.field_label];
+            if (value !== undefined) {
+              // Map to field_name for the form
+              mappedCustomFieldValues[field.field_name] = value;
+            }
+          });
+        }
+
+        // Second, map standard organization fields to custom fields based on field labels
+        // This ensures that standard fields like "name", "nicknames" etc. populate custom fields
+        // with matching labels like "Organization Name", "Nicknames", etc.
+        if (customFields.length > 0) {
+          const standardFieldMapping: Record<string, string> = {
+            "Organization Name": org.name || "",
+            Name: org.name || "",
+            Nicknames: org.nicknames || "",
+            "Parent Organization": org.parent_organization || "",
+            Website: org.website || "",
+            "Organization Website": org.website || "",
+            "Contact Phone": org.contact_phone || "",
+            Address: org.address || "",
+            Status: org.status || "Active",
+            "Contract Signed on File": org.contract_on_file || "No",
+            "Contract Signed By": org.contract_signed_by || "",
+            "Date Contract Signed": org.date_contract_signed
+              ? org.date_contract_signed.split("T")[0]
+              : "",
+            "Year Founded": org.year_founded || "",
+            Overview: org.overview || "",
+            "Organization Overview": org.overview || "",
+            About: org.overview || "",
+            "Standard Perm Fee (%)": org.perm_fee
+              ? org.perm_fee.toString()
+              : "",
+            "# of Employees": org.num_employees
+              ? org.num_employees.toString()
+              : "",
+            "# of Offices": org.num_offices ? org.num_offices.toString() : "",
+          };
+
+          customFields.forEach((field) => {
+            // Only set if not already set from existingCustomFields
+            if (mappedCustomFieldValues[field.field_name] === undefined) {
+              // Try to find matching standard field by field_label
+              const standardValue = standardFieldMapping[field.field_label];
+              if (standardValue !== undefined && standardValue !== "") {
+                mappedCustomFieldValues[field.field_name] = standardValue;
+              }
+            }
+          });
+        }
+
+        console.log(
+          "Custom Field Values Loaded (mapped):",
+          mappedCustomFieldValues
+        );
+        console.log("Original custom fields from DB:", existingCustomFields);
+        console.log(
+          "Custom Fields Definitions:",
+          customFields.map((f) => ({
+            name: f.field_name,
+            label: f.field_label,
+          }))
+        );
+
+        setFormData({
+          name: org.name || "",
+          nicknames: org.nicknames || "",
+          parentOrganization: org.parent_organization || "",
+          website: org.website || "",
+          status: org.status || "Active",
+          contractOnFile: org.contract_on_file || "No",
+          contractSignedBy: org.contract_signed_by || "",
+          dateContractSigned: org.date_contract_signed
             ? org.date_contract_signed.split("T")[0]
             : "",
-          "Year Founded": org.year_founded || "",
-          "Overview": org.overview || "",
-          "Organization Overview": org.overview || "",
-          "About": org.overview || "",
-          "Standard Perm Fee (%)": org.perm_fee ? org.perm_fee.toString() : "",
-          "# of Employees": org.num_employees ? org.num_employees.toString() : "",
-          "# of Offices": org.num_offices ? org.num_offices.toString() : "",
-        };
-
-        customFields.forEach((field) => {
-          // Only set if not already set from existingCustomFields
-          if (mappedCustomFieldValues[field.field_name] === undefined) {
-            // Try to find matching standard field by field_label
-            const standardValue = standardFieldMapping[field.field_label];
-            if (standardValue !== undefined && standardValue !== "") {
-              mappedCustomFieldValues[field.field_name] = standardValue;
-            }
-          }
+          yearFounded: org.year_founded || "",
+          overview: org.overview || "",
+          permFee: org.perm_fee ? org.perm_fee.toString() : "",
+          numEmployees: org.num_employees ? org.num_employees.toString() : "",
+          numOffices: org.num_offices ? org.num_offices.toString() : "",
+          contactPhone: org.contact_phone || "",
+          address: org.address || "",
+          customFields: existingCustomFields,
         });
+
+        // Set the mapped custom field values (field_name as keys)
+        setCustomFieldValues(mappedCustomFieldValues);
+      } catch (err) {
+        console.error("Error fetching organization:", err);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "An error occurred while fetching organization details"
+        );
+      } finally {
+        setIsLoading(false);
       }
-
-      console.log("Custom Field Values Loaded (mapped):", mappedCustomFieldValues);
-      console.log("Original custom fields from DB:", existingCustomFields);
-      console.log("Custom Fields Definitions:", customFields.map(f => ({ name: f.field_name, label: f.field_label })));
-
-      setFormData({
-        name: org.name || "",
-        nicknames: org.nicknames || "",
-        parentOrganization: org.parent_organization || "",
-        website: org.website || "",
-        status: org.status || "Active",
-        contractOnFile: org.contract_on_file || "No",
-        contractSignedBy: org.contract_signed_by || "",
-        dateContractSigned: org.date_contract_signed
-          ? org.date_contract_signed.split("T")[0]
-          : "",
-        yearFounded: org.year_founded || "",
-        overview: org.overview || "",
-        permFee: org.perm_fee ? org.perm_fee.toString() : "",
-        numEmployees: org.num_employees ? org.num_employees.toString() : "",
-        numOffices: org.num_offices ? org.num_offices.toString() : "",
-        contactPhone: org.contact_phone || "",
-        address: org.address || "",
-        customFields: existingCustomFields,
-      });
-      
-      // Set the mapped custom field values (field_name as keys)
-      setCustomFieldValues(mappedCustomFieldValues);
-    } catch (err) {
-      console.error("Error fetching organization:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while fetching organization details"
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [customFields, setCustomFieldValues]);
+    },
+    [customFields, setCustomFieldValues]
+  );
 
   // If organizationId is present, fetch the organization data
   // Wait for customFields to load before fetching to ensure proper mapping
   useEffect(() => {
     // Only fetch if we have an organizationId, customFields are loaded, and we haven't fetched yet
-    if (organizationId && !customFieldsLoading && customFields.length > 0 && !hasFetchedRef.current) {
+    if (
+      organizationId &&
+      !customFieldsLoading &&
+      customFields.length > 0 &&
+      !hasFetchedRef.current
+    ) {
       hasFetchedRef.current = true;
       fetchOrganization(organizationId);
     }
@@ -203,7 +247,12 @@ export default function AddOrganization() {
     if (!organizationId) {
       hasFetchedRef.current = false;
     }
-  }, [organizationId, customFieldsLoading, customFields.length, fetchOrganization]);
+  }, [
+    organizationId,
+    customFieldsLoading,
+    customFields.length,
+    fetchOrganization,
+  ]);
 
   // Fetch active users for Owner dropdown
   useEffect(() => {
@@ -232,15 +281,18 @@ export default function AddOrganization() {
   useEffect(() => {
     // Wait for customFields to load
     if (customFieldsLoading || customFields.length === 0) return;
-    
+
     // Find Field_18 specifically - check both field_name and field_label
-    const ownerField = customFields.find(f => 
-      f.field_name === "Field_18" || 
-      f.field_name === "field_18" ||
-      f.field_name?.toLowerCase() === "field_18" ||
-      (f.field_label === "Owner" && (f.field_name?.includes("18") || f.field_name?.toLowerCase().includes("field_18")))
+    const ownerField = customFields.find(
+      (f) =>
+        f.field_name === "Field_18" ||
+        f.field_name === "field_18" ||
+        f.field_name?.toLowerCase() === "field_18" ||
+        (f.field_label === "Owner" &&
+          (f.field_name?.includes("18") ||
+            f.field_name?.toLowerCase().includes("field_18")))
     );
-    
+
     if (ownerField) {
       const currentOwnerValue = customFieldValues[ownerField.field_name];
       // Only auto-populate if field is empty (works in both create and edit mode)
@@ -250,11 +302,14 @@ export default function AddOrganization() {
           if (userDataStr) {
             const userData = JSON.parse(userDataStr as string);
             if (userData.name) {
-              setCustomFieldValues(prev => ({
+              setCustomFieldValues((prev) => ({
                 ...prev,
-                [ownerField.field_name]: userData.name
+                [ownerField.field_name]: userData.name,
               }));
-              console.log("Auto-populated Field_18 (Owner) with current user:", userData.name);
+              console.log(
+                "Auto-populated Field_18 (Owner) with current user:",
+                userData.name
+              );
             }
           }
         } catch (e) {
@@ -262,8 +317,13 @@ export default function AddOrganization() {
         }
       }
     }
-  }, [customFields, customFieldsLoading, customFieldValues, setCustomFieldValues]);
-  
+  }, [
+    customFields,
+    customFieldsLoading,
+    customFieldValues,
+    setCustomFieldValues,
+  ]);
+
   // Removed console.logs from component level to prevent excessive logging on every render
   //console.log("Custom Fields:", customFields);
 
@@ -357,7 +417,7 @@ export default function AddOrganization() {
       // ✅ Build the API payload
       // Ensure custom_fields is always a valid object (not integer or other types)
       const customFieldsForDB: Record<string, any> = {};
-      
+
       // Include all custom fields, even if they're empty strings (but filter out undefined/null)
       // This ensures all custom field values are saved, including empty ones
       Object.keys(customFieldsToSend).forEach((key) => {
@@ -370,26 +430,31 @@ export default function AddOrganization() {
 
       // Auto-populate Owner field (Field_18) if not set (only in create mode)
       // Check both "Owner" label and Field_18 field_name
-      const ownerFieldKey = Object.keys(customFieldsForDB).find(
-        key => key === "Owner" || key.toLowerCase().includes("owner")
-      ) || Object.keys(customFieldsToSend).find(
-        key => {
-          const field = customFields.find(f => f.field_name === "Field_18" || f.field_name === "field_18");
-          return field && (customFieldsToSend[field.field_label] !== undefined);
-        }
-      );
-      
+      const ownerFieldKey =
+        Object.keys(customFieldsForDB).find(
+          (key) => key === "Owner" || key.toLowerCase().includes("owner")
+        ) ||
+        Object.keys(customFieldsToSend).find((key) => {
+          const field = customFields.find(
+            (f) => f.field_name === "Field_18" || f.field_name === "field_18"
+          );
+          return field && customFieldsToSend[field.field_label] !== undefined;
+        });
+
       if (!isEditMode) {
         // Find Field_18 in customFields
-        const ownerField = customFields.find(f => 
-          f.field_name === "Field_18" || f.field_name === "field_18" ||
-          (f.field_label === "Owner" && f.field_name?.includes("18"))
+        const ownerField = customFields.find(
+          (f) =>
+            f.field_name === "Field_18" ||
+            f.field_name === "field_18" ||
+            (f.field_label === "Owner" && f.field_name?.includes("18"))
         );
-        
+
         if (ownerField) {
-          const ownerValue = customFieldsForDB[ownerField.field_label] || 
-                            customFieldValues[ownerField.field_name];
-          
+          const ownerValue =
+            customFieldsForDB[ownerField.field_label] ||
+            customFieldValues[ownerField.field_name];
+
           if (!ownerValue || ownerValue.trim() === "") {
             try {
               const userDataStr = getCookie("user");
@@ -397,14 +462,21 @@ export default function AddOrganization() {
                 const userData = JSON.parse(userDataStr as string);
                 if (userData.name) {
                   customFieldsForDB[ownerField.field_label] = userData.name;
-                  console.log("Auto-populated Field_18 (Owner) with current user:", userData.name);
+                  console.log(
+                    "Auto-populated Field_18 (Owner) with current user:",
+                    userData.name
+                  );
                 }
               }
             } catch (e) {
               console.error("Error parsing user data from cookie:", e);
             }
           }
-        } else if (ownerFieldKey && (!customFieldsForDB[ownerFieldKey] || customFieldsForDB[ownerFieldKey].trim() === "")) {
+        } else if (
+          ownerFieldKey &&
+          (!customFieldsForDB[ownerFieldKey] ||
+            customFieldsForDB[ownerFieldKey].trim() === "")
+        ) {
           // Fallback to old "Owner" key logic
           try {
             const userDataStr = getCookie("user");
@@ -412,7 +484,10 @@ export default function AddOrganization() {
               const userData = JSON.parse(userDataStr as string);
               if (userData.name) {
                 customFieldsForDB[ownerFieldKey] = userData.name;
-                console.log("Auto-populated Owner with current user:", userData.name);
+                console.log(
+                  "Auto-populated Owner with current user:",
+                  userData.name
+                );
               }
             }
           } catch (e) {
@@ -432,8 +507,14 @@ export default function AddOrganization() {
         status: customFieldsToSend["Status"] || formData.status || "Active",
         contract_on_file: formData.contractOnFile || "No",
         // Check both custom fields and formData for contract_signed_by and date_contract_signed
-        contract_signed_by: customFieldsToSend["Contract Signed By"] || formData.contractSignedBy || null,
-        date_contract_signed: customFieldsToSend["Date Contract Signed"] || formData.dateContractSigned || null,
+        contract_signed_by:
+          customFieldsToSend["Contract Signed By"] ||
+          formData.contractSignedBy ||
+          null,
+        date_contract_signed:
+          customFieldsToSend["Date Contract Signed"] ||
+          formData.dateContractSigned ||
+          null,
         year_founded:
           customFieldsToSend["Year Founded"] || formData.yearFounded || "",
         overview: overview,
@@ -452,7 +533,7 @@ export default function AddOrganization() {
         : formData.numEmployees
         ? parseInt(formData.numEmployees)
         : null;
-      
+
       const numOffices = customFieldsToSend["# of Offices"]
         ? parseInt(customFieldsToSend["# of Offices"])
         : formData.numOffices
@@ -477,7 +558,8 @@ export default function AddOrganization() {
       );
       console.log(
         "Is apiData.custom_fields an object?",
-        typeof apiData.custom_fields === "object" && !Array.isArray(apiData.custom_fields)
+        typeof apiData.custom_fields === "object" &&
+          !Array.isArray(apiData.custom_fields)
       );
       console.log("=== END PAYLOAD ===");
 
@@ -487,57 +569,87 @@ export default function AddOrganization() {
         apiData.custom_fields === null ||
         Array.isArray(apiData.custom_fields)
       ) {
-        console.error("ERROR: custom_fields is not a valid object!", apiData.custom_fields);
+        console.error(
+          "ERROR: custom_fields is not a valid object!",
+          apiData.custom_fields
+        );
         apiData.custom_fields = {};
       }
 
       // Ensure custom_fields is a plain object (not a class instance or special object)
       try {
-        apiData.custom_fields = JSON.parse(JSON.stringify(apiData.custom_fields));
+        apiData.custom_fields = JSON.parse(
+          JSON.stringify(apiData.custom_fields)
+        );
       } catch (e) {
         console.error("ERROR: Failed to serialize custom_fields!", e);
         apiData.custom_fields = {};
       }
 
       // Final validation - ensure custom_fields is definitely an object
-      if (typeof apiData.custom_fields !== "object" || apiData.custom_fields === null) {
-        console.error("FINAL VALIDATION FAILED: custom_fields is still not an object!", apiData.custom_fields);
+      if (
+        typeof apiData.custom_fields !== "object" ||
+        apiData.custom_fields === null
+      ) {
+        console.error(
+          "FINAL VALIDATION FAILED: custom_fields is still not an object!",
+          apiData.custom_fields
+        );
         apiData.custom_fields = {};
       }
 
       // Remove any potential conflicting keys that might cause backend issues
       // Don't send both customFields and custom_fields
       delete (apiData as any).customFields;
-      
+
       // Log final payload before sending
       console.log("=== FINAL VALIDATION ===");
       console.log("custom_fields type:", typeof apiData.custom_fields);
       console.log("custom_fields value:", apiData.custom_fields);
-      console.log("custom_fields is object:", typeof apiData.custom_fields === "object" && !Array.isArray(apiData.custom_fields));
+      console.log(
+        "custom_fields is object:",
+        typeof apiData.custom_fields === "object" &&
+          !Array.isArray(apiData.custom_fields)
+      );
       console.log("All keys in apiData:", Object.keys(apiData));
       console.log("=== END VALIDATION ===");
 
       // Create a clean payload object to ensure no type issues
       // IMPORTANT: Order matters - custom_fields should be last to avoid parameter position issues
       const cleanPayload: Record<string, any> = {};
-      
+
       // Add all fields explicitly, ensuring no undefined values
       if (apiData.name !== undefined) cleanPayload.name = apiData.name || "";
-      if (apiData.nicknames !== undefined) cleanPayload.nicknames = apiData.nicknames || "";
-      if (apiData.parent_organization !== undefined) cleanPayload.parent_organization = apiData.parent_organization || "";
-      if (apiData.website !== undefined) cleanPayload.website = apiData.website || "";
-      if (apiData.status !== undefined) cleanPayload.status = apiData.status || "Active";
-      if (apiData.contract_on_file !== undefined) cleanPayload.contract_on_file = apiData.contract_on_file || "No";
-      if (apiData.contract_signed_by !== undefined) cleanPayload.contract_signed_by = apiData.contract_signed_by || null;
-      if (apiData.year_founded !== undefined) cleanPayload.year_founded = apiData.year_founded || "";
-      if (apiData.overview !== undefined) cleanPayload.overview = apiData.overview || "";
-      if (apiData.perm_fee !== undefined) cleanPayload.perm_fee = apiData.perm_fee || "";
-      if (apiData.contact_phone !== undefined) cleanPayload.contact_phone = apiData.contact_phone || "";
-      if (apiData.address !== undefined) cleanPayload.address = apiData.address || "";
+      if (apiData.nicknames !== undefined)
+        cleanPayload.nicknames = apiData.nicknames || "";
+      if (apiData.parent_organization !== undefined)
+        cleanPayload.parent_organization = apiData.parent_organization || "";
+      if (apiData.website !== undefined)
+        cleanPayload.website = apiData.website || "";
+      if (apiData.status !== undefined)
+        cleanPayload.status = apiData.status || "Active";
+      if (apiData.contract_on_file !== undefined)
+        cleanPayload.contract_on_file = apiData.contract_on_file || "No";
+      if (apiData.contract_signed_by !== undefined)
+        cleanPayload.contract_signed_by = apiData.contract_signed_by || null;
+      if (apiData.year_founded !== undefined)
+        cleanPayload.year_founded = apiData.year_founded || "";
+      if (apiData.overview !== undefined)
+        cleanPayload.overview = apiData.overview || "";
+      if (apiData.perm_fee !== undefined)
+        cleanPayload.perm_fee = apiData.perm_fee || "";
+      if (apiData.contact_phone !== undefined)
+        cleanPayload.contact_phone = apiData.contact_phone || "";
+      if (apiData.address !== undefined)
+        cleanPayload.address = apiData.address || "";
 
       // Handle date_contract_signed separately - explicitly set to null if empty
       if (apiData.date_contract_signed !== undefined) {
-        if (apiData.date_contract_signed && typeof apiData.date_contract_signed === 'string' && apiData.date_contract_signed.trim() !== '') {
+        if (
+          apiData.date_contract_signed &&
+          typeof apiData.date_contract_signed === "string" &&
+          apiData.date_contract_signed.trim() !== ""
+        ) {
           cleanPayload.date_contract_signed = apiData.date_contract_signed;
         } else {
           cleanPayload.date_contract_signed = null;
@@ -545,34 +657,55 @@ export default function AddOrganization() {
       }
 
       // Only add numeric fields if they exist and are valid (before custom_fields)
-      if (apiData.num_employees !== undefined && apiData.num_employees !== null && apiData.num_employees !== '') {
+      if (
+        apiData.num_employees !== undefined &&
+        apiData.num_employees !== null &&
+        apiData.num_employees !== ""
+      ) {
         cleanPayload.num_employees = apiData.num_employees;
       }
-      if (apiData.num_offices !== undefined && apiData.num_offices !== null && apiData.num_offices !== '') {
+      if (
+        apiData.num_offices !== undefined &&
+        apiData.num_offices !== null &&
+        apiData.num_offices !== ""
+      ) {
         cleanPayload.num_offices = apiData.num_offices;
       }
 
       // IMPORTANT: Add custom_fields LAST to ensure it's processed correctly by backend
       // Ensure custom_fields is always a plain object (not array, not null, not other types)
-      const customFieldsValue = typeof apiData.custom_fields === "object" && 
-                                !Array.isArray(apiData.custom_fields) && 
-                                apiData.custom_fields !== null
-        ? apiData.custom_fields
-        : {};
-      
+      const customFieldsValue =
+        typeof apiData.custom_fields === "object" &&
+        !Array.isArray(apiData.custom_fields) &&
+        apiData.custom_fields !== null
+          ? apiData.custom_fields
+          : {};
+
       // Final serialization to ensure it's a plain object
-      cleanPayload.custom_fields = JSON.parse(JSON.stringify(customFieldsValue));
+      cleanPayload.custom_fields = JSON.parse(
+        JSON.stringify(customFieldsValue)
+      );
 
       console.log("=== CLEAN PAYLOAD ===");
       console.log("cleanPayload.custom_fields:", cleanPayload.custom_fields);
-      console.log("cleanPayload.custom_fields type:", typeof cleanPayload.custom_fields);
+      console.log(
+        "cleanPayload.custom_fields type:",
+        typeof cleanPayload.custom_fields
+      );
       console.log("cleanPayload keys:", Object.keys(cleanPayload));
       console.log("Full cleanPayload:", JSON.stringify(cleanPayload, null, 2));
       console.log("=== END CLEAN PAYLOAD ===");
-      
+
       // Double-check: ensure custom_fields is definitely an object before sending
-      if (typeof cleanPayload.custom_fields !== "object" || cleanPayload.custom_fields === null || Array.isArray(cleanPayload.custom_fields)) {
-        console.error("CRITICAL: custom_fields is not valid before sending!", cleanPayload.custom_fields);
+      if (
+        typeof cleanPayload.custom_fields !== "object" ||
+        cleanPayload.custom_fields === null ||
+        Array.isArray(cleanPayload.custom_fields)
+      ) {
+        console.error(
+          "CRITICAL: custom_fields is not valid before sending!",
+          cleanPayload.custom_fields
+        );
         cleanPayload.custom_fields = {};
       }
 
@@ -1193,17 +1326,60 @@ export default function AddOrganization() {
                   </h3>
                 </div> */}
 
-                {customFields.map((field) => {
+                {sortedCustomFields.map((field) => {
+                  if (
+                    addressFields.length > 0 &&
+                    field.id === addressAnchorId
+                  ) {
+                   return (
+                     <div
+                       key="address-group"
+                       className="address-underline flex items-start mb-3"
+                     >
+                       {/* left side same label width space */}
+                       <label className="w-48 font-medium flex items-center mt-4">
+                         Address:
+                         {/* required indicator: agar address fields me koi required ho */}
+                         {addressFields.some((f) => f.is_required) && (
+                           <span className="text-red-500 ml-1">*</span>
+                         )}
+                       </label>
+
+                       {/* right side same as other inputs */}
+                       <div className="flex-1">
+                         <AddressGroupRenderer
+                           fields={addressFields}
+                           values={customFieldValues}
+                           onChange={handleCustomFieldChange}
+                           isEditMode={isEditMode}
+                         />
+                       </div>
+                     </div>
+                   );
+
+                  }
+
+                  // skip individual address fields so they don't render twice
+                  if (addressFieldIdSet.has(field.id)) {
+                    return null;
+                  }
+
                   // Don't render hidden fields at all (neither label nor input)
                   if (field.is_hidden) return null;
-
+                  const addressFieldIds = addressFields.map((f) => f.id);
+                  if (addressFieldIds.includes(field.id)) {
+                    return null;
+                  }
                   const fieldValue = customFieldValues[field.field_name] || "";
 
                   // Special handling for Field_18 (Owner) - render as dropdown with active users
-                  const isOwnerField = field.field_name === "Field_18" || 
+                  const isOwnerField =
+                    field.field_name === "Field_18" ||
                     field.field_name === "field_18" ||
                     field.field_name?.toLowerCase() === "field_18" ||
-                    (field.field_label === "Owner" && (field.field_name?.includes("18") || field.field_name?.toLowerCase().includes("field_18")));
+                    (field.field_label === "Owner" &&
+                      (field.field_name?.includes("18") ||
+                        field.field_name?.toLowerCase().includes("field_18")));
 
                   return (
                     <div key={field.id} className="flex items-center mb-3">
@@ -1221,7 +1397,12 @@ export default function AddOrganization() {
                         {isOwnerField ? (
                           <select
                             value={fieldValue}
-                            onChange={(e) => handleCustomFieldChange(field.field_name, e.target.value)}
+                            onChange={(e) =>
+                              handleCustomFieldChange(
+                                field.field_name,
+                                e.target.value
+                              )
+                            }
                             className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                           >
                             <option value="">Select Owner</option>

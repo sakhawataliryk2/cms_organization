@@ -9,7 +9,9 @@ import { validateAddress } from "@/lib/validation/addressValidation";
 import CustomFieldRenderer, {
   useCustomFields,
 } from "@/components/CustomFieldRenderer";
-import AddressGroupRenderer, { getAddressFields } from "@/components/AddressGroupRenderer";
+import AddressGroupRenderer, {
+  getAddressFields,
+} from "@/components/AddressGroupRenderer";
 
 interface CustomFieldDefinition {
   id: string;
@@ -59,7 +61,11 @@ interface MultiValueTagInputProps {
   placeholder?: string;
 }
 
-function MultiValueTagInput({ values, onChange, placeholder = "Type and press Enter" }: MultiValueTagInputProps) {
+function MultiValueTagInput({
+  values,
+  onChange,
+  placeholder = "Type and press Enter",
+}: MultiValueTagInputProps) {
   const [inputValue, setInputValue] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -71,7 +77,11 @@ function MultiValueTagInput({ values, onChange, placeholder = "Type and press En
         onChange([...values, trimmedValue]);
         setInputValue("");
       }
-    } else if (e.key === "Backspace" && inputValue === "" && values.length > 0) {
+    } else if (
+      e.key === "Backspace" &&
+      inputValue === "" &&
+      values.length > 0
+    ) {
       // Remove last tag when backspace is pressed on empty input
       onChange(values.slice(0, -1));
     }
@@ -153,8 +163,23 @@ export default function AddJobSeeker() {
     getCustomFieldsForSubmission,
   } = useCustomFields("job-seekers");
 
+  const sortedCustomFields = useMemo(
+    () =>
+      [...customFields].sort(
+        (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+      ),
+    [customFields]
+  );
+
   // Calculate address fields once using useMemo
-  const addressFields = useMemo(() => getAddressFields(customFields), [customFields]);
+  const addressFields = useMemo(
+    () => getAddressFields(customFields),
+    [customFields]
+  );
+  const addressAnchorId = useMemo(
+    () => (addressFields.length ? addressFields[0].id : null),
+    [addressFields]
+  );
 
   // Initialize with default fields
   useEffect(() => {
@@ -379,223 +404,244 @@ export default function AddJobSeeker() {
   };
 
   // Memoize fetchJobSeeker to prevent it from being recreated on every render
-  const fetchJobSeeker = useCallback(async (id: string) => {
-    setIsLoading(true);
-    setLoadError(null);
+  const fetchJobSeeker = useCallback(
+    async (id: string) => {
+      setIsLoading(true);
+      setLoadError(null);
 
-    try {
-      console.log(`Fetching job seeker data for ID: ${id}`);
-      const response = await fetch(`/api/job-seekers/${id}`, {
-        headers: {
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
-      });
+      try {
+        console.log(`Fetching job seeker data for ID: ${id}`);
+        const response = await fetch(`/api/job-seekers/${id}`, {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        });
 
-      if (!response.ok) {
-        throw new Error("Failed to fetch job seeker details");
-      }
-
-      const data = await response.json();
-      console.log("Job seeker data received:", data);
-
-      if (!data.jobSeeker) {
-        throw new Error("No job seeker data received");
-      }
-
-      // Map API data to form fields
-      const jobSeeker = data.jobSeeker;
-
-      // Parse existing custom fields from the job seeker
-      let existingCustomFields: Record<string, any> = {};
-      if (jobSeeker.custom_fields) {
-        try {
-          existingCustomFields =
-            typeof jobSeeker.custom_fields === "string"
-              ? JSON.parse(jobSeeker.custom_fields)
-              : jobSeeker.custom_fields;
-        } catch (e) {
-          console.error("Error parsing existing custom fields:", e);
+        if (!response.ok) {
+          throw new Error("Failed to fetch job seeker details");
         }
-      }
 
-      // ✅ Map custom fields from field_label (database key) to field_name (form key)
-      // Custom fields are stored with field_label as keys, but form uses field_name
-      const mappedCustomFieldValues: Record<string, any> = {};
-      
-      // First, map any existing custom field values from the database
-      if (customFields.length > 0 && Object.keys(existingCustomFields).length > 0) {
-        customFields.forEach((field) => {
-          // Try to find the value by field_label (as stored in DB)
-          const value = existingCustomFields[field.field_label];
-          if (value !== undefined) {
-            // Map to field_name for the form
-            mappedCustomFieldValues[field.field_name] = value;
+        const data = await response.json();
+        console.log("Job seeker data received:", data);
+
+        if (!data.jobSeeker) {
+          throw new Error("No job seeker data received");
+        }
+
+        // Map API data to form fields
+        const jobSeeker = data.jobSeeker;
+
+        // Parse existing custom fields from the job seeker
+        let existingCustomFields: Record<string, any> = {};
+        if (jobSeeker.custom_fields) {
+          try {
+            existingCustomFields =
+              typeof jobSeeker.custom_fields === "string"
+                ? JSON.parse(jobSeeker.custom_fields)
+                : jobSeeker.custom_fields;
+          } catch (e) {
+            console.error("Error parsing existing custom fields:", e);
           }
-        });
-      }
+        }
 
-      // ✅ Second, map standard job seeker fields to custom fields based on field labels
-      // This ensures that standard fields like "first_name", "last_name" etc. populate custom fields
-      // with matching labels like "First Name", "Last Name", etc.
-      if (customFields.length > 0) {
-        const standardFieldMapping: Record<string, string> = {
-          // First Name variations
-          "First Name": jobSeeker.first_name || "",
-          "First": jobSeeker.first_name || "",
-          "FName": jobSeeker.first_name || "",
-          // Last Name variations
-          "Last Name": jobSeeker.last_name || "",
-          "Last": jobSeeker.last_name || "",
-          "LName": jobSeeker.last_name || "",
-          // Email variations
-          "Email": jobSeeker.email || "",
-          "Email Address": jobSeeker.email || "",
-          "E-mail": jobSeeker.email || "",
-          // Phone variations
-          "Phone": jobSeeker.phone || "",
-          "Phone Number": jobSeeker.phone || "",
-          "Telephone": jobSeeker.phone || "",
-          "Mobile Phone": jobSeeker.mobile_phone || "",
-          "Mobile": jobSeeker.mobile_phone || "",
-          "Cell Phone": jobSeeker.mobile_phone || "",
-          // Address variations
-          "Address": jobSeeker.address || "",
-          "Street Address": jobSeeker.address || "",
-          "City": jobSeeker.city || "",
-          "State": jobSeeker.state || "",
-          "ZIP Code": jobSeeker.zip || "",
-          "ZIP": jobSeeker.zip || "",
-          "Zip Code": jobSeeker.zip || "",
-          "Postal Code": jobSeeker.zip || "",
-          // Status variations
-          "Status": jobSeeker.status || "New lead",
-          "Current Status": jobSeeker.status || "New lead",
-          // Organization variations
-          "Current Organization": jobSeeker.current_organization || "",
-          "Organization": jobSeeker.current_organization || "",
-          "Company": jobSeeker.current_organization || "",
-          // Title variations
-          "Title": jobSeeker.title || "",
-          "Job Title": jobSeeker.title || "",
-          "Position": jobSeeker.title || "",
-          // Resume variations
-          "Resume Text": jobSeeker.resume_text || "",
-          "Resume": jobSeeker.resume_text || "",
-          "CV": jobSeeker.resume_text || "",
-          // Skills variations
-          "Skills": jobSeeker.skills || "",
-          "Skill Set": jobSeeker.skills || "",
-          "Technical Skills": jobSeeker.skills || "",
-          // Salary variations
-          "Desired Salary": jobSeeker.desired_salary || "",
-          "Salary": jobSeeker.desired_salary || "",
-          "Expected Salary": jobSeeker.desired_salary || "",
-          // Owner variations
-          "Owner": jobSeeker.owner || "",
-          "Assigned To": jobSeeker.owner || "",
-          "Assigned Owner": jobSeeker.owner || "",
-          // Date variations
-          "Date Added": jobSeeker.date_added
-            ? jobSeeker.date_added.split("T")[0]
-            : "",
-          "Added Date": jobSeeker.date_added
-            ? jobSeeker.date_added.split("T")[0]
-            : "",
-          "Created Date": jobSeeker.date_added
-            ? jobSeeker.date_added.split("T")[0]
-            : "",
-          "Last Contact Date": jobSeeker.last_contact_date
-            ? jobSeeker.last_contact_date.split("T")[0]
-            : "",
-          "Last Contact": jobSeeker.last_contact_date
-            ? jobSeeker.last_contact_date.split("T")[0]
-            : "",
-        };
+        // ✅ Map custom fields from field_label (database key) to field_name (form key)
+        // Custom fields are stored with field_label as keys, but form uses field_name
+        const mappedCustomFieldValues: Record<string, any> = {};
 
-        customFields.forEach((field) => {
-          // Only set if not already set from existingCustomFields
-          if (mappedCustomFieldValues[field.field_name] === undefined) {
-            // Try to find matching standard field by field_label
-            const standardValue = standardFieldMapping[field.field_label];
-            if (standardValue !== undefined && standardValue !== "") {
-              mappedCustomFieldValues[field.field_name] = standardValue;
+        // First, map any existing custom field values from the database
+        if (
+          customFields.length > 0 &&
+          Object.keys(existingCustomFields).length > 0
+        ) {
+          customFields.forEach((field) => {
+            // Try to find the value by field_label (as stored in DB)
+            const value = existingCustomFields[field.field_label];
+            if (value !== undefined) {
+              // Map to field_name for the form
+              mappedCustomFieldValues[field.field_name] = value;
             }
-          }
-        });
-      }
+          });
+        }
 
-      console.log("Custom Field Values Loaded (mapped):", mappedCustomFieldValues);
-      console.log("Original custom fields from DB:", existingCustomFields);
-      console.log("Custom Fields Definitions:", customFields.map(f => ({ name: f.field_name, label: f.field_label })));
+        // ✅ Second, map standard job seeker fields to custom fields based on field labels
+        // This ensures that standard fields like "first_name", "last_name" etc. populate custom fields
+        // with matching labels like "First Name", "Last Name", etc.
+        if (customFields.length > 0) {
+          const standardFieldMapping: Record<string, string> = {
+            // First Name variations
+            "First Name": jobSeeker.first_name || "",
+            First: jobSeeker.first_name || "",
+            FName: jobSeeker.first_name || "",
+            // Last Name variations
+            "Last Name": jobSeeker.last_name || "",
+            Last: jobSeeker.last_name || "",
+            LName: jobSeeker.last_name || "",
+            // Email variations
+            Email: jobSeeker.email || "",
+            "Email Address": jobSeeker.email || "",
+            "E-mail": jobSeeker.email || "",
+            // Phone variations
+            Phone: jobSeeker.phone || "",
+            "Phone Number": jobSeeker.phone || "",
+            Telephone: jobSeeker.phone || "",
+            "Mobile Phone": jobSeeker.mobile_phone || "",
+            Mobile: jobSeeker.mobile_phone || "",
+            "Cell Phone": jobSeeker.mobile_phone || "",
+            // Address variations
+            Address: jobSeeker.address || "",
+            "Street Address": jobSeeker.address || "",
+            City: jobSeeker.city || "",
+            State: jobSeeker.state || "",
+            "ZIP Code": jobSeeker.zip || "",
+            ZIP: jobSeeker.zip || "",
+            "Zip Code": jobSeeker.zip || "",
+            "Postal Code": jobSeeker.zip || "",
+            // Status variations
+            Status: jobSeeker.status || "New lead",
+            "Current Status": jobSeeker.status || "New lead",
+            // Organization variations
+            "Current Organization": jobSeeker.current_organization || "",
+            Organization: jobSeeker.current_organization || "",
+            Company: jobSeeker.current_organization || "",
+            // Title variations
+            Title: jobSeeker.title || "",
+            "Job Title": jobSeeker.title || "",
+            Position: jobSeeker.title || "",
+            // Resume variations
+            "Resume Text": jobSeeker.resume_text || "",
+            Resume: jobSeeker.resume_text || "",
+            CV: jobSeeker.resume_text || "",
+            // Skills variations
+            Skills: jobSeeker.skills || "",
+            "Skill Set": jobSeeker.skills || "",
+            "Technical Skills": jobSeeker.skills || "",
+            // Salary variations
+            "Desired Salary": jobSeeker.desired_salary || "",
+            Salary: jobSeeker.desired_salary || "",
+            "Expected Salary": jobSeeker.desired_salary || "",
+            // Owner variations
+            Owner: jobSeeker.owner || "",
+            "Assigned To": jobSeeker.owner || "",
+            "Assigned Owner": jobSeeker.owner || "",
+            // Date variations
+            "Date Added": jobSeeker.date_added
+              ? jobSeeker.date_added.split("T")[0]
+              : "",
+            "Added Date": jobSeeker.date_added
+              ? jobSeeker.date_added.split("T")[0]
+              : "",
+            "Created Date": jobSeeker.date_added
+              ? jobSeeker.date_added.split("T")[0]
+              : "",
+            "Last Contact Date": jobSeeker.last_contact_date
+              ? jobSeeker.last_contact_date.split("T")[0]
+              : "",
+            "Last Contact": jobSeeker.last_contact_date
+              ? jobSeeker.last_contact_date.split("T")[0]
+              : "",
+          };
 
-      // ✅ Set the mapped custom field values (field_name as keys) - same as Organizations
-      setCustomFieldValues(mappedCustomFieldValues);
+          customFields.forEach((field) => {
+            // Only set if not already set from existingCustomFields
+            if (mappedCustomFieldValues[field.field_name] === undefined) {
+              // Try to find matching standard field by field_label
+              const standardValue = standardFieldMapping[field.field_label];
+              if (standardValue !== undefined && standardValue !== "") {
+                mappedCustomFieldValues[field.field_name] = standardValue;
+              }
+            }
+          });
+        }
 
-      // Update formFields with existing job seeker data
-      setFormFields((prevFields) => {
-        const updatedFields = [...prevFields];
-
-        // Helper function to find and update a field
-        const updateField = (id: string, value: any) => {
-          const fieldIndex = updatedFields.findIndex(
-            (field) => field.id === id
-          );
-          if (fieldIndex !== -1) {
-            updatedFields[fieldIndex] = {
-              ...updatedFields[fieldIndex],
-              value: value !== null && value !== undefined ? String(value) : "",
-            };
-          }
-        };
-
-        // Update standard fields
-        updateField("firstName", jobSeeker.first_name);
-        updateField("lastName", jobSeeker.last_name);
-        updateField("email", jobSeeker.email);
-        updateField("phone", jobSeeker.phone);
-        updateField("mobilePhone", jobSeeker.mobile_phone);
-        updateField("address", jobSeeker.address);
-        updateField("city", jobSeeker.city);
-        updateField("state", jobSeeker.state);
-        updateField("zip", jobSeeker.zip);
-        updateField("status", jobSeeker.status);
-        updateField("currentOrganization", jobSeeker.current_organization);
-        updateField("title", jobSeeker.title);
-        updateField("resumeText", jobSeeker.resume_text);
-        updateField("skills", jobSeeker.skills);
-        updateField("desiredSalary", jobSeeker.desired_salary);
-        updateField("owner", jobSeeker.owner);
-        updateField(
-          "dateAdded",
-          jobSeeker.date_added ? jobSeeker.date_added.split("T")[0] : ""
+        console.log(
+          "Custom Field Values Loaded (mapped):",
+          mappedCustomFieldValues
         );
-        // Note: lastContactDate is locked, so we don't update it
+        console.log("Original custom fields from DB:", existingCustomFields);
+        console.log(
+          "Custom Fields Definitions:",
+          customFields.map((f) => ({
+            name: f.field_name,
+            label: f.field_label,
+          }))
+        );
 
-        return updatedFields;
-      });
+        // ✅ Set the mapped custom field values (field_name as keys) - same as Organizations
+        setCustomFieldValues(mappedCustomFieldValues);
 
-      setIsEditMode(true);
-      console.log("Job seeker data loaded successfully");
-    } catch (err) {
-      console.error("Error fetching job seeker:", err);
-      setLoadError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while fetching job seeker details"
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  }, [customFields, setCustomFieldValues]);
+        // Update formFields with existing job seeker data
+        setFormFields((prevFields) => {
+          const updatedFields = [...prevFields];
+
+          // Helper function to find and update a field
+          const updateField = (id: string, value: any) => {
+            const fieldIndex = updatedFields.findIndex(
+              (field) => field.id === id
+            );
+            if (fieldIndex !== -1) {
+              updatedFields[fieldIndex] = {
+                ...updatedFields[fieldIndex],
+                value:
+                  value !== null && value !== undefined ? String(value) : "",
+              };
+            }
+          };
+
+          // Update standard fields
+          updateField("firstName", jobSeeker.first_name);
+          updateField("lastName", jobSeeker.last_name);
+          updateField("email", jobSeeker.email);
+          updateField("phone", jobSeeker.phone);
+          updateField("mobilePhone", jobSeeker.mobile_phone);
+          updateField("address", jobSeeker.address);
+          updateField("city", jobSeeker.city);
+          updateField("state", jobSeeker.state);
+          updateField("zip", jobSeeker.zip);
+          updateField("status", jobSeeker.status);
+          updateField("currentOrganization", jobSeeker.current_organization);
+          updateField("title", jobSeeker.title);
+          updateField("resumeText", jobSeeker.resume_text);
+          updateField("skills", jobSeeker.skills);
+          updateField("desiredSalary", jobSeeker.desired_salary);
+          updateField("owner", jobSeeker.owner);
+          updateField(
+            "dateAdded",
+            jobSeeker.date_added ? jobSeeker.date_added.split("T")[0] : ""
+          );
+          // Note: lastContactDate is locked, so we don't update it
+
+          return updatedFields;
+        });
+
+        setIsEditMode(true);
+        console.log("Job seeker data loaded successfully");
+      } catch (err) {
+        console.error("Error fetching job seeker:", err);
+        setLoadError(
+          err instanceof Error
+            ? err.message
+            : "An error occurred while fetching job seeker details"
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [customFields, setCustomFieldValues]
+  );
 
   // If jobSeekerId is present, fetch the job seeker data
   // Wait for customFields to load before fetching to ensure proper mapping
   useEffect(() => {
     // Only fetch if we have a jobSeekerId, customFields are loaded, and we haven't fetched yet
-    if (jobSeekerId && !customFieldsLoading && customFields.length > 0 && !hasFetchedRef.current) {
+    if (
+      jobSeekerId &&
+      !customFieldsLoading &&
+      customFields.length > 0 &&
+      !hasFetchedRef.current
+    ) {
       hasFetchedRef.current = true;
       fetchJobSeeker(jobSeekerId);
     }
@@ -609,15 +655,18 @@ export default function AddJobSeeker() {
   useEffect(() => {
     // Wait for customFields to load
     if (customFieldsLoading || customFields.length === 0) return;
-    
+
     // Find Field_17 specifically - check both field_name and field_label
-    const ownerField = customFields.find(f => 
-      f.field_name === "Field_17" || 
-      f.field_name === "field_17" ||
-      f.field_name?.toLowerCase() === "field_17" ||
-      (f.field_label === "Owner" && (f.field_name?.includes("17") || f.field_name?.toLowerCase().includes("field_17")))
+    const ownerField = customFields.find(
+      (f) =>
+        f.field_name === "Field_17" ||
+        f.field_name === "field_17" ||
+        f.field_name?.toLowerCase() === "field_17" ||
+        (f.field_label === "Owner" &&
+          (f.field_name?.includes("17") ||
+            f.field_name?.toLowerCase().includes("field_17")))
     );
-    
+
     if (ownerField) {
       const currentOwnerValue = customFieldValues[ownerField.field_name];
       // Only auto-populate if field is empty (works in both create and edit mode)
@@ -630,11 +679,14 @@ export default function AddJobSeeker() {
           if (userCookie) {
             const userData = JSON.parse(decodeURIComponent(userCookie));
             if (userData.name) {
-              setCustomFieldValues(prev => ({
+              setCustomFieldValues((prev) => ({
                 ...prev,
-                [ownerField.field_name]: userData.name
+                [ownerField.field_name]: userData.name,
               }));
-              console.log("Auto-populated Field_17 (Owner) with current user:", userData.name);
+              console.log(
+                "Auto-populated Field_17 (Owner) with current user:",
+                userData.name
+              );
             }
           }
         } catch (e) {
@@ -642,7 +694,12 @@ export default function AddJobSeeker() {
         }
       }
     }
-  }, [customFields, customFieldsLoading, customFieldValues, setCustomFieldValues]);
+  }, [
+    customFields,
+    customFieldsLoading,
+    customFieldValues,
+    setCustomFieldValues,
+  ]);
 
   // ✅ Sync formFields changes to custom fields (two-way binding)
   // When user types in basic fields, update matching custom fields
@@ -697,9 +754,13 @@ export default function AddJobSeeker() {
           }
         );
 
-        if (matchingFormFieldId && formFieldValues[matchingFormFieldId] !== undefined) {
+        if (
+          matchingFormFieldId &&
+          formFieldValues[matchingFormFieldId] !== undefined
+        ) {
           const formValue = formFieldValues[matchingFormFieldId];
-          const currentCustomValue = updatedCustomFields[customField.field_name];
+          const currentCustomValue =
+            updatedCustomFields[customField.field_name];
 
           // Only update if value has changed
           if (currentCustomValue !== formValue) {
@@ -712,7 +773,13 @@ export default function AddJobSeeker() {
       // Only return updated object if there are changes, otherwise return previous to prevent unnecessary re-renders
       return hasChanges ? updatedCustomFields : prevCustomFields;
     });
-  }, [formFields, customFields, customFieldsLoading, isLoading, setCustomFieldValues]);
+  }, [
+    formFields,
+    customFields,
+    customFieldsLoading,
+    isLoading,
+    setCustomFieldValues,
+  ]);
 
   // Email validation with debounce
   //   useEffect(() => {
@@ -790,7 +857,6 @@ export default function AddJobSeeker() {
   //     }
   // };
 
-
   // Handle input change
   const handleChange = (id: string, value: string) => {
     // Don't allow changes to locked fields
@@ -865,44 +931,24 @@ export default function AddJobSeeker() {
 
       // ✅ Map custom fields to standard fields if they exist (same pattern as Organizations)
       const firstName =
-        customFieldsToSend["First Name"] ||
-        formDataObj.firstName ||
-        "";
+        customFieldsToSend["First Name"] || formDataObj.firstName || "";
 
       const lastName =
-        customFieldsToSend["Last Name"] ||
-        formDataObj.lastName ||
-        "";
+        customFieldsToSend["Last Name"] || formDataObj.lastName || "";
 
-      const email =
-        customFieldsToSend["Email"] ||
-        formDataObj.email ||
-        "";
+      const email = customFieldsToSend["Email"] || formDataObj.email || "";
 
-      const phone =
-        customFieldsToSend["Phone"] ||
-        formDataObj.phone ||
-        "";
+      const phone = customFieldsToSend["Phone"] || formDataObj.phone || "";
 
       const mobilePhone =
-        customFieldsToSend["Mobile Phone"] ||
-        formDataObj.mobilePhone ||
-        "";
+        customFieldsToSend["Mobile Phone"] || formDataObj.mobilePhone || "";
 
       const address =
-        customFieldsToSend["Address"] ||
-        formDataObj.address ||
-        "";
+        customFieldsToSend["Address"] || formDataObj.address || "";
 
-      const city =
-        customFieldsToSend["City"] ||
-        formDataObj.city ||
-        "";
+      const city = customFieldsToSend["City"] || formDataObj.city || "";
 
-      const state =
-        customFieldsToSend["State"] ||
-        formDataObj.state ||
-        "";
+      const state = customFieldsToSend["State"] || formDataObj.state || "";
 
       const zip =
         customFieldsToSend["ZIP Code"] ||
@@ -911,34 +957,22 @@ export default function AddJobSeeker() {
         "";
 
       const status =
-        customFieldsToSend["Status"] ||
-        formDataObj.status ||
-        "New lead";
+        customFieldsToSend["Status"] || formDataObj.status || "New lead";
 
       const currentOrganization =
         customFieldsToSend["Current Organization"] ||
         formDataObj.currentOrganization ||
         "";
 
-      const title =
-        customFieldsToSend["Title"] ||
-        formDataObj.title ||
-        "";
+      const title = customFieldsToSend["Title"] || formDataObj.title || "";
 
       const resumeText =
-        customFieldsToSend["Resume Text"] ||
-        formDataObj.resumeText ||
-        "";
+        customFieldsToSend["Resume Text"] || formDataObj.resumeText || "";
 
-      const skills =
-        customFieldsToSend["Skills"] ||
-        formDataObj.skills ||
-        "";
+      const skills = customFieldsToSend["Skills"] || formDataObj.skills || "";
 
       const desiredSalary =
-        customFieldsToSend["Desired Salary"] ||
-        formDataObj.desiredSalary ||
-        "";
+        customFieldsToSend["Desired Salary"] || formDataObj.desiredSalary || "";
 
       const owner =
         customFieldsToSend["Owner"] ||
@@ -953,7 +987,7 @@ export default function AddJobSeeker() {
       // ✅ Build the API payload (same pattern as Organizations)
       // Ensure custom_fields is always a valid object (not integer or other types)
       const customFieldsForDB: Record<string, any> = {};
-      
+
       // Include all custom fields, even if they're empty strings (but filter out undefined/null)
       Object.keys(customFieldsToSend).forEach((key) => {
         const value = customFieldsToSend[key];
@@ -966,17 +1000,21 @@ export default function AddJobSeeker() {
       // Auto-populate Field_17 (Owner) if not set (only in create mode)
       if (!isEditMode) {
         // Find Field_17 in customFields
-        const ownerField = customFields.find(f => 
-          f.field_name === "Field_17" || 
-          f.field_name === "field_17" ||
-          f.field_name?.toLowerCase() === "field_17" ||
-          (f.field_label === "Owner" && (f.field_name?.includes("17") || f.field_name?.toLowerCase().includes("field_17")))
+        const ownerField = customFields.find(
+          (f) =>
+            f.field_name === "Field_17" ||
+            f.field_name === "field_17" ||
+            f.field_name?.toLowerCase() === "field_17" ||
+            (f.field_label === "Owner" &&
+              (f.field_name?.includes("17") ||
+                f.field_name?.toLowerCase().includes("field_17")))
         );
-        
+
         if (ownerField) {
-          const ownerValue = customFieldsForDB[ownerField.field_label] || 
-                            customFieldValues[ownerField.field_name];
-          
+          const ownerValue =
+            customFieldsForDB[ownerField.field_label] ||
+            customFieldValues[ownerField.field_name];
+
           if (!ownerValue || ownerValue.trim() === "") {
             try {
               const userCookie = document.cookie.replace(
@@ -987,7 +1025,10 @@ export default function AddJobSeeker() {
                 const userData = JSON.parse(decodeURIComponent(userCookie));
                 if (userData.name) {
                   customFieldsForDB[ownerField.field_label] = userData.name;
-                  console.log("Auto-populated Field_17 (Owner) with current user:", userData.name);
+                  console.log(
+                    "Auto-populated Field_17 (Owner) with current user:",
+                    userData.name
+                  );
                 }
               }
             } catch (e) {
@@ -1029,7 +1070,8 @@ export default function AddJobSeeker() {
       );
       console.log(
         "Is apiData.custom_fields an object?",
-        typeof apiData.custom_fields === "object" && !Array.isArray(apiData.custom_fields)
+        typeof apiData.custom_fields === "object" &&
+          !Array.isArray(apiData.custom_fields)
       );
       console.log("=== END PAYLOAD ===");
 
@@ -1039,32 +1081,47 @@ export default function AddJobSeeker() {
         apiData.custom_fields === null ||
         Array.isArray(apiData.custom_fields)
       ) {
-        console.error("ERROR: custom_fields is not a valid object!", apiData.custom_fields);
+        console.error(
+          "ERROR: custom_fields is not a valid object!",
+          apiData.custom_fields
+        );
         apiData.custom_fields = {};
       }
 
       // Ensure custom_fields is a plain object
       try {
-        apiData.custom_fields = JSON.parse(JSON.stringify(apiData.custom_fields));
+        apiData.custom_fields = JSON.parse(
+          JSON.stringify(apiData.custom_fields)
+        );
       } catch (e) {
         console.error("ERROR: Failed to serialize custom_fields!", e);
         apiData.custom_fields = {};
       }
 
       // Final validation - ensure custom_fields is definitely an object
-      if (typeof apiData.custom_fields !== "object" || apiData.custom_fields === null) {
-        console.error("FINAL VALIDATION FAILED: custom_fields is still not an object!", apiData.custom_fields);
+      if (
+        typeof apiData.custom_fields !== "object" ||
+        apiData.custom_fields === null
+      ) {
+        console.error(
+          "FINAL VALIDATION FAILED: custom_fields is still not an object!",
+          apiData.custom_fields
+        );
         apiData.custom_fields = {};
       }
 
       // Remove any potential conflicting keys
       delete (apiData as any).customFields;
-      
+
       // Log final payload before sending
       console.log("=== FINAL VALIDATION ===");
       console.log("custom_fields type:", typeof apiData.custom_fields);
       console.log("custom_fields value:", apiData.custom_fields);
-      console.log("custom_fields is object:", typeof apiData.custom_fields === "object" && !Array.isArray(apiData.custom_fields));
+      console.log(
+        "custom_fields is object:",
+        typeof apiData.custom_fields === "object" &&
+          !Array.isArray(apiData.custom_fields)
+      );
       console.log("All keys in apiData:", Object.keys(apiData));
       console.log("=== END VALIDATION ===");
 
@@ -1346,22 +1403,42 @@ export default function AddJobSeeker() {
                                     </h3>
                                 </div> */}
 
-                {/* Address Group Renderer */}
-                {addressFields.length > 0 && (
-                  <AddressGroupRenderer
-                    fields={addressFields}
-                    values={customFieldValues}
-                    onChange={handleCustomFieldChange}
-                  />
-                )}
-
-                {customFields.map((field) => {
+                {sortedCustomFields.map((field) => {
                   // Don't render hidden fields at all (neither label nor input)
                   if (field.is_hidden) return null;
+                  // ✅ Render Address Group exactly where first address field exists
+                  if (
+                    addressFields.length > 0 &&
+                    addressAnchorId &&
+                    field.id === addressAnchorId
+                  ) {
+                    return (
+                      <div
+                        key="address-group"
+                        className="flex items-start mb-3"
+                      >
+                        <label className="w-48 font-medium flex items-center mt-4">
+                          Address:
+                          {addressFields.some((f) => f.is_required) && (
+                            <span className="text-red-500 ml-1">*</span>
+                          )}
+                        </label>
+
+                        <div className="flex-1">
+                          <AddressGroupRenderer
+                            fields={addressFields}
+                            values={customFieldValues}
+                            onChange={handleCustomFieldChange}
+                            isEditMode={isEditMode}
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
 
                   // Skip address fields if they're being rendered in the grouped layout
                   // Compare by ID to ensure we filter correctly
-                  const addressFieldIds = addressFields.map(f => f.id);
+                  const addressFieldIds = addressFields.map((f) => f.id);
                   if (addressFieldIds.includes(field.id)) {
                     return null;
                   }
@@ -1369,47 +1446,72 @@ export default function AddJobSeeker() {
                   const fieldValue = customFieldValues[field.field_name] || "";
 
                   // Special handling for Field_17 (Owner) - render as dropdown with active users
-                  const isOwnerField = field.field_name === "Field_17" || 
+                  const isOwnerField =
+                    field.field_name === "Field_17" ||
                     field.field_name === "field_17" ||
                     field.field_name?.toLowerCase() === "field_17" ||
-                    (field.field_label === "Owner" && (field.field_name?.includes("17") || field.field_name?.toLowerCase().includes("field_17")));
+                    (field.field_label === "Owner" &&
+                      (field.field_name?.includes("17") ||
+                        field.field_name?.toLowerCase().includes("field_17")));
 
                   // Special handling for Field_32 (Skills) - render as multi-value tag input
-                  const isSkillsField = field.field_name === "Field_32" || 
+                  const isSkillsField =
+                    field.field_name === "Field_32" ||
                     field.field_name === "field_32" ||
                     field.field_name?.toLowerCase() === "field_32" ||
-                    (field.field_label === "Skills" && (field.field_name?.includes("32") || field.field_name?.toLowerCase().includes("field_32")));
+                    (field.field_label === "Skills" &&
+                      (field.field_name?.includes("32") ||
+                        field.field_name?.toLowerCase().includes("field_32")));
 
                   // Special handling for Field_33 (Additional Skill) - render as multi-value tag input
-                  const isAdditionalSkillField = field.field_name === "Field_33" || 
+                  const isAdditionalSkillField =
+                    field.field_name === "Field_33" ||
                     field.field_name === "field_33" ||
                     field.field_name?.toLowerCase() === "field_33" ||
-                    (field.field_label === "Additional Skill" && (field.field_name?.includes("33") || field.field_name?.toLowerCase().includes("field_33")));
+                    (field.field_label === "Additional Skill" &&
+                      (field.field_name?.includes("33") ||
+                        field.field_name?.toLowerCase().includes("field_33")));
 
                   // Special handling for Field_34 (Certifications) - render as multi-value tag input
-                  const isCertificationsField = field.field_name === "Field_34" || 
+                  const isCertificationsField =
+                    field.field_name === "Field_34" ||
                     field.field_name === "field_34" ||
                     field.field_name?.toLowerCase() === "field_34" ||
-                    (field.field_label === "Certifications" && (field.field_name?.includes("34") || field.field_name?.toLowerCase().includes("field_34")));
+                    (field.field_label === "Certifications" &&
+                      (field.field_name?.includes("34") ||
+                        field.field_name?.toLowerCase().includes("field_34")));
 
                   // Special handling for Field_35 (Softwares) - render as multi-value tag input
-                  const isSoftwaresField = field.field_name === "Field_35" || 
+                  const isSoftwaresField =
+                    field.field_name === "Field_35" ||
                     field.field_name === "field_35" ||
                     field.field_name?.toLowerCase() === "field_35" ||
-                    (field.field_label === "Softwares" && (field.field_name?.includes("35") || field.field_name?.toLowerCase().includes("field_35")));
+                    (field.field_label === "Softwares" &&
+                      (field.field_name?.includes("35") ||
+                        field.field_name?.toLowerCase().includes("field_35")));
 
                   // Parse multi-value fields - handle both array and comma-separated string
                   const parseMultiValue = (val: any): string[] => {
                     if (!val) return [];
-                    if (Array.isArray(val)) return val.filter(s => s && s.trim());
+                    if (Array.isArray(val))
+                      return val.filter((s) => s && s.trim());
                     if (typeof val === "string") {
-                      return val.split(",").map(s => s.trim()).filter(s => s);
+                      return val
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter((s) => s);
                     }
                     return [];
                   };
 
-                  const isMultiValueField = isSkillsField || isAdditionalSkillField || isCertificationsField || isSoftwaresField;
-                  const multiValueArray = isMultiValueField ? parseMultiValue(fieldValue) : [];
+                  const isMultiValueField =
+                    isSkillsField ||
+                    isAdditionalSkillField ||
+                    isCertificationsField ||
+                    isSoftwaresField;
+                  const multiValueArray = isMultiValueField
+                    ? parseMultiValue(fieldValue)
+                    : [];
 
                   return (
                     <div key={field.id} className="flex items-center mb-3">
@@ -1427,7 +1529,12 @@ export default function AddJobSeeker() {
                         {isOwnerField ? (
                           <select
                             value={fieldValue}
-                            onChange={(e) => handleCustomFieldChange(field.field_name, e.target.value)}
+                            onChange={(e) =>
+                              handleCustomFieldChange(
+                                field.field_name,
+                                e.target.value
+                              )
+                            }
                             className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                           >
                             <option value="">Select Owner</option>
@@ -1442,12 +1549,15 @@ export default function AddJobSeeker() {
                             values={multiValueArray}
                             onChange={(newValues) => {
                               // Store as comma-separated string
-                              handleCustomFieldChange(field.field_name, newValues.join(", "));
+                              handleCustomFieldChange(
+                                field.field_name,
+                                newValues.join(", ")
+                              );
                             }}
                             placeholder={
-                              isSkillsField 
-                                ? "Type a skill and press Enter" 
-                                : isAdditionalSkillField 
+                              isSkillsField
+                                ? "Type a skill and press Enter"
+                                : isAdditionalSkillField
                                 ? "Type an additional skill and press Enter"
                                 : isCertificationsField
                                 ? "Type a certification and press Enter"

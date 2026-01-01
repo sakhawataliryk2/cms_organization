@@ -21,9 +21,9 @@ interface AddressGroupRendererProps {
   fields: CustomFieldDefinition[];
   values: Record<string, any>;
   onChange: (fieldName: string, value: any) => void;
+  isEditMode?: boolean;
 }
 
-// Address field label patterns to detect (case-insensitive)
 const ADDRESS_FIELD_LABELS = {
   address: ["address", "address1"],
   address2: ["address2", "address 2"],
@@ -32,218 +32,167 @@ const ADDRESS_FIELD_LABELS = {
   zip: ["zip", "zip code", "postal code"],
 };
 
-export function getAddressFields(
-  customFields: CustomFieldDefinition[]
-): CustomFieldDefinition[] {
-  const addressFields: CustomFieldDefinition[] = [];
+export function getAddressFields(customFields: CustomFieldDefinition[]) {
+  const normalize = (s: string) => (s || "").toLowerCase().trim();
 
-  // Helper function to normalize and compare labels
-  const normalizeLabel = (label: string) => label.toLowerCase().trim();
+  const pick = (labels: string[]) =>
+    customFields.find((f) =>
+      labels.some((l) => normalize(f.field_label) === normalize(l))
+    );
 
-  // Find each address field by field_label (case-insensitive)
-  const addressField = customFields.find((f) =>
-    ADDRESS_FIELD_LABELS.address.some(
-      (label) => normalizeLabel(f.field_label) === normalizeLabel(label)
-    )
-  );
-  const address2Field = customFields.find((f) =>
-    ADDRESS_FIELD_LABELS.address2.some(
-      (label) => normalizeLabel(f.field_label) === normalizeLabel(label)
-    )
-  );
-  const cityField = customFields.find((f) =>
-    ADDRESS_FIELD_LABELS.city.some(
-      (label) => normalizeLabel(f.field_label) === normalizeLabel(label)
-    )
-  );
-  const stateField = customFields.find((f) =>
-    ADDRESS_FIELD_LABELS.state.some(
-      (label) => normalizeLabel(f.field_label) === normalizeLabel(label)
-    )
-  );
-  const zipField = customFields.find((f) =>
-    ADDRESS_FIELD_LABELS.zip.some(
-      (label) => normalizeLabel(f.field_label) === normalizeLabel(label)
-    )
-  );
+  const address = pick(ADDRESS_FIELD_LABELS.address);
+  const address2 = pick(ADDRESS_FIELD_LABELS.address2);
+  const city = pick(ADDRESS_FIELD_LABELS.city);
+  const state = pick(ADDRESS_FIELD_LABELS.state);
+  const zip = pick(ADDRESS_FIELD_LABELS.zip);
 
-  // Return any found address fields (don't require all of them)
-  if (addressField) addressFields.push(addressField);
-  if (address2Field) addressFields.push(address2Field);
-  if (cityField) addressFields.push(cityField);
-  if (stateField) addressFields.push(stateField);
-  if (zipField) addressFields.push(zipField);
+  return [address, address2, city, state, zip].filter(
+    Boolean
+  ) as CustomFieldDefinition[];
+}
 
-  return addressFields;
+function SearchIcon() {
+  return (
+    <svg
+      className="w-4 h-4 text-gray-400"
+      fill="none"
+      stroke="currentColor"
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+      />
+    </svg>
+  );
+}
+
+function UnderlineField({
+  field,
+  values,
+  onChange,
+  hidePlaceholder = false,
+  withSearchIcon = false,
+}: {
+  field: CustomFieldDefinition;
+  values: Record<string, any>;
+  onChange: (fieldName: string, value: any) => void;
+  hidePlaceholder?: boolean;
+  withSearchIcon?: boolean;
+}) {
+  const value = values?.[field.field_name] ?? "";
+
+  const safeField: CustomFieldDefinition = {
+    ...field,
+    placeholder: hidePlaceholder ? "" : field.field_label,
+  };
+
+  return (
+    <div className="min-w-0">
+      <div className="border-b border-gray-300 flex items-center gap-2">
+        {field.is_required && (
+          <span className="w-2 h-2 bg-red-500 rounded-full inline-block" />
+        )}
+
+        {withSearchIcon && <SearchIcon />}
+
+        <div className="address-input flex-1">
+          <CustomFieldRenderer
+            field={safeField}
+            value={value}
+            onChange={onChange}
+          />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export default function AddressGroupRenderer({
   fields,
   values,
   onChange,
+  isEditMode = false,
 }: AddressGroupRendererProps) {
-  // Helper function to normalize and compare labels
-  const normalizeLabel = (label: string) => label.toLowerCase().trim();
+  const normalize = (s: string) => (s || "").toLowerCase().trim();
 
-  // Find each address field by field_label (case-insensitive)
   const addressField = fields.find((f) =>
     ["address", "address1"].some(
-      (label) => normalizeLabel(f.field_label) === normalizeLabel(label)
+      (l) => normalize(f.field_label) === normalize(l)
     )
   );
+
   const address2Field = fields.find((f) =>
     ["address2", "address 2"].some(
-      (label) => normalizeLabel(f.field_label) === normalizeLabel(label)
+      (l) => normalize(f.field_label) === normalize(l)
     )
   );
-  const cityField = fields.find((f) =>
-    normalizeLabel(f.field_label) === "city"
-  );
-  const stateField = fields.find((f) =>
-    normalizeLabel(f.field_label) === "state"
-  );
+
+  const cityField = fields.find((f) => normalize(f.field_label) === "city");
+  const stateField = fields.find((f) => normalize(f.field_label) === "state");
+
   const zipField = fields.find((f) =>
     ["zip", "zip code", "postal code"].some(
-      (label) => normalizeLabel(f.field_label) === normalizeLabel(label)
+      (l) => normalize(f.field_label) === normalize(l)
     )
   );
 
-  // Only return null if NO address-related fields exist at all
-  if (!addressField && !address2Field && !cityField && !stateField && !zipField) {
+  if (!addressField && !address2Field && !cityField && !stateField && !zipField)
     return null;
-  }
 
   return (
-    <div className="mb-3">
-      {/* Row 1: Address (left) + Address2 (right) */}
+    <div className="address-underline">
+      {/* Row 1 */}
       {(addressField || address2Field) && (
-        <div className="flex gap-4 mb-2">
-          {/* Address Field */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-3">
           {addressField && (
-            <div className="flex-1">
-              <div className="flex items-center">
-                <label className="w-48 font-medium flex items-center">
-                  {addressField.field_label}:
-                  {addressField.is_required && (
-                    <span className="text-red-500 ml-1">*</span>
-                  )}
-                </label>
-                <div className="flex-1 relative">
-                  <CustomFieldRenderer
-                    field={addressField}
-                    value={values[addressField.field_name] || ""}
-                    onChange={onChange}
-                  />
-                </div>
-              </div>
-            </div>
+            <UnderlineField
+              field={addressField}
+              values={values}
+              onChange={onChange}
+            />
           )}
-
-          {/* Address2 Field (if exists) */}
           {address2Field && (
-            <div className="flex-1">
-              <div className="flex items-center">
-                <label className="w-48 font-medium flex items-center">
-                  {address2Field.field_label}:
-                  {address2Field.is_required && (
-                    <span className="text-red-500 ml-1">*</span>
-                  )}
-                </label>
-                <div className="flex-1 relative">
-                  <CustomFieldRenderer
-                    field={address2Field}
-                    value={values[address2Field.field_name] || ""}
-                    onChange={onChange}
-                  />
-                </div>
-              </div>
-            </div>
+            <UnderlineField
+              field={address2Field}
+              values={values}
+              onChange={onChange}
+            />
           )}
         </div>
       )}
 
-      {/* Row 2: City (left) + State (middle) + Zip (right) */}
+      {/* Row 2 */}
       {(cityField || stateField || zipField) && (
-        <div className="flex gap-4">
-          {/* City Field */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-10 gap-y-3 mt-3">
           {cityField && (
-            <div className="flex-1">
-              <div className="flex items-center">
-                <label className="w-48 font-medium flex items-center">
-                  {cityField.field_label}:
-                  {cityField.is_required && (
-                    <span className="text-red-500 ml-1">*</span>
-                  )}
-                </label>
-                <div className="flex-1 relative">
-                  <CustomFieldRenderer
-                    field={cityField}
-                    value={values[cityField.field_name] || ""}
-                    onChange={onChange}
-                  />
-                </div>
-              </div>
-            </div>
+            <UnderlineField
+              field={cityField}
+              values={values}
+              onChange={onChange}
+            />
           )}
-
-          {/* State Field */}
           {stateField && (
-            <div className="flex-1">
-              <div className="flex items-center">
-                <label className="w-48 font-medium flex items-center">
-                  {stateField.field_label}:
-                  {stateField.is_required && (
-                    <span className="text-red-500 ml-1">*</span>
-                  )}
-                </label>
-                <div className="flex-1 relative">
-                  <CustomFieldRenderer
-                    field={stateField}
-                    value={values[stateField.field_name] || ""}
-                    onChange={onChange}
-                  />
-                </div>
-              </div>
-            </div>
+            <UnderlineField
+              withSearchIcon
+              field={stateField}
+              values={values}
+              onChange={onChange}
+            />
           )}
-
-          {/* Zip Field */}
           {zipField && (
-            <div className="flex-1">
-              <div className="flex items-center">
-                <label className="w-48 font-medium flex items-center">
-                  {zipField.field_label}:
-                  {zipField.is_required && (
-                    <span className="text-red-500 ml-1">*</span>
-                  )}
-                  {/* Zip lookup icon */}
-                  <svg
-                    className="w-4 h-4 ml-1 text-gray-400"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                    />
-                  </svg>
-                </label>
-                <div className="flex-1 relative">
-                  <CustomFieldRenderer
-                    field={zipField}
-                    value={values[zipField.field_name] || ""}
-                    onChange={onChange}
-                  />
-                </div>
-              </div>
-            </div>
+            <UnderlineField
+              field={zipField}
+              values={values}
+              onChange={onChange}
+            />
           )}
         </div>
       )}
     </div>
   );
-}
 
+}
