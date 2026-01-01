@@ -36,6 +36,9 @@ export default function PlacementList() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
+  const [availableFields, setAvailableFields] = useState<any[]>([]);
+  const [isLoadingFields, setIsLoadingFields] = useState(false);
+
 
   // Sorting state
   const [sortField, setSortField] = useState<
@@ -56,17 +59,29 @@ export default function PlacementList() {
      "owner",
    ];
 
-   const placementColumnsCatalog = [
-     { key: "candidate", label: "Candidate" },
-     { key: "job", label: "Job" },
-     { key: "status", label: "Status" },
-     { key: "start_date", label: "Start Date" },
-     { key: "end_date", label: "End Date" },
-     { key: "salary", label: "Salary" },
-     { key: "owner", label: "Owner" },
-     { key: "created_at", label: "Date Added" },
-     { key: "created_by", label: "Created By" },
-   ];
+ const placementColumnsCatalog = [
+   // ---------- STANDARD ----------
+   { key: "candidate", label: "Candidate" },
+   { key: "job", label: "Job" },
+   { key: "status", label: "Status" },
+   { key: "start_date", label: "Start Date" },
+   { key: "end_date", label: "End Date" },
+   { key: "salary", label: "Salary" },
+   { key: "owner", label: "Owner" },
+   { key: "created_at", label: "Date Added" },
+   { key: "created_by", label: "Created By" },
+
+   // ---------- CUSTOM (FROM MODIFY PAGE) ----------
+   ...availableFields.map((f: any) => {
+     const key = f.field_key || f.field_name || f.api_name || f.id;
+
+     return {
+       key: `custom:${String(key)}`,
+       label: f.field_label || f.field_name || String(key),
+     };
+   }),
+ ];
+
 
    const getColumnLabel = (key: string) =>
      placementColumnsCatalog.find((c) => c.key === key)?.label ?? key;
@@ -79,30 +94,39 @@ export default function PlacementList() {
      return "bg-blue-100 text-blue-800";
    };
 
-   const getColumnValue = (p: Placement, key: string) => {
-     switch (key) {
-       case "candidate":
-         return p.candidate_name || p.job_seeker_name || "Unknown";
-       case "job":
-         return p.job_title || p.job_name || "Unknown";
-       case "status":
-         return p.status || "Active";
-       case "start_date":
-         return p.start_date ? formatDate(p.start_date) : "-";
-       case "end_date":
-         return p.end_date ? formatDate(p.end_date) : "-";
-       case "salary":
-         return p.salary || "-";
-       case "owner":
-         return p.owner || p.owner_name || "Unassigned";
-       case "created_at":
-         return p.created_at ? formatDate(p.created_at) : "-";
-       case "created_by":
-         return p.created_by_name || "Unknown";
-       default:
-         return "—";
-     }
-   };
+  const getColumnValue = (p: any, key: string) => {
+    if (key.startsWith("custom:")) {
+      const rawKey = key.replace("custom:", "");
+      const val = p?.customFields?.[rawKey];
+      return val === undefined || val === null || val === ""
+        ? "—"
+        : String(val);
+    }
+
+    switch (key) {
+      case "candidate":
+        return p.candidate_name || p.job_seeker_name || "Unknown";
+      case "job":
+        return p.job_title || p.job_name || "Unknown";
+      case "status":
+        return p.status || "Active";
+      case "start_date":
+        return p.start_date ? formatDate(p.start_date) : "-";
+      case "end_date":
+        return p.end_date ? formatDate(p.end_date) : "-";
+      case "salary":
+        return p.salary || "-";
+      case "owner":
+        return p.owner || p.owner_name || "Unassigned";
+      case "created_at":
+        return p.created_at ? formatDate(p.created_at) : "-";
+      case "created_by":
+        return p.created_by_name || "Unknown";
+      default:
+        return "—";
+    }
+  };
+
  const {
    columnFields,
    setColumnFields,
@@ -115,6 +139,28 @@ export default function PlacementList() {
    configType: "columns",
    defaultFields: DEFAULT_PLACEMENT_COLUMNS,
  });
+ useEffect(() => {
+   const fetchAvailableFields = async () => {
+     setIsLoadingFields(true);
+     try {
+       const res = await fetch("/api/admin/field-management/placements");
+       const data = await res.json();
+
+       const fields =
+         data?.customFields || data?.fields || data?.data?.fields || [];
+
+       setAvailableFields(fields);
+     } catch (e) {
+       console.error("Failed to load placement fields", e);
+       setAvailableFields([]);
+     } finally {
+       setIsLoadingFields(false);
+     }
+   };
+
+   fetchAvailableFields();
+ }, []);
+
   // Fetch placements on component mount
   useEffect(() => {
     fetchPlacements();

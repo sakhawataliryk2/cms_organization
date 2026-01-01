@@ -529,7 +529,6 @@ export default function DashboardNav() {
                 const isActive = tab.id === activeChromeTabId;
                 const isTbi = tab.id === "tbi";
 
-                
                 const activeBg = isTbi ? "#16a34a" : "rgb(233 233 233)";
                 const activeText = isTbi ? "#ffffff" : "rgb(0, 0,0)";
 
@@ -546,7 +545,7 @@ export default function DashboardNav() {
                           } as React.CSSProperties)
                         : undefined
                     }
-                    onClick={() => goToTab(tab.id)} 
+                    onClick={() => goToTab(tab.id)}
                   >
                     <div className="sd-tab-desc">{tab.label}</div>
 
@@ -893,7 +892,7 @@ export default function DashboardNav() {
 
           {/* User profile with dropdown - Top Right */}
           {user && (
-            <div className="relative" ref={userMenuRef}>
+            <div className="pr-6 relative" ref={userMenuRef}>
               <button
                 className="flex items-center space-x-2 text-gray-300 hover:text-white"
                 onClick={toggleUserMenu}

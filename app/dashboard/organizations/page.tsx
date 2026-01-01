@@ -1,11 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
-
+import { useListControls } from "@/hooks/useListSortFilter";
+import SortFilterBar from "@/components/list/SortFilterBar";
+import FiltersModal from "@/components/list/FiltersModal";
 
 interface Organization {
   id: string;
@@ -18,10 +21,38 @@ interface Organization {
   created_by_name: string;
   job_orders_count?: number;
   placements_count?: number;
+
+  customFields?: Record<string, any>;
+  custom_fields?: Record<string, any>;
 }
+
+
 
 export default function OrganizationList() {
   const router = useRouter();
+const list = useListControls({
+  defaultSortKey: "id",
+  defaultSortDir: "desc",
+  sortOptions: [
+    { key: "id", label: "ID" },
+    { key: "name", label: "Company Name" },
+    { key: "status", label: "Status" },
+    { key: "contact_phone", label: "Phone Number" },
+    { key: "address", label: "Address" },
+    { key: "job_orders_count", label: "Job Orders" },
+    { key: "placements_count", label: "Placements" },
+  ],
+});
+
+const [showFilters, setShowFilters] = useState(false);
+const [draftFilters, setDraftFilters] = useState<Record<string, any>>({});
+
+useEffect(() => {
+  if (showFilters) setDraftFilters(list.filters);
+}, [showFilters, list.filters]);
+
+
+
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   useEffect(() => {
     const close = () => setOpenActionId(null);
@@ -41,18 +72,72 @@ export default function OrganizationList() {
     "placements_count",
   ];
 
-const {
-  columnFields,
-  setColumnFields,
-  showHeaderFieldModal: showColumnModal,
-  setShowHeaderFieldModal: setShowColumnModal,
-  saveHeaderConfig: saveColumnConfig,
-  isSaving: isSavingColumns,
-} = useHeaderConfig({
-  entityType: "ORGANIZATION",
-  defaultFields: ORG_DEFAULT_COLUMNS,
-  configType: "columns",
-});
+  const {
+    columnFields,
+    setColumnFields,
+    showHeaderFieldModal: showColumnModal,
+    setShowHeaderFieldModal: setShowColumnModal,
+    saveHeaderConfig: saveColumnConfig,
+    isSaving: isSavingColumns,
+  } = useHeaderConfig({
+    entityType: "ORGANIZATION",
+    defaultFields: ORG_DEFAULT_COLUMNS,
+    configType: "columns",
+  });
+  // =====================
+  // AVAILABLE FIELDS (from Modify Page)
+  // =====================
+  const [availableFields, setAvailableFields] = useState<any[]>([]);
+  const [isLoadingFields, setIsLoadingFields] = useState(false);
+
+  useEffect(() => {
+    const fetchAvailableFields = async () => {
+      setIsLoadingFields(true);
+
+      try {
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        );
+
+        const res = await fetch("/api/admin/field-management/organizations", {
+          method: "GET",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          credentials: "include",
+        });
+
+        console.log("field-management status:", res.status);
+
+        const raw = await res.text();
+        console.log("field-management raw:", raw);
+
+        let data: any = {};
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          data = {};
+        }
+
+        const fields =
+          data.fields ||
+          data.data?.fields ||
+          data.organizationFields ||
+          data.data ||
+          [];
+
+        console.log("parsed fields length:", fields?.length);
+
+        setAvailableFields(Array.isArray(fields) ? fields : []);
+      } catch (e) {
+        console.error("Error fetching available fields:", e);
+        setAvailableFields([]);
+      } finally {
+        setIsLoadingFields(false);
+      }
+    };
+
+    fetchAvailableFields();
+  }, []);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [organizations, setOrganizations] = useState<Organization[]>([]);
@@ -65,31 +150,76 @@ const {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Sorting state
-  const [sortField, setSortField] = useState<
-    | "id"
-    | "name"
-    | "status"
-    | "contact_phone"
-    | "address"
-    | "job_orders_count"
-    | "placements_count"
-    | null
-  >(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-  const columnsCatalog = [
-    { key: "name", label: "Company Name", sortable: true },
-    { key: "status", label: "Status", sortable: true },
-    { key: "contact_phone", label: "Phone Number", sortable: true },
-    { key: "address", label: "Address", sortable: true },
-    { key: "job_orders_count", label: "Job Orders", sortable: true },
-    { key: "placements_count", label: "Placements", sortable: true },
-  ];
+  // // Sorting state
+  // const [sortField, setSortField] = useState<
+  //   | "id"
+  //   | "name"
+  //   | "status"
+  //   | "contact_phone"
+  //   | "address"
+  //   | "job_orders_count"
+  //   | "placements_count"
+  //   | null
+  // >(null);
+  // const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  // ✅ Columns Catalog (Standard + Modify Page Custom Fields)
+  const humanize = (s: string) =>
+    s
+      .replace(/[_\-]+/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .trim();
+
+  const columnsCatalog = useMemo(() => {
+    // ✅ 1) Standard columns (fixed)
+    const standard = [
+      { key: "name", label: "Company Name", sortable: true },
+      { key: "status", label: "Status", sortable: true },
+      { key: "contact_phone", label: "Phone Number", sortable: true },
+      { key: "address", label: "Address", sortable: true },
+      { key: "job_orders_count", label: "Job Orders", sortable: true },
+      { key: "placements_count", label: "Placements", sortable: true },
+    ];
+
+    // ✅ 2) Custom keys (auto from ALL organizations list)
+    const customKeySet = new Set<string>();
+
+    (organizations || []).forEach((org: any) => {
+      const cf = org?.customFields || org?.custom_fields || {};
+      Object.keys(cf).forEach((k) => customKeySet.add(k));
+    });
+
+    const custom = Array.from(customKeySet).map((k) => ({
+      key: `custom:${k}`,
+      label: humanize(k),
+      sortable: false,
+    }));
+
+    // ✅ 3) merge + unique
+    const merged = [...standard, ...custom];
+    const seen = new Set<string>();
+    return merged.filter((x) => {
+      if (seen.has(x.key)) return false;
+      seen.add(x.key);
+      return true;
+    });
+  }, [organizations]);
 
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
 
-  const getColumnValue = (org: Organization, key: string) => {
+  const getColumnValue = (org: any, key: string) => {
+    // ✅ custom columns
+    if (key.startsWith("custom:")) {
+      const rawKey = key.replace("custom:", "");
+      const cf = org?.customFields || org?.custom_fields || {};
+      const val = cf?.[rawKey];
+      return val === undefined || val === null || val === ""
+        ? "N/A"
+        : String(val);
+    }
+
+    // ✅ standard columns
     switch (key) {
       case "name":
         return org.name || "N/A";
@@ -152,64 +282,79 @@ const {
         org.address.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  // Handle sorting
-  const handleSort = (
-    field:
-      | "id"
-      | "name"
-      | "status"
-      | "contact_phone"
-      | "address"
-      | "job_orders_count"
-      | "placements_count"
-  ) => {
-    if (sortField === field) {
-      // Toggle direction if same field
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    } else {
-      // Set new field with ascending direction
-      setSortField(field);
-      setSortDirection("asc");
-    }
-  };
+//   // Handle sorting
+//   const handleSort = (
+//     field:
+//       | "id"
+//       | "name"
+//       | "status"
+//       | "contact_phone"
+//       | "address"
+//       | "job_orders_count"
+//       | "placements_count"
+//   ) => {
+//     if (sortField === field) {
+//       // Toggle direction if same field
+//       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+//     } else {
+//       // Set new field with ascending direction
+//       setSortField(field);
+//       setSortDirection("asc");
+//     }
+//   };
+// 
+//   // Sort the filtered organizations
+//   const sortedOrganizations = [...filteredOrganizations].sort((a, b) => {
+//     if (!sortField) return 0;
+// 
+//     let aValue: string | number = "";
+//     let bValue: string | number = "";
+// 
+//     if (sortField === "id") {
+//       // Sort numerically by ID
+//       aValue = parseInt(a.id) || 0;
+//       bValue = parseInt(b.id) || 0;
+//     } else if (sortField === "name") {
+//       aValue = a.name?.toLowerCase() || "";
+//       bValue = b.name?.toLowerCase() || "";
+//     } else if (sortField === "status") {
+//       aValue = a.status?.toLowerCase() || "";
+//       bValue = b.status?.toLowerCase() || "";
+//     } else if (sortField === "contact_phone") {
+//       aValue = a.contact_phone?.toLowerCase() || "";
+//       bValue = b.contact_phone?.toLowerCase() || "";
+//     } else if (sortField === "address") {
+//       aValue = a.address?.toLowerCase() || "";
+//       bValue = b.address?.toLowerCase() || "";
+//     } else if (sortField === "job_orders_count") {
+//       aValue = a.job_orders_count || 0;
+//       bValue = b.job_orders_count || 0;
+//     } else if (sortField === "placements_count") {
+//       aValue = a.placements_count || 0;
+//       bValue = b.placements_count || 0;
+//     }
+// 
+//     if (sortDirection === "asc") {
+//       return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
+//     } else {
+//       return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
+//     }
+//   });
+const viewOrganizations = useMemo(() => {
+  const data = filteredOrganizations;
 
-  // Sort the filtered organizations
-  const sortedOrganizations = [...filteredOrganizations].sort((a, b) => {
-    if (!sortField) return 0;
-
-    let aValue: string | number = "";
-    let bValue: string | number = "";
-
-    if (sortField === "id") {
-      // Sort numerically by ID
-      aValue = parseInt(a.id) || 0;
-      bValue = parseInt(b.id) || 0;
-    } else if (sortField === "name") {
-      aValue = a.name?.toLowerCase() || "";
-      bValue = b.name?.toLowerCase() || "";
-    } else if (sortField === "status") {
-      aValue = a.status?.toLowerCase() || "";
-      bValue = b.status?.toLowerCase() || "";
-    } else if (sortField === "contact_phone") {
-      aValue = a.contact_phone?.toLowerCase() || "";
-      bValue = b.contact_phone?.toLowerCase() || "";
-    } else if (sortField === "address") {
-      aValue = a.address?.toLowerCase() || "";
-      bValue = b.address?.toLowerCase() || "";
-    } else if (sortField === "job_orders_count") {
-      aValue = a.job_orders_count || 0;
-      bValue = b.job_orders_count || 0;
-    } else if (sortField === "placements_count") {
-      aValue = a.placements_count || 0;
-      bValue = b.placements_count || 0;
-    }
-
-    if (sortDirection === "asc") {
-      return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-    } else {
-      return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
-    }
+  return list.applySortFilter<Organization>(data, {
+    getValue: (row, key) => {
+      if (key.startsWith("custom:")) {
+        const rawKey = key.replace("custom:", "");
+        const cf =
+          (row as any)?.customFields || (row as any)?.custom_fields || {};
+        return cf?.[rawKey];
+      }
+      return (row as any)[key];
+    },
   });
+}, [filteredOrganizations, list]);
 
   const handleViewOrganization = (id: string) => {
     router.push(`/dashboard/organizations/view?id=${id}`);
@@ -342,6 +487,47 @@ const {
               Delete Selected ({selectedOrganizations.length})
             </button>
           )}
+          <SortFilterBar
+            sortKey={list.sortKey}
+            sortDir={list.sortDir}
+            onChangeSortKey={list.onChangeSortKey}
+            onToggleDir={list.onToggleDir}
+            sortOptions={list.sortOptions}
+            onOpenFilters={() => setShowFilters(true)}
+            onClearFilters={list.clearFilters}
+            hasFilters={list.hasFilters}
+          />
+
+          {showFilters && (
+            <FiltersModal
+              open={showFilters}
+              onClose={() => setShowFilters(false)}
+              fields={[
+                {
+                  key: "status",
+                  label: "Status",
+                  type: "select",
+                  options: [
+                    { label: "Qualified Lead", value: "Qualified Lead" },
+                    { label: "Archive", value: "Archive" },
+                    { label: "Passive Account", value: "Passive Account" },
+                    { label: "Offer Out", value: "Offer Out" },
+                    { label: "Yes", value: "Yes" },
+                  ],
+                },
+              ]}
+              values={draftFilters}
+              onChange={(key: string, value: any) =>
+                setDraftFilters((prev) => ({ ...prev, [key]: value }))
+              }
+              onApply={() => {
+                list.setFilters(draftFilters);
+                setShowFilters(false);
+              }}
+              onReset={() => setDraftFilters({})}
+            />
+          )}
+
           <button
             onClick={() => setShowColumnModal(true)}
             className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
@@ -431,7 +617,7 @@ const {
               {/* Fixed ID header */}
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <button
-                  onClick={() => handleSort("id")}
+                  onClick={() => list.toggleSort("id")}
                   className="hover:text-gray-700"
                 >
                   ID
@@ -451,7 +637,7 @@ const {
           </thead>
 
           <tbody className="bg-white divide-y divide-gray-200">
-            {sortedOrganizations.map((org) => (
+            {viewOrganizations.map((org) => (
               <tr
                 key={org.id}
                 className="hover:bg-gray-50 cursor-pointer"
@@ -595,13 +781,12 @@ const {
           <div>
             <p className="text-sm text-gray-700">
               Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">{sortedOrganizations.length}</span>{" "}
-              of{" "}
-              <span className="font-medium">{sortedOrganizations.length}</span>{" "}
+              <span className="font-medium">{viewOrganizations.length}</span> of{" "}
+              <span className="font-medium">{viewOrganizations.length}</span>{" "}
               results
             </p>
           </div>
-          {sortedOrganizations.length > 0 && (
+          {viewOrganizations.length > 0 && (
             <div>
               <nav
                 className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
@@ -664,6 +849,7 @@ const {
               {/* Available */}
               <div>
                 <h3 className="font-medium mb-3">Available Columns</h3>
+
                 <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
                   {columnsCatalog.map((c) => {
                     const checked = columnFields.includes(c.key);

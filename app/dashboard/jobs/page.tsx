@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -35,27 +35,49 @@ type JobColumnKey = (typeof JOB_DEFAULT_COLUMNS)[number];
 export default function JobList() {
   const router = useRouter();
   const [openActionId, setOpenActionId] = useState<string | null>(null);
-   
-const {
-  columnFields,
-  setColumnFields,
-  showHeaderFieldModal: showColumnModal,
-  setShowHeaderFieldModal: setShowColumnModal,
-  saveHeaderConfig: saveColumnConfig,
-  isSaving: isSavingColumns,
-} = useHeaderConfig({
-  entityType: "JOB",
-  defaultFields: [...JOB_DEFAULT_COLUMNS],
-  configType: "columns",
-});
 
-
-  
+  const {
+    columnFields,
+    setColumnFields,
+    showHeaderFieldModal: showColumnModal,
+    setShowHeaderFieldModal: setShowColumnModal,
+    saveHeaderConfig: saveColumnConfig,
+    isSaving: isSavingColumns,
+  } = useHeaderConfig({
+    entityType: "JOB",
+    defaultFields: [...JOB_DEFAULT_COLUMNS],
+    configType: "columns",
+  });
 
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
+  const columnsCatalog = useMemo(() => {
+    if (!jobs || jobs.length === 0) return [];
+
+    const sample = jobs[0] as any;
+
+    const ignore = new Set(["updated_at", "deleted_at"]);
+
+    return Object.keys(sample)
+      .filter((key) => !ignore.has(key))
+      .map((key) => ({
+        key,
+        label: key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+        sortable: true,
+      }));
+  }, [jobs]);
+
+  const getColumnLabel = (key: string) =>
+    columnsCatalog.find((c) => c.key === key)?.label || key;
+
+  const getColumnValue = (job: any, key: string) => {
+    const v = job?.[key];
+    if (v === null || v === undefined || v === "") return "-";
+    return String(v);
+  };
+
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -277,19 +299,7 @@ const {
       year: "numeric",
     }).format(date);
   };
-  const columnsCatalog: { key: JobColumnKey; label: string }[] = [
-    { key: "id", label: "ID" },
-    { key: "job_title", label: "Title" },
-    { key: "category", label: "Category" },
-    { key: "organization_name", label: "Organization" },
-    { key: "worksite_location", label: "Location" },
-    { key: "status", label: "Status" },
-    { key: "created_at", label: "Date Posted" },
-    { key: "created_by_name", label: "Owner" },
-  ];
-
-  const getColumnLabel = (key: string) =>
-    columnsCatalog.find((c) => c.key === key)?.label || key;
+ 
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -400,8 +410,6 @@ const {
 
       {/* Jobs Table */}
       <div className="overflow-x-auto">
-      
-
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>

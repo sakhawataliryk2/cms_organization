@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import LoadingScreen from '@/components/LoadingScreen';
@@ -37,6 +37,91 @@ export default function TaskList() {
     const [sortField, setSortField] = useState<string>('created_at');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
     const [openActionId, setOpenActionId] = useState<string | null>(null);
+    const [availableFields, setAvailableFields] = useState<any[]>([]);
+    const [isLoadingFields, setIsLoadingFields] = useState(false);
+    const taskColumnsCatalog = useMemo(() => {
+      const standard = [
+        { key: "completed", label: "Completed?" },
+        { key: "due", label: "Due Date & Time" },
+        { key: "jobSeeker", label: "Job Seeker" },
+        { key: "hiringManager", label: "Hiring Manager" },
+        { key: "job", label: "Job" },
+        { key: "lead", label: "Lead" },
+        { key: "placement", label: "Placement" },
+        { key: "owner", label: "Owner" },
+        { key: "priority", label: "Priority" },
+        { key: "status", label: "Status" },
+        { key: "title", label: "Title" },
+      ];
+
+      const custom = (availableFields || []).map((f: any) => {
+        const key = f?.field_key || f?.field_name || f?.api_name || f?.id;
+
+        return {
+          key: `custom:${String(key)}`,
+          label: f?.field_label || f?.field_name || String(key),
+        };
+      });
+
+      return [...standard, ...custom];
+    }, [availableFields]);
+
+    const normalizeFields = (payload: any) => {
+      const root =
+        payload?.customFields ??
+        payload?.fields ??
+        payload?.data?.fields ??
+        payload?.data?.data?.fields ??
+        payload?.taskFields ??
+        payload?.data ??
+        payload?.data?.data ??
+        [];
+
+      const list: any[] = Array.isArray(root) ? root : [];
+
+      const flat = list.flatMap((x: any) => {
+        if (!x) return [];
+        if (Array.isArray(x.fields)) return x.fields;
+        if (Array.isArray(x.children)) return x.children;
+        return [x];
+      });
+
+      return flat.filter(Boolean);
+    };
+
+    useEffect(() => {
+      const fetchAvailableFields = async () => {
+        setIsLoadingFields(true);
+        try {
+          const token = document.cookie
+            .split("; ")
+            .find((r) => r.startsWith("token="))
+            ?.split("=")[1];
+
+          const res = await fetch("/api/admin/field-management/tasks", {
+            method: "GET",
+            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            credentials: "include",
+          });
+
+          const raw = await res.text();
+          let data: any = {};
+          try {
+            data = JSON.parse(raw);
+          } catch {}
+
+          const fields = normalizeFields(data);
+          setAvailableFields(fields);
+        } catch {
+          setAvailableFields([]);
+        } finally {
+          setIsLoadingFields(false);
+        }
+      };
+
+      fetchAvailableFields();
+    }, []);
+
      const DEFAULT_TASK_COLUMNS: string[] = [
        "completed",
        "due",
@@ -48,51 +133,66 @@ export default function TaskList() {
        "owner",
      ];
 
-     const taskColumnsCatalog = [
-       { key: "completed", label: "Completed?" },
-       { key: "due", label: "Due Date & Time" },
-       { key: "job_seeker", label: "Job Seeker" },
-       { key: "hiring_manager", label: "Hiring Manager" },
-       { key: "job", label: "Job" },
-       { key: "lead", label: "Lead" },
-       { key: "placement", label: "Placement" },
-       { key: "owner", label: "Owner" },
-       { key: "priority", label: "Priority" },
-       { key: "status", label: "Status" },
-       { key: "title", label: "Title" },
-     ];
 
      const getColumnLabel = (key: string) =>
        taskColumnsCatalog.find((c) => c.key === key)?.label ?? key;
 
-     const getColumnValue = (task: Task, key: string) => {
-       switch (key) {
-         case "completed":
-           return task.is_completed ? "Yes" : "No";
-         case "due":
-           return formatDateTime(task.due_date, task.due_time) || "Not set";
-         case "job_seeker":
-           return task.job_seeker_name || "Not specified";
-         case "hiring_manager":
-           return task.hiring_manager_name || "Not specified";
-         case "job":
-           return task.job_title || "Not specified";
-         case "lead":
-           return task.lead_name || "Not specified";
-         case "placement":
-           return task.placement_id || "Not specified";
-         case "owner":
-           return task.owner || task.created_by_name || "Unknown";
-         case "priority":
-           return task.priority || "N/A";
-         case "status":
-           return task.status || "N/A";
-         case "title":
-           return task.title || "N/A";
-         default:
-           return "—";
-       }
-     };
+const getColumnValue = (task: any, key: string) => {
+  if (key.startsWith("custom:")) {
+    const rawKey = key.replace("custom:", "");
+    const cf = task?.customFields || task?.custom_fields || {};
+    const val = cf?.[rawKey];
+    return val === undefined || val === null || val === "" ? "—" : String(val);
+  }
+
+  switch (key) {
+    case "completed":
+      return task.is_completed ? "Yes" : "No";
+
+    case "due":
+      return formatDateTime(task.due_date, task.due_time) || "Not set";
+
+    case "jobSeeker":
+      return task.job_seeker_name || "—";
+
+    case "hiringManager":
+      return task.hiring_manager_name || "—";
+
+    case "job":
+      return task.job_title || "—";
+
+    case "lead":
+      return task.lead_name || "—";
+
+    case "placement":
+      return task.placement_id || "—";
+
+    case "owner":
+      return task.owner || task.created_by_name || "—";
+
+    case "priority":
+      return task.priority || "—";
+
+    case "status":
+      return task.status || "—";
+
+    case "title":
+      return task.title || "—";
+
+    case "dateCreated":
+      return formatDateTime(task.created_at) || "—";
+
+    case "createdBy":
+      return task.created_by_name || "—";
+
+    case "assignedTo":
+      return task.assigned_to_name || "—";
+
+    default:
+      return "—";
+  }
+};
+
      const {
        columnFields,
        setColumnFields,

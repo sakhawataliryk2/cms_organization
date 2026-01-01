@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -20,6 +20,8 @@ interface Lead {
   owner: string;
   created_at: string;
   created_by_name?: string;
+  customFields?: Record<string, any>;
+  custom_fields?: Record<string, any>;
 }
 
 export default function LeadList() {
@@ -57,20 +59,59 @@ const DEFAULT_LEAD_COLUMNS: string[] = [
 ];
 
 // Column Catalog (field mappings like)
-const leadColumnsCatalog = [
-  { key: "name", label: "Name" },
-  { key: "status", label: "Status" },
-  { key: "email", label: "Email" },
-  { key: "phone", label: "Phone" },
-  { key: "title", label: "Title" },
-  { key: "organization", label: "Organization" },
-  { key: "owner", label: "Owner" },
-];
+
+const humanize = (s: string) =>
+  s
+    .replace(/[_\-]+/g, " ")
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/\b\w/g, (c) => c.toUpperCase())
+    .trim();
+
+const columnsCatalog = useMemo(() => {
+  const standard = [
+    { key: "name", label: "Name", sortable: true },
+    { key: "status", label: "Status", sortable: true },
+    { key: "email", label: "Email", sortable: true },
+    { key: "phone", label: "Phone", sortable: true },
+    { key: "title", label: "Title", sortable: true },
+    { key: "organization", label: "Organization", sortable: true },
+    { key: "owner", label: "Owner", sortable: true },
+  ];
+
+  const customKeySet = new Set<string>();
+  (leads || []).forEach((l: any) => {
+    const cf = l?.customFields || l?.custom_fields || {};
+    Object.keys(cf).forEach((k) => customKeySet.add(k));
+  });
+
+  const custom = Array.from(customKeySet).map((k) => ({
+    key: `custom:${k}`,
+    label: humanize(k),
+    sortable: false,
+  }));
+
+  const merged = [...standard, ...custom];
+  const seen = new Set<string>();
+  return merged.filter((x) => {
+    if (seen.has(x.key)) return false;
+    seen.add(x.key);
+    return true;
+  });
+}, [leads]);
 
 const getColumnLabel = (key: string) =>
-  leadColumnsCatalog.find((c) => c.key === key)?.label ?? key;
+  columnsCatalog.find((c) => c.key === key)?.label ?? key;
 
-const getColumnValue = (lead: Lead, key: string) => {
+const getColumnValue = (lead: any, key: string) => {
+  if (key.startsWith("custom:")) {
+    const rawKey = key.replace("custom:", "");
+    const cf = lead?.customFields || lead?.custom_fields || {};
+    const val = cf?.[rawKey];
+    return val === undefined || val === null || val === ""
+      ? "N/A"
+      : String(val);
+  }
+
   const fullName =
     lead.full_name ||
     `${lead.last_name || ""}, ${lead.first_name || ""}`.trim();
@@ -87,13 +128,14 @@ const getColumnValue = (lead: Lead, key: string) => {
     case "title":
       return lead.title || "N/A";
     case "organization":
-      return lead.organization_name_from_org || "N/A";
+      return lead.organization_name_from_org || lead.organization_id || "N/A";
     case "owner":
       return lead.owner || "N/A";
     default:
       return "—";
   }
 };
+
 
 const [openActionId, setOpenActionId] = useState<string | null>(null);
 
@@ -688,7 +730,7 @@ const {
               <div>
                 <h3 className="font-medium mb-3">Available Columns</h3>
                 <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
-                  {leadColumnsCatalog.map((c) => {
+                  {columnsCatalog.map((c)  => {
                     const checked = columnFields.includes(c.key);
                     return (
                       <label

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import LoadingScreen from '@/components/LoadingScreen';
@@ -32,7 +32,6 @@ export default function HiringManagerList() {
   const [error, setError] = useState<string | null>(null);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
 
-
   // Sorting state
   const [sortField, setSortField] = useState<
     | "id"
@@ -56,51 +55,166 @@ export default function HiringManagerList() {
     "created_by_name",
     "created_at",
   ];
+  // =====================
+  // AVAILABLE FIELDS (from Modify Page)
+  // =====================
+  const [availableFields, setAvailableFields] = useState<any[]>([]);
+  const [isLoadingFields, setIsLoadingFields] = useState(false);
 
-  const hmColumnsCatalog = [
-    { key: "full_name", label: "Name" },
-    { key: "status", label: "Status" },
-    { key: "title", label: "Title" },
-    { key: "organization_name", label: "Organization" },
-    { key: "email", label: "Email" },
-    { key: "phone", label: "Phone" },
-    { key: "created_by_name", label: "Owner" },
-    { key: "created_at", label: "Date Added" },
-  ];
+const normalizeFields = (payload: any) => {
+  const root =
+    payload?.customFields ?? // ✅ same as view file
+    payload?.fields ??
+    payload?.data?.fields ??
+    payload?.data?.data?.fields ??
+    payload?.hiringManagerFields ??
+    payload?.data ??
+    payload?.data?.data ??
+    [];
 
-  const getColumnLabel = (key: string) =>
-    hmColumnsCatalog.find((c) => c.key === key)?.label ?? key;
+  const list: any[] = Array.isArray(root) ? root : [];
 
-  const getColumnValue = (hm: HiringManager, key: string) => {
-    switch (key) {
-      case "full_name":
-        return hm.full_name || `${hm.last_name}, ${hm.first_name}`;
-      case "status":
-        return hm.status || "—";
-      case "title":
-        return hm.title || "Not specified";
-      case "organization_name":
-        return hm.organization_name || "Not specified";
-      case "email":
-        return hm.email || "Not provided";
-      case "phone":
-        return hm.phone || "Not provided";
-      case "created_by_name":
-        return hm.created_by_name || "Unknown";
-      case "created_at":
-        return formatDate(hm.created_at);
-      default:
-        return "—";
+  const flat = list.flatMap((x: any) => {
+    if (!x) return [];
+    if (Array.isArray(x.fields)) return x.fields;
+    if (Array.isArray(x.children)) return x.children;
+    return [x];
+  });
+
+  return flat.filter(Boolean);
+};
+
+useEffect(() => {
+  const fetchAvailableFields = async () => {
+    setIsLoadingFields(true);
+    try {
+      const token = document.cookie
+        .split("; ")
+        .find((r) => r.startsWith("token="))
+        ?.split("=")[1];
+
+      const res = await fetch("/api/admin/field-management/hiring-managers", {
+        method: "GET",
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        credentials: "include",
+      });
+
+      const raw = await res.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(raw);
+      } catch {}
+
+      const fields = normalizeFields(data);
+
+      console.log("LIST field-management status:", res.status);
+      console.log("LIST fields count:", fields.length);
+      console.log("LIST fields sample:", fields.slice(0, 5));
+
+      setAvailableFields(fields);
+    } catch (e) {
+      console.error("LIST field-management error:", e);
+      setAvailableFields([]);
+    } finally {
+      setIsLoadingFields(false);
     }
   };
+
+  fetchAvailableFields();
+}, []);
+
+  const humanize = (s: string) =>
+    s
+      .replace(/[_\-]+/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .trim();
+
+  const hmColumnsCatalog = useMemo(() => {
+    const standard = [
+      { key: "full_name", label: "Name", sortable: true },
+      { key: "status", label: "Status", sortable: true },
+      { key: "title", label: "Title", sortable: true },
+      { key: "organization_name", label: "Organization", sortable: true },
+      { key: "email", label: "Email", sortable: true },
+      { key: "phone", label: "Phone", sortable: true },
+      { key: "created_by_name", label: "Owner", sortable: true },
+      { key: "created_at", label: "Date Added", sortable: true },
+    ];
+
+const apiCustom = (availableFields || []).map((f: any) => {
+  const stableKey = f?.field_key || f?.field_name || f?.api_name || f?.id;
+
+  return {
+    key: `custom:${String(stableKey)}`,
+    label: f?.field_label || f?.field_name || String(stableKey),
+    sortable: false,
+  };
+});
+
+
+
+    const customKeySet = new Set<string>();
+    (hiringManagers || []).forEach((hm: any) => {
+      const cf = hm?.customFields || hm?.custom_fields || {};
+      Object.keys(cf).forEach((k) => customKeySet.add(k));
+    });
+
+    const fromList = Array.from(customKeySet).map((k) => ({
+      key: `custom:${k}`,
+      label: humanize(k),
+      sortable: false,
+    }));
+
+    const merged = [...standard, ...apiCustom, ...fromList];
+    const seen = new Set<string>();
+    return merged.filter((x) => {
+      if (seen.has(x.key)) return false;
+      seen.add(x.key);
+      return true;
+    });
+  }, [availableFields, hiringManagers]);
+  const getColumnLabel = (key: string) =>
+    hmColumnsCatalog.find((c) => c.key === key)?.label ?? key;
+const getColumnValue = (hm: any, key: string) => {
+  // ✅ custom
+  if (key.startsWith("custom:")) {
+    const rawKey = key.replace("custom:", "");
+    const cf = hm?.customFields || hm?.custom_fields || {};
+    const val = cf?.[rawKey];
+    return val === undefined || val === null || val === "" ? "—" : String(val);
+  }
+
+  // ✅ standard
+  switch (key) {
+    case "full_name":
+      return hm.full_name || `${hm.last_name}, ${hm.first_name}`;
+    case "status":
+      return hm.status || "—";
+    case "title":
+      return hm.title || "—";
+    case "organization_name":
+      return hm.organization_name || "—";
+    case "email":
+      return hm.email || "—";
+    case "phone":
+      return hm.phone || "—";
+    case "created_by_name":
+      return hm.created_by_name || "—";
+    case "created_at":
+      return formatDate(hm.created_at);
+    default:
+      return "—";
+  }
+};
 
   // Fetch hiring managers data when component mounts
   useEffect(() => {
     fetchHiringManagers();
   }, []);
   const {
-    columnFields, 
-    setColumnFields, 
+    columnFields,
+    setColumnFields,
     showHeaderFieldModal: showColumnModal,
     setShowHeaderFieldModal: setShowColumnModal,
     saveHeaderConfig: saveColumnConfig,
@@ -619,7 +733,7 @@ export default function HiringManagerList() {
             ) : (
               <tr>
                 <td
-                  colSpan={3 + columnFields.length} 
+                  colSpan={3 + columnFields.length}
                   className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                 >
                   {searchTerm
