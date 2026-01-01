@@ -102,6 +102,7 @@ const FieldMapping = () => {
     "email",
     "phone",
     "number",
+    "percentage",
     "date",
     "currency",
     "datetime",

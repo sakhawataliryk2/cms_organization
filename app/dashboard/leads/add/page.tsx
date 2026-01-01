@@ -4,6 +4,10 @@ import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
+import { getCookie } from "cookies-next";
+import CustomFieldRenderer, {
+  useCustomFields,
+} from "@/components/CustomFieldRenderer";
 
 // Define field type for typesafety
 interface FormField {
@@ -46,8 +50,16 @@ export default function AddLead() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeUsers, setActiveUsers] = useState<User[]>([]);
 
-  // Custom fields state
-  const [customFields, setCustomFields] = useState<FormField[]>([]);
+  // Use the custom fields hook (same pattern as jobs)
+  const {
+    customFields,
+    customFieldValues,
+    setCustomFieldValues,
+    isLoading: customFieldsLoading,
+    handleCustomFieldChange,
+    validateCustomFields,
+    getCustomFieldsForSubmission,
+  } = useCustomFields("leads");
 
   const [formData, setFormData] = useState({
     firstName: "",
@@ -87,9 +99,6 @@ export default function AddLead() {
 
     // Fetch active users for owner dropdown
     fetchActiveUsers();
-
-    // Fetch custom fields for leads
-    fetchCustomFields();
   }, []);
 
   // If leadId is present, fetch the lead data
@@ -99,10 +108,77 @@ export default function AddLead() {
     }
   }, [leadId]);
 
-  // Fetch active users
+  // Map basic form fields to custom fields based on field labels (same pattern as jobs)
+  useEffect(() => {
+    if (customFieldsLoading || customFields.length === 0) return;
+
+    // Create a mapping of field labels to form data values
+    const standardFieldMapping: Record<string, string> = {
+      "First Name": formData.firstName || "",
+      "Last Name": formData.lastName || "",
+      "Status": formData.status || "",
+      "Nickname": formData.nickname || "",
+      "Title": formData.title || "",
+      "Organization": formData.organizationId || "",
+      "Department": formData.department || "",
+      "Reports To": formData.reportsTo || "",
+      "Owner": formData.owner || "",
+      "Secondary Owners": formData.secondaryOwners || "",
+      "Email": formData.email || "",
+      "Email 2": formData.email2 || "",
+      "Phone": formData.phone || "",
+      "Mobile Phone": formData.mobilePhone || "",
+      "Direct Line": formData.directLine || "",
+      "LinkedIn URL": formData.linkedinUrl || "",
+      "Address": formData.address || "",
+    };
+
+    setCustomFieldValues((prev) => {
+      const next = { ...prev };
+      customFields.forEach((field) => {
+        // Check if this custom field label matches a standard field
+        const standardValue = standardFieldMapping[field.field_label];
+        if (standardValue !== undefined) {
+          // Always sync the value from formData to custom field
+          next[field.field_name] = standardValue;
+        }
+      });
+      return next;
+    });
+  }, [
+    formData.firstName,
+    formData.lastName,
+    formData.status,
+    formData.nickname,
+    formData.title,
+    formData.organizationId,
+    formData.department,
+    formData.reportsTo,
+    formData.owner,
+    formData.secondaryOwners,
+    formData.email,
+    formData.email2,
+    formData.phone,
+    formData.mobilePhone,
+    formData.directLine,
+    formData.linkedinUrl,
+    formData.address,
+    customFields,
+    customFieldsLoading,
+    setCustomFieldValues,
+  ]);
+
+  // Fetch active users for Field_8 (Owner) dropdown
   const fetchActiveUsers = async () => {
     try {
-      const response = await fetch("/api/users/active");
+      const response = await fetch("/api/users/active", {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
       if (response.ok) {
         const data = await response.json();
         setActiveUsers(data.users || []);
@@ -112,40 +188,51 @@ export default function AddLead() {
     }
   };
 
-  // Fetch custom fields for leads
-  const fetchCustomFields = async () => {
-    try {
-      const response = await fetch("/api/admin/field-management/leads");
-      if (response.ok) {
-        const data = await response.json();
-        const fields = data.customFields || [];
+  // Auto-populate Field_8 (Owner) with logged-in user's name
+  useEffect(() => {
+    // Wait for customFields to load
+    if (customFieldsLoading || customFields.length === 0) return;
 
-        // Convert to form fields format
-        const customFormFields: FormField[] = fields
-          .filter((field: any) => !field.is_hidden)
-          .map((field: any) => ({
-            id: `custom_${field.field_name}`,
-            name: field.field_name,
-            label: field.field_label,
-            type: field.field_type as any,
-            required: field.is_required,
-            visible: true,
-            options: field.options || [],
-            placeholder: field.placeholder || "",
-            value: "",
-            sortOrder: field.sort_order,
-          }));
+    // Find Field_8 specifically
+    const ownerField = customFields.find(
+      (f) =>
+        f.field_name === "Field_8" ||
+        f.field_name === "field_8" ||
+        f.field_name?.toLowerCase() === "field_8"
+    );
 
-        setCustomFields(
-          customFormFields.sort(
-            (a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)
-          )
-        );
+    if (ownerField) {
+      const currentValue = customFieldValues[ownerField.field_name];
+      // Only auto-populate if field is empty (works in both create and edit mode)
+      if (!currentValue || currentValue.trim() === "") {
+        try {
+          const userDataStr = getCookie("user");
+          if (userDataStr) {
+            const userData = JSON.parse(userDataStr as string);
+            if (userData.name) {
+              setCustomFieldValues((prev) => ({
+                ...prev,
+                [ownerField.field_name]: userData.name,
+              }));
+              console.log(
+                "Auto-populated Field_8 (Owner) with current user:",
+                userData.name
+              );
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing user data from cookie:", e);
+        }
       }
-    } catch (error) {
-      console.error("Error fetching custom fields:", error);
     }
-  };
+  }, [
+    customFields,
+    customFieldsLoading,
+    customFieldValues,
+    setCustomFieldValues,
+  ]);
+
+  // Removed fetchCustomFields - now using useCustomFields hook
 
   const fetchLead = async (id: string) => {
     setIsLoading(true);
@@ -187,23 +274,69 @@ export default function AddLead() {
       });
 
       // Load custom field values if they exist
+      let existingCustomFieldValues: Record<string, any> = {};
       if (lead.custom_fields) {
         try {
-          const customFieldValues =
+          existingCustomFieldValues =
             typeof lead.custom_fields === "string"
               ? JSON.parse(lead.custom_fields)
               : lead.custom_fields;
-
-          setCustomFields((prev) =>
-            prev.map((field) => ({
-              ...field,
-              value: customFieldValues[field.name] || "",
-            }))
-          );
         } catch (e) {
           console.error("Error parsing custom fields:", e);
         }
       }
+
+      // Map custom fields: first from existing custom_fields, then from standard fields (same pattern as jobs)
+      const mappedCustomFieldValues: Record<string, any> = {};
+      
+      // First, map any existing custom field values from the database
+      if (customFields.length > 0 && Object.keys(existingCustomFieldValues).length > 0) {
+        customFields.forEach((field) => {
+          // Try to find the value by field_label (as stored in DB)
+          const value = existingCustomFieldValues[field.field_label];
+          if (value !== undefined) {
+            // Map to field_name for the form
+            mappedCustomFieldValues[field.field_name] = value;
+          }
+        });
+      }
+
+      // Second, map standard lead fields to custom fields based on field labels
+      if (customFields.length > 0) {
+        const standardFieldMapping: Record<string, string> = {
+          "First Name": lead.first_name || "",
+          "Last Name": lead.last_name || "",
+          "Status": lead.status || "New Lead",
+          "Nickname": lead.nickname || "",
+          "Title": lead.title || "",
+          "Organization": lead.organization_name || lead.organization_id?.toString() || "",
+          "Department": lead.department || "",
+          "Reports To": lead.reports_to || "",
+          "Owner": lead.owner || "",
+          "Secondary Owners": lead.secondary_owners || "",
+          "Email": lead.email || "",
+          "Email 2": lead.email2 || "",
+          "Phone": lead.phone || "",
+          "Mobile Phone": lead.mobile_phone || "",
+          "Direct Line": lead.direct_line || "",
+          "LinkedIn URL": lead.linkedin_url || "",
+          "Address": lead.address || "",
+        };
+
+        customFields.forEach((field) => {
+          // Only set if not already set from existingCustomFieldValues
+          if (mappedCustomFieldValues[field.field_name] === undefined) {
+            // Try to find matching standard field by field_label
+            const standardValue = standardFieldMapping[field.field_label];
+            if (standardValue !== undefined && standardValue !== "") {
+              mappedCustomFieldValues[field.field_name] = standardValue;
+            }
+          }
+        });
+      }
+
+      // Set the mapped custom field values
+      setCustomFieldValues(mappedCustomFieldValues);
     } catch (err) {
       console.error("Error fetching lead:", err);
       setError(
@@ -228,56 +361,54 @@ export default function AddLead() {
     }));
   };
 
-  const handleCustomFieldChange = (fieldId: string, value: string) => {
-    setCustomFields((prev) =>
-      prev.map((field) => (field.id === fieldId ? { ...field, value } : field))
-    );
-  };
+  // Removed handleCustomFieldChange - now using handleCustomFieldChange from useCustomFields hook
 
-  const validateForm = () => {
-    // Validate required fields
-    if (!formData.firstName.trim()) {
-      setError("First name is required");
-      return false;
-    }
-    if (!formData.lastName.trim()) {
-      setError("Last name is required");
-      return false;
-    }
-    if (!formData.email.trim()) {
-      setError("Email is required");
-      return false;
-    }
+  // const validateForm = () => {
+    
+  //   if (!formData.firstName.trim()) {
+  //     setError("First name is required");
+  //     return false;
+  //   }
+  //   if (!formData.lastName.trim()) {
+  //     setError("Last name is required");
+  //     return false;
+  //   }
+  //   if (!formData.email.trim()) {
+  //     setError("Email is required");
+  //     return false;
+  //   }
 
-    // Basic email validation
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setError("Invalid email format");
-      return false;
-    }
+    
+  //   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  //   if (!emailRegex.test(formData.email)) {
+  //     setError("Invalid email format");
+  //     return false;
+  //   }
 
-    // Validate second email if provided
-    if (formData.email2 && !emailRegex.test(formData.email2)) {
-      setError("Invalid format for second email");
-      return false;
-    }
+    
+  //   if (formData.email2 && !emailRegex.test(formData.email2)) {
+  //     setError("Invalid format for second email");
+  //     return false;
+  //   }
 
-    // Validate required custom fields
-    for (const field of customFields) {
-      if (field.required && !field.value.trim()) {
-        setError(`${field.label} is required`);
-        return false;
-      }
-    }
+    
+  //   for (const field of customFields) {
+  //     if (field.required && !field.value.trim()) {
+  //       setError(`${field.label} is required`);
+  //       return false;
+  //     }
+  //   }
 
-    return true;
-  };
+  //   return true;
+  // };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Validate form
-    if (!validateForm()) {
+    // Validate required custom fields (same pattern as jobs)
+    const customFieldValidation = validateCustomFields();
+    if (!customFieldValidation.isValid) {
+      setError(customFieldValidation.message);
       return;
     }
 
@@ -285,34 +416,80 @@ export default function AddLead() {
     setError(null);
 
     try {
-      // Collect custom field values
-      const customFieldValues: Record<string, string> = {};
-      customFields.forEach((field) => {
-        if (field.value) {
-          customFieldValues[field.name] = field.value;
-        }
+      // Get custom fields for submission (keys are field_label)
+      const customFieldsToSend = getCustomFieldsForSubmission();
+
+      // Build DB customFields object (keep empty strings, skip undefined/null)
+      const customFieldsForDB: Record<string, any> = {};
+      Object.keys(customFieldsToSend).forEach((k) => {
+        const v = customFieldsToSend[k];
+        if (v !== undefined && v !== null) customFieldsForDB[k] = v;
       });
 
+      // Extract firstName and lastName from custom fields OR formData (same pattern as jobs)
+      const mappedFirstName =
+        customFieldsToSend["First Name"] ||
+        formData.firstName ||
+        "";
+      
+      const mappedLastName =
+        customFieldsToSend["Last Name"] ||
+        formData.lastName ||
+        "";
+
+      // Map other standard fields from custom fields OR formData
+      const mappedStatus =
+        customFieldsToSend["Status"] || formData.status || "New Lead";
+      const mappedNickname =
+        customFieldsToSend["Nickname"] || formData.nickname || "";
+      const mappedTitle =
+        customFieldsToSend["Title"] || formData.title || "";
+      const mappedOrganizationId =
+        customFieldsToSend["Organization"] || formData.organizationId || "";
+      const mappedDepartment =
+        customFieldsToSend["Department"] || formData.department || "";
+      const mappedReportsTo =
+        customFieldsToSend["Reports To"] || formData.reportsTo || "";
+      const mappedOwner =
+        customFieldsToSend["Owner"] || formData.owner || currentUser?.name || "";
+      const mappedSecondaryOwners =
+        customFieldsToSend["Secondary Owners"] || formData.secondaryOwners || "";
+      const mappedEmail =
+        customFieldsToSend["Email"] || formData.email || "";
+      const mappedEmail2 =
+        customFieldsToSend["Email 2"] || formData.email2 || "";
+      const mappedPhone =
+        customFieldsToSend["Phone"] || formData.phone || "";
+      const mappedMobilePhone =
+        customFieldsToSend["Mobile Phone"] || formData.mobilePhone || "";
+      const mappedDirectLine =
+        customFieldsToSend["Direct Line"] || formData.directLine || "";
+      const mappedLinkedInUrl =
+        customFieldsToSend["LinkedIn URL"] || formData.linkedinUrl || "";
+      const mappedAddress =
+        customFieldsToSend["Address"] || formData.address || "";
+
       const apiData = {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        status: formData.status,
-        nickname: formData.nickname,
-        title: formData.title,
-        organizationId: formData.organizationId,
-        organizationName: formData.organizationId, // In case it's a string name
-        department: formData.department,
-        reportsTo: formData.reportsTo,
-        owner: formData.owner || currentUser?.name || "",
-        secondaryOwners: formData.secondaryOwners,
-        email: formData.email,
-        email2: formData.email2,
-        phone: formData.phone,
-        mobilePhone: formData.mobilePhone,
-        directLine: formData.directLine,
-        linkedinUrl: formData.linkedinUrl,
-        address: formData.address,
-        customFields: customFieldValues,
+        firstName: mappedFirstName,
+        lastName: mappedLastName,
+        status: mappedStatus,
+        nickname: mappedNickname,
+        title: mappedTitle,
+        organizationId: mappedOrganizationId,
+        organizationName: mappedOrganizationId, // In case it's a string name
+        department: mappedDepartment,
+        reportsTo: mappedReportsTo,
+        owner: mappedOwner,
+        secondaryOwners: mappedSecondaryOwners,
+        email: mappedEmail,
+        email2: mappedEmail2,
+        phone: mappedPhone,
+        mobilePhone: mappedMobilePhone,
+        directLine: mappedDirectLine,
+        linkedinUrl: mappedLinkedInUrl,
+        address: mappedAddress,
+        // Use snake_case custom_fields to match backend expectation
+        custom_fields: customFieldsForDB,
       };
 
       console.log(
@@ -380,8 +557,9 @@ export default function AddLead() {
     router.back();
   };
 
-  if (isLoading) {
-    return <LoadingScreen message="Loading lead data..." />;
+  // Show loading screen when loading existing lead data or custom fields
+  if (isLoading || customFieldsLoading) {
+    return <LoadingScreen message="Loading lead form..." />;
   }
 
   if (isSubmitting) {
@@ -436,8 +614,8 @@ export default function AddLead() {
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
-            {/* First Name */}
-            <div className="flex items-center">
+            
+            {/* <div className="flex items-center">
               <label className="w-48 font-medium">First Name:</label>
               <div className="flex-1 relative">
                 <input
@@ -452,10 +630,10 @@ export default function AddLead() {
                   *
                 </span>
               </div>
-            </div>
+            </div> */}
 
-            {/* Last Name */}
-            <div className="flex items-center">
+            
+            {/* <div className="flex items-center">
               <label className="w-48 font-medium">Last Name:</label>
               <div className="flex-1 relative">
                 <input
@@ -472,7 +650,7 @@ export default function AddLead() {
               </div>
             </div>
 
-            {/* Status */}
+            
             <div className="flex items-center">
               <label className="w-48 font-medium">Status:</label>
               <div className="flex-1 relative">
@@ -504,7 +682,7 @@ export default function AddLead() {
               </div>
             </div>
 
-            {/* Nickname */}
+            
             <div className="flex items-center">
               <label className="w-48 font-medium">Nickname:</label>
               <input
@@ -516,7 +694,7 @@ export default function AddLead() {
               />
             </div>
 
-            {/* Title */}
+            
             <div className="flex items-center">
               <label className="w-48 font-medium">Title:</label>
               <input
@@ -528,7 +706,7 @@ export default function AddLead() {
               />
             </div>
 
-            {/* Organization */}
+            
             <div className="flex items-center">
               <label className="w-48 font-medium">Organization:</label>
               <div className="flex-1 relative">
@@ -551,7 +729,7 @@ export default function AddLead() {
               </div>
             </div>
 
-            {/* Department */}
+           
             <div className="flex items-center">
               <label className="w-48 font-medium">Department:</label>
               <div className="flex-1 relative">
@@ -584,7 +762,7 @@ export default function AddLead() {
               </div>
             </div>
 
-            {/* Reports to */}
+            
             <div className="flex items-center">
               <label className="w-48 font-medium">Reports to:</label>
               <div className="flex-1 relative">
@@ -606,7 +784,7 @@ export default function AddLead() {
               </div>
             </div>
 
-            {/* Owner */}
+            
             <div className="flex items-center">
               <label className="w-48 font-medium">Owner:</label>
               <div className="flex-1 relative">
@@ -635,7 +813,7 @@ export default function AddLead() {
               </div>
             </div>
 
-            {/* Secondary Owners */}
+            
             <div className="flex items-center">
               <label className="w-48 font-medium">Secondary Owners:</label>
               <div className="flex-1 relative">
@@ -655,11 +833,11 @@ export default function AddLead() {
                   />
                 </button>
               </div>
-            </div>
+            </div> */}
           </div>
 
           {/* Contact Information Section */}
-          <div className="mt-8">
+          {/* <div className="mt-8">
             <div className="bg-gray-100 p-2 mb-4">
               <h2 className="font-medium flex items-center">
                 <Image
@@ -673,7 +851,7 @@ export default function AddLead() {
               </h2>
             </div>
 
-            {/* Email 1 */}
+            
             <div className="flex items-center mt-4">
               <label className="w-48 font-medium">Email 1:</label>
               <div className="flex-1 relative">
@@ -691,7 +869,7 @@ export default function AddLead() {
               </div>
             </div>
 
-            {/* Email 2 */}
+            
             <div className="flex items-center mt-4">
               <label className="w-48 font-medium">Email 2:</label>
               <input
@@ -703,7 +881,7 @@ export default function AddLead() {
               />
             </div>
 
-            {/* Phone */}
+            
             <div className="flex items-center mt-4">
               <label className="w-48 font-medium">Phone:</label>
               <input
@@ -716,7 +894,7 @@ export default function AddLead() {
               />
             </div>
 
-            {/* Mobile Phone */}
+            
             <div className="flex items-center mt-4">
               <label className="w-48 font-medium">Mobile Phone:</label>
               <input
@@ -729,7 +907,7 @@ export default function AddLead() {
               />
             </div>
 
-            {/* Direct Line */}
+            
             <div className="flex items-center mt-4">
               <label className="w-48 font-medium">Direct Line:</label>
               <input
@@ -742,7 +920,7 @@ export default function AddLead() {
               />
             </div>
 
-            {/* LinkedIn URL */}
+            
             <div className="flex items-center mt-4">
               <label className="w-48 font-medium">LinkedIn URL:</label>
               <input
@@ -755,7 +933,7 @@ export default function AddLead() {
               />
             </div>
 
-            {/* Address */}
+           
             <div className="flex items-center mt-4">
               <label className="w-48 font-medium">Address:</label>
               <textarea
@@ -767,78 +945,105 @@ export default function AddLead() {
                 placeholder="Street address, City, State, ZIP"
               />
             </div>
-          </div>
+          </div> */}
 
           {/* Custom Fields Section */}
           {customFields.length > 0 && (
             <div className="mt-8">
-              <div className="bg-gray-100 p-2 mb-4">
-                <h2 className="font-medium flex items-center">
-                  <Image
-                    src="/file.svg"
-                    alt="Custom"
-                    width={16}
-                    height={16}
-                    className="mr-2"
-                  />
-                  Custom Fields
-                </h2>
-              </div>
+              {customFields.map((field) => {
+                // Don't render hidden fields
+                if (field.is_hidden) return null;
 
-              {customFields.map((field) => (
-                <div key={field.id} className="flex items-center mt-4">
-                  <label className="w-48 font-medium">{field.label}:</label>
-                  <div className="flex-1 relative">
-                    {field.type === "select" ? (
-                      <select
-                        name={field.name}
-                        value={field.value}
-                        onChange={(e) =>
-                          handleCustomFieldChange(field.id, e.target.value)
-                        }
-                        className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
-                        required={field.required}
-                      >
-                        <option value="">Select {field.label}</option>
-                        {field.options?.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
+                const fieldValue = customFieldValues[field.field_name] || "";
+
+                // Special handling for Field_8 (Owner) - active users dropdown
+                if (field.field_name === "Field_8") {
+                  return (
+                    <div key={field.id} className="flex items-center mb-3">
+                      <label className="w-48 font-medium flex items-center">
+                        {field.field_label}:
+                        {field.is_required &&
+                          (fieldValue.trim() !== "" ? (
+                            <span className="text-green-500 ml-1">✔</span>
+                          ) : (
+                            <span className="text-red-500 ml-1">*</span>
+                          ))}
+                      </label>
+
+                      <div className="flex-1 relative">
+                        <select
+                          value={fieldValue}
+                          onChange={(e) => handleCustomFieldChange(field.field_name, e.target.value)}
+                          className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
+                          required={field.is_required}
+                        >
+                          <option value="">Select {field.field_label}</option>
+                          {activeUsers.map((user) => (
+                            <option key={user.id} value={user.name || user.email}>
+                              {user.name || user.email || `User #${user.id}`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Special handling for Field_16 (Assigned to) - active users dropdown
+                if (field.field_name === "Field_16") {
+                  return (
+                    <div key={field.id} className="flex items-center mb-3">
+                      <label className="w-48 font-medium flex items-center">
+                        {field.field_label}:
+                        {field.is_required &&
+                          (fieldValue.trim() !== "" ? (
+                            <span className="text-green-500 ml-1">✔</span>
+                          ) : (
+                            <span className="text-red-500 ml-1">*</span>
+                          ))}
+                      </label>
+
+                      <div className="flex-1 relative">
+                        <select
+                          value={fieldValue}
+                          onChange={(e) => handleCustomFieldChange(field.field_name, e.target.value)}
+                          className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
+                          required={field.is_required}
+                        >
+                          <option value="">Select {field.field_label}</option>
+                          {activeUsers.map((user) => (
+                            <option key={user.id} value={user.name || user.email}>
+                              {user.name || user.email || `User #${user.id}`}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div key={field.id} className="flex items-center mb-3">
+                    <label className="w-48 font-medium flex items-center">
+                      {field.field_label}:
+                      {field.is_required &&
+                        (fieldValue.trim() !== "" ? (
+                          <span className="text-green-500 ml-1">✔</span>
+                        ) : (
+                          <span className="text-red-500 ml-1">*</span>
                         ))}
-                      </select>
-                    ) : field.type === "textarea" ? (
-                      <textarea
-                        name={field.name}
-                        value={field.value}
-                        onChange={(e) =>
-                          handleCustomFieldChange(field.id, e.target.value)
-                        }
-                        rows={3}
-                        placeholder={field.placeholder}
-                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                        required={field.required}
+                    </label>
+
+                    <div className="flex-1 relative">
+                      <CustomFieldRenderer
+                        field={field}
+                        value={fieldValue}
+                        onChange={handleCustomFieldChange}
                       />
-                    ) : (
-                      <input
-                        type={field.type}
-                        name={field.name}
-                        value={field.value}
-                        onChange={(e) =>
-                          handleCustomFieldChange(field.id, e.target.value)
-                        }
-                        placeholder={field.placeholder}
-                        className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                        required={field.required}
-                      />
-                    )}
-                    {field.required && (
-                      <span className="absolute text-red-500 left-[-10px] top-2">
-                        *
-                      </span>
-                    )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 

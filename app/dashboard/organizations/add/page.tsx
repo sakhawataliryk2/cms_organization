@@ -37,6 +37,9 @@ export default function AddOrganization() {
   const [activeUsers, setActiveUsers] = useState<
     Array<{ id: string; name: string; email: string }>
   >([]);
+  const [organizationContacts, setOrganizationContacts] = useState<
+    Array<{ id: string; name: string; full_name?: string; first_name?: string; last_name?: string }>
+  >([]);
   const {
     customFields,
     customFieldValues,
@@ -276,6 +279,39 @@ export default function AddOrganization() {
     };
     fetchActiveUsers();
   }, []);
+
+  // Fetch organization contacts (hiring managers) for Contract Signed By dropdown
+  useEffect(() => {
+    const fetchOrganizationContacts = async () => {
+      if (!organizationId) {
+        setOrganizationContacts([]);
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/hiring-managers", {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          // Filter hiring managers by organization_id
+          const orgContacts = (data.hiringManagers || []).filter(
+            (hm: any) =>
+              hm.organization_id?.toString() === organizationId.toString()
+          );
+          setOrganizationContacts(orgContacts);
+        }
+      } catch (error) {
+        console.error("Error fetching organization contacts:", error);
+      }
+    };
+    fetchOrganizationContacts();
+  }, [organizationId]);
 
   // Auto-populate Field_18 (Owner) field in UI when customFields are loaded
   useEffect(() => {
@@ -1381,6 +1417,15 @@ export default function AddOrganization() {
                       (field.field_name?.includes("18") ||
                         field.field_name?.toLowerCase().includes("field_18")));
 
+                  // Special handling for Field_9 (Contract Signed by) - render as contact lookup
+                  const isContractSignedByField =
+                    field.field_name === "Field_9" ||
+                    field.field_name === "field_9" ||
+                    field.field_name?.toLowerCase() === "field_9" ||
+                    (field.field_label === "Contract Signed By" &&
+                      (field.field_name?.includes("9") ||
+                        field.field_name?.toLowerCase().includes("field_9")));
+
                   return (
                     <div key={field.id} className="flex items-center mb-3">
                       <label className="w-48 font-medium flex items-center">
@@ -1411,6 +1456,34 @@ export default function AddOrganization() {
                                 {user.name}
                               </option>
                             ))}
+                          </select>
+                        ) : isContractSignedByField ? (
+                          <select
+                            value={fieldValue}
+                            onChange={(e) =>
+                              handleCustomFieldChange(
+                                field.field_name,
+                                e.target.value
+                              )
+                            }
+                            className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                            disabled={!organizationId}
+                          >
+                            <option value="">
+                              {organizationId
+                                ? "Select Contact"
+                                : "Save organization first to select contact"}
+                            </option>
+                            {organizationContacts.map((contact) => {
+                              const contactName =
+                                contact.full_name ||
+                                `${contact.first_name || ""} ${contact.last_name || ""}`.trim();
+                              return (
+                                <option key={contact.id} value={contactName}>
+                                  {contactName}
+                                </option>
+                              );
+                            })}
                           </select>
                         ) : (
                           <CustomFieldRenderer

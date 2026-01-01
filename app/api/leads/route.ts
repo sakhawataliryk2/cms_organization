@@ -60,8 +60,35 @@ export async function POST(request: NextRequest) {
             );
         }
 
+        // ✅ Normalize custom fields key (support both)
+        const custom_fields = body.custom_fields || body.customFields || {};
+
+        // ✅ Clean payload (same pattern as jobs)
+        const apiData = {
+            firstName: body.firstName || "",
+            lastName: body.lastName || "",
+            status: body.status || "New Lead",
+            nickname: body.nickname || "",
+            title: body.title || "",
+            organizationId: body.organizationId || "",
+            organizationName: body.organizationName || body.organizationId || "",
+            department: body.department || "",
+            reportsTo: body.reportsTo || "",
+            owner: body.owner || "",
+            secondaryOwners: body.secondaryOwners || "",
+            email: body.email || "",
+            email2: body.email2 || "",
+            phone: body.phone || "",
+            mobilePhone: body.mobilePhone || "",
+            directLine: body.directLine || "",
+            linkedinUrl: body.linkedinUrl || "",
+            address: body.address || "",
+            // ✅ CRITICAL: Include custom_fields
+            custom_fields,
+        };
+
         // Log the request data for debugging
-        console.log('Creating lead with data:', body);
+        console.log('Creating lead with data:', apiData);
 
         // Make a request to your backend API
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
@@ -71,7 +98,7 @@ export async function POST(request: NextRequest) {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify(body)
+            body: JSON.stringify(apiData)
         });
 
         // Log the response status
