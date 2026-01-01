@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
+import { getCookie } from "cookies-next";
 import CustomFieldRenderer, {
   useCustomFields,
 } from "@/components/CustomFieldRenderer";
@@ -41,7 +42,16 @@ export default function AddJob() {
   const hasPrefilledOrgRef = useRef(false);
   const [organizationName, setOrganizationName] = useState<string>("");
   const [leadPrefillData, setLeadPrefillData] = useState<any>(null);
-
+  const [currentOrganizationId, setCurrentOrganizationId] = useState<string | null>(null);
+  const [organizationContacts, setOrganizationContacts] = useState<
+    Array<{ id: string; name: string; full_name?: string; first_name?: string; last_name?: string }>
+  >([]);
+  const [activeUsers, setActiveUsers] = useState<
+    Array<{ id: string; name: string; email: string }>
+  >([]);
+  const [organizations, setOrganizations] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
 
   // Add these state variables
   const [isEditMode, setIsEditMode] = useState(!!jobId);
@@ -65,6 +75,61 @@ export default function AddJob() {
     getCustomFieldsForSubmission,
   } = useCustomFields("jobs");
 
+  // Calculate Client Bill Rate (Field_13) from Pay Rate (Field_11) and Mark-up % (Field_12 or Field_512)
+  const calculateClientBillRate = (payRate: string, markupPercent: string): string => {
+    const payRateNum = parseFloat(payRate);
+    const markupNum = parseFloat(markupPercent);
+
+    if (isNaN(payRateNum) || payRateNum <= 0) {
+      return "";
+    }
+
+    if (isNaN(markupNum) || markupNum < 0) {
+      return payRateNum.toString();
+    }
+
+    // Calculate: Client Bill Rate = Pay Rate * (1 + Mark-up % / 100)
+    const clientBillRate = payRateNum * (1 + markupNum / 100);
+    return clientBillRate.toFixed(2);
+  };
+
+  // Auto-calculate Field_13 (Client Bill Rate) when Field_11 (Pay Rate) or Field_12/Field_512 (Mark-up %) changes
+  useEffect(() => {
+    if (customFieldsLoading || customFields.length === 0) return;
+
+    const payRateField = customFields.find((f) => f.field_name === "Field_11");
+    const markupField = customFields.find((f) => f.field_name === "Field_12" || f.field_name === "Field_512");
+    const clientBillRateField = customFields.find((f) => f.field_name === "Field_13");
+
+    if (payRateField && markupField && clientBillRateField) {
+      const payRate = customFieldValues["Field_11"] || "";
+      const markupPercent = customFieldValues["Field_12"] || customFieldValues["Field_512"] || "";
+
+      if (payRate || markupPercent) {
+        const calculatedBillRate = calculateClientBillRate(payRate, markupPercent);
+        if (calculatedBillRate && calculatedBillRate !== (customFieldValues["Field_13"] || "")) {
+          setCustomFieldValues((prev) => ({
+            ...prev,
+            Field_13: calculatedBillRate,
+          }));
+        }
+      }
+    }
+  }, [
+    customFields,
+    customFieldsLoading,
+    customFieldValues["Field_11"],
+    customFieldValues["Field_12"],
+    customFieldValues["Field_512"],
+    setCustomFieldValues,
+  ]);
+
+  // Enhanced handleCustomFieldChange that triggers calculation for Field_11 and Field_12/Field_512
+  const handleCustomFieldChangeWithCalculation = (fieldName: string, value: string) => {
+    // Update the field value
+    handleCustomFieldChange(fieldName, value);
+  };
+
   // Initialize with default fields
   useEffect(() => {
     initializeFields();
@@ -78,6 +143,7 @@ export default function AddJob() {
         const data = await response.json();
         const orgName = data.organization?.name || "";
         setOrganizationName(orgName);
+        setCurrentOrganizationId(orgId);
         // Prefill organizationId in form with organization name for display
         setFormFields((prev) =>
           prev.map((f) =>
@@ -90,6 +156,7 @@ export default function AddJob() {
     } catch (error) {
       console.error("Error fetching organization:", error);
       // Still set the organizationId even if fetch fails
+      setCurrentOrganizationId(orgId);
       setFormFields((prev) =>
         prev.map((f) =>
           f.name === "organizationId"
@@ -99,6 +166,149 @@ export default function AddJob() {
       );
     }
   };
+
+  // Fetch active users for Field_46 (Internal user), Field_506 (Sales Rep), and Field_507 (Account Manager) dropdowns
+  useEffect(() => {
+    const fetchActiveUsers = async () => {
+      try {
+        const response = await fetch("/api/users/active", {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setActiveUsers(data.users || []);
+        }
+      } catch (error) {
+        console.error("Error fetching active users:", error);
+      }
+    };
+    fetchActiveUsers();
+  }, []);
+
+  // Fetch organizations for Field_3 (Organization) dropdown
+  useEffect(() => {
+    const fetchOrganizations = async () => {
+      try {
+        const response = await fetch("/api/organizations", {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setOrganizations(data.organizations || []);
+        }
+      } catch (error) {
+        console.error("Error fetching organizations:", error);
+      }
+    };
+    fetchOrganizations();
+  }, []);
+
+  // Auto-populate Field_507 (Account Manager) with logged-in user's name
+  useEffect(() => {
+    // Wait for customFields to load
+    if (customFieldsLoading || customFields.length === 0) return;
+
+    // Find Field_507 specifically
+    const accountManagerField = customFields.find(
+      (f) =>
+        f.field_name === "Field_507" ||
+        f.field_name === "field_507" ||
+        f.field_name?.toLowerCase() === "field_507"
+    );
+
+    if (accountManagerField) {
+      const currentValue = customFieldValues[accountManagerField.field_name];
+      // Only auto-populate if field is empty (works in both create and edit mode)
+      if (!currentValue || currentValue.trim() === "") {
+        try {
+          const userDataStr = getCookie("user");
+          if (userDataStr) {
+            const userData = JSON.parse(userDataStr as string);
+            if (userData.name) {
+              setCustomFieldValues((prev) => ({
+                ...prev,
+                [accountManagerField.field_name]: userData.name,
+              }));
+              console.log(
+                "Auto-populated Field_507 (Account Manager) with current user:",
+                userData.name
+              );
+            }
+          }
+        } catch (e) {
+          console.error("Error parsing user data from cookie:", e);
+        }
+      }
+    }
+  }, [
+    customFields,
+    customFieldsLoading,
+    customFieldValues,
+    setCustomFieldValues,
+  ]);
+
+  // Sync currentOrganizationId with Field_3 value when it changes
+  useEffect(() => {
+    if (customFieldsLoading || customFields.length === 0 || organizations.length === 0) return;
+
+    const organizationField = customFields.find((f) => f.field_name === "Field_3");
+    if (organizationField) {
+      const fieldValue = customFieldValues["Field_3"] || "";
+      if (fieldValue) {
+        // Try to find organization by name or ID
+        const selectedOrg = organizations.find(
+          (org) => org.name === fieldValue || org.id.toString() === fieldValue
+        );
+        if (selectedOrg && selectedOrg.id.toString() !== currentOrganizationId) {
+          setCurrentOrganizationId(selectedOrg.id.toString());
+        }
+      }
+    }
+  }, [customFieldValues["Field_3"], organizations, customFields, customFieldsLoading, currentOrganizationId]);
+
+  // Fetch organization contacts (hiring managers) for Field_4 (Billing Contact)
+  useEffect(() => {
+    const fetchOrganizationContacts = async () => {
+      const orgId = currentOrganizationId || organizationIdFromUrl;
+      if (!orgId) {
+        setOrganizationContacts([]);
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/hiring-managers", {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          // Filter hiring managers by organization_id
+          const orgContacts = (data.hiringManagers || []).filter(
+            (hm: any) =>
+              hm.organization_id?.toString() === orgId.toString()
+          );
+          setOrganizationContacts(orgContacts);
+        }
+      } catch (error) {
+        console.error("Error fetching organization contacts:", error);
+      }
+    };
+    fetchOrganizationContacts();
+  }, [currentOrganizationId, organizationIdFromUrl]);
 
   // Prefill organizationId from URL if provided (create mode only)
   useEffect(() => {
@@ -493,6 +703,11 @@ useEffect(() => {
 
       // Map API data to form fields
       const job = data.job;
+
+      // Set current organization ID for contact lookup
+      if (job.organization_id) {
+        setCurrentOrganizationId(job.organization_id.toString());
+      }
 
       // Parse existing custom fields from the job
       let existingCustomFields: Record<string, any> = {};
@@ -941,6 +1156,244 @@ useEffect(() => {
                   if (field.is_hidden) return null;
 
                   const fieldValue = customFieldValues[field.field_name] || "";
+
+                  // Special handling for Field_3 (Organization) - organizations dropdown
+                  if (field.field_name === "Field_3") {
+                    return (
+                      <div key={field.id} className="flex items-center mb-3">
+                        <label className="w-48 font-medium flex items-center">
+                          {field.field_label}:
+                          {field.is_required &&
+                            (fieldValue.trim() !== "" ? (
+                              <span className="text-green-500 ml-1">✔</span>
+                            ) : (
+                              <span className="text-red-500 ml-1">*</span>
+                            ))}
+                        </label>
+
+                        <div className="flex-1 relative">
+                          <select
+                            value={fieldValue}
+                            onChange={(e) => {
+                              handleCustomFieldChange(field.field_name, e.target.value);
+                              // Update currentOrganizationId when organization changes
+                              const selectedOrg = organizations.find(
+                                (org) => org.name === e.target.value || org.id.toString() === e.target.value
+                              );
+                              if (selectedOrg) {
+                                setCurrentOrganizationId(selectedOrg.id.toString());
+                              }
+                            }}
+                            className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
+                            required={field.is_required}
+                          >
+                            <option value="">Select {field.field_label}</option>
+                            {organizations.map((org) => (
+                              <option key={org.id} value={org.name || org.id.toString()}>
+                                {org.name || `Organization #${org.id}`}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Special handling for Field_46 (Internal user), Field_506 (Sales Rep), and Field_507 (Account Manager) - active users dropdown
+                  if (field.field_name === "Field_46" || field.field_name === "Field_506" || field.field_name === "Field_507") {
+                    return (
+                      <div key={field.id} className="flex items-center mb-3">
+                        <label className="w-48 font-medium flex items-center">
+                          {field.field_label}:
+                          {field.is_required &&
+                            (fieldValue.trim() !== "" ? (
+                              <span className="text-green-500 ml-1">✔</span>
+                            ) : (
+                              <span className="text-red-500 ml-1">*</span>
+                            ))}
+                        </label>
+
+                        <div className="flex-1 relative">
+                          <select
+                            value={fieldValue}
+                            onChange={(e) => handleCustomFieldChange(field.field_name, e.target.value)}
+                            className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
+                            required={field.is_required}
+                          >
+                            <option value="">Select {field.field_label}</option>
+                            {activeUsers.map((user) => (
+                              <option key={user.id} value={user.name || user.email}>
+                                {user.name || user.email || `User #${user.id}`}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Special handling for Field_4 (Billing Contact) and Field_503 (Timecard Approved) - multi-select contact lookup
+                  if (field.field_name === "Field_4" || field.field_name === "Field_503") {
+                    // Parse existing value (comma-separated string or array)
+                    const selectedContactIds = Array.isArray(fieldValue)
+                      ? fieldValue
+                      : typeof fieldValue === "string" && fieldValue.trim()
+                      ? fieldValue.split(",").map((id) => id.trim()).filter(Boolean)
+                      : [];
+
+                    const handleContactLookupChange = (contactIds: string[]) => {
+                      // Save as comma-separated string
+                      const valueToSave = contactIds.length > 0 ? contactIds.join(", ") : "";
+                      handleCustomFieldChange(field.field_name, valueToSave);
+                    };
+
+                    return (
+                      <div key={field.id} className="flex items-start mb-3">
+                        <label className="w-48 font-medium flex items-center pt-2">
+                          {field.field_label}:
+                          {field.is_required &&
+                            (selectedContactIds.length > 0 ? (
+                              <span className="text-green-500 ml-1">✔</span>
+                            ) : (
+                              <span className="text-red-500 ml-1">*</span>
+                            ))}
+                        </label>
+
+                        <div className="flex-1 relative">
+                          {!currentOrganizationId && !organizationIdFromUrl ? (
+                            <div className="w-full p-2 border border-gray-300 rounded bg-gray-50 text-gray-500 text-sm">
+                              Please select an organization first to load contacts
+                            </div>
+                          ) : (
+                            <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500">
+                              <div className="max-h-48 overflow-y-auto p-2">
+                                {organizationContacts.length === 0 ? (
+                                  <div className="text-gray-500 text-sm p-2">
+                                    No contacts available for this organization
+                                  </div>
+                                ) : (
+                                  organizationContacts.map((contact) => {
+                                    const contactId = contact.id.toString();
+                                    const isSelected = selectedContactIds.includes(contactId);
+                                    const contactName =
+                                      contact.full_name ||
+                                      `${contact.first_name || ""} ${contact.last_name || ""}`.trim() ||
+                                      contact.name ||
+                                      `Contact #${contact.id}`;
+
+                                    return (
+                                      <label
+                                        key={contact.id}
+                                        className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
+                                      >
+                                        <input
+                                          type="checkbox"
+                                          checked={isSelected}
+                                          onChange={(e) => {
+                                            const newIds = e.target.checked
+                                              ? [...selectedContactIds, contactId]
+                                              : selectedContactIds.filter((id) => id !== contactId);
+                                            handleContactLookupChange(newIds);
+                                          }}
+                                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                                        />
+                                        <span className="text-sm text-gray-700">{contactName}</span>
+                                      </label>
+                                    );
+                                  })
+                                )}
+                              </div>
+                              {selectedContactIds.length > 0 && (
+                                <div className="border-t border-gray-300 p-2 bg-gray-50">
+                                  <div className="text-xs text-gray-600 mb-1">
+                                    Selected: {selectedContactIds.length} contact(s)
+                                  </div>
+                                  <div className="flex flex-wrap gap-1">
+                                    {selectedContactIds.map((contactId) => {
+                                      const contact = organizationContacts.find(
+                                        (c) => c.id.toString() === contactId
+                                      );
+                                      const contactName =
+                                        contact?.full_name ||
+                                        `${contact?.first_name || ""} ${contact?.last_name || ""}`.trim() ||
+                                        contact?.name ||
+                                        `Contact #${contactId}`;
+                                      return contact ? (
+                                        <span
+                                          key={contactId}
+                                          className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                                        >
+                                          {contactName}
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              const newIds = selectedContactIds.filter(
+                                                (id) => id !== contactId
+                                              );
+                                              handleContactLookupChange(newIds);
+                                            }}
+                                            className="ml-1 text-blue-600 hover:text-blue-800"
+                                          >
+                                            ×
+                                          </button>
+                                        </span>
+                                      ) : null;
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Special handling for Field_11 (Pay Rate), Field_12/Field_512 (Mark-up %), and Field_13 (Client Bill Rate)
+                  // Field_13 is calculated from Field_11 and Field_12/Field_512
+                  if (field.field_name === "Field_11" || field.field_name === "Field_12" || field.field_name === "Field_512" || field.field_name === "Field_13") {
+                    const isCalculatedField = field.field_name === "Field_13";
+                    const payRateValue = customFieldValues["Field_11"] || "";
+                    const markupValue = customFieldValues["Field_12"] || customFieldValues["Field_512"] || "";
+                    const calculatedValue = calculateClientBillRate(payRateValue, markupValue);
+
+                    return (
+                      <div key={field.id} className="flex items-center mb-3">
+                        <label className="w-48 font-medium flex items-center">
+                          {field.field_label}:
+                          {field.is_required &&
+                            (fieldValue.trim() !== "" ? (
+                              <span className="text-green-500 ml-1">✔</span>
+                            ) : (
+                              <span className="text-red-500 ml-1">*</span>
+                            ))}
+                          {isCalculatedField && (
+                            <span className="text-xs text-gray-500 ml-2">(Calculated)</span>
+                          )}
+                        </label>
+
+                        <div className="flex-1 relative">
+                          {isCalculatedField ? (
+                            // Field_13 is read-only and shows calculated value
+                            <input
+                              type="text"
+                              value={calculatedValue || fieldValue}
+                              readOnly
+                              className="w-full p-2 border-b border-gray-300 bg-gray-50 text-gray-700 cursor-not-allowed"
+                              placeholder="Auto-calculated"
+                            />
+                          ) : (
+                            // Field_11, Field_12, and Field_512 are editable
+                            <CustomFieldRenderer
+                              field={field}
+                              value={fieldValue}
+                              onChange={handleCustomFieldChangeWithCalculation}
+                            />
+                          )}
+                        </div>
+                      </div>
+                    );
+                  }
 
                   return (
                     <div key={field.id} className="flex items-center mb-3">

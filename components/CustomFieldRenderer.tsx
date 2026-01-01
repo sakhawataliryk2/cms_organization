@@ -311,6 +311,77 @@ export default function CustomFieldRenderer({
         />
       );
 
+    case "percentage":
+      return (
+        <div className="relative w-full">
+          {/* % sign (static) */}
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 select-none">
+            %
+          </span>
+
+          <input
+            id={field.field_name}
+            type="number"
+            min="0"
+            max="100"
+            step="0.01"
+            value={value ?? ""}
+            onChange={(e) => {
+              const inputValue = e.target.value;
+              
+              // Allow empty value
+              if (inputValue === "") {
+                onChange(field.field_name, "");
+                return;
+              }
+
+              // Parse the number
+              const numValue = parseFloat(inputValue);
+
+              // Check if valid number
+              if (isNaN(numValue)) {
+                return; // Don't update if invalid
+              }
+
+              // Enforce range: 0 to 100
+              if (numValue < 0) {
+                onChange(field.field_name, "0");
+                return;
+              }
+
+              if (numValue > 100) {
+                onChange(field.field_name, "100");
+                return;
+              }
+
+              // Valid value within range
+              onChange(field.field_name, numValue.toString());
+            }}
+            onBlur={(e) => {
+              // Ensure value is within range on blur
+              const inputValue = e.target.value;
+              if (inputValue === "") {
+                return;
+              }
+
+              const numValue = parseFloat(inputValue);
+              if (!isNaN(numValue)) {
+                if (numValue < 0) {
+                  onChange(field.field_name, "0");
+                  e.target.value = "0";
+                } else if (numValue > 100) {
+                  onChange(field.field_name, "100");
+                  e.target.value = "100";
+                }
+              }
+            }}
+            placeholder={field.placeholder || "0"}
+            required={field.is_required}
+            className={`${className} pr-8`}
+          />
+        </div>
+      );
+
     // case "number":
     //   return (
     //     <input
