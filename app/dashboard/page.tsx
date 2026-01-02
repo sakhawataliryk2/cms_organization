@@ -62,12 +62,18 @@ export default function Dashboard() {
     const [uploadFile, setUploadFile] = useState<File | null>(null);
     const [uploadDescription, setUploadDescription] = useState('');
     const [isUploading, setIsUploading] = useState(false);
+    const [editingDocumentId, setEditingDocumentId] = useState<number | null>(null);
+    const [editDocumentDescription, setEditDocumentDescription] = useState('');
+    const [isUpdatingDocument, setIsUpdatingDocument] = useState(false);
 
     // Broadcast Messages state
     const [broadcastMessages, setBroadcastMessages] = useState<any[]>([]);
     const [isLoadingMessages, setIsLoadingMessages] = useState(false);
     const [newMessage, setNewMessage] = useState('');
     const [isPostingMessage, setIsPostingMessage] = useState(false);
+    const [editingMessageId, setEditingMessageId] = useState<number | null>(null);
+    const [editMessageText, setEditMessageText] = useState('');
+    const [isUpdatingMessage, setIsUpdatingMessage] = useState(false);
 
     // Activity Report (Goals & Quotas) - scoped to logged-in user + selected date range
     const toISODateInput = (d: Date) => d.toISOString().slice(0, 10);
@@ -431,6 +437,58 @@ export default function Dashboard() {
         router.push(`/dashboard/tasks/view?id=${taskId}`);
     };
 
+    // Toggle task completion status
+    const handleToggleTaskComplete = async (task: Task, e: React.MouseEvent) => {
+        e.stopPropagation(); // Prevent navigation when clicking checkbox
+        
+        const newCompletedStatus = !task.is_completed;
+        
+        try {
+            const response = await fetch(`/api/tasks/${task.id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                },
+                body: JSON.stringify({
+                    isCompleted: newCompletedStatus, // Backend expects camelCase
+                    status: newCompletedStatus ? 'Completed' : (task.status === 'Completed' ? 'Open' : task.status || 'Open'),
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.message || 'Failed to update task');
+            }
+
+            // Update the task in local state with the response data if available
+            const updatedTask = data.task || { 
+                ...task, 
+                is_completed: newCompletedStatus, 
+                status: newCompletedStatus ? 'Completed' : (task.status === 'Completed' ? 'Open' : task.status || 'Open')
+            };
+
+            setTasks((prevTasks) =>
+                prevTasks.map((t) =>
+                    t.id === task.id ? updatedTask : t
+                )
+            );
+            setFilteredTasks((prevTasks) =>
+                prevTasks.map((t) =>
+                    t.id === task.id ? updatedTask : t
+                )
+            );
+            setAllTasks((prevTasks) =>
+                prevTasks.map((t) =>
+                    t.id === task.id ? updatedTask : t
+                )
+            );
+        } catch (err) {
+            console.error('Error updating task:', err);
+            alert(err instanceof Error ? err.message : 'Failed to update task');
+        }
+    };
+
     // Filter tasks based on search query
     useEffect(() => {
         if (!taskSearchQuery.trim()) {
@@ -493,7 +551,29 @@ export default function Dashboard() {
     // Handle file upload
     const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         if (e.target.files && e.target.files[0]) {
-            setUploadFile(e.target.files[0]);
+            const file = e.target.files[0];
+            const allowedTypes = [
+                'application/pdf',
+                'application/msword',
+                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                'application/vnd.ms-excel',
+                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'application/vnd.ms-powerpoint',
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                'text/plain',
+                'text/csv',
+                'application/rtf'
+            ];
+            const allowedExtensions = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt', '.csv', '.rtf'];
+            const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
+            
+            if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
+                alert('Invalid file type. Please upload PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, CSV, or RTF files only.');
+                e.target.value = '';
+                return;
+            }
+            
+            setUploadFile(file);
         }
     };
 
@@ -626,6 +706,97 @@ export default function Dashboard() {
         }
     };
 
+    // Edit document description
+    const handleEditDocument = (doc: any) => {
+        setEditingDocumentId(doc.id);
+        setEditDocumentDescription(doc.description || '');
+    };
+
+    // Cancel editing document
+    const handleCancelEditDocument = () => {
+        setEditingDocumentId(null);
+        setEditDocumentDescription('');
+    };
+
+    // Update document description
+    const handleUpdateDocument = async (id: number) => {
+        setIsUpdatingDocument(true);
+        try {
+            const response = await fetch(`/api/shared-documents/${id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                },
+                body: JSON.stringify({
+                    description: editDocumentDescription.trim() || null,
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.message || 'Failed to update document');
+            }
+
+            setEditingDocumentId(null);
+            setEditDocumentDescription('');
+            fetchSharedDocuments();
+        } catch (err) {
+            console.error('Error updating document:', err);
+            alert(err instanceof Error ? err.message : 'Failed to update document');
+        } finally {
+            setIsUpdatingDocument(false);
+        }
+    };
+
+    // Edit message
+    const handleEditMessage = (msg: any) => {
+        setEditingMessageId(msg.id);
+        setEditMessageText(msg.message || '');
+    };
+
+    // Cancel editing message
+    const handleCancelEditMessage = () => {
+        setEditingMessageId(null);
+        setEditMessageText('');
+    };
+
+    // Update message
+    const handleUpdateMessage = async (id: number) => {
+        if (!editMessageText.trim()) {
+            alert('Please enter a message');
+            return;
+        }
+
+        setIsUpdatingMessage(true);
+        try {
+            const response = await fetch(`/api/broadcast-messages/${id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                },
+                body: JSON.stringify({
+                    message: editMessageText.trim(),
+                }),
+            });
+
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.message || 'Failed to update message');
+            }
+
+            setEditingMessageId(null);
+            setEditMessageText('');
+            fetchBroadcastMessages();
+        } catch (err) {
+            console.error('Error updating message:', err);
+            alert(err instanceof Error ? err.message : 'Failed to update message');
+        } finally {
+            setIsUpdatingMessage(false);
+        }
+    };
+
     return (
         <div className="flex flex-col h-full relative">
             {/* X button in top right corner */}
@@ -641,7 +812,7 @@ export default function Dashboard() {
                 {/* Appointments Calendar */}
                 <div className="bg-white rounded-md shadow overflow-hidden">
                     <div className="p-2 border-b border-gray-200">
-                        <h2 className="text-lg font-semibold">Appointments</h2>
+                        <h2 className="text-lg font-semibold">Calendar</h2>
                     </div>
                     <div className="p-4">
                         {/* Calendar navigation */}
@@ -800,9 +971,13 @@ export default function Dashboard() {
                                     >
                                         <div className="flex items-start justify-between mb-2">
                                             <div className="flex items-start space-x-2 flex-1">
-                                                <div className={`mt-1 ${task.is_completed ? 'text-green-600' : 'text-gray-400'}`}>
+                                                <button
+                                                    onClick={(e) => handleToggleTaskComplete(task, e)}
+                                                    className={`mt-1 hover:scale-110 transition-transform ${task.is_completed ? 'text-green-600' : 'text-gray-400 hover:text-green-600'}`}
+                                                    title={task.is_completed ? 'Mark as incomplete' : 'Mark as complete'}
+                                                >
                                                     <FiCheckSquare size={16} />
-                                                </div>
+                                                </button>
                                                 <div className="flex-1 min-w-0">
                                                     <h3 className={`text-sm font-medium truncate ${task.is_completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
                                                         {task.title}
@@ -907,25 +1082,72 @@ export default function Dashboard() {
                                     {sharedDocuments.slice(0, 5).map((doc) => (
                                         <div
                                             key={doc.id}
-                                            className="flex items-center justify-between p-2 bg-gray-50 rounded text-xs hover:bg-gray-100"
+                                            className="p-2 bg-gray-50 rounded text-xs hover:bg-gray-100"
                                         >
-                                            <div className="flex-1 min-w-0">
-                                                <div className="font-medium text-gray-700 truncate">
-                                                    {doc.file_name}
-                                                </div>
-                                                {doc.uploaded_by_name && (
-                                                    <div className="text-gray-500 text-xs">
-                                                        by {doc.uploaded_by_name}
+                                            {editingDocumentId === doc.id ? (
+                                                <div className="space-y-2">
+                                                    <div className="font-medium text-gray-700 truncate">
+                                                        {doc.file_name}
                                                     </div>
-                                                )}
-                                            </div>
-                                            <button
-                                                onClick={() => handleDeleteDocument(doc.id)}
-                                                className="ml-2 text-red-600 hover:text-red-800"
-                                                title="Delete"
-                                            >
-                                                <FiTrash2 size={12} />
-                                            </button>
+                                                    <textarea
+                                                        value={editDocumentDescription}
+                                                        onChange={(e) => setEditDocumentDescription(e.target.value)}
+                                                        placeholder="Add or edit description..."
+                                                        className="w-full p-1.5 text-xs border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+                                                        rows={2}
+                                                    />
+                                                    <div className="flex items-center justify-end space-x-2">
+                                                        <button
+                                                            onClick={handleCancelEditDocument}
+                                                            disabled={isUpdatingDocument}
+                                                            className="text-xs text-gray-600 hover:text-gray-800 disabled:opacity-50"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleUpdateDocument(doc.id)}
+                                                            disabled={isUpdatingDocument}
+                                                            className="text-xs text-blue-600 hover:text-blue-800 disabled:opacity-50"
+                                                        >
+                                                            {isUpdatingDocument ? 'Saving...' : 'Save'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex items-start justify-between">
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="font-medium text-gray-700 truncate">
+                                                            {doc.file_name}
+                                                        </div>
+                                                        {doc.description && (
+                                                            <div className="text-gray-600 mt-1 break-words">
+                                                                {doc.description}
+                                                            </div>
+                                                        )}
+                                                        {doc.uploaded_by_name && (
+                                                            <div className="text-gray-500 text-xs mt-1">
+                                                                by {doc.uploaded_by_name}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex items-center space-x-1 ml-2">
+                                                        <button
+                                                            onClick={() => handleEditDocument(doc)}
+                                                            className="text-blue-600 hover:text-blue-800"
+                                                            title="Edit"
+                                                        >
+                                                            <FiEdit2 size={12} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteDocument(doc.id)}
+                                                            className="text-red-600 hover:text-red-800"
+                                                            title="Delete"
+                                                        >
+                                                            <FiTrash2 size={12} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
@@ -969,23 +1191,60 @@ export default function Dashboard() {
                                             key={msg.id}
                                             className="p-2 bg-gray-50 rounded text-xs"
                                         >
-                                            <div className="flex items-start justify-between">
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-gray-700 whitespace-pre-wrap break-words">
-                                                        {msg.message}
-                                                    </p>
-                                                    <div className="text-gray-500 mt-1">
-                                                        {msg.created_by_name || 'Unknown'} • {new Date(msg.created_at).toLocaleDateString()}
+                                            {editingMessageId === msg.id ? (
+                                                <div className="space-y-2">
+                                                    <textarea
+                                                        value={editMessageText}
+                                                        onChange={(e) => setEditMessageText(e.target.value)}
+                                                        placeholder="Write a message for all users..."
+                                                        className="w-full p-2 text-xs border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                                                        rows={3}
+                                                    />
+                                                    <div className="flex items-center justify-end space-x-2">
+                                                        <button
+                                                            onClick={handleCancelEditMessage}
+                                                            disabled={isUpdatingMessage}
+                                                            className="text-xs text-gray-600 hover:text-gray-800 disabled:opacity-50"
+                                                        >
+                                                            Cancel
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleUpdateMessage(msg.id)}
+                                                            disabled={!editMessageText.trim() || isUpdatingMessage}
+                                                            className="text-xs px-2 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                        >
+                                                            {isUpdatingMessage ? 'Saving...' : 'Save'}
+                                                        </button>
                                                     </div>
                                                 </div>
-                                                <button
-                                                    onClick={() => handleDeleteMessage(msg.id)}
-                                                    className="ml-2 text-red-600 hover:text-red-800 flex-shrink-0"
-                                                    title="Delete"
-                                                >
-                                                    <FiTrash2 size={12} />
-                                                </button>
-                                            </div>
+                                            ) : (
+                                                <div className="flex items-start justify-between">
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-gray-700 whitespace-pre-wrap break-words">
+                                                            {msg.message}
+                                                        </p>
+                                                        <div className="text-gray-500 mt-1">
+                                                            {msg.created_by_name || 'Unknown'} • {new Date(msg.created_at).toLocaleDateString()}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-center space-x-1 ml-2 flex-shrink-0">
+                                                        <button
+                                                            onClick={() => handleEditMessage(msg)}
+                                                            className="text-blue-600 hover:text-blue-800"
+                                                            title="Edit"
+                                                        >
+                                                            <FiEdit2 size={12} />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteMessage(msg.id)}
+                                                            className="text-red-600 hover:text-red-800"
+                                                            title="Delete"
+                                                        >
+                                                            <FiTrash2 size={12} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
@@ -1370,8 +1629,12 @@ export default function Dashboard() {
                                 <input
                                     type="file"
                                     onChange={handleFileSelect}
+                                    accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.rtf"
                                     className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                                 />
+                                <div className="mt-1 text-xs text-gray-500">
+                                    Accepted formats: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, CSV, RTF
+                                </div>
                                 {uploadFile && (
                                     <div className="mt-2 text-xs text-gray-600">
                                         Selected: {uploadFile.name} ({(uploadFile.size / 1024).toFixed(2)} KB)
