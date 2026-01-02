@@ -80,11 +80,7 @@ const DocumentManagementPage = () => {
     };
   };
 
-  // Backend API base URL - must be set in .env.local
-  // Example: NEXT_PUBLIC_API_URL=http://localhost:8080
-  const API = process.env.API_BASE_URL || "http://localhost:8080";
 
-  console.log("API URL =>", API);
 
   const fetchDocs = async () => {
     setLoading(true);
@@ -270,9 +266,8 @@ const DocumentManagementPage = () => {
 
     try {
       setLoading(true);
-      const res = await fetch(`${API}/api/template-documents/${id}`, {
+      const res = await fetch(`/api/template-documents/${id}`, {
         method: "DELETE",
-        headers: { ...authHeaders() },
       });
       const data = await res.json();
       if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
@@ -483,19 +478,17 @@ const DocumentManagementPage = () => {
                         <>
                           <a
                             className="ml-3 text-xs text-blue-600 underline"
-                            href={`${API}${doc.file_path.startsWith('/') ? doc.file_path : '/' + doc.file_path}`}
-                            target="_blank"
-                            rel="noreferrer"
+                            href={`/dashboard/admin/document-management/${doc.id}/view`}
                           >
                             View PDF
                           </a>
 
-                          {/* <a
+                          <a
                             className="ml-3 text-xs text-green-600 underline"
                             href={`/dashboard/admin/document-management/${doc.id}/editor`}
                           >
                             Open Editor
-                          </a> */}
+                          </a>
                         </>
                       ) : null}
                     </td>

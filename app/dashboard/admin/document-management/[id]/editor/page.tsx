@@ -4,8 +4,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { Document as PdfDoc, Page, pdfjs } from "react-pdf";
 import { Rnd } from "react-rnd";
-pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+import "react-pdf/dist/esm/Page/AnnotationLayer.css";
+import "react-pdf/dist/esm/Page/TextLayer.css";
 
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url
+).toString();
 
 type FieldType = "text" | "signature" | "date" | "checkbox";
 
@@ -18,11 +23,10 @@ type OverlayField = {
   wPct: number;
   hPct: number;
   label?: string;
+  value?: string;
+  checked?: boolean;
 };
 
-// Backend API base URL - must be set in .env.local
-// Example: NEXT_PUBLIC_API_URL=http://localhost:8080
-const API = process.env.API_BASE_URL || "http://localhost:8080";
 export default function TemplateDocEditorPage() {
   const params = useParams();
   const id = String(params?.id || "");
@@ -38,40 +42,42 @@ export default function TemplateDocEditorPage() {
   const pageWrapRef = useRef<HTMLDivElement | null>(null);
   const [pageRect, setPageRect] = useState({ w: 1, h: 1 });
 
-  const storageKey = useMemo(() => `template_doc_fields_${id}`, [id]);
-
+  // ✅ always works local + live
   useEffect(() => {
-    const load = async () => {
-      const res = await fetch(`${API}/api/template-documents/${id}`);
-      const data = await res.json();
+    if (!id) return;
+    setPdfUrl(`/api/template-documents/${id}/file`);
+  }, [id]);
 
-      if (!res.ok || !data?.success) return;
-
-      const fp = data.document?.file_path || data.document?.filePath;
-      if (!fp) return setPdfUrl("");
-
-      // Ensure file path starts with / and construct full backend URL
-      // Backend stores paths like /uploads/template-documents/filename.pdf
-      const normalizedPath = fp.startsWith('/') ? fp : '/' + fp;
-      setPdfUrl(encodeURI(`${API}${normalizedPath}`));
-    };
-
-    if (id) load();
-  }, [id, API]);
-
+  // ✅ load fields from DB (fallback to localStorage if needed)
   useEffect(() => {
-    const raw = localStorage.getItem(storageKey);
-    if (!raw) return;
-    try {
-      setFields(JSON.parse(raw));
-    } catch {}
-  }, [storageKey]);
+    if (!id) return;
+
+    (async () => {
+      try {
+        const res = await fetch(`/api/template-documents/${id}/fields`, {
+          cache: "no-store",
+        });
+        const data = await res.json();
+        if (res.ok && data?.success && Array.isArray(data.fields)) {
+          setFields(data.fields);
+          return;
+        }
+      } catch {}
+
+      // fallback
+      const raw = localStorage.getItem(`template_doc_fields_${id}`);
+      if (!raw) return;
+      try {
+        setFields(JSON.parse(raw));
+      } catch {}
+    })();
+  }, [id]);
 
   const measurePage = () => {
     if (!pageWrapRef.current) return;
-    const pageEl = pageWrapRef.current.querySelector(
-      ".react-pdf__Page"
-    ) as HTMLElement | null;
+    const pageEl = pageWrapRef.current.querySelector(".react-pdf__Page") as
+      | HTMLElement
+      | null;
     const target = pageEl || pageWrapRef.current;
     const r = target.getBoundingClientRect();
     if (r.width > 0 && r.height > 0) setPageRect({ w: r.width, h: r.height });
@@ -88,18 +94,22 @@ export default function TemplateDocEditorPage() {
     setActivePage(1);
   };
 
+  // ✅ create only when click on "blank" pdf area, not on any field
   const createFieldAtClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!activeTool || !pageWrapRef.current) return;
+
+    const target = e.target as HTMLElement;
+    if (target.closest("[data-overlay-field='true']")) return; // ✅ stop duplicates
 
     const r = pageWrapRef.current.getBoundingClientRect();
     const x = e.clientX - r.left;
     const y = e.clientY - r.top;
 
     const defaultSize = {
-      text: { w: 220, h: 44 },
-      signature: { w: 240, h: 60 },
-      date: { w: 160, h: 44 },
-      checkbox: { w: 28, h: 28 },
+      text: { w: 260, h: 70 },
+      signature: { w: 280, h: 90 },
+      date: { w: 220, h: 70 },
+      checkbox: { w: 60, h: 60 },
     }[activeTool];
 
     const xPct = clamp(x / r.width, 0, 0.98);
@@ -125,22 +135,36 @@ export default function TemplateDocEditorPage() {
             : activeTool === "date"
             ? "Date"
             : "✓",
+        value: "",
+        checked: false,
       },
     ]);
   };
 
-  const updateField = (id: string, patch: Partial<OverlayField>) => {
-    setFields((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, ...patch } : f))
-    );
+  const updateField = (fid: string, patch: Partial<OverlayField>) => {
+    setFields((prev) => prev.map((f) => (f.id === fid ? { ...f, ...patch } : f)));
   };
 
-  const deleteField = (id: string) => {
-    setFields((prev) => prev.filter((f) => f.id !== id));
+  const deleteField = (fid: string) => {
+    setFields((prev) => prev.filter((f) => f.id !== fid));
   };
 
-  const save = () => {
-    localStorage.setItem(storageKey, JSON.stringify(fields));
+  // ✅ Save to DB + localStorage backup
+  const save = async () => {
+    localStorage.setItem(`template_doc_fields_${id}`, JSON.stringify(fields));
+
+    const res = await fetch(`/api/template-documents/${id}/fields`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields }),
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data?.success) {
+      alert(data?.message || "Failed to save fields");
+      return;
+    }
+    alert("Saved!");
   };
 
   const pageFields = fields.filter((f) => f.page === activePage);
@@ -184,9 +208,7 @@ export default function TemplateDocEditorPage() {
                 </button>
                 <button
                   disabled={activePage >= numPages}
-                  onClick={() =>
-                    setActivePage((p) => Math.min(numPages, p + 1))
-                  }
+                  onClick={() => setActivePage((p) => Math.min(numPages, p + 1))}
                   className="px-3 py-1 text-xs border rounded disabled:opacity-50"
                 >
                   Next
@@ -195,22 +217,20 @@ export default function TemplateDocEditorPage() {
             </div>
 
             {!fileObj ? (
-              <div className="text-sm text-gray-600">
-                No PDF file found for this document.
-              </div>
+              <div className="text-sm text-gray-600">No PDF file found.</div>
             ) : (
               <div
                 ref={pageWrapRef}
-                onClick={createFieldAtClick}
+                onMouseDownCapture={(e) => {
+                  const t = e.target as HTMLElement;
+                  if (t.closest("[data-overlay-field='true']")) return;
+                }}
+                onMouseDown={createFieldAtClick}
                 className={`relative mx-auto w-fit ${
                   activeTool ? "cursor-crosshair" : "cursor-default"
                 }`}
               >
-                <PdfDoc
-                  file={fileObj}
-                  onLoadSuccess={onDocumentLoadSuccess}
-                  onLoadError={() => {}}
-                >
+                <PdfDoc file={fileObj} onLoadSuccess={onDocumentLoadSuccess}>
                   <Page
                     pageNumber={activePage}
                     renderTextLayer={false}
@@ -231,6 +251,8 @@ export default function TemplateDocEditorPage() {
                       size={{ width: w, height: h }}
                       position={{ x, y }}
                       bounds="parent"
+                      dragHandleClassName="field-drag-handle"
+                      style={{ zIndex: 50 }}
                       onDragStop={(_, d) => {
                         updateField(f.id, {
                           xPct: clamp(d.x / pageRect.w, 0, 0.98),
@@ -242,26 +264,77 @@ export default function TemplateDocEditorPage() {
                           xPct: clamp(pos.x / pageRect.w, 0, 0.98),
                           yPct: clamp(pos.y / pageRect.h, 0, 0.98),
                           wPct: clamp(ref.offsetWidth / pageRect.w, 0.02, 0.98),
-                          hPct: clamp(
-                            ref.offsetHeight / pageRect.h,
-                            0.02,
-                            0.98
-                          ),
+                          hPct: clamp(ref.offsetHeight / pageRect.h, 0.02, 0.98),
                         });
                       }}
-                      enableResizing={f.type !== "checkbox"}
+                      enableResizing={true}
                     >
-                      <div className="w-full h-full border-2 border-blue-600 bg-blue-50/40 text-[11px] text-blue-900 flex items-center justify-center relative select-none">
-                        <span className="px-2 text-center">{f.label}</span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteField(f.id);
-                          }}
-                          className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-black text-white text-[10px] grid place-items-center"
-                        >
-                          ✕
-                        </button>
+                      <div
+                        data-overlay-field="true"
+                        className="w-full h-full bg-white border-2 border-blue-600 rounded-sm overflow-hidden"
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {/* drag bar */}
+                        <div className="field-drag-handle h-6 bg-blue-600 text-white text-[11px] px-2 flex items-center justify-between cursor-move">
+                          <span className="truncate">{f.label}</span>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteField(f.id);
+                            }}
+                            className="ml-2 w-5 h-5 rounded-full bg-black text-white text-[10px] grid place-items-center"
+                            title="Delete"
+                          >
+                            ✕
+                          </button>
+                        </div>
+
+                        {/* content */}
+                        <div className="h-[calc(100%-24px)] p-1">
+                          {f.type === "text" && (
+                            <input
+                              value={f.value || ""}
+                              onChange={(e) =>
+                                updateField(f.id, { value: e.target.value })
+                              }
+                              placeholder="Type..."
+                              className="w-full h-full px-2 text-[12px] outline-none border border-gray-200 rounded"
+                            />
+                          )}
+
+                          {f.type === "date" && (
+                            <input
+                              type="date"
+                              value={f.value || ""}
+                              onChange={(e) =>
+                                updateField(f.id, { value: e.target.value })
+                              }
+                              className="w-full h-full px-2 text-[12px] outline-none border border-gray-200 rounded"
+                            />
+                          )}
+
+                          {f.type === "checkbox" && (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <input
+                                type="checkbox"
+                                checked={!!f.checked}
+                                onChange={(e) =>
+                                  updateField(f.id, { checked: e.target.checked })
+                                }
+                                className="w-5 h-5"
+                              />
+                            </div>
+                          )}
+
+                          {f.type === "signature" && (
+                            <div className="w-full h-full flex items-center justify-center text-[12px] text-gray-600 border border-gray-200 rounded">
+                              Signature Here
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </Rnd>
                   );
@@ -316,9 +389,7 @@ function ToolButton({
     <button
       onClick={onClick}
       className={`w-full px-3 py-2 text-left text-sm border rounded ${
-        active
-          ? "bg-black text-white border-black"
-          : "bg-white hover:bg-gray-50"
+        active ? "bg-black text-white border-black" : "bg-white hover:bg-gray-50"
       }`}
     >
       {label}
