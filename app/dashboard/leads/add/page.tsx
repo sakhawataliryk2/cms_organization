@@ -49,6 +49,21 @@ export default function AddLead() {
   const [isEditMode, setIsEditMode] = useState(!!leadId);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeUsers, setActiveUsers] = useState<User[]>([]);
+  const [hiringManagers, setHiringManagers] = useState<
+    Array<{ id: string; name: string; full_name?: string; first_name?: string; last_name?: string }>
+  >([]);
+  const [jobSeekers, setJobSeekers] = useState<
+    Array<{ id: string; name: string; full_name?: string; first_name?: string; last_name?: string; email?: string }>
+  >([]);
+  const [jobs, setJobs] = useState<
+    Array<{ id: string; job_title?: string; title?: string; name?: string }>
+  >([]);
+  const [placements, setPlacements] = useState<
+    Array<{ id: string; candidate_name?: string; job_seeker_name?: string; job_title?: string; job_name?: string; name?: string }>
+  >([]);
+  const [opportunities, setOpportunities] = useState<
+    Array<{ id: string; name?: string; title?: string; opportunity_name?: string }>
+  >([]);
 
   // Use the custom fields hook (same pattern as jobs)
   const {
@@ -99,6 +114,16 @@ export default function AddLead() {
 
     // Fetch active users for owner dropdown
     fetchActiveUsers();
+    // Fetch hiring managers for Field_18 (Contact) lookup
+    fetchHiringManagers();
+    // Fetch job seekers for Field_20 (Candidate) lookup
+    fetchJobSeekers();
+    // Fetch jobs for Field_21 (Job) lookup
+    fetchJobs();
+    // Fetch placements for Field_22 (Placement) lookup
+    fetchPlacements();
+    // Fetch opportunities for Field_23 (Opportunity) lookup
+    fetchOpportunities();
   }, []);
 
   // If leadId is present, fetch the lead data
@@ -185,6 +210,106 @@ export default function AddLead() {
       }
     } catch (error) {
       console.error("Error fetching active users:", error);
+    }
+  };
+
+  // Fetch hiring managers for Field_18 (Contact) lookup
+  const fetchHiringManagers = async () => {
+    try {
+      const response = await fetch("/api/hiring-managers", {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setHiringManagers(data.hiringManagers || []);
+      }
+    } catch (error) {
+      console.error("Error fetching hiring managers:", error);
+    }
+  };
+
+  // Fetch job seekers (candidates) for Field_20 (Candidate) lookup
+  const fetchJobSeekers = async () => {
+    try {
+      const response = await fetch("/api/job-seekers", {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setJobSeekers(data.jobSeekers || []);
+      }
+    } catch (error) {
+      console.error("Error fetching job seekers:", error);
+    }
+  };
+
+  // Fetch jobs for Field_21 (Job) lookup
+  const fetchJobs = async () => {
+    try {
+      const response = await fetch("/api/jobs", {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setJobs(data.jobs || []);
+      }
+    } catch (error) {
+      console.error("Error fetching jobs:", error);
+    }
+  };
+
+  // Fetch placements for Field_22 (Placement) lookup
+  const fetchPlacements = async () => {
+    try {
+      const response = await fetch("/api/placements", {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setPlacements(data.placements || []);
+      }
+    } catch (error) {
+      console.error("Error fetching placements:", error);
+    }
+  };
+
+  // Fetch opportunities for Field_23 (Opportunity) lookup
+  const fetchOpportunities = async () => {
+    try {
+      const response = await fetch("/api/opportunities", {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setOpportunities(data.opportunities || []);
+      }
+    } catch (error) {
+      console.error("Error fetching opportunities:", error);
     }
   };
 
@@ -1017,6 +1142,565 @@ export default function AddLead() {
                             </option>
                           ))}
                         </select>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Special handling for Field_18 (Contact) - multi-select hiring manager lookup
+                if (field.field_name === "Field_18") {
+                  // Parse existing value (comma-separated string or array)
+                  const selectedContactIds = Array.isArray(fieldValue)
+                    ? fieldValue
+                    : typeof fieldValue === "string" && fieldValue.trim()
+                    ? fieldValue.split(",").map((id) => id.trim()).filter(Boolean)
+                    : [];
+
+                  const handleContactLookupChange = (contactIds: string[]) => {
+                    // Save as comma-separated string
+                    const valueToSave = contactIds.length > 0 ? contactIds.join(", ") : "";
+                    handleCustomFieldChange(field.field_name, valueToSave);
+                  };
+
+                  return (
+                    <div key={field.id} className="flex items-start mb-3">
+                      <label className="w-48 font-medium flex items-center pt-2">
+                        {field.field_label}:
+                        {field.is_required &&
+                          (selectedContactIds.length > 0 ? (
+                            <span className="text-green-500 ml-1">✔</span>
+                          ) : (
+                            <span className="text-red-500 ml-1">*</span>
+                          ))}
+                      </label>
+
+                      <div className="flex-1 relative">
+                        <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500">
+                          <div className="max-h-48 overflow-y-auto p-2">
+                            {hiringManagers.length === 0 ? (
+                              <div className="text-gray-500 text-sm p-2">
+                                No hiring managers available in the system
+                              </div>
+                            ) : (
+                              hiringManagers.map((contact) => {
+                                const contactId = contact.id.toString();
+                                const isSelected = selectedContactIds.includes(contactId);
+                                const contactName =
+                                  contact.full_name ||
+                                  `${contact.first_name || ""} ${contact.last_name || ""}`.trim() ||
+                                  contact.name ||
+                                  `Contact #${contact.id}`;
+
+                                return (
+                                  <label
+                                    key={contact.id}
+                                    className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={(e) => {
+                                        const newIds = e.target.checked
+                                          ? [...selectedContactIds, contactId]
+                                          : selectedContactIds.filter((id) => id !== contactId);
+                                        handleContactLookupChange(newIds);
+                                      }}
+                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                                    />
+                                    <span className="text-sm text-gray-700">{contactName}</span>
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
+                          {selectedContactIds.length > 0 && (
+                            <div className="border-t border-gray-300 p-2 bg-gray-50">
+                              <div className="text-xs text-gray-600 mb-1">
+                                Selected: {selectedContactIds.length} contact(s)
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {selectedContactIds.map((contactId) => {
+                                  const contact = hiringManagers.find(
+                                    (c) => c.id.toString() === contactId
+                                  );
+                                  const contactName =
+                                    contact?.full_name ||
+                                    `${contact?.first_name || ""} ${contact?.last_name || ""}`.trim() ||
+                                    contact?.name ||
+                                    `Contact #${contactId}`;
+                                  return contact ? (
+                                    <span
+                                      key={contactId}
+                                      className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                                    >
+                                      {contactName}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const newIds = selectedContactIds.filter(
+                                            (id) => id !== contactId
+                                          );
+                                          handleContactLookupChange(newIds);
+                                        }}
+                                        className="ml-1 text-blue-600 hover:text-blue-800"
+                                      >
+                                        ×
+                                      </button>
+                                    </span>
+                                  ) : null;
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Special handling for Field_20 (Candidate) - multi-select job seeker lookup
+                if (field.field_name === "Field_20") {
+                  // Parse existing value (comma-separated string or array)
+                  const selectedCandidateIds = Array.isArray(fieldValue)
+                    ? fieldValue
+                    : typeof fieldValue === "string" && fieldValue.trim()
+                    ? fieldValue.split(",").map((id) => id.trim()).filter(Boolean)
+                    : [];
+
+                  const handleCandidateLookupChange = (candidateIds: string[]) => {
+                    // Save as comma-separated string
+                    const valueToSave = candidateIds.length > 0 ? candidateIds.join(", ") : "";
+                    handleCustomFieldChange(field.field_name, valueToSave);
+                  };
+
+                  return (
+                    <div key={field.id} className="flex items-start mb-3">
+                      <label className="w-48 font-medium flex items-center pt-2">
+                        {field.field_label}:
+                        {field.is_required &&
+                          (selectedCandidateIds.length > 0 ? (
+                            <span className="text-green-500 ml-1">✔</span>
+                          ) : (
+                            <span className="text-red-500 ml-1">*</span>
+                          ))}
+                      </label>
+
+                      <div className="flex-1 relative">
+                        <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500">
+                          <div className="max-h-48 overflow-y-auto p-2">
+                            {jobSeekers.length === 0 ? (
+                              <div className="text-gray-500 text-sm p-2">
+                                No candidates available in the system
+                              </div>
+                            ) : (
+                              jobSeekers.map((candidate) => {
+                                const candidateId = candidate.id.toString();
+                                const isSelected = selectedCandidateIds.includes(candidateId);
+                                const candidateName =
+                                  candidate.full_name ||
+                                  `${candidate.first_name || ""} ${candidate.last_name || ""}`.trim() ||
+                                  candidate.name ||
+                                  `Candidate #${candidate.id}`;
+
+                                return (
+                                  <label
+                                    key={candidate.id}
+                                    className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={(e) => {
+                                        const newIds = e.target.checked
+                                          ? [...selectedCandidateIds, candidateId]
+                                          : selectedCandidateIds.filter((id) => id !== candidateId);
+                                        handleCandidateLookupChange(newIds);
+                                      }}
+                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                                    />
+                                    <span className="text-sm text-gray-700">{candidateName}</span>
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
+                          {selectedCandidateIds.length > 0 && (
+                            <div className="border-t border-gray-300 p-2 bg-gray-50">
+                              <div className="text-xs text-gray-600 mb-1">
+                                Selected: {selectedCandidateIds.length} candidate(s)
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {selectedCandidateIds.map((candidateId) => {
+                                  const candidate = jobSeekers.find(
+                                    (c) => c.id.toString() === candidateId
+                                  );
+                                  const candidateName =
+                                    candidate?.full_name ||
+                                    `${candidate?.first_name || ""} ${candidate?.last_name || ""}`.trim() ||
+                                    candidate?.name ||
+                                    `Candidate #${candidateId}`;
+                                  return candidate ? (
+                                    <span
+                                      key={candidateId}
+                                      className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                                    >
+                                      {candidateName}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const newIds = selectedCandidateIds.filter(
+                                            (id) => id !== candidateId
+                                          );
+                                          handleCandidateLookupChange(newIds);
+                                        }}
+                                        className="ml-1 text-blue-600 hover:text-blue-800"
+                                      >
+                                        ×
+                                      </button>
+                                    </span>
+                                  ) : null;
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Special handling for Field_21 (Job) - multi-select job lookup
+                if (field.field_name === "Field_21") {
+                  // Parse existing value (comma-separated string or array)
+                  const selectedJobIds = Array.isArray(fieldValue)
+                    ? fieldValue
+                    : typeof fieldValue === "string" && fieldValue.trim()
+                    ? fieldValue.split(",").map((id) => id.trim()).filter(Boolean)
+                    : [];
+
+                  const handleJobLookupChange = (jobIds: string[]) => {
+                    // Save as comma-separated string
+                    const valueToSave = jobIds.length > 0 ? jobIds.join(", ") : "";
+                    handleCustomFieldChange(field.field_name, valueToSave);
+                  };
+
+                  return (
+                    <div key={field.id} className="flex items-start mb-3">
+                      <label className="w-48 font-medium flex items-center pt-2">
+                        {field.field_label}:
+                        {field.is_required &&
+                          (selectedJobIds.length > 0 ? (
+                            <span className="text-green-500 ml-1">✔</span>
+                          ) : (
+                            <span className="text-red-500 ml-1">*</span>
+                          ))}
+                      </label>
+
+                      <div className="flex-1 relative">
+                        <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500">
+                          <div className="max-h-48 overflow-y-auto p-2">
+                            {jobs.length === 0 ? (
+                              <div className="text-gray-500 text-sm p-2">
+                                No jobs available in the system
+                              </div>
+                            ) : (
+                              jobs.map((job) => {
+                                const jobId = job.id.toString();
+                                const isSelected = selectedJobIds.includes(jobId);
+                                const jobName =
+                                  job.job_title ||
+                                  job.title ||
+                                  job.name ||
+                                  `Job #${job.id}`;
+
+                                return (
+                                  <label
+                                    key={job.id}
+                                    className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={(e) => {
+                                        const newIds = e.target.checked
+                                          ? [...selectedJobIds, jobId]
+                                          : selectedJobIds.filter((id) => id !== jobId);
+                                        handleJobLookupChange(newIds);
+                                      }}
+                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                                    />
+                                    <span className="text-sm text-gray-700">{jobName}</span>
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
+                          {selectedJobIds.length > 0 && (
+                            <div className="border-t border-gray-300 p-2 bg-gray-50">
+                              <div className="text-xs text-gray-600 mb-1">
+                                Selected: {selectedJobIds.length} job(s)
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {selectedJobIds.map((jobId) => {
+                                  const job = jobs.find(
+                                    (j) => j.id.toString() === jobId
+                                  );
+                                  const jobName =
+                                    job?.job_title ||
+                                    job?.title ||
+                                    job?.name ||
+                                    `Job #${jobId}`;
+                                  return job ? (
+                                    <span
+                                      key={jobId}
+                                      className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                                    >
+                                      {jobName}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const newIds = selectedJobIds.filter(
+                                            (id) => id !== jobId
+                                          );
+                                          handleJobLookupChange(newIds);
+                                        }}
+                                        className="ml-1 text-blue-600 hover:text-blue-800"
+                                      >
+                                        ×
+                                      </button>
+                                    </span>
+                                  ) : null;
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Special handling for Field_22 (Placement) - multi-select placement lookup
+                if (field.field_name === "Field_22") {
+                  // Parse existing value (comma-separated string or array)
+                  const selectedPlacementIds = Array.isArray(fieldValue)
+                    ? fieldValue
+                    : typeof fieldValue === "string" && fieldValue.trim()
+                    ? fieldValue.split(",").map((id) => id.trim()).filter(Boolean)
+                    : [];
+
+                  const handlePlacementLookupChange = (placementIds: string[]) => {
+                    // Save as comma-separated string
+                    const valueToSave = placementIds.length > 0 ? placementIds.join(", ") : "";
+                    handleCustomFieldChange(field.field_name, valueToSave);
+                  };
+
+                  return (
+                    <div key={field.id} className="flex items-start mb-3">
+                      <label className="w-48 font-medium flex items-center pt-2">
+                        {field.field_label}:
+                        {field.is_required &&
+                          (selectedPlacementIds.length > 0 ? (
+                            <span className="text-green-500 ml-1">✔</span>
+                          ) : (
+                            <span className="text-red-500 ml-1">*</span>
+                          ))}
+                      </label>
+
+                      <div className="flex-1 relative">
+                        <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500">
+                          <div className="max-h-48 overflow-y-auto p-2">
+                            {placements.length === 0 ? (
+                              <div className="text-gray-500 text-sm p-2">
+                                No placements available in the system
+                              </div>
+                            ) : (
+                              placements.map((placement) => {
+                                const placementId = placement.id.toString();
+                                const isSelected = selectedPlacementIds.includes(placementId);
+                                const placementName =
+                                  placement.candidate_name ||
+                                  placement.job_seeker_name ||
+                                  placement.job_title ||
+                                  placement.job_name ||
+                                  placement.name ||
+                                  `Placement #${placement.id}`;
+
+                                return (
+                                  <label
+                                    key={placement.id}
+                                    className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={(e) => {
+                                        const newIds = e.target.checked
+                                          ? [...selectedPlacementIds, placementId]
+                                          : selectedPlacementIds.filter((id) => id !== placementId);
+                                        handlePlacementLookupChange(newIds);
+                                      }}
+                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                                    />
+                                    <span className="text-sm text-gray-700">{placementName}</span>
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
+                          {selectedPlacementIds.length > 0 && (
+                            <div className="border-t border-gray-300 p-2 bg-gray-50">
+                              <div className="text-xs text-gray-600 mb-1">
+                                Selected: {selectedPlacementIds.length} placement(s)
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {selectedPlacementIds.map((placementId) => {
+                                  const placement = placements.find(
+                                    (p) => p.id.toString() === placementId
+                                  );
+                                  const placementName =
+                                    placement?.candidate_name ||
+                                    placement?.job_seeker_name ||
+                                    placement?.job_title ||
+                                    placement?.job_name ||
+                                    placement?.name ||
+                                    `Placement #${placementId}`;
+                                  return placement ? (
+                                    <span
+                                      key={placementId}
+                                      className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                                    >
+                                      {placementName}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const newIds = selectedPlacementIds.filter(
+                                            (id) => id !== placementId
+                                          );
+                                          handlePlacementLookupChange(newIds);
+                                        }}
+                                        className="ml-1 text-blue-600 hover:text-blue-800"
+                                      >
+                                        ×
+                                      </button>
+                                    </span>
+                                  ) : null;
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Special handling for Field_23 (Opportunity) - multi-select opportunity lookup
+                if (field.field_name === "Field_23") {
+                  // Parse existing value (comma-separated string or array)
+                  const selectedOpportunityIds = Array.isArray(fieldValue)
+                    ? fieldValue
+                    : typeof fieldValue === "string" && fieldValue.trim()
+                    ? fieldValue.split(",").map((id) => id.trim()).filter(Boolean)
+                    : [];
+
+                  const handleOpportunityLookupChange = (opportunityIds: string[]) => {
+                    // Save as comma-separated string
+                    const valueToSave = opportunityIds.length > 0 ? opportunityIds.join(", ") : "";
+                    handleCustomFieldChange(field.field_name, valueToSave);
+                  };
+
+                  return (
+                    <div key={field.id} className="flex items-start mb-3">
+                      <label className="w-48 font-medium flex items-center pt-2">
+                        {field.field_label}:
+                        {field.is_required &&
+                          (selectedOpportunityIds.length > 0 ? (
+                            <span className="text-green-500 ml-1">✔</span>
+                          ) : (
+                            <span className="text-red-500 ml-1">*</span>
+                          ))}
+                      </label>
+
+                      <div className="flex-1 relative">
+                        <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500">
+                          <div className="max-h-48 overflow-y-auto p-2">
+                            {opportunities.length === 0 ? (
+                              <div className="text-gray-500 text-sm p-2">
+                                No opportunities available in the system
+                              </div>
+                            ) : (
+                              opportunities.map((opportunity) => {
+                                const opportunityId = opportunity.id.toString();
+                                const isSelected = selectedOpportunityIds.includes(opportunityId);
+                                const opportunityName =
+                                  opportunity.name ||
+                                  opportunity.title ||
+                                  opportunity.opportunity_name ||
+                                  `Opportunity #${opportunity.id}`;
+
+                                return (
+                                  <label
+                                    key={opportunity.id}
+                                    className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={(e) => {
+                                        const newIds = e.target.checked
+                                          ? [...selectedOpportunityIds, opportunityId]
+                                          : selectedOpportunityIds.filter((id) => id !== opportunityId);
+                                        handleOpportunityLookupChange(newIds);
+                                      }}
+                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                                    />
+                                    <span className="text-sm text-gray-700">{opportunityName}</span>
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
+                          {selectedOpportunityIds.length > 0 && (
+                            <div className="border-t border-gray-300 p-2 bg-gray-50">
+                              <div className="text-xs text-gray-600 mb-1">
+                                Selected: {selectedOpportunityIds.length} opportunity(ies)
+                              </div>
+                              <div className="flex flex-wrap gap-1">
+                                {selectedOpportunityIds.map((opportunityId) => {
+                                  const opportunity = opportunities.find(
+                                    (o) => o.id.toString() === opportunityId
+                                  );
+                                  const opportunityName =
+                                    opportunity?.name ||
+                                    opportunity?.title ||
+                                    opportunity?.opportunity_name ||
+                                    `Opportunity #${opportunityId}`;
+                                  return opportunity ? (
+                                    <span
+                                      key={opportunityId}
+                                      className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                                    >
+                                      {opportunityName}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const newIds = selectedOpportunityIds.filter(
+                                            (id) => id !== opportunityId
+                                          );
+                                          handleOpportunityLookupChange(newIds);
+                                        }}
+                                        className="ml-1 text-blue-600 hover:text-blue-800"
+                                      >
+                                        ×
+                                      </button>
+                                    </span>
+                                  ) : null;
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   );
