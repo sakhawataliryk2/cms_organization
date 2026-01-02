@@ -80,8 +80,6 @@ const DocumentManagementPage = () => {
     };
   };
 
-
-
   const fetchDocs = async () => {
     setLoading(true);
     try {
@@ -93,21 +91,27 @@ const DocumentManagementPage = () => {
       const data = await res.json();
       if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
 
-      setDocs(
-        (data.documents || []).map((d: any) => ({
-          id: d.id,
-          document_name: d.document_name,
-          category: d.category,
-          created_at: d.created_at,
-          created_by_name: d.created_by_name,
-          file_path: d.file_path,
-        }))
-      );
+      const normalized = (data.documents || []).map((d: any) => ({
+        id: d.id,
+        document_name: d.document_name,
+        category: d.category,
+        created_at: d.created_at,
+        created_by_name: d.created_by_name,
+        file_path: d.file_path,
+      }));
+
+      setDocs(normalized);
+
+      clampPage(normalized.length, pageSize);
     } catch (e: any) {
       alert(e.message || "Failed to load documents");
     } finally {
       setLoading(false);
     }
+  };
+  const clampPage = (nextTotal: number, nextPageSize: number) => {
+    const pages = Math.max(1, Math.ceil(nextTotal / nextPageSize));
+    setCurrentPage((p) => Math.min(p, pages));
   };
 
   const fetchInternalUsers = async () => {
@@ -279,10 +283,32 @@ const DocumentManagementPage = () => {
     }
   };
 
-  const actionOptions = (doc: Document) => [
-    { label: "Edit", action: () => openEditModal(doc) },
-    { label: "Delete", action: () => handleDelete(doc.id) },
-  ];
+  const actionOptions = (doc: Document) => {
+    const opts: { label: string; action: () => void }[] = [];
+
+    if (doc.file_path) {
+      opts.push({
+        label: "View PDF",
+        action: () =>
+          window.open(
+            `/dashboard/admin/document-management/${doc.id}/view`,
+            "_blank"
+          ),
+      });
+
+      opts.push({
+        label: "Open Editor",
+        action: () => {
+          window.location.href = `/dashboard/admin/document-management/${doc.id}/editor`;
+        },
+      });
+    }
+
+    opts.push({ label: "Edit", action: () => openEditModal(doc) });
+    opts.push({ label: "Delete", action: () => handleDelete(doc.id) });
+
+    return opts;
+  };
 
   const SortIcon = ({ field }: { field: "document_name" | "category" }) => {
     if (sortConfig.field !== field) {
@@ -474,7 +500,7 @@ const DocumentManagementPage = () => {
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {doc.document_name}
 
-                      {doc.file_path ? (
+                      {/* {doc.file_path ? (
                         <>
                           <a
                             className="ml-3 text-xs text-blue-600 underline"
@@ -490,7 +516,7 @@ const DocumentManagementPage = () => {
                             Open Editor
                           </a>
                         </>
-                      ) : null}
+                      ) : null} */}
                     </td>
 
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
