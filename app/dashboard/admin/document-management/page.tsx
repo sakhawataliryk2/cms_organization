@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
+
 import {
   FiSearch,
   FiRefreshCw,
@@ -17,6 +19,7 @@ type Document = {
   created_at?: string;
   created_by_name?: string;
   file_path?: string | null;
+  mapped_count?: number;
 };
 
 type SortConfig = {
@@ -35,9 +38,11 @@ type InternalUser = {
 const DEFAULT_CATEGORIES = ["General", "Onboarding", "Healthcare", "HR"];
 
 const DocumentManagementPage = () => {
-  const [activeTab, setActiveTab] = useState<"packets" | "documents">(
+  const [activeTab, setActiveTab] = useState<"documents">(
     "documents"
   );
+   const router = useRouter();
+   const pathname = usePathname();
 
   const [loading, setLoading] = useState(false);
   const [docs, setDocs] = useState<Document[]>([]);
@@ -98,6 +103,7 @@ const DocumentManagementPage = () => {
         created_at: d.created_at,
         created_by_name: d.created_by_name,
         file_path: d.file_path,
+        mapped_count: Number(d.mapped_count || 0),
       }));
 
       setDocs(normalized);
@@ -331,9 +337,11 @@ const DocumentManagementPage = () => {
       {/* Tabs */}
       <div className="flex space-x-4 mb-4">
         <button
-          onClick={() => setActiveTab("packets")}
+          onClick={() =>
+            router.push("/dashboard/admin/document-management/packets")
+          }
           className={`px-4 py-2 text-sm font-medium ${
-            activeTab === "packets"
+            pathname.includes("/packets")
               ? "text-blue-600 border-b-2 border-blue-600"
               : "text-gray-600 hover:text-gray-800"
           }`}
@@ -469,6 +477,9 @@ const DocumentManagementPage = () => {
                     <FiFilter className="w-3 h-3 text-gray-400" />
                   </div>
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Mapped
+                </th>
               </tr>
             </thead>
 
@@ -521,6 +532,17 @@ const DocumentManagementPage = () => {
 
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {doc.category}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {(doc.mapped_count ?? 0) > 0 ? (
+                        <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-700">
+                          Mapped ({doc.mapped_count})
+                        </span>
+                      ) : (
+                        <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-600">
+                          Not Mapped
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))

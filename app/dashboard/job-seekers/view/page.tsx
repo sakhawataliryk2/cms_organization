@@ -11,6 +11,9 @@ import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Aut
 import { FiUsers, FiUpload, FiFile, FiX } from "react-icons/fi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import OnboardingTab from "./onboarding/OnboardingTab";
+
+
 
 export default function JobSeekerView() {
   const router = useRouter();
@@ -1996,30 +1999,15 @@ Best regards`;
             </div>
           )}
 
-          {activeTab === "onboarding" && (
-            <div className="col-span-7">
-              <div className="bg-white p-4 rounded shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold">Onboarding</h2>
-                  <button
-                    onClick={() => setShowOnboardingModal(true)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                  >
-                    Send Onboarding
-                  </button>
-                </div>
-                <p className="text-gray-600">
-                  Use the button above to send onboarding documents to the job
-                  seeker via Outlook.
-                </p>
-              </div>
-            </div>
-          )}
+         {activeTab === "onboarding" && (
+  <OnboardingTab jobSeeker={jobSeeker} />
+)}
+
         </div>
       </div>
 
       {/* Onboarding Modal */}
-      {showOnboardingModal && (
+      {/* {showOnboardingModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
           <div className="bg-white rounded shadow-lg w-full max-w-lg p-4">
             <div className="flex items-center justify-between mb-3">
@@ -2083,7 +2071,7 @@ Best regards`;
             </div>
           </div>
         </div>
-      )}
+      )} */}
 
       {/* Reference Form Modal */}
       {showReferenceModal && (
