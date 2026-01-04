@@ -8,8 +8,6 @@ import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 
 interface Placement {
   id: string;
-  candidate_id?: string;
-  candidate_name?: string;
   job_seeker_id?: string;
   job_seeker_name?: string;
   job_id?: string;
@@ -43,7 +41,7 @@ export default function PlacementList() {
   // Sorting state
   const [sortField, setSortField] = useState<
     | "id"
-    | "candidate_name"
+    | "job_seeker_name"
     | "job_title"
     | "status"
     | "start_date"
@@ -105,7 +103,7 @@ export default function PlacementList() {
 
     switch (key) {
       case "candidate":
-        return p.candidate_name || p.job_seeker_name || "Unknown";
+        return p.job_seeker_name || "Unknown";
       case "job":
         return p.job_title || p.job_name || "Unknown";
       case "status":
@@ -203,7 +201,7 @@ const toggleActionDropdown = (id: string, e: React.MouseEvent) => {
 
   const filteredPlacements = placements.filter(
     (placement) =>
-      (placement.candidate_name || placement.job_seeker_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (placement.job_seeker_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (placement.job_title || placement.job_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
       (placement.status && placement.status.toLowerCase().includes(searchTerm.toLowerCase())) ||
       (placement.owner || placement.owner_name || "").toLowerCase().includes(searchTerm.toLowerCase())
@@ -213,7 +211,7 @@ const toggleActionDropdown = (id: string, e: React.MouseEvent) => {
   const handleSort = (
     field:
       | "id"
-      | "candidate_name"
+      | "job_seeker_name"
       | "job_title"
       | "status"
       | "start_date"
@@ -240,9 +238,9 @@ const toggleActionDropdown = (id: string, e: React.MouseEvent) => {
       // Sort numerically by ID
       aValue = parseInt(a.id) || 0;
       bValue = parseInt(b.id) || 0;
-    } else if (sortField === "candidate_name") {
-      aValue = (a.candidate_name || a.job_seeker_name || "").toLowerCase();
-      bValue = (b.candidate_name || b.job_seeker_name || "").toLowerCase();
+    } else if (sortField === "job_seeker_name") {
+      aValue = (a.job_seeker_name || "").toLowerCase();
+      bValue = (b.job_seeker_name || "").toLowerCase();
     } else if (sortField === "job_title") {
       aValue = (a.job_title || a.job_name || "").toLowerCase();
       bValue = (b.job_title || b.job_name || "").toLowerCase();

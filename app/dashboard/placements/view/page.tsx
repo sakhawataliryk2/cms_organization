@@ -79,7 +79,7 @@ export default function PlacementView() {
     const standard = [
       { key: "status", label: "Status" },
       { key: "owner", label: "Owner" },
-      { key: "candidateName", label: "Candidate" },
+      { key: "jobSeekerName", label: "Job Seeker" },
       { key: "jobTitle", label: "Job Title" },
       { key: "startDate", label: "Start Date" },
       { key: "endDate", label: "End Date" },
@@ -130,8 +130,8 @@ export default function PlacementView() {
         return placement.status || "-";
       case "owner":
         return placement.owner || "Unassigned";
-      case "candidateName":
-        return placement.candidateName || "-";
+      case "jobSeekerName":
+        return placement.jobSeekerName || "-";
       case "jobTitle":
         return placement.jobTitle || "-";
       case "startDate":
@@ -259,7 +259,7 @@ export default function PlacementView() {
     if (placement) {
       // Flatten placement data for editing
       const flattenedData = {
-        candidate: placement.candidateName || '',
+        candidate: placement.jobSeekerName || '',
         job: placement.jobTitle || '',
         status: placement.status || '',
         startDate: placement.startDate || '',
@@ -322,18 +322,18 @@ export default function PlacementView() {
 
       const formattedPlacement = {
         id: data.placement.id,
-        candidateId: data.placement.candidate_id || data.placement.job_seeker_id || '',
-        candidateName: data.placement.candidate_name || data.placement.job_seeker_name || 'Unknown Candidate',
-        jobId: data.placement.job_id || '',
-        jobTitle: data.placement.job_title || data.placement.job_name || 'Unknown Job',
+        jobSeekerId: data.placement.jobSeekerId || data.placement.job_seeker_id || '',
+        jobSeekerName: data.placement.jobSeekerName || data.placement.job_seeker_name || 'Unknown Job Seeker',
+        jobId: data.placement.jobId || data.placement.job_id || '',
+        jobTitle: data.placement.jobTitle || data.placement.job_title || data.placement.job_name || 'Unknown Job',
         status: data.placement.status || 'Active',
-        startDate: data.placement.start_date ? new Date(data.placement.start_date).toLocaleDateString() : '',
-        endDate: data.placement.end_date ? new Date(data.placement.end_date).toLocaleDateString() : '',
+        startDate: data.placement.startDate ? new Date(data.placement.startDate).toLocaleDateString() : (data.placement.start_date ? new Date(data.placement.start_date).toLocaleDateString() : ''),
+        endDate: data.placement.endDate ? new Date(data.placement.endDate).toLocaleDateString() : (data.placement.end_date ? new Date(data.placement.end_date).toLocaleDateString() : ''),
         salary: data.placement.salary || '',
         owner: data.placement.owner || data.placement.owner_name || '',
-        dateAdded: data.placement.created_at ? new Date(data.placement.created_at).toLocaleDateString() : '',
+        dateAdded: data.placement.createdAt ? new Date(data.placement.createdAt).toLocaleDateString() : (data.placement.created_at ? new Date(data.placement.created_at).toLocaleDateString() : ''),
         lastContactDate: data.placement.last_contact_date ? new Date(data.placement.last_contact_date).toLocaleDateString() : 'Never contacted',
-        createdBy: data.placement.created_by_name || 'Unknown',
+        createdBy: data.placement.createdByName || data.placement.created_by_name || 'Unknown',
         customFields: customFieldsObj,
       };
 
@@ -428,7 +428,7 @@ export default function PlacementView() {
   };
 
   const handleEmailJobSeeker = async () => {
-    const jobSeekerId = placement?.candidateId;
+    const jobSeekerId = placement?.jobSeekerId;
     if (!jobSeekerId) {
       alert("Job Seeker not available for this placement.");
       return;
@@ -1149,7 +1149,7 @@ export default function PlacementView() {
             <FiBriefcase size={24} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
-            {placement.id} {placement.candidateName} - {placement.jobTitle}
+            {placement.id} {placement.jobSeekerName} - {placement.jobTitle}
           </h1>
         </div>
         
@@ -1264,7 +1264,7 @@ export default function PlacementView() {
                     <div className="flex border-b border-gray-200 last:border-b-0">
                       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Candidate:</div>
                       <div className="flex-1 p-2 text-blue-600">
-                        {placement.candidateName}
+                        {placement.jobSeekerName}
                       </div>
                     </div>
                   )}

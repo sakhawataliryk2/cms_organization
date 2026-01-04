@@ -83,6 +83,12 @@ export async function POST(request: NextRequest) {
             directLine: body.directLine || "",
             linkedinUrl: body.linkedinUrl || "",
             address: body.address || "",
+            // Relationship IDs
+            hiringManagerIds: body.hiringManagerIds || [],
+            jobSeekerIds: body.jobSeekerIds || [],
+            jobIds: body.jobIds || [],
+            placementIds: body.placementIds || [],
+            opportunityIds: body.opportunityIds || [],
             // ✅ CRITICAL: Include custom_fields
             custom_fields,
         };

@@ -35,7 +35,7 @@ export default function AddPlacement() {
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
 
   const [formData, setFormData] = useState({
-    candidate_id: "",
+    job_seeker_id: "",
     job_id: "",
     status: "Active",
     start_date: "",
@@ -95,14 +95,14 @@ export default function AddPlacement() {
 
       // Set form data
       setFormData({
-        candidate_id: placement.candidate_id || placement.job_seeker_id || "",
-        job_id: placement.job_id || "",
+        job_seeker_id: placement.jobSeekerId || placement.job_seeker_id || "",
+        job_id: placement.jobId || placement.job_id || "",
         status: placement.status || "Active",
-        start_date: placement.start_date ? placement.start_date.split('T')[0] : "",
-        end_date: placement.end_date ? placement.end_date.split('T')[0] : "",
+        start_date: placement.startDate ? placement.startDate.split('T')[0] : (placement.start_date ? placement.start_date.split('T')[0] : ""),
+        end_date: placement.endDate ? placement.endDate.split('T')[0] : (placement.end_date ? placement.end_date.split('T')[0] : ""),
         salary: placement.salary || "",
         owner: placement.owner || placement.owner_name || "",
-        internal_email_notification: placement.internal_email_notification || "",
+        internal_email_notification: placement.internalEmailNotification || placement.internal_email_notification || "",
       });
     } catch (err) {
       console.error("Error fetching placement:", err);
@@ -179,7 +179,7 @@ export default function AddPlacement() {
       const customFieldsToSend = getCustomFieldsForSubmission();
 
       const cleanPayload: Record<string, any> = {
-        candidate_id: formData.candidate_id || null,
+        job_seeker_id: formData.job_seeker_id || null,
         job_id: formData.job_id || null,
         status: formData.status || "Active",
         start_date: formData.start_date || null,
@@ -289,23 +289,23 @@ export default function AddPlacement() {
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
-            {/* Candidate */}
+            {/* Job Seeker */}
             <div className="flex items-center">
               <label className="w-48 font-medium">
-                Candidate <span className="text-red-500">*</span>
+                Job Seeker <span className="text-red-500">*</span>
               </label>
               <div className="flex-1 relative">
                 {isLoadingJobSeekers ? (
-                  <div className="p-2 text-gray-500">Loading candidates...</div>
+                  <div className="p-2 text-gray-500">Loading job seekers...</div>
                 ) : (
                   <select
-                    name="candidate_id"
-                    value={formData.candidate_id}
+                    name="job_seeker_id"
+                    value={formData.job_seeker_id}
                     onChange={handleChange}
                     className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                     required
                   >
-                    <option value="">Select a candidate</option>
+                    <option value="">Select a job seeker</option>
                     {jobSeekers.map((js) => (
                       <option key={js.id} value={js.id}>
                         {js.full_name || `${js.first_name || ''} ${js.last_name || ''}`.trim() || `Job Seeker #${js.id}`}
@@ -474,7 +474,7 @@ export default function AddPlacement() {
             <button
               type="submit"
               className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
-              disabled={isSubmitting || !formData.candidate_id || !formData.job_id || !formData.start_date}
+              disabled={isSubmitting || !formData.job_seeker_id || !formData.job_id || !formData.start_date}
             >
               {isSubmitting
                 ? isEditMode
