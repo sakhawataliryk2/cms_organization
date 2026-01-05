@@ -509,58 +509,105 @@ export default function PlacementView() {
         return;
       }
 
-      // Extract billing contact emails from multiple possible sources
-      const emails: string[] = [];
+      // Extract billing contact emails from multiple possible sources (priority-based)
+      const emailSet = new Set<string>();
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
-      // Try job.billing_contacts (snake_case)
+      // Helper function to recursively extract emails from any value
+      const extractEmailsFromValue = (value: any): void => {
+        if (value === null || value === undefined) return;
+
+        if (typeof value === "string") {
+          // Check if the string itself is a valid email
+          const trimmed = value.trim();
+          if (emailRegex.test(trimmed)) {
+            emailSet.add(trimmed.toLowerCase());
+          }
+          // Also check for emails within the string (space/comma/semicolon separated)
+          const emailMatches = trimmed.match(/[^\s,;]+@[^\s,;]+\.[^\s,;]+/gi);
+          if (emailMatches) {
+            emailMatches.forEach((match) => {
+              const trimmedMatch = match.trim();
+              if (emailRegex.test(trimmedMatch)) {
+                emailSet.add(trimmedMatch.toLowerCase());
+              }
+            });
+          }
+          return;
+        }
+
+        if (Array.isArray(value)) {
+          value.forEach((item) => extractEmailsFromValue(item));
+          return;
+        }
+
+        if (typeof value === "object") {
+          // Check common email properties first
+          if (value.email && typeof value.email === "string") {
+            extractEmailsFromValue(value.email);
+          }
+          if (value.email_address && typeof value.email_address === "string") {
+            extractEmailsFromValue(value.email_address);
+          }
+          // Recursively scan all values
+          Object.values(value).forEach((val) => extractEmailsFromValue(val));
+        }
+      };
+
+      // Priority 1: Preferred structured fields
+      // job.billing_contact_email
+      if (job.billing_contact_email) {
+        extractEmailsFromValue(job.billing_contact_email);
+      }
+
+      // job.billing_contacts (snake_case)
       if (job.billing_contacts) {
-        if (Array.isArray(job.billing_contacts)) {
-          job.billing_contacts.forEach((contact: any) => {
-            const email = typeof contact === "string" ? contact : contact?.email || contact?.email_address;
-            if (email && emailRegex.test(email)) {
-              emails.push(email.trim().toLowerCase());
-            }
-          });
-        } else if (typeof job.billing_contacts === "string") {
-          const email = job.billing_contacts.trim();
-          if (emailRegex.test(email)) {
-            emails.push(email.toLowerCase());
-          }
-        }
+        extractEmailsFromValue(job.billing_contacts);
       }
 
-      // Try job.billingContacts (camelCase)
+      // job.billingContacts (camelCase)
       if (job.billingContacts) {
-        if (Array.isArray(job.billingContacts)) {
-          job.billingContacts.forEach((contact: any) => {
-            const email = typeof contact === "string" ? contact : contact?.email || contact?.email_address;
-            if (email && emailRegex.test(email)) {
-              emails.push(email.trim().toLowerCase());
-            }
-          });
-        } else if (typeof job.billingContacts === "string") {
-          const email = job.billingContacts.trim();
-          if (emailRegex.test(email)) {
-            emails.push(email.toLowerCase());
-          }
-        }
+        extractEmailsFromValue(job.billingContacts);
       }
 
-      // Try job.contacts array where type === "billing"
+      // Priority 2: contacts array where type === "billing" (case-insensitive)
       if (Array.isArray(job.contacts)) {
         job.contacts.forEach((contact: any) => {
-          if (contact?.type === "billing" || contact?.contact_type === "billing") {
+          const contactType = (contact?.type || contact?.contact_type || "").toLowerCase();
+          if (contactType === "billing") {
             const email = contact?.email || contact?.email_address;
-            if (email && emailRegex.test(email)) {
-              emails.push(email.trim().toLowerCase());
+            if (email && emailRegex.test(email.trim())) {
+              emailSet.add(email.trim().toLowerCase());
             }
           }
         });
       }
 
-      // Normalize and deduplicate
-      const uniqueEmails = Array.from(new Set(emails));
+      // Priority 3: Fallback - scan custom_fields for ALL valid emails
+      if (emailSet.size === 0) {
+        const customFields = job.custom_fields || job.customFields;
+        if (customFields) {
+          // Parse if string
+          let parsedCustomFields: any = customFields;
+          if (typeof customFields === "string") {
+            try {
+              parsedCustomFields = JSON.parse(customFields);
+            } catch {
+              // If parsing fails, treat as plain string and extract emails
+              extractEmailsFromValue(customFields);
+              parsedCustomFields = null;
+            }
+          }
+
+          // Scan all values in custom_fields recursively
+          if (parsedCustomFields && typeof parsedCustomFields === "object") {
+            extractEmailsFromValue(parsedCustomFields);
+          }
+        }
+      }
+
+      // Normalize and deduplicate (already done by Set)
+      const uniqueEmails = Array.from(emailSet);
 
       if (uniqueEmails.length === 0) {
         alert("Billing contact email(s) not available");
@@ -610,59 +657,105 @@ export default function PlacementView() {
         return;
       }
 
-      // Extract timecard approver emails from multiple possible sources
-      const emails: string[] = [];
+      // Extract timecard approver emails from multiple possible sources (priority-based)
+      const emailSet = new Set<string>();
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
-      // Try job.timecard_approvers (snake_case)
+      // Helper function to recursively extract emails from any value
+      const extractEmailsFromValue = (value: any): void => {
+        if (value === null || value === undefined) return;
+
+        if (typeof value === "string") {
+          // Check if the string itself is a valid email
+          const trimmed = value.trim();
+          if (emailRegex.test(trimmed)) {
+            emailSet.add(trimmed.toLowerCase());
+          }
+          // Also check for emails within the string (space/comma/semicolon separated)
+          const emailMatches = trimmed.match(/[^\s,;]+@[^\s,;]+\.[^\s,;]+/gi);
+          if (emailMatches) {
+            emailMatches.forEach((match) => {
+              const trimmedMatch = match.trim();
+              if (emailRegex.test(trimmedMatch)) {
+                emailSet.add(trimmedMatch.toLowerCase());
+              }
+            });
+          }
+          return;
+        }
+
+        if (Array.isArray(value)) {
+          value.forEach((item) => extractEmailsFromValue(item));
+          return;
+        }
+
+        if (typeof value === "object") {
+          // Check common email properties first
+          if (value.email && typeof value.email === "string") {
+            extractEmailsFromValue(value.email);
+          }
+          if (value.email_address && typeof value.email_address === "string") {
+            extractEmailsFromValue(value.email_address);
+          }
+          // Recursively scan all values
+          Object.values(value).forEach((val) => extractEmailsFromValue(val));
+        }
+      };
+
+      // Priority 1: Preferred structured fields
+      // job.timecard_approver_email
+      if (job.timecard_approver_email) {
+        extractEmailsFromValue(job.timecard_approver_email);
+      }
+
+      // job.timecard_approvers (snake_case)
       if (job.timecard_approvers) {
-        if (Array.isArray(job.timecard_approvers)) {
-          job.timecard_approvers.forEach((approver: any) => {
-            const email = typeof approver === "string" ? approver : approver?.email || approver?.email_address;
-            if (email && emailRegex.test(email)) {
-              emails.push(email.trim().toLowerCase());
-            }
-          });
-        } else if (typeof job.timecard_approvers === "string") {
-          const email = job.timecard_approvers.trim();
-          if (emailRegex.test(email)) {
-            emails.push(email.toLowerCase());
-          }
-        }
+        extractEmailsFromValue(job.timecard_approvers);
       }
 
-      // Try job.timecardApprovers (camelCase)
+      // job.timecardApprovers (camelCase)
       if (job.timecardApprovers) {
-        if (Array.isArray(job.timecardApprovers)) {
-          job.timecardApprovers.forEach((approver: any) => {
-            const email = typeof approver === "string" ? approver : approver?.email || approver?.email_address;
-            if (email && emailRegex.test(email)) {
-              emails.push(email.trim().toLowerCase());
-            }
-          });
-        } else if (typeof job.timecardApprovers === "string") {
-          const email = job.timecardApprovers.trim();
-          if (emailRegex.test(email)) {
-            emails.push(email.toLowerCase());
-          }
-        }
+        extractEmailsFromValue(job.timecardApprovers);
       }
 
-      // Try job.contacts array where type === "timecard" or type === "approver"
+      // Priority 2: contacts array where type includes "timecard" OR "approver" (case-insensitive)
       if (Array.isArray(job.contacts)) {
         job.contacts.forEach((contact: any) => {
-          const contactType = contact?.type || contact?.contact_type;
-          if (contactType === "timecard" || contactType === "approver") {
+          const contactType = (contact?.type || contact?.contact_type || "").toLowerCase();
+          if (contactType.includes("timecard") || contactType.includes("approver")) {
             const email = contact?.email || contact?.email_address;
-            if (email && emailRegex.test(email)) {
-              emails.push(email.trim().toLowerCase());
+            if (email && emailRegex.test(email.trim())) {
+              emailSet.add(email.trim().toLowerCase());
             }
           }
         });
       }
 
-      // Normalize and deduplicate
-      const uniqueEmails = Array.from(new Set(emails));
+      // Priority 3: Fallback - scan custom_fields for ALL valid emails
+      if (emailSet.size === 0) {
+        const customFields = job.custom_fields || job.customFields;
+        if (customFields) {
+          // Parse if string
+          let parsedCustomFields: any = customFields;
+          if (typeof customFields === "string") {
+            try {
+              parsedCustomFields = JSON.parse(customFields);
+            } catch {
+              // If parsing fails, treat as plain string and extract emails
+              extractEmailsFromValue(customFields);
+              parsedCustomFields = null;
+            }
+          }
+
+          // Scan all values in custom_fields recursively
+          if (parsedCustomFields && typeof parsedCustomFields === "object") {
+            extractEmailsFromValue(parsedCustomFields);
+          }
+        }
+      }
+
+      // Normalize and deduplicate (already done by Set)
+      const uniqueEmails = Array.from(emailSet);
 
       if (uniqueEmails.length === 0) {
         alert("Timecard approver email(s) not available");
