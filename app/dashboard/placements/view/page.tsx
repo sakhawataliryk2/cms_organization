@@ -434,9 +434,6 @@ export default function PlacementView() {
       return;
     }
 
-    // Try to open a window immediately to avoid popup blockers (then redirect it)
-    const popup = window.open("about:blank", "_blank");
-
     try {
       const token = document.cookie.replace(
         /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
@@ -466,251 +463,217 @@ export default function PlacementView() {
 
       if (!email || email === "No email provided") {
         alert("Job seeker email not available");
-        if (popup) popup.close();
         return;
       }
 
-      // Outlook web compose deep link (Office 365)
-      const composeUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(
-        email
-      )}`;
-
-      if (popup) {
-        popup.location.href = composeUrl;
-      } else {
-        window.open(composeUrl, "_blank");
-      }
+      // Use mailto link to open default email application (e.g., Outlook Desktop) in popup style
+      window.location.href = `mailto:${email}`;
     } catch (err) {
       console.error("Error opening email compose:", err);
       alert(err instanceof Error ? err.message : "Failed to open email compose");
-      if (popup) popup.close();
     }
   };
 
   const handleEmailBillingContacts = async () => {
-    const extractEmails = (input: unknown): string[] => {
-      const emails: string[] = [];
-      const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
-
-      const collect = (val: unknown) => {
-        if (val === null || val === undefined) return;
-        if (typeof val === "string") {
-          const matches = val.match(emailRegex);
-          if (matches) emails.push(...matches);
-          return;
-        }
-        if (Array.isArray(val)) {
-          val.forEach(collect);
-          return;
-        }
-        if (typeof val === "object") {
-          // Try common email properties first
-          const anyVal = val as any;
-          if (typeof anyVal.email === "string") collect(anyVal.email);
-          if (typeof anyVal.email_address === "string") collect(anyVal.email_address);
-          // Walk values to find embedded emails
-          Object.values(anyVal).forEach(collect);
-        }
-      };
-
-      collect(input);
-
-      // Normalize + unique
-      const normalized = emails
-        .map((e) => e.trim())
-        .filter(Boolean)
-        .map((e) => e.toLowerCase());
-      return Array.from(new Set(normalized));
-    };
-
-    const extractBillingEmailsFromCustomFields = (
-      customFields: Record<string, any> | undefined | null
-    ) => {
-      if (!customFields) return [];
-      const keys = Object.keys(customFields);
-      const billingKeys = keys.filter((k) => k.toLowerCase().includes("billing"));
-      // Prefer billing-specific keys; if none exist, return empty to avoid pulling unrelated emails.
-      const targetKeys = billingKeys.length > 0 ? billingKeys : [];
-      const emails: string[] = [];
-      targetKeys.forEach((k) => {
-        emails.push(...extractEmails(customFields[k]));
-      });
-      return Array.from(new Set(emails));
-    };
-
-    // Try placement custom fields first (if present)
-    let emails = extractBillingEmailsFromCustomFields(placement?.customFields);
-
-    // Fallback: pull from job custom_fields (common place for billing contacts)
-    if (emails.length === 0 && placement?.jobId) {
-      try {
-        const token = document.cookie.replace(
-          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-          "$1"
-        );
-        const res = await fetch(`/api/jobs/${placement.jobId}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
-        const text = await res.text();
-        let data: any = null;
-        try {
-          data = JSON.parse(text);
-        } catch {
-          data = null;
-        }
-
-        if (res.ok) {
-          let jobCustom: any = data?.job?.custom_fields ?? data?.job?.customFields;
-          if (typeof jobCustom === "string") {
-            try {
-              jobCustom = JSON.parse(jobCustom);
-            } catch {
-              // ignore
-            }
-          }
-          if (jobCustom && typeof jobCustom === "object") {
-            emails = extractBillingEmailsFromCustomFields(jobCustom);
-          }
-        }
-      } catch (e) {
-        // Non-blocking: if fallback fetch fails we'll just show "not available"
-      }
-    }
-
-    if (emails.length === 0) {
-      alert("Billing contact email(s) not available");
+    const jobId = placement?.jobId;
+    if (!jobId) {
+      alert("Job not available for this placement.");
       return;
     }
 
-    // Semicolon-separated for Outlook
-    const to = emails.join(";");
-    const popup = window.open("about:blank", "_blank");
-    const composeUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(
-      to
-    )}`;
+    try {
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      const response = await fetch(`/api/jobs/${jobId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
 
-    if (popup) {
-      popup.location.href = composeUrl;
-    } else {
-      window.open(composeUrl, "_blank");
+      // Handle non-JSON responses
+      const responseText = await response.text();
+      let data: any;
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to fetch job details");
+      }
+
+      const job = data?.job || data?.job_data || data;
+      if (!job) {
+        alert("Billing contact email(s) not available");
+        return;
+      }
+
+      // Extract billing contact emails from multiple possible sources
+      const emails: string[] = [];
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+
+      // Try job.billing_contacts (snake_case)
+      if (job.billing_contacts) {
+        if (Array.isArray(job.billing_contacts)) {
+          job.billing_contacts.forEach((contact: any) => {
+            const email = typeof contact === "string" ? contact : contact?.email || contact?.email_address;
+            if (email && emailRegex.test(email)) {
+              emails.push(email.trim().toLowerCase());
+            }
+          });
+        } else if (typeof job.billing_contacts === "string") {
+          const email = job.billing_contacts.trim();
+          if (emailRegex.test(email)) {
+            emails.push(email.toLowerCase());
+          }
+        }
+      }
+
+      // Try job.billingContacts (camelCase)
+      if (job.billingContacts) {
+        if (Array.isArray(job.billingContacts)) {
+          job.billingContacts.forEach((contact: any) => {
+            const email = typeof contact === "string" ? contact : contact?.email || contact?.email_address;
+            if (email && emailRegex.test(email)) {
+              emails.push(email.trim().toLowerCase());
+            }
+          });
+        } else if (typeof job.billingContacts === "string") {
+          const email = job.billingContacts.trim();
+          if (emailRegex.test(email)) {
+            emails.push(email.toLowerCase());
+          }
+        }
+      }
+
+      // Try job.contacts array where type === "billing"
+      if (Array.isArray(job.contacts)) {
+        job.contacts.forEach((contact: any) => {
+          if (contact?.type === "billing" || contact?.contact_type === "billing") {
+            const email = contact?.email || contact?.email_address;
+            if (email && emailRegex.test(email)) {
+              emails.push(email.trim().toLowerCase());
+            }
+          }
+        });
+      }
+
+      // Normalize and deduplicate
+      const uniqueEmails = Array.from(new Set(emails));
+
+      if (uniqueEmails.length === 0) {
+        alert("Billing contact email(s) not available");
+        return;
+      }
+
+      // Use mailto link to open default email application (e.g., Outlook Desktop) in popup style
+      window.location.href = `mailto:${uniqueEmails.join(";")}`;
+    } catch (err) {
+      console.error("Error opening email compose:", err);
+      alert(err instanceof Error ? err.message : "Failed to open email compose");
     }
   };
 
   const handleEmailTimeCardApprovers = async () => {
-    const extractEmails = (input: unknown): string[] => {
-      const emails: string[] = [];
-      const emailRegex = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi;
-
-      const collect = (val: unknown) => {
-        if (val === null || val === undefined) return;
-        if (typeof val === "string") {
-          const matches = val.match(emailRegex);
-          if (matches) emails.push(...matches);
-          return;
-        }
-        if (Array.isArray(val)) {
-          val.forEach(collect);
-          return;
-        }
-        if (typeof val === "object") {
-          // Try common email properties first
-          const anyVal = val as any;
-          if (typeof anyVal.email === "string") collect(anyVal.email);
-          if (typeof anyVal.email_address === "string") collect(anyVal.email_address);
-          // Walk values to find embedded emails
-          Object.values(anyVal).forEach(collect);
-        }
-      };
-
-      collect(input);
-
-      // Normalize + unique
-      const normalized = emails
-        .map((e) => e.trim())
-        .filter(Boolean)
-        .map((e) => e.toLowerCase());
-      return Array.from(new Set(normalized));
-    };
-
-    const extractTimeCardApproverEmailsFromCustomFields = (
-      customFields: Record<string, any> | undefined | null
-    ) => {
-      if (!customFields) return [];
-      const keys = Object.keys(customFields);
-      // Look for fields with "timecard", "time card", "approver", or "approval" in the name
-      const approverKeys = keys.filter((k) => {
-        const lowerKey = k.toLowerCase();
-        return (
-          lowerKey.includes("timecard") ||
-          lowerKey.includes("time card") ||
-          lowerKey.includes("approver") ||
-          lowerKey.includes("approval")
-        );
-      });
-      // Prefer timecard/approver-specific keys; if none exist, return empty to avoid pulling unrelated emails.
-      const targetKeys = approverKeys.length > 0 ? approverKeys : [];
-      const emails: string[] = [];
-      targetKeys.forEach((k) => {
-        emails.push(...extractEmails(customFields[k]));
-      });
-      return Array.from(new Set(emails));
-    };
-
-    // Try placement custom fields first (if present)
-    let emails = extractTimeCardApproverEmailsFromCustomFields(placement?.customFields);
-
-    // Fallback: pull from job custom_fields (common place for timecard approver contacts)
-    if (emails.length === 0 && placement?.jobId) {
-      try {
-        const token = document.cookie.replace(
-          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-          "$1"
-        );
-        const res = await fetch(`/api/jobs/${placement.jobId}`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        });
-        const text = await res.text();
-        let data: any = null;
-        try {
-          data = JSON.parse(text);
-        } catch {
-          data = null;
-        }
-
-        if (res.ok) {
-          let jobCustom: any = data?.job?.custom_fields ?? data?.job?.customFields;
-          if (typeof jobCustom === "string") {
-            try {
-              jobCustom = JSON.parse(jobCustom);
-            } catch {
-              // ignore
-            }
-          }
-          if (jobCustom && typeof jobCustom === "object") {
-            emails = extractTimeCardApproverEmailsFromCustomFields(jobCustom);
-          }
-        }
-      } catch (e) {
-        // Non-blocking: if fallback fetch fails we'll just show "not available"
-      }
-    }
-
-    if (emails.length === 0) {
-      alert("Timecard approver email(s) not available");
+    const jobId = placement?.jobId;
+    if (!jobId) {
+      alert("Job not available for this placement.");
       return;
     }
 
-    // Semicolon-separated for Outlook
-    const to = emails.join(";");
-    const popup = window.open("about:blank", "_blank");
-    const composeUrl = `https://outlook.office.com/mail/deeplink/compose?to=${encodeURIComponent(
-      to
-    )}`;
+    try {
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      const response = await fetch(`/api/jobs/${jobId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
 
-    if (popup) {
-      popup.location.href = composeUrl;
-    } else {
-      window.open(composeUrl, "_blank");
+      // Handle non-JSON responses
+      const responseText = await response.text();
+      let data: any;
+      try {
+        data = JSON.parse(responseText);
+      } catch {
+        data = null;
+      }
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to fetch job details");
+      }
+
+      const job = data?.job || data?.job_data || data;
+      if (!job) {
+        alert("Timecard approver email(s) not available");
+        return;
+      }
+
+      // Extract timecard approver emails from multiple possible sources
+      const emails: string[] = [];
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+
+      // Try job.timecard_approvers (snake_case)
+      if (job.timecard_approvers) {
+        if (Array.isArray(job.timecard_approvers)) {
+          job.timecard_approvers.forEach((approver: any) => {
+            const email = typeof approver === "string" ? approver : approver?.email || approver?.email_address;
+            if (email && emailRegex.test(email)) {
+              emails.push(email.trim().toLowerCase());
+            }
+          });
+        } else if (typeof job.timecard_approvers === "string") {
+          const email = job.timecard_approvers.trim();
+          if (emailRegex.test(email)) {
+            emails.push(email.toLowerCase());
+          }
+        }
+      }
+
+      // Try job.timecardApprovers (camelCase)
+      if (job.timecardApprovers) {
+        if (Array.isArray(job.timecardApprovers)) {
+          job.timecardApprovers.forEach((approver: any) => {
+            const email = typeof approver === "string" ? approver : approver?.email || approver?.email_address;
+            if (email && emailRegex.test(email)) {
+              emails.push(email.trim().toLowerCase());
+            }
+          });
+        } else if (typeof job.timecardApprovers === "string") {
+          const email = job.timecardApprovers.trim();
+          if (emailRegex.test(email)) {
+            emails.push(email.toLowerCase());
+          }
+        }
+      }
+
+      // Try job.contacts array where type === "timecard" or type === "approver"
+      if (Array.isArray(job.contacts)) {
+        job.contacts.forEach((contact: any) => {
+          const contactType = contact?.type || contact?.contact_type;
+          if (contactType === "timecard" || contactType === "approver") {
+            const email = contact?.email || contact?.email_address;
+            if (email && emailRegex.test(email)) {
+              emails.push(email.trim().toLowerCase());
+            }
+          }
+        });
+      }
+
+      // Normalize and deduplicate
+      const uniqueEmails = Array.from(new Set(emails));
+
+      if (uniqueEmails.length === 0) {
+        alert("Timecard approver email(s) not available");
+        return;
+      }
+
+      // Use mailto link to open default email application (e.g., Outlook Desktop) in popup style
+      window.location.href = `mailto:${uniqueEmails.join(";")}`;
+    } catch (err) {
+      console.error("Error opening email compose:", err);
+      alert(err instanceof Error ? err.message : "Failed to open email compose");
     }
   };
 
