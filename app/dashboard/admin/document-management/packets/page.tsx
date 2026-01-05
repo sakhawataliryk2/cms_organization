@@ -59,7 +59,7 @@ export default function PacketsPage() {
 
   return (
     <div className="bg-gray-200 min-h-screen p-4">
-      {/* Header / Tabs style area (optional) */}
+      {/* Header */}
       <div className="bg-white rounded shadow-sm p-4 mb-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           {/* Search */}
@@ -68,7 +68,7 @@ export default function PacketsPage() {
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Filter Packets..."
+              placeholder="Search packets..."
               className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
@@ -98,51 +98,66 @@ export default function PacketsPage() {
         </div>
       </div>
 
-      {/* List + Right panel layout like screenshot */}
+      {/* Table */}
       <div className="bg-white rounded shadow-sm overflow-hidden">
-        <div className="grid grid-cols-12 min-h-[620px]">
-          {/* Left list */}
-          <div className="col-span-4 border-r bg-gray-50">
+        <table className="min-w-full divide-y divide-gray-200">
+          <thead className="bg-gray-50">
+            <tr>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Packet Name
+              </th>
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">
+                Documents
+              </th>
+              <th className="px-6 py-3 w-32"></th>
+            </tr>
+          </thead>
+
+          <tbody className="divide-y divide-gray-200">
             {loading ? (
-              <div className="p-6 text-sm text-gray-600">Loading...</div>
+              <tr>
+                <td colSpan={3} className="px-6 py-6 text-sm text-gray-600">
+                  Loading packets...
+                </td>
+              </tr>
             ) : filteredPackets.length === 0 ? (
-              <div className="p-6 text-sm text-gray-600">
-                No packets created.
-              </div>
+              <tr>
+                <td colSpan={3} className="px-6 py-6 text-sm text-gray-600">
+                  No packets found.
+                </td>
+              </tr>
             ) : (
               filteredPackets.map((p) => {
                 const name = p.packet_name || p.name || "Untitled Packet";
                 const count = p.documents_count ?? p.doc_count ?? 0;
 
                 return (
-                  <button
+                  <tr
                     key={p.id}
+                    className="hover:bg-gray-50 cursor-pointer"
                     onClick={() =>
                       router.push(
                         `/dashboard/admin/document-management/packets/${p.id}`
                       )
                     }
-                    className="w-full text-left px-4 py-3 border-b hover:bg-white"
                   >
-                    <div className="text-sm font-semibold text-gray-800">
+                    <td className="px-6 py-4 text-sm font-medium text-gray-900">
                       {name}
-                    </div>
-                    <div className="text-xs text-gray-500">
-                      ({count} Documents)
-                    </div>
-                  </button>
+                    </td>
+
+                    <td className="px-6 py-4 text-sm text-gray-700">{count}</td>
+
+                    <td className="px-6 py-4 text-right">
+                      <span className="text-xs text-blue-600 underline">
+                        Open
+                      </span>
+                    </td>
+                  </tr>
                 );
               })
             )}
-          </div>
-
-          {/* Right empty panel */}
-          <div className="col-span-8 bg-gray-100 p-6">
-            <div className="text-sm text-gray-600">
-              Select a packet from the left to view and edit its documents.
-            </div>
-          </div>
-        </div>
+          </tbody>
+        </table>
       </div>
     </div>
   );
