@@ -1,402 +1,919 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { Document as PdfDoc, Page, pdfjs } from "react-pdf";
-import { Rnd } from "react-rnd";
-import "react-pdf/dist/esm/Page/AnnotationLayer.css";
-import "react-pdf/dist/esm/Page/TextLayer.css";
+import { Document, Page, pdfjs } from "react-pdf";
+import "react-pdf/dist/Page/AnnotationLayer.css";
+import "react-pdf/dist/Page/TextLayer.css";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url
 ).toString();
 
-type FieldType = "text" | "signature" | "date" | "checkbox";
+type YesNo = "Yes" | "No";
 
-type OverlayField = {
-  id: string;
-  type: FieldType;
-  page: number;
-  xPct: number;
-  yPct: number;
-  wPct: number;
-  hPct: number;
-  label?: string;
-  value?: string;
-  checked?: boolean;
+type AvailableField = {
+  id: number;
+  entity_type: string;
+  field_name: string;
+  field_label: string;
+  is_hidden?: boolean;
 };
 
-export default function TemplateDocEditorPage() {
-  const params = useParams();
-  const id = String(params?.id || "");
+type FieldTypeUI =
+  | "Text Input"
+  | "Text Area"
+  | "Number"
+  | "Email"
+  | "Phone"
+  | "Date"
+  | "Checkbox"
+  | "Signature";
 
-  const [pdfUrl, setPdfUrl] = useState("");
-  const fileObj = useMemo(() => (pdfUrl ? { url: pdfUrl } : null), [pdfUrl]);
+type FieldFormat = "None" | "Phone Number" | "SSN";
 
-  const [numPages, setNumPages] = useState(0);
-  const [activeTool, setActiveTool] = useState<FieldType | null>(null);
-  const [fields, setFields] = useState<OverlayField[]>([]);
-  const [activePage, setActivePage] = useState(1);
+type MappedField = {
+  id: string;
+  source_field_name: string;
+  source_field_label: string;
 
-  const pageWrapRef = useRef<HTMLDivElement | null>(null);
-  const [pageRect, setPageRect] = useState({ w: 1, h: 1 });
+  // stored in "PDF coordinate space" (unscaled)
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 
-  // ✅ always works local + live
-  useEffect(() => {
-    if (!id) return;
-    setPdfUrl(`/api/template-documents/${id}/file`);
-  }, [id]);
+  whoFills: "Admin" | "Candidate";
+  required: YesNo;
+  fieldType: FieldTypeUI;
+  maxChars: number | "";
+  format: FieldFormat;
+  populateWithData: YesNo;
+  dataFlowBack: YesNo;
+};
 
-  // ✅ load fields from DB (fallback to localStorage if needed)
-  useEffect(() => {
-    if (!id) return;
-
-    (async () => {
-      try {
-        const res = await fetch(`/api/template-documents/${id}/fields`, {
-          cache: "no-store",
-        });
-        const data = await res.json();
-        if (res.ok && data?.success && Array.isArray(data.fields)) {
-          setFields(data.fields);
-          return;
-        }
-      } catch {}
-
-      // fallback
-      const raw = localStorage.getItem(`template_doc_fields_${id}`);
-      if (!raw) return;
-      try {
-        setFields(JSON.parse(raw));
-      } catch {}
-    })();
-  }, [id]);
-
-  const measurePage = () => {
-    if (!pageWrapRef.current) return;
-    const pageEl = pageWrapRef.current.querySelector(".react-pdf__Page") as
-      | HTMLElement
-      | null;
-    const target = pageEl || pageWrapRef.current;
-    const r = target.getBoundingClientRect();
-    if (r.width > 0 && r.height > 0) setPageRect({ w: r.width, h: r.height });
-  };
-
-  useEffect(() => {
-    measurePage();
-    window.addEventListener("resize", measurePage);
-    return () => window.removeEventListener("resize", measurePage);
-  }, [activePage, numPages, pdfUrl]);
-
-  const onDocumentLoadSuccess = ({ numPages: n }: { numPages: number }) => {
-    setNumPages(n);
-    setActivePage(1);
-  };
-
-  // ✅ create only when click on "blank" pdf area, not on any field
-  const createFieldAtClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!activeTool || !pageWrapRef.current) return;
-
-    const target = e.target as HTMLElement;
-    if (target.closest("[data-overlay-field='true']")) return; // ✅ stop duplicates
-
-    const r = pageWrapRef.current.getBoundingClientRect();
-    const x = e.clientX - r.left;
-    const y = e.clientY - r.top;
-
-    const defaultSize = {
-      text: { w: 260, h: 70 },
-      signature: { w: 280, h: 90 },
-      date: { w: 220, h: 70 },
-      checkbox: { w: 60, h: 60 },
-    }[activeTool];
-
-    const xPct = clamp(x / r.width, 0, 0.98);
-    const yPct = clamp(y / r.height, 0, 0.98);
-    const wPct = clamp(defaultSize.w / r.width, 0.02, 0.9);
-    const hPct = clamp(defaultSize.h / r.height, 0.02, 0.9);
-
-    setFields((p) => [
-      ...p,
-      {
-        id: crypto.randomUUID(),
-        type: activeTool,
-        page: activePage,
-        xPct,
-        yPct,
-        wPct,
-        hPct,
-        label:
-          activeTool === "text"
-            ? "Text"
-            : activeTool === "signature"
-            ? "Signature"
-            : activeTool === "date"
-            ? "Date"
-            : "✓",
-        value: "",
-        checked: false,
-      },
-    ]);
-  };
-
-  const updateField = (fid: string, patch: Partial<OverlayField>) => {
-    setFields((prev) => prev.map((f) => (f.id === fid ? { ...f, ...patch } : f)));
-  };
-
-  const deleteField = (fid: string) => {
-    setFields((prev) => prev.filter((f) => f.id !== fid));
-  };
-
-  // ✅ Save to DB + localStorage backup
-  const save = async () => {
-    localStorage.setItem(`template_doc_fields_${id}`, JSON.stringify(fields));
-
-    const res = await fetch(`/api/template-documents/${id}/fields`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fields }),
-    });
-
-    const data = await res.json();
-    if (!res.ok || !data?.success) {
-      alert(data?.message || "Failed to save fields");
-      return;
-    }
-    alert("Saved!");
-  };
-
-  const pageFields = fields.filter((f) => f.page === activePage);
-
-  return (
-    <div className="min-h-screen bg-gray-100">
-      <div className="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-        <div className="text-sm font-semibold">Template Document Editor</div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setActiveTool(null)}
-            className={`px-3 py-1.5 text-xs border rounded ${
-              activeTool === null ? "bg-black text-white" : "bg-white"
-            }`}
-          >
-            Cursor
-          </button>
-          <button
-            onClick={save}
-            className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded"
-          >
-            Save
-          </button>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-12 gap-4 p-4">
-        <div className="col-span-9">
-          <div className="bg-white border border-gray-200 rounded shadow-sm p-3">
-            <div className="flex items-center justify-between mb-3">
-              <div className="text-xs text-gray-600">
-                Page {activePage} / {numPages || "…"}
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  disabled={activePage <= 1}
-                  onClick={() => setActivePage((p) => Math.max(1, p - 1))}
-                  className="px-3 py-1 text-xs border rounded disabled:opacity-50"
-                >
-                  Prev
-                </button>
-                <button
-                  disabled={activePage >= numPages}
-                  onClick={() => setActivePage((p) => Math.min(numPages, p + 1))}
-                  className="px-3 py-1 text-xs border rounded disabled:opacity-50"
-                >
-                  Next
-                </button>
-              </div>
-            </div>
-
-            {!fileObj ? (
-              <div className="text-sm text-gray-600">No PDF file found.</div>
-            ) : (
-              <div
-                ref={pageWrapRef}
-                onMouseDownCapture={(e) => {
-                  const t = e.target as HTMLElement;
-                  if (t.closest("[data-overlay-field='true']")) return;
-                }}
-                onMouseDown={createFieldAtClick}
-                className={`relative mx-auto w-fit ${
-                  activeTool ? "cursor-crosshair" : "cursor-default"
-                }`}
-              >
-                <PdfDoc file={fileObj} onLoadSuccess={onDocumentLoadSuccess}>
-                  <Page
-                    pageNumber={activePage}
-                    renderTextLayer={false}
-                    renderAnnotationLayer={false}
-                    onRenderSuccess={measurePage}
-                  />
-                </PdfDoc>
-
-                {pageFields.map((f) => {
-                  const x = f.xPct * pageRect.w;
-                  const y = f.yPct * pageRect.h;
-                  const w = f.wPct * pageRect.w;
-                  const h = f.hPct * pageRect.h;
-
-                  return (
-                    <Rnd
-                      key={f.id}
-                      size={{ width: w, height: h }}
-                      position={{ x, y }}
-                      bounds="parent"
-                      dragHandleClassName="field-drag-handle"
-                      style={{ zIndex: 50 }}
-                      onDragStop={(_, d) => {
-                        updateField(f.id, {
-                          xPct: clamp(d.x / pageRect.w, 0, 0.98),
-                          yPct: clamp(d.y / pageRect.h, 0, 0.98),
-                        });
-                      }}
-                      onResizeStop={(_, __, ref, ___, pos) => {
-                        updateField(f.id, {
-                          xPct: clamp(pos.x / pageRect.w, 0, 0.98),
-                          yPct: clamp(pos.y / pageRect.h, 0, 0.98),
-                          wPct: clamp(ref.offsetWidth / pageRect.w, 0.02, 0.98),
-                          hPct: clamp(ref.offsetHeight / pageRect.h, 0.02, 0.98),
-                        });
-                      }}
-                      enableResizing={true}
-                    >
-                      <div
-                        data-overlay-field="true"
-                        className="w-full h-full bg-white border-2 border-blue-600 rounded-sm overflow-hidden"
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {/* drag bar */}
-                        <div className="field-drag-handle h-6 bg-blue-600 text-white text-[11px] px-2 flex items-center justify-between cursor-move">
-                          <span className="truncate">{f.label}</span>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteField(f.id);
-                            }}
-                            className="ml-2 w-5 h-5 rounded-full bg-black text-white text-[10px] grid place-items-center"
-                            title="Delete"
-                          >
-                            ✕
-                          </button>
-                        </div>
-
-                        {/* content */}
-                        <div className="h-[calc(100%-24px)] p-1">
-                          {f.type === "text" && (
-                            <input
-                              value={f.value || ""}
-                              onChange={(e) =>
-                                updateField(f.id, { value: e.target.value })
-                              }
-                              placeholder="Type..."
-                              className="w-full h-full px-2 text-[12px] outline-none border border-gray-200 rounded"
-                            />
-                          )}
-
-                          {f.type === "date" && (
-                            <input
-                              type="date"
-                              value={f.value || ""}
-                              onChange={(e) =>
-                                updateField(f.id, { value: e.target.value })
-                              }
-                              className="w-full h-full px-2 text-[12px] outline-none border border-gray-200 rounded"
-                            />
-                          )}
-
-                          {f.type === "checkbox" && (
-                            <div className="w-full h-full flex items-center justify-center">
-                              <input
-                                type="checkbox"
-                                checked={!!f.checked}
-                                onChange={(e) =>
-                                  updateField(f.id, { checked: e.target.checked })
-                                }
-                                className="w-5 h-5"
-                              />
-                            </div>
-                          )}
-
-                          {f.type === "signature" && (
-                            <div className="w-full h-full flex items-center justify-center text-[12px] text-gray-600 border border-gray-200 rounded">
-                              Signature Here
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </Rnd>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="col-span-3">
-          <div className="bg-white border border-gray-200 rounded shadow-sm p-3">
-            <div className="text-sm font-semibold mb-3">Fields</div>
-            <div className="space-y-2">
-              <ToolButton
-                label="Text"
-                active={activeTool === "text"}
-                onClick={() => setActiveTool("text")}
-              />
-              <ToolButton
-                label="Signature"
-                active={activeTool === "signature"}
-                onClick={() => setActiveTool("signature")}
-              />
-              <ToolButton
-                label="Date"
-                active={activeTool === "date"}
-                onClick={() => setActiveTool("date")}
-              />
-              <ToolButton
-                label="Checkbox"
-                active={activeTool === "checkbox"}
-                onClick={() => setActiveTool("checkbox")}
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ToolButton({
-  label,
-  active,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`w-full px-3 py-2 text-left text-sm border rounded ${
-        active ? "bg-black text-white border-black" : "bg-white hover:bg-gray-50"
-      }`}
-    >
-      {label}
-    </button>
+function getTokenFromCookie() {
+  if (typeof document === "undefined") return "";
+  return document.cookie.replace(
+    /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+    "$1"
   );
 }
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
+}
+
+export default function TemplateDocEditorPage() {
+  const params = useParams();
+  const docId = String(params?.id || "");
+
+  // LEFT
+  const [isLoadingFields, setIsLoadingFields] = useState(false);
+  const [availableFields, setAvailableFields] = useState<AvailableField[]>([]);
+  const [fieldSearch, setFieldSearch] = useState("");
+
+  // PDF
+  const [pdfUrl, setPdfUrl] = useState<string>("");
+  const [loadingPdf, setLoadingPdf] = useState(false);
+  const [numPages, setNumPages] = useState(1);
+  const [page, setPage] = useState(1);
+  const [scale, setScale] = useState(1);
+  const [pagePx, setPagePx] = useState({ w: 0, h: 0 });
+
+  // CANVAS
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+  const [mappedFields, setMappedFields] = useState<MappedField[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // UI
+  const [saving, setSaving] = useState(false);
+  const [loadingMappings, setLoadingMappings] = useState(false);
+
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [draftField, setDraftField] = useState<MappedField | null>(null);
+
+  const selectedField = useMemo(
+    () => mappedFields.find((f) => f.id === selectedId) || null,
+    [mappedFields, selectedId]
+  );
+
+  const fetchAvailableFields = async () => {
+    setIsLoadingFields(true);
+    try {
+      const token = getTokenFromCookie();
+
+      const response = await fetch("/api/admin/field-management/job-seekers", {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        cache: "no-store",
+      });
+
+      if (!response.ok) throw new Error("Failed to fetch available fields");
+      const data = await response.json();
+
+      const fields = (data.customFields || []).filter(
+        (f: any) => f.is_hidden === false
+      );
+
+      setAvailableFields(fields);
+    } catch (err: any) {
+      console.error("Error fetching available fields:", err?.message || err);
+      setAvailableFields([]);
+    } finally {
+      setIsLoadingFields(false);
+    }
+  };
+
+  const fetchDoc = async () => {
+    setLoadingPdf(true);
+    try {
+      setPdfUrl(`/api/template-documents/${docId}/file`);
+    } finally {
+      setLoadingPdf(false);
+    }
+  };
+
+  const fetchMappings = async () => {
+    setLoadingMappings(true);
+    try {
+      const res = await fetch(`/api/template-documents/${docId}/mappings`, {
+        cache: "no-store",
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success) {
+        setMappedFields([]);
+        return;
+      }
+
+      const rows = data.fields || [];
+      const mapped: MappedField[] = rows.map((r: any) => ({
+        id: String(r.client_id || r.id || crypto.randomUUID()),
+        source_field_name: r.field_name,
+        source_field_label: r.field_label || r.field_name,
+
+        x: Number(r.x ?? 20),
+        y: Number(r.y ?? 20),
+        w: Number(r.w ?? 220),
+        h: Number(r.h ?? 44),
+
+        whoFills: r.who_fills === "Admin" ? "Admin" : "Candidate",
+        required: r.is_required ? "Yes" : "No",
+        fieldType: (r.field_type as FieldTypeUI) || "Text Input",
+        maxChars: r.max_characters ?? 255,
+        format: (r.format as FieldFormat) || "None",
+        populateWithData: r.populate_with_data ? "Yes" : "No",
+        dataFlowBack: r.data_flow_back ? "Yes" : "No",
+      }));
+
+      setMappedFields(mapped);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingMappings(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAvailableFields();
+    fetchDoc();
+    fetchMappings();
+    setSelectedId(null);
+    setIsModalOpen(false);
+    setDraftField(null);
+    setPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docId]);
+
+  const filteredAvailableFields = useMemo(() => {
+    const q = fieldSearch.trim().toLowerCase();
+    if (!q) return availableFields;
+    return availableFields.filter((f) =>
+      (f.field_label || f.field_name || "").toLowerCase().includes(q)
+    );
+  }, [availableFields, fieldSearch]);
+
+  const onDragStartField = (e: React.DragEvent, field: AvailableField) => {
+    e.dataTransfer.setData("application/x-field", JSON.stringify(field));
+    e.dataTransfer.effectAllowed = "copy";
+  };
+
+  const onDragOverCanvas = (e: React.DragEvent) => {
+    e.preventDefault();
+  };
+
+  const openModalForField = (id: string) => {
+    const f = mappedFields.find((x) => x.id === id);
+    if (!f) return;
+    setSelectedId(id);
+    setDraftField({ ...f }); // draft copy
+    setIsModalOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsModalOpen(false);
+    setDraftField(null);
+  };
+
+  const applyDraftToState = () => {
+    if (!draftField) return;
+    const id = draftField.id;
+    setMappedFields((prev) => prev.map((f) => (f.id === id ? draftField : f)));
+    closeModal();
+  };
+
+  const updateDraft = (patch: Partial<MappedField>) => {
+    setDraftField((cur) => (cur ? { ...cur, ...patch } : cur));
+  };
+
+  const onDropCanvas = (e: React.DragEvent) => {
+    e.preventDefault();
+
+    const raw = e.dataTransfer.getData("application/x-field");
+    if (!raw) return;
+
+    let src: AvailableField | null = null;
+    try {
+      src = JSON.parse(raw);
+    } catch {
+      return;
+    }
+    if (!src) return;
+
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const pageEl = canvas.querySelector(
+      ".react-pdf__Page"
+    ) as HTMLElement | null;
+    if (!pageEl) return;
+
+    const rect = pageEl.getBoundingClientRect();
+    const pxX = e.clientX - rect.left;
+    const pxY = e.clientY - rect.top;
+
+    const x = Math.max(0, pxX / scale);
+    const y = Math.max(0, pxY / scale);
+
+    const newField: MappedField = {
+      id: crypto.randomUUID(),
+      source_field_name: src.field_name,
+      source_field_label: src.field_label || src.field_name,
+      x,
+      y,
+      w: 220,
+      h: 44,
+
+      whoFills: "Candidate",
+      required: "No",
+      fieldType: "Text Input",
+      maxChars: 255,
+      format: "None",
+      populateWithData: "No",
+      dataFlowBack: "No",
+    };
+
+    setMappedFields((p) => [...p, newField]);
+
+    // CLIENT REQUIREMENT: open modal after drop
+    setSelectedId(newField.id);
+    setDraftField({ ...newField });
+    setIsModalOpen(true);
+  };
+
+  const startDrag = (id: string, startX: number, startY: number) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const target = mappedFields.find((f) => f.id === id);
+    if (!target) return;
+
+    const pageEl = canvas.querySelector(
+      ".react-pdf__Page"
+    ) as HTMLElement | null;
+    if (!pageEl) return;
+
+    const originX = target.x;
+    const originY = target.y;
+
+    const onMove = (ev: MouseEvent) => {
+      const dxUnscaled = (ev.clientX - startX) / scale;
+      const dyUnscaled = (ev.clientY - startY) / scale;
+
+      setMappedFields((prev) =>
+        prev.map((f) =>
+          f.id === id
+            ? {
+                ...f,
+                x: Math.max(0, originX + dxUnscaled),
+                y: Math.max(0, originY + dyUnscaled),
+              }
+            : f
+        )
+      );
+    };
+
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  const removeField = (id: string) => {
+    setMappedFields((prev) => prev.filter((f) => f.id !== id));
+    setSelectedId((cur) => (cur === id ? null : cur));
+    if (draftField?.id === id) closeModal();
+  };
+
+ const saveMapping = async () => {
+   try {
+     setSaving(true);
+
+     const payload = {
+       fields: mappedFields.map((f, i) => ({
+         field_id: null,
+         field_name: f.source_field_name,
+         field_label: f.source_field_label,
+         field_type: f.fieldType,
+         who_fills: f.whoFills,
+         is_required: f.required === "Yes",
+         max_characters: f.maxChars === "" ? 255 : Number(f.maxChars),
+         format: f.format,
+         populate_with_data: f.populateWithData === "Yes",
+         data_flow_back: f.dataFlowBack === "Yes",
+         sort_order: i,
+         x: Math.round(f.x),
+         y: Math.round(f.y),
+         w: Math.round(f.w),
+         h: Math.round(f.h),
+       })),
+     };
+
+     const res = await fetch(`/api/template-documents/${docId}/mappings`, {
+       method: "PUT",
+       headers: { "Content-Type": "application/json" },
+       body: JSON.stringify(payload),
+     });
+
+     const data = await res.json();
+     if (!res.ok || !data?.success)
+       throw new Error(data?.message || "Save failed");
+
+     window.location.href = "/dashboard/admin/document-management";
+   } catch (e: any) {
+     console.error("Save mapping error:", e);
+     alert(e?.message || "Save failed");
+   } finally {
+     setSaving(false);
+   }
+ };
+
+  return (
+    <div className="min-h-screen bg-gray-100">
+      {/* TOP BAR */}
+      <div className="sticky top-0 z-20 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
+        <div className="text-sm font-semibold">
+          Template Document Editor{" "}
+          <span className="text-gray-500">Doc ID: {docId}</span>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() =>
+              setScale((s) => Math.max(0.5, Number((s - 0.1).toFixed(2))))
+            }
+            className="px-3 py-1.5 text-xs border rounded bg-white hover:bg-gray-50"
+            type="button"
+          >
+            Zoom -
+          </button>
+          <button
+            onClick={() =>
+              setScale((s) => Math.min(2, Number((s + 0.1).toFixed(2))))
+            }
+            className="px-3 py-1.5 text-xs border rounded bg-white hover:bg-gray-50"
+            type="button"
+          >
+            Zoom +
+          </button>
+
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="px-3 py-1.5 text-xs border rounded bg-white hover:bg-gray-50 disabled:opacity-50"
+            type="button"
+          >
+            Prev
+          </button>
+          <button
+            onClick={() => setPage((p) => Math.min(numPages, p + 1))}
+            disabled={page >= numPages}
+            className="px-3 py-1.5 text-xs border rounded bg-white hover:bg-gray-50 disabled:opacity-50"
+            type="button"
+          >
+            Next
+          </button>
+
+          <button
+            onClick={saveMapping}
+            disabled={saving}
+            className="px-3 py-1.5 text-xs bg-blue-600 text-white rounded disabled:opacity-50"
+            type="button"
+          >
+            {saving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-12 gap-4 p-4">
+        {/* LEFT */}
+        <div className="col-span-3">
+          <div className="bg-white border border-gray-200 rounded shadow-sm p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-sm font-semibold">Fields</div>
+              <button
+                onClick={fetchAvailableFields}
+                className="px-2 py-1 text-xs border rounded hover:bg-gray-50"
+                disabled={isLoadingFields}
+                type="button"
+              >
+                Refresh
+              </button>
+            </div>
+
+            <input
+              value={fieldSearch}
+              onChange={(e) => setFieldSearch(e.target.value)}
+              placeholder="Search fields..."
+              className="w-full px-3 py-2 text-sm border rounded mb-2 outline-none focus:ring-2 focus:ring-blue-500"
+            />
+
+            {isLoadingFields ? (
+              <div className="text-xs text-gray-600">Loading fields...</div>
+            ) : filteredAvailableFields.length === 0 ? (
+              <div className="text-xs text-gray-600">No fields found.</div>
+            ) : (
+              <div className="max-h-[65vh] overflow-auto border rounded">
+                {filteredAvailableFields.map((f) => (
+                  <div
+                    key={f.id}
+                    draggable
+                    onDragStart={(e) => onDragStartField(e, f)}
+                    className="px-3 py-2 text-sm border-b last:border-b-0 cursor-grab active:cursor-grabbing hover:bg-gray-50 flex items-center justify-between"
+                    title="Drag to canvas"
+                  >
+                    <span className="truncate">{f.field_label}</span>
+                    <span className="text-xs text-gray-400 ml-2">
+                      {f.field_name}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* CENTER */}
+        <div className="col-span-9">
+          <div className="bg-white border border-gray-200 rounded shadow-sm p-3">
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-xs text-gray-600">
+                Drag fields onto the PDF to map them
+              </div>
+              <div className="text-xs text-gray-500">
+                {loadingMappings
+                  ? "Loading..."
+                  : `Mapped: ${mappedFields.length}`}
+              </div>
+            </div>
+
+            <div
+              ref={canvasRef}
+              onDrop={onDropCanvas}
+              onDragOver={onDragOverCanvas}
+              className="relative w-full h-[75vh] bg-white border border-gray-200 rounded overflow-auto"
+              onMouseDown={() => setSelectedId(null)}
+            >
+              {loadingPdf ? (
+                <div className="absolute inset-0 grid place-items-center text-sm text-gray-500">
+                  Loading PDF...
+                </div>
+              ) : pdfUrl ? (
+                <div className="relative w-fit mx-auto p-3">
+                  <Document
+                    file={pdfUrl}
+                    onLoadSuccess={(pdf) => {
+                      setNumPages(pdf.numPages);
+                      setPage((p) => Math.min(p, pdf.numPages));
+                    }}
+                    loading={
+                      <div className="p-4 text-sm text-gray-500">
+                        Loading...
+                      </div>
+                    }
+                    error={
+                      <div className="p-4 text-sm text-red-600">
+                        Failed to load PDF
+                      </div>
+                    }
+                  >
+                    <Page
+                      pageNumber={page}
+                      scale={scale}
+                      renderAnnotationLayer={false}
+                      renderTextLayer={false}
+                      onRenderSuccess={() => {
+                        const el = canvasRef.current;
+                        if (!el) return;
+                        const pageEl = el.querySelector(
+                          ".react-pdf__Page"
+                        ) as HTMLElement | null;
+                        if (!pageEl) return;
+                        const r = pageEl.getBoundingClientRect();
+                        setPagePx({ w: r.width, h: r.height });
+                      }}
+                    />
+                  </Document>
+
+                  {/* OVERLAY aligned to PDF page */}
+                  <div
+                    className="absolute left-3 top-3"
+                    style={{ width: pagePx.w, height: pagePx.h }}
+                  >
+                    {mappedFields.map((f) => {
+                      const selected = f.id === selectedId;
+
+                      return (
+                        <div
+                          key={f.id}
+                          className={`absolute bg-white/90 border rounded shadow-sm ${
+                            selected
+                              ? "border-blue-600 ring-2 ring-blue-200"
+                              : "border-gray-300"
+                          }`}
+                          style={{
+                            left: f.x * scale,
+                            top: f.y * scale,
+                            width: f.w * scale,
+                            height: f.h * scale,
+                          }}
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            setSelectedId(f.id);
+                            startDrag(f.id, e.clientX, e.clientY);
+                          }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            openModalForField(f.id); // modal on double click too
+                          }}
+                        >
+                          <div className="h-full px-2 flex items-center justify-between gap-2">
+                            <button
+                              type="button"
+                              className="text-left flex-1 min-w-0"
+                              title="Click to edit settings"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openModalForField(f.id);
+                              }}
+                            >
+                              <div className="text-xs font-semibold truncate">
+                                {f.source_field_label}
+                              </div>
+                              <div className="text-[10px] text-gray-500 truncate">
+                                {f.source_field_name}
+                              </div>
+                            </button>
+
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeField(f.id);
+                              }}
+                              className="w-6 h-6 grid place-items-center text-xs border rounded hover:bg-gray-50"
+                              title="Remove"
+                              type="button"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : (
+                <div className="absolute inset-0 grid place-items-center text-sm text-gray-500">
+                  No PDF found (file_path missing).
+                </div>
+              )}
+            </div>
+
+            <div className="text-[11px] text-gray-500 mt-2">
+              Tip: click a mapped field to open settings (modal). Drag to
+              reposition.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {isModalOpen && draftField && (
+        <div
+          className="fixed inset-0 z-50"
+          aria-modal="true"
+          role="dialog"
+          onMouseDown={(e) => {
+            // click backdrop to close
+            if (e.target === e.currentTarget) closeModal();
+          }}
+        >
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/40" />
+
+          {/* Modal */}
+          <div className="absolute inset-0 flex items-center justify-center p-4">
+            <div className="w-full max-w-3xl bg-white rounded-md shadow-xl border border-gray-200 overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-800 text-white">
+                <div className="text-sm font-semibold truncate">
+                  Edit Field: {draftField.source_field_label}
+                </div>
+                <button
+                  type="button"
+                  className="w-8 h-8 grid place-items-center rounded hover:bg-white/10"
+                  onClick={closeModal}
+                  title="Close"
+                >
+                  ✕
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-4">
+                <div className="grid grid-cols-2 gap-6">
+                  {/* LEFT COLUMN */}
+                  <div className="space-y-4">
+                    <div className="text-xs text-gray-500">
+                      <div className="font-semibold text-gray-800">
+                        {draftField.source_field_label}
+                      </div>
+                      <div>{draftField.source_field_name}</div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Who will fill field
+                      </label>
+                      <div className="flex items-center gap-4 text-sm">
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            checked={draftField.whoFills === "Admin"}
+                            onChange={() => updateDraft({ whoFills: "Admin" })}
+                          />
+                          Admin
+                        </label>
+                        <label className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            checked={draftField.whoFills === "Candidate"}
+                            onChange={() =>
+                              updateDraft({ whoFills: "Candidate" })
+                            }
+                          />
+                          Candidate
+                        </label>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Required
+                      </label>
+                      <div className="flex gap-2">
+                        <ToggleBtn
+                          active={draftField.required === "No"}
+                          onClick={() => updateDraft({ required: "No" })}
+                          label="No"
+                        />
+                        <ToggleBtn
+                          active={draftField.required === "Yes"}
+                          onClick={() => updateDraft({ required: "Yes" })}
+                          label="Yes"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Field Type
+                      </label>
+                      <select
+                        value={draftField.fieldType}
+                        onChange={(e) =>
+                          updateDraft({
+                            fieldType: e.target.value as FieldTypeUI,
+                          })
+                        }
+                        className="w-full h-9 px-3 border rounded text-sm bg-white"
+                      >
+                        {[
+                          "Text Input",
+                          "Text Area",
+                          "Number",
+                          "Email",
+                          "Phone",
+                          "Date",
+                          "Checkbox",
+                          "Signature",
+                        ].map((t) => (
+                          <option key={t} value={t}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* RIGHT COLUMN */}
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Max Characters
+                      </label>
+                      <input
+                        value={draftField.maxChars}
+                        onChange={(e) =>
+                          updateDraft({
+                            maxChars:
+                              e.target.value === ""
+                                ? ""
+                                : Number(e.target.value),
+                          })
+                        }
+                        type="number"
+                        min={1}
+                        className="w-full h-9 px-3 border rounded text-sm"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Format
+                      </label>
+                      <select
+                        value={draftField.format}
+                        onChange={(e) =>
+                          updateDraft({ format: e.target.value as FieldFormat })
+                        }
+                        className="w-full h-9 px-3 border rounded text-sm bg-white"
+                      >
+                        {["None", "Phone Number", "SSN"].map((t) => (
+                          <option key={t} value={t as FieldFormat}>
+                            {t}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Populate with Data?
+                      </label>
+                      <div className="flex gap-2">
+                        <ToggleBtn
+                          active={draftField.populateWithData === "No"}
+                          onClick={() =>
+                            updateDraft({ populateWithData: "No" })
+                          }
+                          label="No"
+                        />
+                        <ToggleBtn
+                          active={draftField.populateWithData === "Yes"}
+                          onClick={() =>
+                            updateDraft({ populateWithData: "Yes" })
+                          }
+                          label="Yes"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1">
+                        Data Flow back?
+                      </label>
+                      <div className="flex gap-2">
+                        <ToggleBtn
+                          active={draftField.dataFlowBack === "No"}
+                          onClick={() => updateDraft({ dataFlowBack: "No" })}
+                          label="No"
+                        />
+                        <ToggleBtn
+                          active={draftField.dataFlowBack === "Yes"}
+                          onClick={() => updateDraft({ dataFlowBack: "Yes" })}
+                          label="Yes"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Optional: size fields (not required by your payload UI, but helpful) */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                          Width
+                        </label>
+                        <input
+                          type="number"
+                          value={draftField.w}
+                          onChange={(e) =>
+                            updateDraft({
+                              w: clamp(Number(e.target.value || 0), 20, 1200),
+                            })
+                          }
+                          className="w-full h-9 px-3 border rounded text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-gray-700 mb-1">
+                          Height
+                        </label>
+                        <input
+                          type="number"
+                          value={draftField.h}
+                          onChange={(e) =>
+                            updateDraft({
+                              h: clamp(Number(e.target.value || 0), 20, 1200),
+                            })
+                          }
+                          className="w-full h-9 px-3 border rounded text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-4 py-3 border-t bg-gray-50 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedId) removeField(selectedId);
+                  }}
+                  className="px-3 py-2 text-sm border rounded hover:bg-gray-50"
+                >
+                  Remove Field
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={closeModal}
+                    className="px-4 py-2 text-sm border rounded hover:bg-gray-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={applyDraftToState}
+                    className="px-4 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    Save ✓
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToggleBtn({
+  active,
+  onClick,
+  label,
+}: {
+  active: boolean;
+  onClick: () => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`px-3 py-1.5 text-xs border rounded ${
+        active
+          ? "bg-blue-600 text-white border-blue-600"
+          : "bg-white hover:bg-gray-50"
+      }`}
+    >
+      {label}
+    </button>
+  );
 }

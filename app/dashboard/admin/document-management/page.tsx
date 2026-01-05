@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { useRouter, usePathname } from "next/navigation";
+
 import {
   FiSearch,
   FiRefreshCw,
@@ -17,6 +19,7 @@ type Document = {
   created_at?: string;
   created_by_name?: string;
   file_path?: string | null;
+  mapped_count?: number;
 };
 
 type SortConfig = {
@@ -35,10 +38,12 @@ type InternalUser = {
 const DEFAULT_CATEGORIES = ["General", "Onboarding", "Healthcare", "HR"];
 
 const DocumentManagementPage = () => {
-  const [activeTab, setActiveTab] = useState<"packets" | "documents">(
+  const [activeTab, setActiveTab] = useState<"documents">(
     "documents"
   );
-
+   const router = useRouter();
+   const pathname = usePathname();
+const [loadingEdit, setLoadingEdit] = useState(false);
   const [loading, setLoading] = useState(false);
   const [docs, setDocs] = useState<Document[]>([]);
   const [internalUsers, setInternalUsers] = useState<InternalUser[]>([]);
@@ -63,6 +68,13 @@ const DocumentManagementPage = () => {
     notification_user_ids: [] as number[],
     file: null as File | null,
   });
+const API = process.env.API_BASE_URL || "http://localhost:8080";
+const fileUrl = (path?: string | null) => {
+  if (!path) return "";
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return `${API}${p}`;
+};
+
 
   const authHeaders = (): HeadersInit => {
     const token =
@@ -98,6 +110,7 @@ const DocumentManagementPage = () => {
         created_at: d.created_at,
         created_by_name: d.created_by_name,
         file_path: d.file_path,
+        mapped_count: Number(d.mapped_count || 0),
       }));
 
       setDocs(normalized);
@@ -191,19 +204,24 @@ const DocumentManagementPage = () => {
     setShowCreateModal(true);
   };
 
-  const openEditModal = (doc: Document) => {
-    setEditingDoc(doc);
-    setFormData({
-      document_name: doc.document_name,
-      category: doc.category,
-      description: "",
-      approvalRequired: "No",
-      additionalDocsRequired: "No",
-      notification_user_ids: [],
-      file: null,
-    });
-    setShowCreateModal(true);
-  };
+ const openEditModal = async (doc: Document) => {
+   setEditingDoc(doc);
+   setShowCreateModal(true);
+
+
+   setFormData({
+     document_name: doc.document_name,
+     category: doc.category,
+     description: "",
+     approvalRequired: "No",
+     additionalDocsRequired: "No",
+     notification_user_ids: [],
+     file: null,
+   });
+
+   await fetchDocDetails(doc.id); 
+ };
+
 
   const closeModal = () => {
     setShowCreateModal(false);
@@ -309,6 +327,41 @@ const DocumentManagementPage = () => {
 
     return opts;
   };
+const fetchDocDetails = async (id: number) => {
+  setLoadingEdit(true);
+  try {
+    const res = await fetch(`/api/template-documents/${id}`, {
+      method: "GET",
+      headers: { ...authHeaders() },
+      cache: "no-store",
+    });
+
+    const data = await res.json();
+    if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
+
+    const d = data.document || data.data || data; // safe fallback
+
+    setFormData({
+      document_name: d.document_name ?? "",
+      category: d.category ?? "",
+      description: d.description ?? "",
+      approvalRequired: (d.approvalRequired ??
+        d.approval_required ??
+        "No") as YesNo,
+      additionalDocsRequired: (d.additionalDocsRequired ??
+        d.additional_docs_required ??
+        "No") as YesNo,
+      notification_user_ids: (d.notification_user_ids ??
+        d.notificationUserIds ??
+        []) as number[],
+      file: null, // edit mode me file optional
+    });
+  } catch (e: any) {
+    alert(e?.message || "Failed to load document details");
+  } finally {
+    setLoadingEdit(false);
+  }
+};
 
   const SortIcon = ({ field }: { field: "document_name" | "category" }) => {
     if (sortConfig.field !== field) {
@@ -331,9 +384,11 @@ const DocumentManagementPage = () => {
       {/* Tabs */}
       <div className="flex space-x-4 mb-4">
         <button
-          onClick={() => setActiveTab("packets")}
+          onClick={() =>
+            router.push("/dashboard/admin/document-management/packets")
+          }
           className={`px-4 py-2 text-sm font-medium ${
-            activeTab === "packets"
+            pathname.includes("/packets")
               ? "text-blue-600 border-b-2 border-blue-600"
               : "text-gray-600 hover:text-gray-800"
           }`}
@@ -469,6 +524,9 @@ const DocumentManagementPage = () => {
                     <FiFilter className="w-3 h-3 text-gray-400" />
                   </div>
                 </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Mapped
+                </th>
               </tr>
             </thead>
 
@@ -521,6 +579,17 @@ const DocumentManagementPage = () => {
 
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {doc.category}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                      {(doc.mapped_count ?? 0) > 0 ? (
+                        <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-700">
+                          Mapped ({doc.mapped_count})
+                        </span>
+                      ) : (
+                        <span className="px-2 py-1 text-xs rounded bg-gray-100 text-gray-600">
+                          Not Mapped
+                        </span>
+                      )}
                     </td>
                   </tr>
                 ))
@@ -699,39 +768,95 @@ const DocumentManagementPage = () => {
                   </div>
 
                   <div className="mt-4">
-                    <label className="block text-xs font-semibold text-gray-700 mb-2">
-                      Upload PDF Document:
-                    </label>
-                    <input
-                      type="file"
-                      accept="application/pdf"
-                      onChange={(e) =>
-                        setFormData((p) => ({
-                          ...p,
-                          file: e.target.files?.[0] ?? null,
-                        }))
-                      }
-                      className="text-sm mb-3"
-                    />
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-xs font-semibold text-gray-700">
+                        Upload PDF Document:
+                      </label>
 
-                    <div className="flex items-center justify-center gap-2 mb-2">
+                      {editingDoc?.file_path ? (
+                        <a
+                          className="text-xs text-blue-600 underline"
+                          href={`/dashboard/admin/document-management/${editingDoc.id}/view`}
+                          target="_blank"
+                        >
+                          View current PDF
+                        </a>
+                      ) : null}
+                    </div>
+
+                    {/* Nice bordered upload UI */}
+                    <div className="border border-gray-300 rounded px-3 py-3 bg-white">
+                      <div className="flex items-center gap-3">
+                        {/* Hidden real input */}
+                        <input
+                          id="pdf-upload"
+                          type="file"
+                          accept="application/pdf"
+                          className="hidden"
+                          onChange={(e) =>
+                            setFormData((p) => ({
+                              ...p,
+                              file: e.target.files?.[0] ?? null,
+                            }))
+                          }
+                        />
+
+                        {/* Custom choose button */}
+                        <label
+                          htmlFor="pdf-upload"
+                          className="px-3 py-2 text-xs border border-gray-400 rounded bg-gray-50 hover:bg-gray-100 cursor-pointer select-none"
+                        >
+                          Choose File
+                        </label>
+
+                        {/* File name */}
+                        <div className="flex-1 min-w-0 text-xs text-gray-600 truncate">
+                          {formData.file?.name
+                            ? formData.file.name
+                            : editingDoc?.file_path
+                            ? "No new file selected (current PDF will remain)"
+                            : "No file chosen"}
+                        </div>
+
+                        {/* Clear selection */}
+                        {formData.file ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setFormData((p) => ({
+                                ...p,
+                                file: null,
+                              }))
+                            }
+                            className="px-2 py-2 text-xs border border-gray-300 rounded hover:bg-gray-50"
+                            title="Remove selected file"
+                          >
+                            ✕
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {/* Buttons */}
+                    <div className="flex items-center justify-center gap-2 mt-3">
                       <button
                         onClick={handleCreateOrUpdate}
-                        className="px-4 py-1.5 bg-blue-600 text-white text-xs rounded disabled:opacity-50"
-                        disabled={loading}
+                        disabled={loading || loadingEdit}
+                        className="px-5 py-2 bg-blue-600 text-white text-xs rounded disabled:opacity-50"
                       >
                         {editingDoc ? "Update" : "Upload"}
                       </button>
+
                       <button
                         onClick={closeModal}
-                        className="px-4 py-1.5 bg-blue-600 text-white text-xs rounded"
+                        className="px-5 py-2 bg-blue-600 text-white text-xs rounded disabled:opacity-50"
                         disabled={loading}
                       >
                         Cancel
                       </button>
                     </div>
 
-                    <div className="text-xs text-gray-600 text-center">
+                    <div className="text-xs text-gray-600 text-center mt-2">
                       When Document is selected and click upload
                     </div>
                   </div>
