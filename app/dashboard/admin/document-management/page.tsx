@@ -19,6 +19,7 @@ type Document = {
   created_at?: string;
   created_by_name?: string;
   file_path?: string | null;
+  file_url?: string | null;
   mapped_count?: number;
 };
 
@@ -110,6 +111,7 @@ const fileUrl = (path?: string | null) => {
         created_at: d.created_at,
         created_by_name: d.created_by_name,
         file_path: d.file_path,
+        file_url: d.file_url,
         mapped_count: Number(d.mapped_count || 0),
       }));
 
@@ -301,32 +303,34 @@ const fileUrl = (path?: string | null) => {
     }
   };
 
-  const actionOptions = (doc: Document) => {
-    const opts: { label: string; action: () => void }[] = [];
+const actionOptions = (doc: Document) => {
+  const opts: { label: string; action: () => void }[] = [];
 
-    if (doc.file_path) {
-      opts.push({
-        label: "View PDF",
-        action: () =>
-          window.open(
-            `/dashboard/admin/document-management/${doc.id}/view`,
-            "_blank"
-          ),
-      });
+  // ✅ Blob wala case
+  if (doc.file_url) {
+    opts.push({
+      label: "View PDF",
+      action: () =>
+        window.open(
+          `/dashboard/admin/document-management/${doc.id}/view`,
+          "_blank"
+        ),
+    });
 
-      opts.push({
-        label: "Open Editor",
-        action: () => {
-          window.location.href = `/dashboard/admin/document-management/${doc.id}/editor`;
-        },
-      });
-    }
+    opts.push({
+      label: "Open Editor",
+      action: () => {
+        window.location.href = `/dashboard/admin/document-management/${doc.id}/editor`;
+      },
+    });
+  }
 
-    opts.push({ label: "Edit", action: () => openEditModal(doc) });
-    opts.push({ label: "Delete", action: () => handleDelete(doc.id) });
+  opts.push({ label: "Edit", action: () => openEditModal(doc) });
+  opts.push({ label: "Delete", action: () => handleDelete(doc.id) });
 
-    return opts;
-  };
+  return opts;
+};
+
 const fetchDocDetails = async (id: number) => {
   setLoadingEdit(true);
   try {
@@ -497,8 +501,9 @@ const fetchDocDetails = async (id: number) => {
 
       {/* Table */}
       <div className="bg-white rounded shadow-sm overflow-visible">
-        <div className="overflow-x-auto overflow-y-visible">
-          <table className="min-w-full divide-y divide-gray-200">
+        {/* IMPORTANT: keep scroll only on this wrapper */}
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200 overflow-visible">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 w-24"></th>
@@ -524,17 +529,19 @@ const fetchDocDetails = async (id: number) => {
                     <FiFilter className="w-3 h-3 text-gray-400" />
                   </div>
                 </th>
+
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Mapped
                 </th>
               </tr>
             </thead>
 
-            <tbody className="bg-white divide-y divide-gray-200">
+            {/* IMPORTANT: allow dropdown to overflow */}
+            <tbody className="bg-white divide-y divide-gray-200 overflow-visible">
               {displayedDocuments.length === 0 ? (
-                <tr>
+                <tr className="overflow-visible">
                   <td
-                    colSpan={3}
+                    colSpan={4}
                     className="px-6 py-8 text-center text-gray-500"
                   >
                     No documents found.
@@ -544,10 +551,13 @@ const fetchDocDetails = async (id: number) => {
                 displayedDocuments.map((doc, index) => (
                   <tr
                     key={doc.id}
-                    className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}
+                    className={`${
+                      index % 2 === 0 ? "bg-white" : "bg-gray-50"
+                    } overflow-visible`}
                   >
+                    {/* IMPORTANT: this cell must be relative + visible */}
                     <td className="px-6 py-4 whitespace-nowrap relative overflow-visible">
-                      <div className="relative ml-7">
+                      <div className="relative ml-7 overflow-visible">
                         <ActionDropdown
                           label="ACTIONS"
                           options={actionOptions(doc)}
@@ -557,29 +567,12 @@ const fetchDocDetails = async (id: number) => {
 
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                       {doc.document_name}
-
-                      {/* {doc.file_path ? (
-                        <>
-                          <a
-                            className="ml-3 text-xs text-blue-600 underline"
-                            href={`/dashboard/admin/document-management/${doc.id}/view`}
-                          >
-                            View PDF
-                          </a>
-
-                          <a
-                            className="ml-3 text-xs text-green-600 underline"
-                            href={`/dashboard/admin/document-management/${doc.id}/editor`}
-                          >
-                            Open Editor
-                          </a>
-                        </>
-                      ) : null} */}
                     </td>
 
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                       {doc.category}
                     </td>
+
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       {(doc.mapped_count ?? 0) > 0 ? (
                         <span className="px-2 py-1 text-xs rounded bg-green-100 text-green-700">
@@ -773,7 +766,7 @@ const fetchDocDetails = async (id: number) => {
                         Upload PDF Document:
                       </label>
 
-                      {editingDoc?.file_path ? (
+                      {editingDoc?.file_url ? (
                         <a
                           className="text-xs text-blue-600 underline"
                           href={`/dashboard/admin/document-management/${editingDoc.id}/view`}

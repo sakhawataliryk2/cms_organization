@@ -9,22 +9,16 @@ function requireApiUrl() {
 }
 
 async function getToken() {
-  const cookieStore = await cookies(); 
+  const cookieStore = await cookies(); // ✅ must await
   return cookieStore.get("token")?.value || "";
 }
 
-export async function GET(_req: NextRequest, context: any) {
+export async function GET(
+  _req: NextRequest,
+  context: { params: { id: string } }
+) {
   try {
-    
-    const p = await context?.params;
-    const id = p?.id;
-
-    if (!id) {
-      return NextResponse.json(
-        { success: false, message: "Missing document id" },
-        { status: 400 }
-      );
-    }
+    const { id } = context.params;
 
     const token = await getToken();
     if (!token) {
@@ -36,37 +30,47 @@ export async function GET(_req: NextRequest, context: any) {
 
     const base = requireApiUrl();
 
-    // 1) Get document to read file_path
+    // 1) get doc
     const docRes = await fetch(`${base}/api/template-documents/${id}`, {
+      method: "GET",
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
 
+    const docJson = await docRes.json().catch(() => ({}));
     if (!docRes.ok) {
-      const err = await docRes.json().catch(() => ({}));
       return NextResponse.json(
-        { success: false, message: err?.message || "Failed to load document" },
+        {
+          success: false,
+          message: docJson?.message || "Failed to fetch document",
+        },
         { status: docRes.status }
       );
     }
 
-    const docData = await docRes.json().catch(() => ({}));
-    const doc = docData?.document || docData;
+    const doc = docJson?.document || docJson;
 
+    // ✅ NEW: if file_url exists, redirect to it
+    const fileUrl: string | null = doc?.file_url || null;
+    if (fileUrl) {
+      return NextResponse.redirect(fileUrl);
+    }
+
+    // fallback (old)
     const filePath: string | null = doc?.file_path || null;
     if (!filePath) {
       return NextResponse.json(
-        { success: false, message: "file_path missing" },
+        { success: false, message: "file_url/file_path missing" },
         { status: 404 }
       );
     }
 
-    const fileUrl = filePath.startsWith("/")
+    const url = filePath.startsWith("/")
       ? `${base}${filePath}`
       : `${base}/${filePath}`;
 
-    // 2) Fetch the actual PDF bytes
-    const pdfRes = await fetch(fileUrl, {
+    const pdfRes = await fetch(url, {
+      method: "GET",
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
@@ -89,7 +93,6 @@ export async function GET(_req: NextRequest, context: any) {
       },
     });
   } catch (error: any) {
-    console.error("Error fetching template PDF:", error);
     return NextResponse.json(
       { success: false, message: error?.message || "Internal server error" },
       { status: 500 }
