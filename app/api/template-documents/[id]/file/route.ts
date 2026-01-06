@@ -9,16 +9,20 @@ function requireApiUrl() {
 }
 
 async function getToken() {
-  const cookieStore = await cookies(); // ✅ must await
+  const cookieStore = await cookies();
   return cookieStore.get("token")?.value || "";
 }
 
-export async function GET(
-  _req: NextRequest,
-  context: { params: { id: string } }
-) {
+export async function GET(_req: NextRequest, context: any) {
   try {
-    const { id } = context.params;
+    const id = String(context?.params?.id || "");
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, message: "Missing document id" },
+        { status: 400 }
+      );
+    }
 
     const token = await getToken();
     if (!token) {
@@ -30,9 +34,8 @@ export async function GET(
 
     const base = requireApiUrl();
 
-    // 1) get doc
+    // 1) get doc (to read file_url / file_path)
     const docRes = await fetch(`${base}/api/template-documents/${id}`, {
-      method: "GET",
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
@@ -50,13 +53,13 @@ export async function GET(
 
     const doc = docJson?.document || docJson;
 
-    // ✅ NEW: if file_url exists, redirect to it
+    // ✅ NEW: blob URL (preferred)
     const fileUrl: string | null = doc?.file_url || null;
     if (fileUrl) {
       return NextResponse.redirect(fileUrl);
     }
 
-    // fallback (old)
+    // fallback (old local path)
     const filePath: string | null = doc?.file_path || null;
     if (!filePath) {
       return NextResponse.json(
@@ -70,7 +73,6 @@ export async function GET(
       : `${base}/${filePath}`;
 
     const pdfRes = await fetch(url, {
-      method: "GET",
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
