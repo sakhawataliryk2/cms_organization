@@ -9,17 +9,22 @@ function requireApiUrl() {
 }
 
 async function getToken() {
-  const cookieStore = await cookies();
+  const cookieStore = await cookies(); 
   return cookieStore.get("token")?.value || "";
 }
 
-
-export async function GET(
-  _request: NextRequest,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function GET(_req: NextRequest, context: any) {
   try {
-    const { id } = await params;
+    
+    const p = await context?.params;
+    const id = p?.id;
+
+    if (!id) {
+      return NextResponse.json(
+        { success: false, message: "Missing document id" },
+        { status: 400 }
+      );
+    }
 
     const token = await getToken();
     if (!token) {
@@ -31,28 +36,24 @@ export async function GET(
 
     const base = requireApiUrl();
 
-    // 1) Fetch document to get file_path
+    // 1) Get document to read file_path
     const docRes = await fetch(`${base}/api/template-documents/${id}`, {
-      method: "GET",
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
 
-    const docJson = await docRes.json().catch(() => ({}));
-
     if (!docRes.ok) {
+      const err = await docRes.json().catch(() => ({}));
       return NextResponse.json(
-        {
-          success: false,
-          message: docJson?.message || "Failed to fetch document",
-        },
+        { success: false, message: err?.message || "Failed to load document" },
         { status: docRes.status }
       );
     }
 
-    const doc = docJson?.document || docJson;
-    const filePath: string | null = doc?.file_path || null;
+    const docData = await docRes.json().catch(() => ({}));
+    const doc = docData?.document || docData;
 
+    const filePath: string | null = doc?.file_path || null;
     if (!filePath) {
       return NextResponse.json(
         { success: false, message: "file_path missing" },
@@ -60,26 +61,20 @@ export async function GET(
       );
     }
 
-    // 2) Build absolute URL for file
     const fileUrl = filePath.startsWith("/")
       ? `${base}${filePath}`
       : `${base}/${filePath}`;
 
-    // 3) Fetch PDF bytes
+    // 2) Fetch the actual PDF bytes
     const pdfRes = await fetch(fileUrl, {
-      method: "GET",
       headers: { Authorization: `Bearer ${token}` },
       cache: "no-store",
     });
 
     if (!pdfRes.ok) {
-      // try to parse backend error if it's JSON
       const err = await pdfRes.json().catch(() => ({}));
       return NextResponse.json(
-        {
-          success: false,
-          message: err?.message || "Failed to fetch PDF file",
-        },
+        { success: false, message: err?.message || "Failed to fetch PDF file" },
         { status: pdfRes.status }
       );
     }
