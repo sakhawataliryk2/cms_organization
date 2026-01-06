@@ -62,7 +62,6 @@ interface ValidationResult {
 
 export default function AdminCenter() {
     const router = useRouter();
-    const [buttonColor, setButtonColor] = useState('#3B82F6'); // Default blue color
     const [showDownloadModal, setShowDownloadModal] = useState(false);
     const [selectedModules, setSelectedModules] = useState<string[]>([]);
     const [exportFormat, setExportFormat] = useState<'csv' | 'excel'>('csv');
@@ -153,31 +152,6 @@ export default function AdminCenter() {
             }
         },
     ];
-
-    // Generate a random color
-    const generateRandomColor = () => {
-        const colors = [
-            '#3B82F6', // blue
-            '#EF4444', // red
-            '#10B981', // green
-            '#F59E0B', // amber
-            '#8B5CF6', // purple
-            '#EC4899', // pink
-            '#06B6D4', // cyan
-            '#F97316', // orange
-            '#84CC16', // lime
-            '#6366F1', // indigo
-            '#14B8A6', // teal
-            '#A855F7', // violet
-        ];
-        return colors[Math.floor(Math.random() * colors.length)];
-    };
-
-    // Handle button click - change to random color
-    const handleColorChange = () => {
-        const newColor = generateRandomColor();
-        setButtonColor(newColor);
-    };
 
     // Toggle module selection
     const toggleModule = (moduleId: string) => {
@@ -763,17 +737,6 @@ export default function AdminCenter() {
                         </span>
                     </div>
                 ))}
-            </div>
-
-            {/* Random Color Button */}
-            <div className="flex justify-center mt-12">
-                <button
-                    onClick={handleColorChange}
-                    style={{ backgroundColor: buttonColor }}
-                    className="px-8 py-4 text-white text-lg font-semibold rounded-lg shadow-lg hover:opacity-90 transition-opacity transform hover:scale-105 transition-transform"
-                >
-                    Click Me!
-                </button>
             </div>
 
             {/* Download Modal */}
