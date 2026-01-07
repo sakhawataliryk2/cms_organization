@@ -52,13 +52,13 @@ export default function DocumentMgmtTabs() {
       {onDocs && (
         <button
           onClick={() => goDocs(!archived)}
-          className={`px-3 py-2 text-sm border rounded ${
+          className={`px-4 py-2 text-sm font-medium ${
             archived
-              ? "bg-gray-900 text-white border-gray-900"
-              : "bg-white text-gray-700 border-gray-300"
+              ? "text-blue-600 border-b-2 border-blue-600"
+              : "text-gray-600 hover:text-gray-800"
           }`}
         >
-          {archived ? "Showing Archived" : "Show Archived"}
+          {archived ? "ARCHIVED" : "SHOW ARCHIVED"}
         </button>
       )}
     </div>

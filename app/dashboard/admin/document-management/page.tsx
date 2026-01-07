@@ -20,6 +20,7 @@ type Document = {
   file_path?: string | null;
   file_url?: string | null;
   mapped_count?: number;
+  archived?: boolean;
 };
 
 type SortConfig = {
@@ -134,6 +135,14 @@ const DocumentManagementPage = () => {
         file_path: d.file_path,
         file_url: d.file_url,
         mapped_count: Number(d.mapped_count || 0),
+        archived: Boolean(
+          d.archived ??
+            d.is_archived ??
+            d.isArchived ??
+            d.archived_at ??
+            d.archivedAt
+        ),
+        archived_at: d.archived_at ?? d.archivedAt ?? null,
       }));
 
       setDocs(normalized);
@@ -170,6 +179,9 @@ const DocumentManagementPage = () => {
   // ✅ filter + sort (with mapped)
   const filteredAndSortedDocuments = useMemo(() => {
     let filtered = docs;
+     filtered = filtered.filter((d) =>
+       showArchived ? d.archived : !d.archived
+     );
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -597,7 +609,7 @@ const DocumentManagementPage = () => {
                     setOpen(false);
                     opt.action();
                   }}
-                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                  className="block text-left px-2 py-1.5 text-sm hover:bg-gray-50 whitespace-nowrap"
                 >
                   {opt.label}
                 </button>
