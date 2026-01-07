@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
-
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   FiSearch,
   FiRefreshCw,
@@ -10,7 +9,7 @@ import {
   FiChevronDown,
   FiFilter,
 } from "react-icons/fi";
-import ActionDropdown from "@/components/ActionDropdown";
+import { createPortal } from "react-dom";
 
 type Document = {
   id: number;
@@ -24,7 +23,7 @@ type Document = {
 };
 
 type SortConfig = {
-  field: "document_name" | "category";
+  field: "document_name" | "category" | "mapped";
   order: "ASC" | "DESC";
 };
 
@@ -39,24 +38,45 @@ type InternalUser = {
 const DEFAULT_CATEGORIES = ["General", "Onboarding", "Healthcare", "HR"];
 
 const DocumentManagementPage = () => {
-  const [activeTab, setActiveTab] = useState<"documents">(
-    "documents"
-  );
-   const router = useRouter();
-   const pathname = usePathname();
-const [loadingEdit, setLoadingEdit] = useState(false);
+  const router = useRouter();
+  const params = useSearchParams();
+  const showArchived = params.get("archived") === "1";
+
+  const [loadingEdit, setLoadingEdit] = useState(false);
   const [loading, setLoading] = useState(false);
+
   const [docs, setDocs] = useState<Document[]>([]);
   const [internalUsers, setInternalUsers] = useState<InternalUser[]>([]);
 
   const [searchQuery, setSearchQuery] = useState("");
   const [pageSize, setPageSize] = useState(250);
   const [currentPage, setCurrentPage] = useState(1);
+
   const [sortConfig, setSortConfig] = useState<SortConfig>({
     field: "document_name",
     order: "ASC",
   });
 
+  // ✅ Mapped filter state
+  const [mappedFilter, setMappedFilter] = useState<
+    "all" | "mapped" | "not_mapped"
+  >("all");
+  const [mappedMenuOpen, setMappedMenuOpen] = useState(false);
+
+  // ✅ Needed for portal positioning + outside click
+  const mappedBtnRef = useRef<HTMLButtonElement | null>(null);
+  const mappedMenuRef = useRef<HTMLDivElement | null>(null);
+
+  const [mappedMenuPos, setMappedMenuPos] = useState({
+    top: 0,
+    left: 0,
+    width: 176,
+  });
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  // ✅ modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingDoc, setEditingDoc] = useState<Document | null>(null);
 
@@ -69,13 +89,13 @@ const [loadingEdit, setLoadingEdit] = useState(false);
     notification_user_ids: [] as number[],
     file: null as File | null,
   });
-const API = process.env.API_BASE_URL || "http://localhost:8080";
-const fileUrl = (path?: string | null) => {
-  if (!path) return "";
-  const p = path.startsWith("/") ? path : `/${path}`;
-  return `${API}${p}`;
-};
 
+  const API = process.env.API_BASE_URL || "http://localhost:8080";
+  const fileUrl = (path?: string | null) => {
+    if (!path) return "";
+    const p = path.startsWith("/") ? path : `/${path}`;
+    return `${API}${p}`;
+  };
 
   const authHeaders = (): HeadersInit => {
     const token =
@@ -87,20 +107,21 @@ const fileUrl = (path?: string | null) => {
         : "";
 
     if (!token) return {};
+    return { Authorization: `Bearer ${token}` };
+  };
 
-    return {
-      Authorization: `Bearer ${token}`,
-    };
+  const clampPage = (nextTotal: number, nextPageSize: number) => {
+    const pages = Math.max(1, Math.ceil(nextTotal / nextPageSize));
+    setCurrentPage((p) => Math.min(p, pages));
   };
 
   const fetchDocs = async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/template-documents", {
-        method: "GET",
-        cache: "no-store",
-      });
-
+      const res = await fetch(
+        `/api/template-documents${showArchived ? "?archived=1" : ""}`,
+        { method: "GET", cache: "no-store" }
+      );
       const data = await res.json();
       if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
 
@@ -116,17 +137,12 @@ const fileUrl = (path?: string | null) => {
       }));
 
       setDocs(normalized);
-
       clampPage(normalized.length, pageSize);
     } catch (e: any) {
       alert(e.message || "Failed to load documents");
     } finally {
       setLoading(false);
     }
-  };
-  const clampPage = (nextTotal: number, nextPageSize: number) => {
-    const pages = Math.max(1, Math.ceil(nextTotal / nextPageSize));
-    setCurrentPage((p) => Math.min(p, pages));
   };
 
   const fetchInternalUsers = async () => {
@@ -139,7 +155,6 @@ const fileUrl = (path?: string | null) => {
       if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
       setInternalUsers(data.users || []);
     } catch (e: any) {
-      // don't block UI
       console.log("internal users load failed:", e.message);
     }
   };
@@ -148,10 +163,11 @@ const fileUrl = (path?: string | null) => {
     fetchDocs();
     fetchInternalUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [showArchived]);
 
   const categories = useMemo(() => DEFAULT_CATEGORIES, []);
 
+  // ✅ filter + sort (with mapped)
   const filteredAndSortedDocuments = useMemo(() => {
     let filtered = docs;
 
@@ -162,16 +178,29 @@ const fileUrl = (path?: string | null) => {
       );
     }
 
+    if (mappedFilter === "mapped") {
+      filtered = filtered.filter((d) => (d.mapped_count ?? 0) > 0);
+    } else if (mappedFilter === "not_mapped") {
+      filtered = filtered.filter((d) => (d.mapped_count ?? 0) === 0);
+    }
+
     const sorted = [...filtered].sort((a, b) => {
-      const aValue = (a[sortConfig.field] || "").toLowerCase();
-      const bValue = (b[sortConfig.field] || "").toLowerCase();
+      if (sortConfig.field === "mapped") {
+        const av = Number(a.mapped_count ?? 0);
+        const bv = Number(b.mapped_count ?? 0);
+        return sortConfig.order === "ASC" ? av - bv : bv - av;
+      }
+
+      const aValue = String(a[sortConfig.field] || "").toLowerCase();
+      const bValue = String(b[sortConfig.field] || "").toLowerCase();
+
       return sortConfig.order === "ASC"
         ? aValue.localeCompare(bValue)
         : bValue.localeCompare(aValue);
     });
 
     return sorted;
-  }, [docs, searchQuery, sortConfig]);
+  }, [docs, searchQuery, sortConfig, mappedFilter]);
 
   const total = filteredAndSortedDocuments.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -184,13 +213,61 @@ const fileUrl = (path?: string | null) => {
     return filteredAndSortedDocuments.slice(start, end);
   }, [filteredAndSortedDocuments, currentPage, pageSize]);
 
-  const handleSort = (field: "document_name" | "category") => {
+  const handleSort = (field: "document_name" | "category" | "mapped") => {
     setSortConfig((prev) => ({
       field,
       order: prev.field === field && prev.order === "ASC" ? "DESC" : "ASC",
     }));
     setCurrentPage(1);
   };
+
+  // ✅ mapped menu position
+  const computeMappedMenuPos = () => {
+    const btn = mappedBtnRef.current;
+    if (!btn) return;
+
+    const r = btn.getBoundingClientRect();
+    const gap = 8;
+
+    setMappedMenuPos({
+      top: r.bottom + gap,
+      left: Math.max(8, r.right - 176), // keep inside screen a bit
+      width: 176,
+    });
+  };
+
+  // ✅ When menu opens, position it + keep it updated
+  useEffect(() => {
+    if (!mappedMenuOpen) return;
+
+    computeMappedMenuPos();
+
+    const onScroll = () => computeMappedMenuPos();
+    const onResize = () => computeMappedMenuPos();
+
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
+    };
+  }, [mappedMenuOpen]);
+
+  // ✅ Outside click to close mapped menu
+  useEffect(() => {
+    if (!mappedMenuOpen) return;
+
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (mappedBtnRef.current?.contains(t)) return;
+      if (mappedMenuRef.current?.contains(t)) return;
+      setMappedMenuOpen(false);
+    };
+
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [mappedMenuOpen]);
 
   const openCreateModal = () => {
     setEditingDoc(null);
@@ -206,25 +283,6 @@ const fileUrl = (path?: string | null) => {
     setShowCreateModal(true);
   };
 
- const openEditModal = async (doc: Document) => {
-   setEditingDoc(doc);
-   setShowCreateModal(true);
-
-
-   setFormData({
-     document_name: doc.document_name,
-     category: doc.category,
-     description: "",
-     approvalRequired: "No",
-     additionalDocsRequired: "No",
-     notification_user_ids: [],
-     file: null,
-   });
-
-   await fetchDocDetails(doc.id); 
- };
-
-
   const closeModal = () => {
     setShowCreateModal(false);
     setEditingDoc(null);
@@ -237,6 +295,59 @@ const fileUrl = (path?: string | null) => {
       notification_user_ids: [],
       file: null,
     });
+  };
+
+  const fetchDocDetails = async (id: number) => {
+    setLoadingEdit(true);
+    try {
+      const res = await fetch(`/api/template-documents/${id}`, {
+        method: "GET",
+        headers: { ...authHeaders() },
+        cache: "no-store",
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
+
+      const d = data.document || data.data || data;
+
+      setFormData({
+        document_name: d.document_name ?? "",
+        category: d.category ?? "",
+        description: d.description ?? "",
+        approvalRequired: (d.approvalRequired ??
+          d.approval_required ??
+          "No") as YesNo,
+        additionalDocsRequired: (d.additionalDocsRequired ??
+          d.additional_docs_required ??
+          "No") as YesNo,
+        notification_user_ids: (d.notification_user_ids ??
+          d.notificationUserIds ??
+          []) as number[],
+        file: null,
+      });
+    } catch (e: any) {
+      alert(e?.message || "Failed to load document details");
+    } finally {
+      setLoadingEdit(false);
+    }
+  };
+
+  const openEditModal = async (doc: Document) => {
+    setEditingDoc(doc);
+    setShowCreateModal(true);
+
+    setFormData({
+      document_name: doc.document_name,
+      category: doc.category,
+      description: "",
+      approvalRequired: "No",
+      additionalDocsRequired: "No",
+      notification_user_ids: [],
+      file: null,
+    });
+
+    await fetchDocDetails(doc.id);
   };
 
   const handleCreateOrUpdate = async () => {
@@ -264,20 +375,28 @@ const fileUrl = (path?: string | null) => {
       );
       if (formData.file) fd.append("file", formData.file);
 
-      const url = editingDoc
-        ? `/api/template-documents/${editingDoc.id}`
+      const isEdit = !!editingDoc;
+      const url = isEdit
+        ? `/api/template-documents/${editingDoc!.id}`
         : `/api/template-documents`;
 
       const res = await fetch(url, {
-        method: editingDoc ? "PUT" : "POST",
+        method: isEdit ? "PUT" : "POST",
         body: fd,
       });
 
       const data = await res.json();
       if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
 
+      const newDocId =
+        data?.document?.id ?? data?.id ?? (isEdit ? editingDoc!.id : null);
+
       closeModal();
       await fetchDocs();
+
+      if (!isEdit && newDocId) {
+        router.push(`/dashboard/admin/document-management/${newDocId}/editor`);
+      }
     } catch (e: any) {
       alert(e.message || "Failed");
     } finally {
@@ -303,71 +422,76 @@ const fileUrl = (path?: string | null) => {
     }
   };
 
-const actionOptions = (doc: Document) => {
-  const opts: { label: string; action: () => void }[] = [];
+  const handleArchive = async (id: number, archive: boolean) => {
+    try {
+      setLoading(true);
 
-  // ✅ Blob wala case
-  if (doc.file_url) {
-    opts.push({
-      label: "View PDF",
-      action: () =>
-        window.open(
-          `/dashboard/admin/document-management/${doc.id}/view`,
-          "_blank"
-        ),
-    });
+      const res = await fetch(`/api/template-documents/${id}/archive`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ archive }),
+      });
 
-    opts.push({
-      label: "Open Editor",
-      action: () => {
-        window.location.href = `/dashboard/admin/document-management/${doc.id}/editor`;
-      },
-    });
-  }
+      const data = await res.json();
+      if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
 
-  opts.push({ label: "Edit", action: () => openEditModal(doc) });
-  opts.push({ label: "Delete", action: () => handleDelete(doc.id) });
+      await fetchDocs();
+    } catch (e: any) {
+      alert(e?.message || "Archive failed");
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  return opts;
-};
+  const actionOptions = (doc: Document) => {
+    const opts: { label: string; action: () => void }[] = [];
 
-const fetchDocDetails = async (id: number) => {
-  setLoadingEdit(true);
-  try {
-    const res = await fetch(`/api/template-documents/${id}`, {
-      method: "GET",
-      headers: { ...authHeaders() },
-      cache: "no-store",
-    });
+    if (doc.file_url) {
+      opts.push({
+        label: "View PDF",
+        action: () =>
+          window.open(
+            `/dashboard/admin/document-management/${doc.id}/view`,
+            "_blank"
+          ),
+      });
 
-    const data = await res.json();
-    if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
+      opts.push({
+        label: "Open Editor",
+        action: () =>
+          router.push(`/dashboard/admin/document-management/${doc.id}/editor`),
+      });
+    }
 
-    const d = data.document || data.data || data; // safe fallback
+    opts.push({ label: "Edit", action: () => openEditModal(doc) });
 
-    setFormData({
-      document_name: d.document_name ?? "",
-      category: d.category ?? "",
-      description: d.description ?? "",
-      approvalRequired: (d.approvalRequired ??
-        d.approval_required ??
-        "No") as YesNo,
-      additionalDocsRequired: (d.additionalDocsRequired ??
-        d.additional_docs_required ??
-        "No") as YesNo,
-      notification_user_ids: (d.notification_user_ids ??
-        d.notificationUserIds ??
-        []) as number[],
-      file: null, // edit mode me file optional
-    });
-  } catch (e: any) {
-    alert(e?.message || "Failed to load document details");
-  } finally {
-    setLoadingEdit(false);
-  }
-};
+    if (showArchived) {
+      opts.push({
+        label: "Unarchive",
+        action: () => {
+          if (!confirm("Unarchive this document?")) return;
+          handleArchive(doc.id, false);
+        },
+      });
+    } else {
+      opts.push({
+        label: "Archive",
+        action: () => {
+          if (!confirm("Archive this document?")) return;
+          handleArchive(doc.id, true);
+        },
+      });
+    }
 
-  const SortIcon = ({ field }: { field: "document_name" | "category" }) => {
+    opts.push({ label: "Delete", action: () => handleDelete(doc.id) });
+    return opts;
+  };
+
+  const SortIcon = ({
+    field,
+  }: {
+    field: "document_name" | "category" | "mapped";
+  }) => {
     if (sortConfig.field !== field) {
       return (
         <div className="flex flex-col">
@@ -376,6 +500,7 @@ const fetchDocDetails = async (id: number) => {
         </div>
       );
     }
+
     return sortConfig.order === "ASC" ? (
       <FiChevronUp className="w-3 h-3 text-blue-600" />
     ) : (
@@ -383,10 +508,124 @@ const fetchDocDetails = async (id: number) => {
     );
   };
 
+  const RowActions = ({ doc }: { doc: Document }) => {
+    const btnRef = useRef<HTMLButtonElement | null>(null);
+    const menuRef = useRef<HTMLDivElement | null>(null);
+
+    const [open, setOpen] = useState(false);
+    const [mountedLocal, setMountedLocal] = useState(false);
+    const [pos, setPos] = useState({
+      top: 0,
+      left: 0,
+      width: 180,
+      openUp: false,
+    });
+
+    useEffect(() => setMountedLocal(true), []);
+
+    const computePos = () => {
+      const btn = btnRef.current;
+      if (!btn) return;
+
+      const r = btn.getBoundingClientRect();
+      const gap = 6;
+      const menuHeightGuess = 220;
+
+      const spaceBelow = window.innerHeight - r.bottom;
+      const openUp = spaceBelow < menuHeightGuess;
+
+      setPos({
+        top: openUp ? r.top - gap : r.bottom + gap,
+        left: r.left,
+        width: Math.max(180, r.width),
+        openUp,
+      });
+    };
+
+    useEffect(() => {
+      if (!open) return;
+
+      computePos();
+
+      const onScroll = () => computePos();
+      const onResize = () => computePos();
+
+      window.addEventListener("scroll", onScroll, true);
+      window.addEventListener("resize", onResize);
+
+      return () => {
+        window.removeEventListener("scroll", onScroll, true);
+        window.removeEventListener("resize", onResize);
+      };
+    }, [open]);
+
+    useEffect(() => {
+      const onDown = (e: MouseEvent) => {
+        if (!open) return;
+        const t = e.target as Node;
+
+        if (btnRef.current?.contains(t)) return;
+        if (menuRef.current?.contains(t)) return;
+
+        setOpen(false);
+      };
+
+      document.addEventListener("mousedown", onDown);
+      return () => document.removeEventListener("mousedown", onDown);
+    }, [open]);
+
+    const options = actionOptions(doc);
+
+    const menu =
+      open && mountedLocal
+        ? createPortal(
+            <div
+              ref={menuRef}
+              className="fixed z-[99999] bg-white border border-gray-300 shadow-lg rounded-md overflow-hidden"
+              style={{
+                left: pos.left,
+                top: pos.openUp ? pos.top : pos.top,
+                transform: pos.openUp ? "translateY(-100%)" : "translateY(0)",
+                minWidth: pos.width,
+              }}
+            >
+              {options.map((opt) => (
+                <button
+                  key={opt.label}
+                  type="button"
+                  onClick={() => {
+                    setOpen(false);
+                    opt.action();
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>,
+            document.body
+          )
+        : null;
+
+    return (
+      <>
+        <button
+          ref={btnRef}
+          type="button"
+          onClick={() => setOpen((p) => !p)}
+          className="px-3 py-2 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50"
+        >
+          ACTIONS <span className="ml-1">▼</span>
+        </button>
+        {menu}
+      </>
+    );
+  };
+
   return (
-    <div className="bg-gray-200 min-h-screen p-4">
+    <div>
       {/* Tabs */}
-      <div className="flex space-x-4 mb-4">
+      {/* <div className="flex space-x-4 mb-4">
         <button
           onClick={() =>
             router.push("/dashboard/admin/document-management/packets")
@@ -409,7 +648,20 @@ const fetchDocDetails = async (id: number) => {
         >
           DOCUMENTS
         </button>
-      </div>
+        <button
+          onClick={() => {
+            setShowArchived((p) => !p);
+            setCurrentPage(1);
+          }}
+          className={`px-3 py-2 text-sm border rounded ${
+            showArchived
+              ? "bg-gray-900 text-white border-gray-900"
+              : "bg-white text-gray-700 border-gray-300"
+          }`}
+        >
+          {showArchived ? "Showing Archived" : "Show Archived"}
+        </button>
+      </div> */}
 
       {/* Controls */}
       <div className="bg-white p-4 rounded shadow-sm mb-4">
@@ -531,7 +783,76 @@ const fetchDocDetails = async (id: number) => {
                 </th>
 
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Mapped
+                  <div className="flex items-center gap-2">
+                    {/* ✅ Sort */}
+                    <button
+                      type="button"
+                      onClick={() => handleSort("mapped")}
+                      className="flex items-center gap-1 hover:bg-gray-100 px-2 py-1 rounded"
+                      title="Sort by mapped count"
+                    >
+                      <span>Mapped</span>
+                      <SortIcon field="mapped" />
+                      
+                    </button>
+
+                    {/* ✅ Filter */}
+                    <div className="relative" data-mapped-filter-root>
+                      <button
+                        ref={mappedBtnRef}
+                        type="button"
+                        onClick={() => {
+                          setMappedMenuOpen((p) => !p);
+                          setTimeout(() => computeMappedMenuPos(), 0);
+                        }}
+                        className={` rounded ${
+                          mappedFilter !== "all"
+                           
+                        } hover:bg-gray-50`}
+                        title="Filter"
+                      >
+                        <FiFilter className="w-3 h-3 text-gray-600" />
+                      </button>
+
+                      {mappedMenuOpen && mounted
+                        ? createPortal(
+                            <div
+                              ref={mappedMenuRef}
+                              className="fixed z-[99999] bg-white border border-gray-200 rounded shadow-lg overflow-hidden"
+                              style={{
+                                top: mappedMenuPos.top,
+                                left: mappedMenuPos.left,
+                                width: mappedMenuPos.width,
+                              }}
+                            >
+                              {[
+                                { key: "all", label: "All" },
+                                { key: "mapped", label: "Mapped only" },
+                                { key: "not_mapped", label: "Not mapped only" },
+                              ].map((opt) => (
+                                <button
+                                  key={opt.key}
+                                  type="button"
+                                  onClick={() => {
+                                    setMappedFilter(opt.key as any);
+                                    setMappedMenuOpen(false);
+                                    setCurrentPage(1);
+                                  }}
+                                  className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 ${
+                                    mappedFilter === opt.key
+                                      ? "bg-blue-50 text-blue-700"
+                                      : ""
+                                  }`}
+                                >
+                                  {opt.label}
+                                </button>
+                              ))}
+                            </div>,
+                            document.body
+                          )
+                        : null}
+                    </div>
+                  </div>
                 </th>
               </tr>
             </thead>
@@ -558,10 +879,7 @@ const fetchDocDetails = async (id: number) => {
                     {/* IMPORTANT: this cell must be relative + visible */}
                     <td className="px-6 py-4 whitespace-nowrap relative overflow-visible">
                       <div className="relative ml-7 overflow-visible">
-                        <ActionDropdown
-                          label="ACTIONS"
-                          options={actionOptions(doc)}
-                        />
+                        <RowActions doc={doc} />
                       </div>
                     </td>
 

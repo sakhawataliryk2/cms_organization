@@ -29,7 +29,8 @@ type FieldTypeUI =
   | "Phone"
   | "Date"
   | "Checkbox"
-  | "Signature";
+  | "Signature"
+  | "Blank";
 
 type FieldFormat = "None" | "Phone Number" | "SSN";
 
@@ -91,13 +92,33 @@ export default function TemplateDocEditorPage() {
   const [saving, setSaving] = useState(false);
   const [loadingMappings, setLoadingMappings] = useState(false);
 
-
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [draftField, setDraftField] = useState<MappedField | null>(null);
 
   const selectedField = useMemo(
     () => mappedFields.find((f) => f.id === selectedId) || null,
     [mappedFields, selectedId]
+  );
+
+  // ✅ Client requirement: add Signature + Blank into Fields list
+  const extraFields: AvailableField[] = useMemo(
+    () => [
+      {
+        id: -1001,
+        entity_type: "system",
+        field_name: "signature_box",
+        field_label: "Signature Box",
+        is_hidden: false,
+      },
+      {
+        id: -1002,
+        entity_type: "system",
+        field_name: "blank_box",
+        field_label: "Blank Box (Variable)",
+        is_hidden: false,
+      },
+    ],
+    []
   );
 
   const fetchAvailableFields = async () => {
@@ -186,13 +207,18 @@ export default function TemplateDocEditorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId]);
 
+  // ✅ Merge extra fields + API fields, then filter by search
+  const allAvailableFields = useMemo(() => {
+    return [...extraFields, ...availableFields];
+  }, [extraFields, availableFields]);
+
   const filteredAvailableFields = useMemo(() => {
     const q = fieldSearch.trim().toLowerCase();
-    if (!q) return availableFields;
-    return availableFields.filter((f) =>
+    if (!q) return allAvailableFields;
+    return allAvailableFields.filter((f) =>
       (f.field_label || f.field_name || "").toLowerCase().includes(q)
     );
-  }, [availableFields, fieldSearch]);
+  }, [allAvailableFields, fieldSearch]);
 
   const onDragStartField = (e: React.DragEvent, field: AvailableField) => {
     e.dataTransfer.setData("application/x-field", JSON.stringify(field));
@@ -207,7 +233,7 @@ export default function TemplateDocEditorPage() {
     const f = mappedFields.find((x) => x.id === id);
     if (!f) return;
     setSelectedId(id);
-    setDraftField({ ...f }); // draft copy
+    setDraftField({ ...f });
     setIsModalOpen(true);
   };
 
@@ -225,6 +251,12 @@ export default function TemplateDocEditorPage() {
 
   const updateDraft = (patch: Partial<MappedField>) => {
     setDraftField((cur) => (cur ? { ...cur, ...patch } : cur));
+  };
+
+  const getUnscaledPageSize = () => {
+    const pageW = scale ? pagePx.w / scale : 0;
+    const pageH = scale ? pagePx.h / scale : 0;
+    return { pageW, pageH };
   };
 
   const onDropCanvas = (e: React.DragEvent) => {
@@ -256,19 +288,40 @@ export default function TemplateDocEditorPage() {
     const x = Math.max(0, pxX / scale);
     const y = Math.max(0, pxY / scale);
 
+    // ✅ Default sizes
+    let w = 220;
+    let h = 44;
+
+    // ✅ If signature/blank -> better default size
+    const inferredType: FieldTypeUI =
+      src.field_name === "signature_box"
+        ? "Signature"
+        : src.field_name === "blank_box"
+        ? "Blank"
+        : "Text Input";
+
+    if (inferredType === "Signature") {
+      w = 260;
+      h = 80;
+    }
+    if (inferredType === "Blank") {
+      w = 260;
+      h = 44;
+    }
+
     const newField: MappedField = {
       id: crypto.randomUUID(),
       source_field_name: src.field_name,
       source_field_label: src.field_label || src.field_name,
       x,
       y,
-      w: 220,
-      h: 44,
+      w,
+      h,
 
       whoFills: "Candidate",
       required: "No",
-      fieldType: "Text Input",
-      maxChars: 255,
+      fieldType: inferredType,
+      maxChars: inferredType === "Blank" ? "" : 255,
       format: "None",
       populateWithData: "No",
       dataFlowBack: "No",
@@ -276,7 +329,7 @@ export default function TemplateDocEditorPage() {
 
     setMappedFields((p) => [...p, newField]);
 
-    // CLIENT REQUIREMENT: open modal after drop
+    // Open modal after drop
     setSelectedId(newField.id);
     setDraftField({ ...newField });
     setIsModalOpen(true);
@@ -289,28 +342,63 @@ export default function TemplateDocEditorPage() {
     const target = mappedFields.find((f) => f.id === id);
     if (!target) return;
 
-    const pageEl = canvas.querySelector(
-      ".react-pdf__Page"
-    ) as HTMLElement | null;
-    if (!pageEl) return;
-
     const originX = target.x;
     const originY = target.y;
+
+    const { pageW, pageH } = getUnscaledPageSize();
 
     const onMove = (ev: MouseEvent) => {
       const dxUnscaled = (ev.clientX - startX) / scale;
       const dyUnscaled = (ev.clientY - startY) / scale;
 
       setMappedFields((prev) =>
-        prev.map((f) =>
-          f.id === id
-            ? {
-                ...f,
-                x: Math.max(0, originX + dxUnscaled),
-                y: Math.max(0, originY + dyUnscaled),
-              }
-            : f
-        )
+        prev.map((f) => {
+          if (f.id !== id) return f;
+
+          // keep within page bounds
+          const nx = clamp(originX + dxUnscaled, 0, Math.max(0, pageW - f.w));
+          const ny = clamp(originY + dyUnscaled, 0, Math.max(0, pageH - f.h));
+
+          return { ...f, x: nx, y: ny };
+        })
+      );
+    };
+
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  // ✅ Client requirement: drag-to-resize (no width/height number adjusters)
+  const startResize = (id: string, startX: number, startY: number) => {
+    const target = mappedFields.find((f) => f.id === id);
+    if (!target) return;
+
+    const originW = target.w;
+    const originH = target.h;
+
+    const { pageW, pageH } = getUnscaledPageSize();
+
+    const onMove = (ev: MouseEvent) => {
+      const dxUnscaled = (ev.clientX - startX) / scale;
+      const dyUnscaled = (ev.clientY - startY) / scale;
+
+      setMappedFields((prev) =>
+        prev.map((f) => {
+          if (f.id !== id) return f;
+
+          const maxW = Math.max(20, pageW - f.x);
+          const maxH = Math.max(20, pageH - f.y);
+
+          const nw = clamp(originW + dxUnscaled, 20, maxW);
+          const nh = clamp(originH + dyUnscaled, 20, maxH);
+
+          return { ...f, w: nw, h: nh };
+        })
       );
     };
 
@@ -329,48 +417,48 @@ export default function TemplateDocEditorPage() {
     if (draftField?.id === id) closeModal();
   };
 
- const saveMapping = async () => {
-   try {
-     setSaving(true);
+  const saveMapping = async () => {
+    try {
+      setSaving(true);
 
-     const payload = {
-       fields: mappedFields.map((f, i) => ({
-         field_id: null,
-         field_name: f.source_field_name,
-         field_label: f.source_field_label,
-         field_type: f.fieldType,
-         who_fills: f.whoFills,
-         is_required: f.required === "Yes",
-         max_characters: f.maxChars === "" ? 255 : Number(f.maxChars),
-         format: f.format,
-         populate_with_data: f.populateWithData === "Yes",
-         data_flow_back: f.dataFlowBack === "Yes",
-         sort_order: i,
-         x: Math.round(f.x),
-         y: Math.round(f.y),
-         w: Math.round(f.w),
-         h: Math.round(f.h),
-       })),
-     };
+      const payload = {
+        fields: mappedFields.map((f, i) => ({
+          field_id: null,
+          field_name: f.source_field_name,
+          field_label: f.source_field_label,
+          field_type: f.fieldType,
+          who_fills: f.whoFills,
+          is_required: f.required === "Yes",
+          max_characters: f.maxChars === "" ? null : Number(f.maxChars),
+          format: f.format,
+          populate_with_data: f.populateWithData === "Yes",
+          data_flow_back: f.dataFlowBack === "Yes",
+          sort_order: i,
+          x: Math.round(f.x),
+          y: Math.round(f.y),
+          w: Math.round(f.w),
+          h: Math.round(f.h),
+        })),
+      };
 
-     const res = await fetch(`/api/template-documents/${docId}/mappings`, {
-       method: "PUT",
-       headers: { "Content-Type": "application/json" },
-       body: JSON.stringify(payload),
-     });
+      const res = await fetch(`/api/template-documents/${docId}/mappings`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
 
-     const data = await res.json();
-     if (!res.ok || !data?.success)
-       throw new Error(data?.message || "Save failed");
+      const data = await res.json();
+      if (!res.ok || !data?.success)
+        throw new Error(data?.message || "Save failed");
 
-     window.location.href = "/dashboard/admin/document-management";
-   } catch (e: any) {
-     console.error("Save mapping error:", e);
-     alert(e?.message || "Save failed");
-   } finally {
-     setSaving(false);
-   }
- };
+      window.location.href = "/dashboard/admin/document-management";
+    } catch (e: any) {
+      console.error("Save mapping error:", e);
+      alert(e?.message || "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -568,10 +656,10 @@ export default function TemplateDocEditorPage() {
                           }}
                           onDoubleClick={(e) => {
                             e.stopPropagation();
-                            openModalForField(f.id); // modal on double click too
+                            openModalForField(f.id);
                           }}
                         >
-                          <div className="h-full px-2 flex items-center justify-between gap-2">
+                          <div className="h-full px-2 flex items-center justify-between gap-2 relative">
                             <button
                               type="button"
                               className="text-left flex-1 min-w-0"
@@ -585,7 +673,7 @@ export default function TemplateDocEditorPage() {
                                 {f.source_field_label}
                               </div>
                               <div className="text-[10px] text-gray-500 truncate">
-                                {f.source_field_name}
+                                {f.source_field_name} • {f.fieldType}
                               </div>
                             </button>
 
@@ -600,6 +688,17 @@ export default function TemplateDocEditorPage() {
                             >
                               ✕
                             </button>
+
+                            {/* ✅ Resize handle (drag to size) */}
+                            <div
+                              title="Drag to resize"
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                setSelectedId(f.id);
+                                startResize(f.id, e.clientX, e.clientY);
+                              }}
+                              className="absolute right-1 bottom-1 w-3 h-3 bg-gray-800/70 rounded cursor-se-resize"
+                            />
                           </div>
                         </div>
                       );
@@ -614,30 +713,27 @@ export default function TemplateDocEditorPage() {
             </div>
 
             <div className="text-[11px] text-gray-500 mt-2">
-              Tip: click a mapped field to open settings (modal). Drag to
-              reposition.
+              Tip: click a mapped field to open settings. Drag to reposition.
+              Use bottom-right handle to resize.
             </div>
           </div>
         </div>
       </div>
 
+      {/* MODAL */}
       {isModalOpen && draftField && (
         <div
           className="fixed inset-0 z-50"
           aria-modal="true"
           role="dialog"
           onMouseDown={(e) => {
-            // click backdrop to close
             if (e.target === e.currentTarget) closeModal();
           }}
         >
-          {/* Backdrop */}
           <div className="absolute inset-0 bg-black/40" />
 
-          {/* Modal */}
           <div className="absolute inset-0 flex items-center justify-center p-4">
             <div className="w-full max-w-3xl bg-white rounded-md shadow-xl border border-gray-200 overflow-hidden">
-              {/* Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-800 text-white">
                 <div className="text-sm font-semibold truncate">
                   Edit Field: {draftField.source_field_label}
@@ -652,10 +748,8 @@ export default function TemplateDocEditorPage() {
                 </button>
               </div>
 
-              {/* Body */}
               <div className="p-4">
                 <div className="grid grid-cols-2 gap-6">
-                  {/* LEFT COLUMN */}
                   <div className="space-y-4">
                     <div className="text-xs text-gray-500">
                       <div className="font-semibold text-gray-800">
@@ -730,6 +824,7 @@ export default function TemplateDocEditorPage() {
                           "Date",
                           "Checkbox",
                           "Signature",
+                          "Blank",
                         ].map((t) => (
                           <option key={t} value={t}>
                             {t}
@@ -739,7 +834,6 @@ export default function TemplateDocEditorPage() {
                     </div>
                   </div>
 
-                  {/* RIGHT COLUMN */}
                   <div className="space-y-4">
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1">
@@ -758,7 +852,18 @@ export default function TemplateDocEditorPage() {
                         type="number"
                         min={1}
                         className="w-full h-9 px-3 border rounded text-sm"
+                        placeholder={
+                          draftField.fieldType === "Blank"
+                            ? "Leave empty for variable"
+                            : ""
+                        }
                       />
+                      {draftField.fieldType === "Blank" && (
+                        <div className="text-[11px] text-gray-500 mt-1">
+                          Blank box is variable: you can keep Max Characters
+                          empty.
+                        </div>
+                      )}
                     </div>
 
                     <div>
@@ -820,44 +925,15 @@ export default function TemplateDocEditorPage() {
                       </div>
                     </div>
 
-                    {/* Optional: size fields (not required by your payload UI, but helpful) */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">
-                          Width
-                        </label>
-                        <input
-                          type="number"
-                          value={draftField.w}
-                          onChange={(e) =>
-                            updateDraft({
-                              w: clamp(Number(e.target.value || 0), 20, 1200),
-                            })
-                          }
-                          className="w-full h-9 px-3 border rounded text-sm"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-xs font-semibold text-gray-700 mb-1">
-                          Height
-                        </label>
-                        <input
-                          type="number"
-                          value={draftField.h}
-                          onChange={(e) =>
-                            updateDraft({
-                              h: clamp(Number(e.target.value || 0), 20, 1200),
-                            })
-                          }
-                          className="w-full h-9 px-3 border rounded text-sm"
-                        />
-                      </div>
+                    {/* ✅ Removed width/height inputs as per client demand */}
+                    <div className="text-[11px] text-gray-500">
+                      Size is controlled by drag-to-resize handle on the field
+                      itself.
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Footer */}
               <div className="px-4 py-3 border-t bg-gray-50 flex items-center justify-between">
                 <button
                   type="button"
