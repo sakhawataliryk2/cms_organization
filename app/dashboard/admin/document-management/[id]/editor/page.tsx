@@ -99,8 +99,11 @@ export default function TemplateDocEditorPage() {
     () => mappedFields.find((f) => f.id === selectedId) || null,
     [mappedFields, selectedId]
   );
+    const isSignatureBox = draftField?.source_field_name === "signature_box";
+    const isBlankBox = draftField?.source_field_name === "blank_box";
+    const hideExtraOptions = isSignatureBox || isBlankBox;
+  
 
-  // ✅ Client requirement: add Signature + Blank into Fields list
   const extraFields: AvailableField[] = useMemo(
     () => [
       {
@@ -233,6 +236,18 @@ export default function TemplateDocEditorPage() {
     const f = mappedFields.find((x) => x.id === id);
     if (!f) return;
     setSelectedId(id);
+    const next = { ...f };
+
+    if (next.source_field_name === "signature_box") {
+      next.fieldType = "Signature";
+    }
+
+    if (next.source_field_name === "blank_box") {
+      if (next.fieldType !== "Text Area") next.fieldType = "Text Input";
+    }
+
+    setDraftField(next);
+
     setDraftField({ ...f });
     setIsModalOpen(true);
   };
@@ -288,26 +303,26 @@ export default function TemplateDocEditorPage() {
     const x = Math.max(0, pxX / scale);
     const y = Math.max(0, pxY / scale);
 
-    // ✅ Default sizes
     let w = 220;
     let h = 44;
 
-    // ✅ If signature/blank -> better default size
-    const inferredType: FieldTypeUI =
-      src.field_name === "signature_box"
-        ? "Signature"
-        : src.field_name === "blank_box"
-        ? "Blank"
-        : "Text Input";
+   const inferredType: FieldTypeUI =
+     src.field_name === "signature_box"
+       ? "Signature"
+       : src.field_name === "blank_box"
+       ? "Text Input"
+       : "Text Input";
 
-    if (inferredType === "Signature") {
-      w = 260;
-      h = 80;
-    }
-    if (inferredType === "Blank") {
-      w = 260;
-      h = 44;
-    }
+   if (inferredType === "Signature") {
+     w = 260;
+     h = 80;
+   }
+
+   if (src.field_name === "blank_box") {
+     w = 260;
+     h = 44;
+   }
+
 
     const newField: MappedField = {
       id: crypto.randomUUID(),
@@ -321,7 +336,7 @@ export default function TemplateDocEditorPage() {
       whoFills: "Candidate",
       required: "No",
       fieldType: inferredType,
-      maxChars: inferredType === "Blank" ? "" : 255,
+      maxChars: 255,
       format: "None",
       populateWithData: "No",
       dataFlowBack: "No",
@@ -459,6 +474,9 @@ export default function TemplateDocEditorPage() {
       setSaving(false);
     }
   };
+  
+
+
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -750,6 +768,7 @@ export default function TemplateDocEditorPage() {
 
               <div className="p-4">
                 <div className="grid grid-cols-2 gap-6">
+                  {/* LEFT */}
                   <div className="space-y-4">
                     <div className="text-xs text-gray-500">
                       <div className="font-semibold text-gray-800">
@@ -806,129 +825,161 @@ export default function TemplateDocEditorPage() {
                       <label className="block text-xs font-semibold text-gray-700 mb-1">
                         Field Type
                       </label>
-                      <select
-                        value={draftField.fieldType}
-                        onChange={(e) =>
-                          updateDraft({
-                            fieldType: e.target.value as FieldTypeUI,
-                          })
-                        }
-                        className="w-full h-9 px-3 border rounded text-sm bg-white"
-                      >
-                        {[
-                          "Text Input",
-                          "Text Area",
-                          "Number",
-                          "Email",
-                          "Phone",
-                          "Date",
-                          "Checkbox",
-                          "Signature",
-                          "Blank",
-                        ].map((t) => (
-                          <option key={t} value={t}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
+
+                      {isSignatureBox ? (
+                        <div className="w-full h-9 px-3 border rounded text-sm bg-gray-50 flex items-center">
+                          Signature
+                        </div>
+                      ) : isBlankBox ? (
+                        <div className="flex items-center gap-4 text-sm">
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              checked={draftField.fieldType === "Text Input"}
+                              onChange={() =>
+                                updateDraft({ fieldType: "Text Input" })
+                              }
+                            />
+                            Text Input
+                          </label>
+                          <label className="flex items-center gap-2">
+                            <input
+                              type="radio"
+                              checked={draftField.fieldType === "Text Area"}
+                              onChange={() =>
+                                updateDraft({ fieldType: "Text Area" })
+                              }
+                            />
+                            Text Area
+                          </label>
+                        </div>
+                      ) : (
+                        <select
+                          value={draftField.fieldType}
+                          onChange={(e) =>
+                            updateDraft({
+                              fieldType: e.target.value as FieldTypeUI,
+                            })
+                          }
+                          className="w-full h-9 px-3 border rounded text-sm bg-white"
+                        >
+                          {[
+                            "Text Input",
+                            "Text Area",
+                            "Number",
+                            "Email",
+                            "Phone",
+                            "Date",
+                            "Checkbox",
+                            "Signature",
+                          ].map((t) => (
+                            <option key={t} value={t}>
+                              {t}
+                            </option>
+                          ))}
+                        </select>
+                      )}
                     </div>
                   </div>
 
+                  {/* RIGHT */}
                   <div className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Max Characters
-                      </label>
-                      <input
-                        value={draftField.maxChars}
-                        onChange={(e) =>
-                          updateDraft({
-                            maxChars:
-                              e.target.value === ""
-                                ? ""
-                                : Number(e.target.value),
-                          })
-                        }
-                        type="number"
-                        min={1}
-                        className="w-full h-9 px-3 border rounded text-sm"
-                        placeholder={
-                          draftField.fieldType === "Blank"
-                            ? "Leave empty for variable"
-                            : ""
-                        }
-                      />
-                      {draftField.fieldType === "Blank" && (
-                        <div className="text-[11px] text-gray-500 mt-1">
-                          Blank box is variable: you can keep Max Characters
-                          empty.
+                    {!hideExtraOptions ? (
+                      <>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            Max Characters
+                          </label>
+                          <input
+                            value={draftField.maxChars}
+                            onChange={(e) =>
+                              updateDraft({
+                                maxChars:
+                                  e.target.value === ""
+                                    ? ""
+                                    : Number(e.target.value),
+                              })
+                            }
+                            type="number"
+                            min={1}
+                            className="w-full h-9 px-3 border rounded text-sm"
+                          />
                         </div>
-                      )}
-                    </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Format
-                      </label>
-                      <select
-                        value={draftField.format}
-                        onChange={(e) =>
-                          updateDraft({ format: e.target.value as FieldFormat })
-                        }
-                        className="w-full h-9 px-3 border rounded text-sm bg-white"
-                      >
-                        {["None", "Phone Number", "SSN"].map((t) => (
-                          <option key={t} value={t as FieldFormat}>
-                            {t}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            Format
+                          </label>
+                          <select
+                            value={draftField.format}
+                            onChange={(e) =>
+                              updateDraft({
+                                format: e.target.value as FieldFormat,
+                              })
+                            }
+                            className="w-full h-9 px-3 border rounded text-sm bg-white"
+                          >
+                            {["None", "Phone Number", "SSN"].map((t) => (
+                              <option key={t} value={t as FieldFormat}>
+                                {t}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Populate with Data?
-                      </label>
-                      <div className="flex gap-2">
-                        <ToggleBtn
-                          active={draftField.populateWithData === "No"}
-                          onClick={() =>
-                            updateDraft({ populateWithData: "No" })
-                          }
-                          label="No"
-                        />
-                        <ToggleBtn
-                          active={draftField.populateWithData === "Yes"}
-                          onClick={() =>
-                            updateDraft({ populateWithData: "Yes" })
-                          }
-                          label="Yes"
-                        />
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            Populate with Data?
+                          </label>
+                          <div className="flex gap-2">
+                            <ToggleBtn
+                              active={draftField.populateWithData === "No"}
+                              onClick={() =>
+                                updateDraft({ populateWithData: "No" })
+                              }
+                              label="No"
+                            />
+                            <ToggleBtn
+                              active={draftField.populateWithData === "Yes"}
+                              onClick={() =>
+                                updateDraft({ populateWithData: "Yes" })
+                              }
+                              label="Yes"
+                            />
+                          </div>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-gray-700 mb-1">
+                            Data Flow back?
+                          </label>
+                          <div className="flex gap-2">
+                            <ToggleBtn
+                              active={draftField.dataFlowBack === "No"}
+                              onClick={() =>
+                                updateDraft({ dataFlowBack: "No" })
+                              }
+                              label="No"
+                            />
+                            <ToggleBtn
+                              active={draftField.dataFlowBack === "Yes"}
+                              onClick={() =>
+                                updateDraft({ dataFlowBack: "Yes" })
+                              }
+                              label="Yes"
+                            />
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-[11px] text-gray-500">
+                        {/* Extra options are not needed for this field. */}
                       </div>
-                    </div>
+                    )}
 
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1">
-                        Data Flow back?
-                      </label>
-                      <div className="flex gap-2">
-                        <ToggleBtn
-                          active={draftField.dataFlowBack === "No"}
-                          onClick={() => updateDraft({ dataFlowBack: "No" })}
-                          label="No"
-                        />
-                        <ToggleBtn
-                          active={draftField.dataFlowBack === "Yes"}
-                          onClick={() => updateDraft({ dataFlowBack: "Yes" })}
-                          label="Yes"
-                        />
-                      </div>
-                    </div>
-
-                    {/* ✅ Removed width/height inputs as per client demand */}
                     <div className="text-[11px] text-gray-500">
-                      Size is controlled by drag-to-resize handle on the field
-                      itself.
+                      {/* Size is controlled by drag-to-resize handle on the field
+                      itself. */}
                     </div>
                   </div>
                 </div>

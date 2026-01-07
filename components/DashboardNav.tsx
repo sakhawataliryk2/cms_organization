@@ -520,7 +520,7 @@ export default function DashboardNav() {
   return (
     <>
       {/* Top Navigation Bar */}
-      <div className="fixed top-0 left-0 right-0 z-10 pl-60 pr-4">
+      <div className="fixed top-0 left-0 right-0 z-[9999] pl-60 pr-4">
         {/* Chrome-style tab strip (shown after clicking T.B.I) */}
         {chromeTabsVisible && (
           <div className="sd-tabs sd-tabs-bar">
@@ -874,7 +874,7 @@ export default function DashboardNav() {
 
               {/* Add dropdown menu */}
               {isAddMenuOpen && (
-                <div className="absolute top-full left-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-20">
+                <div className="absolute top-full left-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-[10000]">
                   {addMenuItems.map((item) => (
                     <button
                       key={item.path}
@@ -905,7 +905,7 @@ export default function DashboardNav() {
 
               {/* User dropdown menu */}
               {isUserMenuOpen && (
-                <div className="absolute top-full right-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-20">
+                <div className="absolute top-full right-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-[10000]">
                   <div className="px-4 py-2 border-b border-slate-700">
                     <div className="font-medium text-white text-sm">
                       {user.name}
