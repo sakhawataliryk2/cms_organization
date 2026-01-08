@@ -1,4 +1,4 @@
-// app/dashboard/jobs/add/page.tsx
+// app/dashboard/jobs-direct-hire/add/page.tsx
 "use client";
 
 import { useState, useEffect, useRef } from "react";
@@ -32,16 +32,14 @@ interface FormField {
   value: string;
 }
 
-export default function AddJob() {
+export default function AddDirectHireJob() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const jobId = searchParams.get("id"); // Get job ID from URL if present
-  const jobType = searchParams.get("type"); // Get job type from URL if present
   const leadId = searchParams.get("leadId") || searchParams.get("lead_id");
   const organizationIdFromUrl = searchParams.get("organizationId");
   const hasPrefilledFromLeadRef = useRef(false);
   const hasPrefilledOrgRef = useRef(false);
-  const [selectedJobType, setSelectedJobType] = useState<string>("");
   const [organizationName, setOrganizationName] = useState<string>("");
   const [leadPrefillData, setLeadPrefillData] = useState<any>(null);
   const [currentOrganizationId, setCurrentOrganizationId] = useState<string | null>(null);
@@ -59,31 +57,6 @@ export default function AddJob() {
   const [isEditMode, setIsEditMode] = useState(!!jobId);
   const [isLoadingJob, setIsLoadingJob] = useState(!!jobId);
   const [loadError, setLoadError] = useState<string | null>(null);
-  
-  // Show landing page if creating new job (no id, no type parameter)
-  const showLandingPage = !jobId && !jobType;
-  
-  // Handle job type selection and redirect
-  const handleJobTypeSelect = (type: string) => {
-    setSelectedJobType(type);
-    
-    // Build query string preserving existing params
-    const params = new URLSearchParams();
-    if (leadId) params.append("leadId", leadId);
-    if (organizationIdFromUrl) params.append("organizationId", organizationIdFromUrl);
-    const queryString = params.toString();
-    const query = queryString ? `?${queryString}` : "";
-    
-    // Redirect based on selected type
-    if (type === "direct-hire") {
-      router.push(`/dashboard/jobs-direct-hire/add${query}`);
-    } else if (type === "executive-search") {
-      router.push(`/dashboard/jobs-executive-search/add${query}`);
-    } else if (type === "contract") {
-      // Contract uses the same form with type parameter
-      router.push(`/dashboard/jobs/add?type=contract${queryString ? `&${queryString}` : ""}`);
-    }
-  };
 
   // This state will hold the dynamic form fields configuration
   const [formFields, setFormFields] = useState<FormField[]>([]);
@@ -91,16 +64,16 @@ export default function AddJob() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Use the custom fields hook (✅ Added setCustomFieldValues like Organizations)
+  // Use the custom fields hook with jobs-direct-hire entity type
   const {
     customFields,
     customFieldValues,
-    setCustomFieldValues, // ✅ Extract setCustomFieldValues
+    setCustomFieldValues,
     isLoading: customFieldsLoading,
     handleCustomFieldChange,
     validateCustomFields,
     getCustomFieldsForSubmission,
-  } = useCustomFields("jobs");
+  } = useCustomFields("jobs-direct-hire");
 
   // Calculate Client Bill Rate (Field_13) from Pay Rate (Field_11) and Mark-up % (Field_12 or Field_512)
   const calculateClientBillRate = (payRate: string, markupPercent: string): string => {
@@ -443,271 +416,73 @@ export default function AddJob() {
     customFields,
     setCustomFieldValues,
   ]);
-useEffect(() => {
-  if (jobId) return; // edit mode me kuch override nahi
-  if (!leadPrefillData) return;
-  if (customFieldsLoading) return;
-  if (customFields.length === 0) return;
 
-  const lead = leadPrefillData;
+  useEffect(() => {
+    if (jobId) return; // edit mode me kuch override nahi
+    if (!leadPrefillData) return;
+    if (customFieldsLoading) return;
+    if (customFields.length === 0) return;
 
-  const orgValue =
-    lead.organization_id?.toString?.() ||
-    lead.organization_id ||
-    lead.organization_name_from_org ||
-    "";
+    const lead = leadPrefillData;
 
-  const hiringManagerValue =
-    lead.full_name ||
-    `${lead.first_name || ""} ${lead.last_name || ""}`.trim() ||
-    "";
+    const orgValue =
+      lead.organization_id?.toString?.() ||
+      lead.organization_id ||
+      lead.organization_name_from_org ||
+      "";
 
-  setCustomFieldValues((prev) => {
-    const next = { ...prev };
+    const hiringManagerValue =
+      lead.full_name ||
+      `${lead.first_name || ""} ${lead.last_name || ""}`.trim() ||
+      "";
 
-    customFields.forEach((field) => {
-      if (
-        (field.field_label === "Organization" ||
-          field.field_label === "Organization ID") &&
-        !next[field.field_name]
-      ) {
-        next[field.field_name] = orgValue;
-      }
+    setCustomFieldValues((prev) => {
+      const next = { ...prev };
 
-      if (field.field_label === "Hiring Manager" && !next[field.field_name]) {
-        next[field.field_name] = hiringManagerValue;
-      }
+      customFields.forEach((field) => {
+        if (
+          (field.field_label === "Organization" ||
+            field.field_label === "Organization ID") &&
+          !next[field.field_name]
+        ) {
+          next[field.field_name] = orgValue;
+        }
+
+        if (field.field_label === "Hiring Manager" && !next[field.field_name]) {
+          next[field.field_name] = hiringManagerValue;
+        }
+      });
+
+      return next;
     });
-
-    return next;
-  });
-}, [
-  jobId,
-  leadPrefillData,
-  customFieldsLoading,
-  customFields,
-  setCustomFieldValues,
-]);
+  }, [
+    jobId,
+    leadPrefillData,
+    customFieldsLoading,
+    customFields,
+    setCustomFieldValues,
+  ]);
 
   const initializeFields = () => {
-    // These are the standard fields
-    const standardFields: FormField[] = [
-      {
-        id: "jobTitle",
-        name: "jobTitle",
-        label: "Job Title",
-        type: "text",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "category",
-        name: "category",
-        label: "Category",
-        type: "select",
-        required: false,
-        visible: true,
-        options: [
-          "Payroll",
-          "IT",
-          "Finance",
-          "Marketing",
-          "Human Resources",
-          "Operations",
-          "Sales",
-        ],
-        value: "Payroll",
-      },
-      {
-        id: "organization",
-        name: "organizationId",
-        label: "Organization",
-        type: "text",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "hiringManager",
-        name: "hiringManager",
-        label: "Hiring Manager",
-        type: "text",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "status",
-        name: "status",
-        label: "Status",
-        type: "select",
-        required: false,
-        visible: true,
-        options: ["Open", "On Hold", "Filled", "Closed"],
-        value: "Open",
-      },
-      {
-        id: "priority",
-        name: "priority",
-        label: "Priority",
-        type: "select",
-        required: false,
-        visible: true,
-        options: ["A", "B", "C"],
-        value: "A",
-      },
-      {
-        id: "employmentType",
-        name: "employmentType",
-        label: "Employment Type",
-        type: "select",
-        required: false,
-        visible: true,
-        options: [
-          "Full-time",
-          "Part-time",
-          "Contract",
-          "Temp to Hire",
-          "Temporary",
-          "Internship",
-        ],
-        value: "Temp to Hire",
-      },
-      {
-        id: "startDate",
-        name: "startDate",
-        label: "Start Date",
-        type: "date",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "worksiteLocation",
-        name: "worksiteLocation",
-        label: "Worksite Location",
-        type: "text",
-        required: false,
-        visible: true,
-        placeholder: "Address, City, State, Zip",
-        value: "",
-      },
-      {
-        id: "remoteOption",
-        name: "remoteOption",
-        label: "Remote Option",
-        type: "select",
-        required: false,
-        visible: true,
-        options: ["On-site", "Remote", "Hybrid"],
-        value: "On-site",
-      },
-      {
-        id: "jobDescription",
-        name: "jobDescription",
-        label: "Job Description",
-        type: "textarea",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "jobDescriptionFile",
-        name: "jobDescriptionFile",
-        label: "Upload Job Description",
-        type: "file",
-        required: false,
-        visible: true,
-        value: "",
-      },
-      {
-        id: "minSalary",
-        name: "minSalary",
-        label: "Minimum Salary",
-        type: "number",
-        required: false,
-        visible: true,
-        value: "",
-        placeholder: "e.g. 50000",
-      },
-      {
-        id: "maxSalary",
-        name: "maxSalary",
-        label: "Maximum Salary",
-        type: "number",
-        required: false,
-        visible: true,
-        value: "",
-        placeholder: "e.g. 70000",
-      },
-      {
-        id: "benefits",
-        name: "benefits",
-        label: "Benefits",
-        type: "textarea",
-        required: false,
-        visible: true,
-        value: "",
-        placeholder: "Enter benefits separated by new lines",
-      },
-      {
-        id: "requiredSkills",
-        name: "requiredSkills",
-        label: "Required Skills",
-        type: "textarea",
-        required: false,
-        visible: true,
-        value: "",
-        placeholder: "Enter required skills separated by commas",
-      },
-      {
-        id: "jobBoardStatus",
-        name: "jobBoardStatus",
-        label: "Job Board Status",
-        type: "select",
-        required: false,
-        visible: true,
-        options: ["Not Posted", "Posted", "Featured"],
-        value: "Not Posted",
-      },
-      {
-        id: "owner",
-        name: "owner",
-        label: "Owner",
-        type: "text",
-        required: false,
-        visible: true,
-        value: "Employee 1",
-      },
-      {
-        id: "dateAdded",
-        name: "dateAdded",
-        label: "Date Added",
-        type: "date",
-        required: false,
-        visible: true,
-        value: new Date().toISOString().split("T")[0],
-      },
-    ];
-
+    // These are the standard fields (not used for Direct Hire - only custom fields are used)
+    const standardFields: FormField[] = [];
     setFormFields(standardFields);
   };
 
   // Load job data when in edit mode
   useEffect(() => {
-    if (jobId && formFields.length > 0 && !customFieldsLoading) {
+    if (jobId && formFields.length >= 0 && !customFieldsLoading) {
       fetchJobData(jobId);
     }
   }, [jobId, formFields.length, customFieldsLoading]);
 
-  // Function to fetch job data (✅ Updated to match Organizations pattern)
+  // Function to fetch job data
   const fetchJobData = async (id: string) => {
     setIsLoadingJob(true);
     setLoadError(null);
 
     try {
-      console.log(`Fetching job data for ID: ${id}`);
+      console.log(`Fetching Direct Hire job data for ID: ${id}`);
       const response = await fetch(`/api/jobs/${id}`, {
         headers: {
           Authorization: `Bearer ${document.cookie.replace(
@@ -749,8 +524,7 @@ useEffect(() => {
         }
       }
 
-      // ✅ Map custom fields from field_label (database key) to field_name (form key)
-      // Custom fields are stored with field_label as keys, but form uses field_name
+      // Map custom fields from field_label (database key) to field_name (form key)
       const mappedCustomFieldValues: Record<string, any> = {};
       
       // First, map any existing custom field values from the database
@@ -765,9 +539,7 @@ useEffect(() => {
         });
       }
 
-      // ✅ Second, map standard job fields to custom fields based on field labels
-      // This ensures that standard fields like "job_title", "status" etc. populate custom fields
-      // with matching labels like "Job Title", "Status", etc.
+      // Second, map standard job fields to custom fields based on field labels
       if (customFields.length > 0) {
         const standardFieldMapping: Record<string, string> = {
           "Job Title": job.job_title || "",
@@ -812,59 +584,10 @@ useEffect(() => {
       console.log("Original custom fields from DB:", existingCustomFields);
       console.log("Custom Fields Definitions:", customFields.map(f => ({ name: f.field_name, label: f.field_label })));
 
-      // Update formFields with existing job data
-      setFormFields((prevFields) => {
-        const updatedFields = [...prevFields];
-
-        // Helper function to find and update a field
-        const updateField = (id: string, value: any) => {
-          const fieldIndex = updatedFields.findIndex(
-            (field) => field.id === id
-          );
-          if (fieldIndex !== -1) {
-            updatedFields[fieldIndex] = {
-              ...updatedFields[fieldIndex],
-              value: value !== null && value !== undefined ? String(value) : "",
-            };
-          }
-        };
-
-        // Update standard fields
-        updateField("jobTitle", job.job_title);
-        updateField("category", job.category);
-        updateField(
-          "organization",
-          job.organization_id || job.organization_name
-        );
-        updateField("hiringManager", job.hiring_manager);
-        updateField("status", job.status);
-        updateField("priority", job.priority);
-        updateField("employmentType", job.employment_type);
-        updateField(
-          "startDate",
-          job.start_date ? job.start_date.split("T")[0] : ""
-        );
-        updateField("worksiteLocation", job.worksite_location);
-        updateField("remoteOption", job.remote_option);
-        updateField("jobDescription", job.job_description);
-        updateField("minSalary", job.min_salary);
-        updateField("maxSalary", job.max_salary);
-        updateField("benefits", job.benefits);
-        updateField("requiredSkills", job.required_skills);
-        updateField("jobBoardStatus", job.job_board_status);
-        updateField("owner", job.owner);
-        updateField(
-          "dateAdded",
-          job.date_added ? job.date_added.split("T")[0] : ""
-        );
-
-        return updatedFields;
-      });
-
-      // ✅ Set the mapped custom field values (field_name as keys) - same as Organizations
+      // Set the mapped custom field values
       setCustomFieldValues(mappedCustomFieldValues);
 
-      console.log("Job data loaded successfully");
+      console.log("Direct Hire job data loaded successfully");
     } catch (err) {
       console.error("Error fetching job:", err);
       setLoadError(
@@ -922,24 +645,24 @@ useEffect(() => {
         if (v !== undefined && v !== null) customFieldsForDB[k] = v;
       });
   
-      // 4) Map custom -> standard (Organizations style)
+      // 4) Map custom -> standard
       const mappedJobTitle =
         customFieldsToSend["Job Title"] ||
         customFieldsToSend["Title"] ||
         payload.jobTitle ||
         "";
-  
+
       const mappedHiringManager =
         customFieldsToSend["Hiring Manager"] ||
         payload.hiringManager ||
         "";
-  
+
       const mappedJobDescription =
         customFieldsToSend["Job Description"] ||
         customFieldsToSend["Description"] ||
         payload.jobDescription ||
         "";
-  
+
       const mappedStatusRaw =
         customFieldsToSend["Status"] || payload.status || "Open";
       const allowedStatus = ["Open", "On Hold", "Filled", "Closed"];
@@ -950,21 +673,21 @@ useEffect(() => {
       // Use organizationId from URL if available, otherwise use form value
       const finalOrganizationId = organizationIdFromUrl || payload.organizationId || "";
 
-      // 5) Final payload (✅ Use snake_case custom_fields like Organizations)
+      // 5) Final payload - include entityType for jobs-direct-hire
       const finalPayload: Record<string, any> = {
         ...payload,
         jobTitle: mappedJobTitle,
         hiringManager: mappedHiringManager,
         jobDescription: mappedJobDescription,
         status: mappedStatus,
-        // Ensure organizationId is included (use URL param if available, otherwise form value)
         organizationId: finalOrganizationId,
-
-        // ✅ Use snake_case custom_fields to match Organizations pattern
+        // Include entityType to scope this to jobs-direct-hire
+        entityType: "jobs-direct-hire",
+        // Use snake_case custom_fields
         custom_fields: customFieldsForDB,
       };
   
-      console.log(`${isEditMode ? "Updating" : "Creating"} job payload:`, finalPayload);
+      console.log(`${isEditMode ? "Updating" : "Creating"} Direct Hire job payload:`, finalPayload);
   
       const url = isEditMode ? `/api/jobs/${jobId}` : "/api/jobs";
       const method = isEditMode ? "PUT" : "POST";
@@ -983,19 +706,18 @@ useEffect(() => {
   
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.message || `Failed to ${isEditMode ? "update" : "create"} job`);
+        throw new Error(data.message || `Failed to ${isEditMode ? "update" : "create"} Direct Hire job`);
       }
   
       const resultId = isEditMode ? jobId : data.job?.id;
       // Navigate based on where we came from
-      // If we came from organization page, navigate back there
       if (organizationIdFromUrl && !isEditMode) {
         router.push(`/dashboard/organizations/view?id=${organizationIdFromUrl}`);
       } else {
         router.push(resultId ? `/dashboard/jobs/view?id=${resultId}` : "/dashboard/jobs");
       }
     } catch (err) {
-      console.error(`Error ${isEditMode ? "updating" : "creating"} job:`, err);
+      console.error(`Error ${isEditMode ? "updating" : "creating"} Direct Hire job:`, err);
       setError(err instanceof Error ? err.message : "An error occurred");
     } finally {
       setIsSubmitting(false);
@@ -1003,128 +725,22 @@ useEffect(() => {
   };
   
 
-
-
   const handleGoBack = () => {
     router.back();
   };
-
-  // Show landing page for new job creation (show immediately, don't wait for custom fields)
-  if (showLandingPage) {
-    return (
-      <div className="mx-auto py-4 px-4 sm:py-8 sm:px-6">
-        <div className="bg-white rounded-lg shadow p-4 sm:p-6">
-          {/* Header */}
-          <div className="flex items-center border-b border-red-600 pb-4 mb-6">
-            <div className="bg-red-100 border border-red-300 p-2 mr-3">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-6 w-6 text-red-600"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                />
-              </svg>
-            </div>
-            <h1 className="text-xl font-bold">Add Job</h1>
-          </div>
-
-          {/* Job Type Options */}
-          <div className="p-6">
-            <div className="flex flex-col sm:flex-row gap-4">
-              {/* Direct Hire */}
-              <label
-                className={`flex-1 border-2 rounded-lg p-4 cursor-pointer transition-all ${
-                  selectedJobType === "direct-hire"
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-blue-200 hover:border-blue-300"
-                }`}
-              >
-                <div className="flex items-center">
-                  <input
-                    type="radio"
-                    name="jobType"
-                    value="direct-hire"
-                    checked={selectedJobType === "direct-hire"}
-                    onChange={(e) => handleJobTypeSelect(e.target.value)}
-                    className="w-5 h-5 text-blue-600 border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="ml-3 text-lg font-semibold text-gray-800">
-                    DIRECT HIRE
-                  </span>
-                </div>
-              </label>
-
-              {/* Contract */}
-              <label
-                className={`flex-1 border-2 rounded-lg p-4 cursor-pointer transition-all ${
-                  selectedJobType === "contract"
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-blue-200 hover:border-blue-300"
-                }`}
-              >
-                <div className="flex items-center">
-                  <input
-                    type="radio"
-                    name="jobType"
-                    value="contract"
-                    checked={selectedJobType === "contract"}
-                    onChange={(e) => handleJobTypeSelect(e.target.value)}
-                    className="w-5 h-5 text-blue-600 border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="ml-3 text-lg font-semibold text-gray-800">
-                    CONTRACT
-                  </span>
-                </div>
-              </label>
-
-              {/* Executive Search */}
-              <label
-                className={`flex-1 border-2 rounded-lg p-4 cursor-pointer transition-all ${
-                  selectedJobType === "executive-search"
-                    ? "border-blue-500 bg-blue-50"
-                    : "border-blue-200 hover:border-blue-300"
-                }`}
-              >
-                <div className="flex items-center">
-                  <input
-                    type="radio"
-                    name="jobType"
-                    value="executive-search"
-                    checked={selectedJobType === "executive-search"}
-                    onChange={(e) => handleJobTypeSelect(e.target.value)}
-                    className="w-5 h-5 text-blue-600 border-gray-300 focus:ring-blue-500"
-                  />
-                  <span className="ml-3 text-lg font-semibold text-gray-800">
-                    EXECUTIVE SEARCH
-                  </span>
-                </div>
-              </label>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   // Show loading screen when submitting
   if (isSubmitting) {
     return (
       <LoadingScreen
-        message={isEditMode ? "Updating job..." : "Creating job..."}
+        message={isEditMode ? "Updating Direct Hire job..." : "Creating Direct Hire job..."}
       />
     );
   }
 
   // Show loading screen when loading existing job data or custom fields
   if (isLoadingJob || customFieldsLoading) {
-    return <LoadingScreen message="Loading job form..." />;
+    return <LoadingScreen message="Loading Direct Hire job form..." />;
   }
 
   // Show error if job loading fails
@@ -1150,22 +766,16 @@ useEffect(() => {
           <div className="flex items-center">
             <Image
               src="/window.svg"
-              alt="Job"
+              alt="Direct Hire Job"
               width={24}
               height={24}
               className="mr-2"
             />
             <h1 className="text-xl font-bold">
-              {isEditMode ? "Edit" : "Add"} Job
+              {isEditMode ? "Edit" : "Add"} Direct Hire Job
             </h1>
           </div>
           <div className="flex items-center space-x-4">
-            {/* <button
-                            onClick={() => router.push('/dashboard/admin/field-mapping?section=jobs')}
-                            className="px-4 py-2 bg-gray-200 text-gray-800 hover:bg-gray-300 rounded"
-                        >
-                            Manage Fields
-                        </button> */}
             <button
               onClick={handleGoBack}
               className="text-gray-500 hover:text-gray-700"
@@ -1185,105 +795,11 @@ useEffect(() => {
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
-            {/* Standard Job Fields */}
-            {/* {formFields
-                            .filter(field => field.visible)
-                            .map((field, index) => (
-                                <div key={field.id} className="flex items-center">
-            
-            <label className="w-48 font-medium">
-                                        {field.label}:
-                                    </label>
-
-            
-            <div className="flex-1 relative">
-                                        {field.type === 'text' || field.type === 'email' || field.type === 'tel' || field.type === 'url' ? (
-                                            <input
-                                                type={field.type}
-                                                name={field.name}
-                                                value={field.value}
-                                                onChange={(e) => handleChange(field.id, e.target.value)}
-                                                placeholder={field.placeholder}
-                                                className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                                                required={field.required}
-                                                readOnly={field.locked}
-                                                disabled={field.locked}
-                                            />
-                                        ) : field.type === 'number' ? (
-                                            <input
-                                                type="number"
-                                                name={field.name}
-                                                value={field.value}
-                                                onChange={(e) => handleChange(field.id, e.target.value)}
-                                                placeholder={field.placeholder}
-                                                className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                                                required={field.required}
-                                            />
-                                        ) : field.type === 'date' ? (
-                                            <div className="relative">
-                                                <input
-                                                    type="date"
-                                                    name={field.name}
-                                                    value={field.value}
-                                                    onChange={(e) => handleChange(field.id, e.target.value)}
-                                                    className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                                                    required={field.required}
-                                                />
-                                            </div>
-                                        ) : field.type === 'select' ? (
-                                            <select
-                                                name={field.name}
-                                                value={field.value}
-                                                onChange={(e) => handleChange(field.id, e.target.value)}
-                                                className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
-                                                required={field.required}
-                                            >
-                                                {!field.required && <option value="">Select {field.label}</option>}
-                                                {field.options?.map((option) => (
-                                                    <option key={option} value={option}>{option}</option>
-                                                ))}
-                                            </select>
-                                        ) : field.type === 'textarea' ? (
-                                            <textarea
-                                                name={field.name}
-                                                value={field.value}
-                                                onChange={(e) => handleChange(field.id, e.target.value)}
-                                                rows={field.name === 'jobDescription' ? 5 : 3}
-                                                placeholder={field.placeholder}
-                                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                                                required={field.required}
-                                            />
-                                        ) : field.type === 'file' ? (
-                                            <div>
-                                                <input
-                                                    type="file"
-                                                    accept=".pdf,.doc,.docx"
-                                                    onChange={handleFileChange}
-                                                    className="w-full p-2 text-gray-700"
-                                                    required={field.required}
-                                                />
-                                                <p className="text-sm text-gray-500 mt-1">Accepted formats: PDF, DOC, DOCX</p>
-                                            </div>
-                                        ) : null}
-
-                                        {field.required && (
-                                            <span className="absolute text-red-500 left-[-10px] top-2">*</span>
-                                        )}
-                                    </div>
-            </div>
-             ))} */}
-
-            {/* Custom Fields Section */}
+            {/* Custom Fields Section - Only fields from Admin Center → Field Management → Jobs Direct Hire */}
             {customFields.length > 0 && (
               <>
-                {/* <div className="mt-8 mb-4">
-                                    <h3 className="text-lg font-semibold text-gray-800 border-b pb-2">
-                                        Additional Information
-                                    </h3>
-                                </div> */}
-
                 {customFields.map((field) => {
-                  // Don't render hidden fields at all (neither label nor input)
+                  // Don't render hidden fields at all
                   if (field.is_hidden) return null;
 
                   const fieldValue = customFieldValues[field.field_name] || "";
@@ -1481,7 +997,6 @@ useEffect(() => {
                   }
 
                   // Special handling for Field_11 (Pay Rate), Field_12/Field_512 (Mark-up %), and Field_13 (Client Bill Rate)
-                  // Field_13 is calculated from Field_11 and Field_12/Field_512
                   if (field.field_name === "Field_11" || field.field_name === "Field_12" || field.field_name === "Field_512" || field.field_name === "Field_13") {
                     const isCalculatedField = field.field_name === "Field_13";
                     const payRateValue = customFieldValues["Field_11"] || "";
@@ -1532,9 +1047,9 @@ useEffect(() => {
                         {field.field_label}:
                         {field.is_required &&
                           (fieldValue.trim() !== "" ? (
-                            <span className="text-green-500 ml-1">✔</span> // ✅ Green check if filled
+                            <span className="text-green-500 ml-1">✔</span>
                           ) : (
-                            <span className="text-red-500 ml-1">*</span> // ❌ Red star if empty
+                            <span className="text-red-500 ml-1">*</span>
                           ))}
                       </label>
 
@@ -1547,29 +1062,6 @@ useEffect(() => {
                       </div>
                     </div>
                   );
-
-                  // return (
-                  //   <div key={field.id} className="flex items-center">
-                  //     <label className="w-48 font-medium">
-                  //       {field.field_label}:
-                  //       {field.is_required && (
-                  //         <span className="text-red-500 ml-1">*</span>
-                  //       )}
-                  //     </label>
-                  //     <div className="flex-1 relative">
-                  //       <CustomFieldRenderer
-                  //         field={field}
-                  //         value={customFieldValues[field.field_name]}
-                  //         onChange={handleCustomFieldChange}
-                  //       />
-                  //       {/* {field.is_required && (
-                  //                                   <span className="absolute text-red-500 left-[-10px] top-2">
-                  //                                       *
-                  //                                   </span>
-                  //                               )} */}
-                  //     </div>
-                  //   </div>
-                  // );
                 })}
               </>
             )}
