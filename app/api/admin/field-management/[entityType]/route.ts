@@ -10,7 +10,7 @@ export async function GET(
         const { entityType } = await params;
 
         // Validate entity type
-        const validEntityTypes = ['job-seekers', 'hiring-managers', 'organizations', 'jobs', 'placements', 'tasks', 'planner', 'leads', 'tearsheets', 'goals-quotas'];
+        const validEntityTypes = ['job-seekers', 'hiring-managers', 'organizations', 'jobs', 'jobs-direct-hire', 'jobs-executive-search', 'placements', 'tasks', 'planner', 'leads', 'tearsheets', 'goals-quotas'];
         if (!validEntityTypes.includes(entityType)) {
             return NextResponse.json(
                 { success: false, message: 'Invalid entity type' },
@@ -30,6 +30,7 @@ export async function GET(
         }
 
         // Make a request to your backend API
+        // jobs-direct-hire and jobs-executive-search are separate entities that behave like jobs
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
         const response = await fetch(`${apiUrl}/api/custom-fields/entity/${entityType}`, {
             method: 'GET',
@@ -79,6 +80,7 @@ export async function POST(
         }
 
         // Add entity type to the body
+        // jobs-direct-hire and jobs-executive-search are separate entities that behave like jobs
         body.entityType = entityType;
 
         // Make a request to your backend API

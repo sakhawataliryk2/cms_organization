@@ -16,6 +16,8 @@ export default function FieldManagement() {
     const [sections] = useState<Section[]>([
         { id: 'organizations', name: 'Organizations' },
         { id: 'jobs', name: 'Jobs' },
+        { id: 'jobs-direct-hire', name: 'Jobs Direct Hire' },
+        { id: 'jobs-executive-search', name: 'Jobs Executive Search'},
         { id: 'job-seekers', name: 'Job Seekers' },
         { id: 'leads', name: 'Leads' },
         { id: 'hiring-managers', name: 'Hiring Managers' },
