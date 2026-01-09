@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import SendOnboardingModal from "./SendOnboardingModal";
 
 type JobSeeker = {
@@ -9,38 +9,78 @@ type JobSeeker = {
   email?: string;
 };
 
+type OnboardingStatus =
+  | "SENT"
+  | "IN_PROGRESS"
+  | "SUBMITTED"
+  | "APPROVED"
+  | "REJECTED";
+
 type OnboardingItem = {
   id: number;
   document_name: string;
-  status: "SENT" | "COMPLETED";
+  status: OnboardingStatus;
 };
 
 export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
+  const API_BASE = process.env.API_BASE_URL || "http://localhost:8080";
   const [showModal, setShowModal] = useState(false);
-
-  // TODO: Replace with API later
   const [items, setItems] = useState<OnboardingItem[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const authHeaders = (): HeadersInit => {
+    const token =
+      typeof document !== "undefined"
+        ? document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )
+        : "";
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  async function fetchItems() {
+    setLoading(true);
+    try {
+      const res = await fetch(
+        `${API_BASE}/api/onboarding/job-seekers/${jobSeeker.id}`,
+        { headers: { ...authHeaders() }, cache: "no-store" }
+      );
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.message || "Failed to load onboarding");
+      setItems(Array.isArray(json?.items) ? json.items : []);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (jobSeeker?.id) fetchItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobSeeker?.id]);
 
   const pending = useMemo(
-    () => items.filter((x) => x.status === "SENT"),
+    () => items.filter((x) => x.status !== "APPROVED"),
     [items]
   );
-
   const completed = useMemo(
-    () => items.filter((x) => x.status === "COMPLETED"),
+    () => items.filter((x) => x.status === "APPROVED"),
     [items]
   );
 
-  function handleAfterSend(newItems: OnboardingItem[]) {
-    // Merge/update list after send (temporary until backend provides list)
-    setItems((prev) => [...newItems, ...prev]);
-    setShowModal(false);
+  function statusLabel(s: OnboardingStatus) {
+    if (s === "SENT") return "SENT →";
+    if (s === "IN_PROGRESS") return "IN PROGRESS →";
+    if (s === "SUBMITTED") return "SUBMITTED →";
+    if (s === "REJECTED") return "REJECTED →";
+    return "APPROVED";
   }
 
   return (
     <div className="col-span-7">
       <div className="bg-white p-4 rounded shadow-sm">
-        {/* Header */}
         <div className="flex justify-center mb-6">
           <button
             onClick={() => setShowModal(true)}
@@ -49,6 +89,10 @@ export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
             Send Onboarding
           </button>
         </div>
+
+        {loading && (
+          <div className="text-sm text-gray-500 mb-3">Loading...</div>
+        )}
 
         {/* Pending */}
         <div className="mb-4 border rounded">
@@ -69,7 +113,7 @@ export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
                 >
                   <div className="text-sm">{doc.document_name}</div>
                   <div className="text-xs font-semibold text-gray-600">
-                    SENT →
+                    {statusLabel(doc.status)}
                   </div>
                 </div>
               ))}
@@ -96,7 +140,7 @@ export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
                 >
                   <div className="text-sm">{doc.document_name}</div>
                   <div className="text-xs font-semibold text-green-600">
-                    COMPLETED
+                    APPROVED
                   </div>
                 </div>
               ))}
@@ -105,12 +149,11 @@ export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
         </div>
       </div>
 
-      {/* Modal */}
       {showModal && (
         <SendOnboardingModal
           jobSeeker={jobSeeker}
           onClose={() => setShowModal(false)}
-          onSent={handleAfterSend}
+          onSent={() => fetchItems()} // ✅ refresh from backend after sending
         />
       )}
     </div>

@@ -7,6 +7,10 @@ export async function middleware(request: NextRequest) {
   // Get the pathname of the request
   const path = request.nextUrl.pathname;
 
+  //job seeker portal logins
+   if (path.startsWith("/job-seeker-portal")) {
+    return NextResponse.next();
+  }
   // Define public paths that don't require authentication
   const isPublicPath =
     path === "/auth/login" ||

@@ -65,7 +65,6 @@ export default function SendOnboardingModal({
   >({});
   const [selectedDocs, setSelectedDocs] = useState<Record<number, boolean>>({});
 
-  // ✅ Your cookie token helper (same logic)
   const authHeaders = (): HeadersInit => {
     const token =
       typeof document !== "undefined"
@@ -79,7 +78,6 @@ export default function SendOnboardingModal({
     return { Authorization: `Bearer ${token}` };
   };
 
-  // ✅ Fetch packets + template docs with Bearer token + correct response parsing
   useEffect(() => {
     let alive = true;
 
@@ -142,7 +140,6 @@ export default function SendOnboardingModal({
     return () => {
       alive = false;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [API_BASE]);
 
   const filteredPackets = useMemo(() => {
@@ -167,46 +164,52 @@ export default function SendOnboardingModal({
   const toggleDoc = (id: number) =>
     setSelectedDocs((prev) => ({ ...prev, [id]: !prev[id] }));
 
-  // NOTE: This still just adds items to Pending list in UI.
-  // Next step we will call POST /api/onboarding/send-packet
-  async function handleSend() {
-    const chosenPacketIds = Object.keys(selectedPackets)
-      .filter((k) => selectedPackets[Number(k)])
-      .map(Number);
 
-    const chosenDocIds = Object.keys(selectedDocs)
-      .filter((k) => selectedDocs[Number(k)])
-      .map(Number);
+ async function handleSend() {
+  const chosenPacketIds = Object.keys(selectedPackets)
+    .filter((k) => selectedPackets[Number(k)])
+    .map(Number);
 
-    if (chosenPacketIds.length === 0 && chosenDocIds.length === 0) {
-      alert("Select at least 1 packet or document.");
-      return;
-    }
+  const chosenDocIds = Object.keys(selectedDocs)
+    .filter((k) => selectedDocs[Number(k)])
+    .map(Number);
 
-    // Recipient from record (correct)
-    console.log("Recipient:", jobSeeker?.email);
-
-    const newItems: OnboardingItem[] = [
-      ...chosenDocIds.map((id) => {
-        const d = docs.find((x) => x.id === id);
-        return {
-          id: Date.now() + id,
-          document_name: d?.document_name ?? `Document ${id}`,
-          status: "SENT" as const,
-        };
-      }),
-      ...chosenPacketIds.map((id) => {
-        const p = packets.find((x) => x.id === id);
-        return {
-          id: Date.now() + id,
-          document_name: p ? `[Packet] ${p.packet_name}` : `[Packet] ${id}`,
-          status: "SENT" as const,
-        };
-      }),
-    ];
-
-    onSent(newItems);
+  if (chosenPacketIds.length === 0 && chosenDocIds.length === 0) {
+    alert("Select at least 1 packet or document.");
+    return;
   }
+
+  try {
+    setLoading(true);
+    setError(null);
+
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    };
+
+    const res = await fetch(`${API_BASE}/api/onboarding/send`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        job_seeker_id: jobSeeker.id,
+        packet_ids: chosenPacketIds,
+        document_ids: chosenDocIds,
+      }),
+    });
+
+    const json = await res.json();
+    if (!res.ok) throw new Error(json?.message || "Failed to send onboarding");
+
+    // backend returns items: [{id, document_name, status}]
+    onSent(json?.items || []);
+    onClose(); // close modal
+  } catch (e: any) {
+    setError(e?.message || "Failed to send onboarding");
+  } finally {
+    setLoading(false);
+  }
+}
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
