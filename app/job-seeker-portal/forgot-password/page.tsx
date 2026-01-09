@@ -40,14 +40,16 @@ export default function ForgotPasswordPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-white p-4">
       <div className="w-full max-w-md border border-gray-200 rounded-lg p-6 shadow">
-        <h1 className="text-lg font-semibold mb-2">Forgot Password</h1>
-        <p className="text-sm text-gray-600 mb-4">
+        <h1 className="text-lg font-semibold mb-2 text-black"> 
+          Forgot Password
+        </h1>
+        <p className="text-sm text-gray-600 mb-4 text-black"> 
           Enter your email and we’ll send reset instructions.
         </p>
 
         <form onSubmit={submit} className="space-y-3">
           <input
-            className="w-full h-10 px-3 border border-gray-300 rounded"
+            className="w-full h-10 px-3 border border-gray-300 rounded text-black" 
             placeholder="email@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -65,7 +67,7 @@ export default function ForgotPasswordPage() {
 
           <button
             type="button"
-            className="w-full h-10 rounded border border-gray-300"
+            className="w-full h-10 rounded border border-gray-300 text-black" 
             onClick={() => router.push("/job-seeker-portal/login")}
           >
             Back to Login
@@ -73,5 +75,6 @@ export default function ForgotPasswordPage() {
         </form>
       </div>
     </div>
+
   );
 }

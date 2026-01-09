@@ -100,7 +100,7 @@ export default function JobSeekerPortalLoginPage() {
           <input
             value={username}
             onChange={(e) => setUsername(e.target.value)}
-            className="h-10 px-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="h-10 px-3 border text-black border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             placeholder="email@example.com"
             autoComplete="username"
           />
@@ -112,7 +112,7 @@ export default function JobSeekerPortalLoginPage() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             type="password"
-            className="h-10 px-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="h-10 px-3 text-black border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
             autoComplete="current-password"
           />
         </div>
@@ -140,7 +140,7 @@ export default function JobSeekerPortalLoginPage() {
             type="button"
             className="text-sm text-blue-700 underline"
             onClick={() =>
-              router.push("/job-seeker-portal/auth/forgot-password")
+              router.push("/job-seeker-portal/forgot-password")
             }
           >
             Forgot Password?
