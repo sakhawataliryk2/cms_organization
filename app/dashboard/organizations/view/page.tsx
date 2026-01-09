@@ -45,6 +45,7 @@ export default function OrganizationView() {
   // Add Note form state - matching jobs view structure
   const [noteForm, setNoteForm] = useState({
     text: "",
+    action: "",
     about: organization ? `${organization.id} ${organization.name}` : "",
     copyNote: "No",
     replaceGeneralContactComments: false,
@@ -1069,6 +1070,7 @@ setAvailableFields(fields);
           },
           body: JSON.stringify({
             text: noteForm.text,
+            action: noteForm.action,
             copy_note: noteForm.copyNote === "Yes",
             replace_general_contact_comments:
               noteForm.replaceGeneralContactComments,
@@ -1092,6 +1094,7 @@ setAvailableFields(fields);
       // Clear the form
       setNoteForm({
         text: "",
+        action: "",
         about: organization
           ? `${formatRecordId(organization.id, "organization")} ${
               organization.name
@@ -1125,6 +1128,7 @@ setAvailableFields(fields);
     setShowAddNote(false);
     setNoteForm({
       text: "",
+      action: "",
       about: organization ? `${organization.id} ${organization.name}` : "",
       copyNote: "No",
       replaceGeneralContactComments: false,
@@ -2509,6 +2513,28 @@ setAvailableFields(fields);
                     className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={6}
                   />
+                </div>
+
+                {/* Action Dropdown */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Action
+                  </label>
+                  <select
+                    value={noteForm.action}
+                    onChange={(e) =>
+                      setNoteForm((prev) => ({ ...prev, action: e.target.value }))
+                    }
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select Action</option>
+                    <option value="Outbound Call">Outbound Call</option>
+                    <option value="Inbound Call">Inbound Call</option>
+                    <option value="Left Message">Left Message</option>
+                    <option value="Email">Email</option>
+                    <option value="Appointment">Appointment</option>
+                    <option value="Client Visit">Client Visit</option>
+                  </select>
                 </div>
 
                 {/* About Section */}
