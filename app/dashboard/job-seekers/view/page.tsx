@@ -38,6 +38,7 @@ export default function JobSeekerView() {
   // Add Note form state
   const [noteForm, setNoteForm] = useState({
     text: "",
+    action: "",
     about: jobSeeker
       ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
       : "",
@@ -50,6 +51,10 @@ export default function JobSeekerView() {
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isOffice365Connected, setIsOffice365Connected] = useState(false);
+  
+  // Action fields state (for dynamic dropdown options)
+  const [actionFields, setActionFields] = useState<any[]>([]);
+  const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
 
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
@@ -420,6 +425,7 @@ Best regards`;
   useEffect(() => {
     if (showAddNote) {
       fetchUsers();
+      fetchActionFields();
     }
   }, [showAddNote]);
 
@@ -473,6 +479,36 @@ Best regards`;
       console.error("Error fetching available fields:", err);
     } finally {
       setIsLoadingFields(false);
+    }
+  };
+
+  // Fetch action fields (custom fields from Job Seekers field management)
+  const fetchActionFields = async () => {
+    setIsLoadingActionFields(true);
+    try {
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      const response = await fetch("/api/admin/field-management/job-seekers", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        // Get custom fields from the response - handle both response structures
+        const fields = data.customFields || data.fields || [];
+        // Sort by sort_order if available
+        const sortedFields = fields.sort((a: any, b: any) => 
+          (a.sort_order || 0) - (b.sort_order || 0)
+        );
+        setActionFields(sortedFields);
+      }
+    } catch (err) {
+      console.error("Error fetching action fields:", err);
+    } finally {
+      setIsLoadingActionFields(false);
     }
   };
 
@@ -888,6 +924,7 @@ Best regards`;
         },
         body: JSON.stringify({
           text: noteForm.text,
+          action: noteForm.action,
           copy_note: noteForm.copyNote === "Yes",
           replace_general_contact_comments:
             noteForm.replaceGeneralContactComments,
@@ -909,6 +946,7 @@ Best regards`;
       // Clear the form
       setNoteForm({
         text: "",
+        action: "",
         about: jobSeeker
           ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
           : "",
@@ -933,6 +971,7 @@ Best regards`;
     setShowAddNote(false);
     setNoteForm({
       text: "",
+      action: "",
       about: jobSeeker
         ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
         : "",
@@ -2454,6 +2493,37 @@ Best regards`;
                     className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={6}
                   />
+                </div>
+
+                {/* Action Dropdown */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Action
+                  </label>
+                  {isLoadingActionFields ? (
+                    <div className="flex items-center space-x-2 text-sm text-gray-500">
+                      <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-blue-500"></div>
+                      <span>Loading actions...</span>
+                    </div>
+                  ) : (
+                    <select
+                      value={noteForm.action}
+                      onChange={(e) =>
+                        setNoteForm((prev) => ({ ...prev, action: e.target.value }))
+                      }
+                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="">Select Action</option>
+                      {actionFields.map((field) => (
+                        <option
+                          key={field.id || field.field_name || field.field_label}
+                          value={field.field_label || field.field_name || ""}
+                        >
+                          {field.field_label || field.field_name || ""}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </div>
 
                 {/* About Section */}
