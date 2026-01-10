@@ -23,7 +23,7 @@ type OnboardingItem = {
 };
 
 export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
-  const API_BASE = process.env.API_BASE_URL || "http://localhost:8080";
+const API_BASE = process.env.API_BASE_URL || ""; 
   const [showModal, setShowModal] = useState(false);
   const [items, setItems] = useState<OnboardingItem[]>([]);
   const [loading, setLoading] = useState(false);

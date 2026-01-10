@@ -51,8 +51,7 @@ export default function SendOnboardingModal({
   onClose: () => void;
   onSent: (newItems: OnboardingItem[]) => void;
 }) {
-  const API_BASE = process.env.API_BASE_URL || "http://localhost:8080";
-  const [q, setQ] = useState("");
+const API_BASE = process.env.API_BASE_URL || "";   const [q, setQ] = useState("");
 
   const [packets, setPackets] = useState<Packet[]>([]);
   const [docs, setDocs] = useState<Doc[]>([]);
