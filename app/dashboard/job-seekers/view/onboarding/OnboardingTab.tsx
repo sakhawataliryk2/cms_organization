@@ -49,13 +49,11 @@ const API_BASE = process.env.API_BASE_URL || "";
           "Content-Type": "application/json",
           ...authHeaders(),
         };
-      const res = await fetch(
-        `${API_BASE}/api/onboarding/job-seekers/${jobSeeker.id}`,{
-method: "GET",
-            headers,
-            cache: "no-store",  
-        }
-    );
+     const res = await fetch(`/api/onboarding/job-seekers/${jobSeeker.id}`, {
+        method: "GET",
+        headers,
+        cache: "no-store",
+      });
       const json = await res.json();
       if (!res.ok) throw new Error(json?.message || "Failed to load onboarding");
       setItems(Array.isArray(json?.items) ? json.items : []);
