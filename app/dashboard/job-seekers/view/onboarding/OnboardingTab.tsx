@@ -36,16 +36,26 @@ export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
             "$1"
           )
         : "";
-    return token ? { Authorization: `Bearer ${token}` } : {};
+
+    if (!token) return {};
+    return { Authorization: `Bearer ${token}` };
   };
 
   async function fetchItems() {
     setLoading(true);
     try {
+      
+        const headers: HeadersInit = {
+          "Content-Type": "application/json",
+          ...authHeaders(),
+        };
       const res = await fetch(
-        `${API_BASE}/api/onboarding/job-seekers/${jobSeeker.id}`,
-        { headers: { ...authHeaders() }, cache: "no-store" }
-      );
+        `${API_BASE}/api/onboarding/job-seekers/${jobSeeker.id}`,{
+method: "GET",
+            headers,
+            cache: "no-store",  
+        }
+    );
       const json = await res.json();
       if (!res.ok) throw new Error(json?.message || "Failed to load onboarding");
       setItems(Array.isArray(json?.items) ? json.items : []);

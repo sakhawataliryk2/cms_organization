@@ -20,6 +20,7 @@ import {
   FiFile,
   FiSettings,
   FiBriefcase,
+  FiMessageSquare,
   FiGrid,
   FiX,
   FiLogOut,
@@ -890,29 +891,33 @@ export default function DashboardNav() {
             </div>
           </div>
 
+
           {/* User profile with dropdown - Top Right */}
           {user && (
             <div className="pr-6 relative" ref={userMenuRef}>
-              <button
-                className="flex items-center space-x-2 text-gray-300 hover:text-white"
-                onClick={toggleUserMenu}
-              >
-                <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center text-white font-medium text-sm">
-                  {user.name.charAt(0)}
+              <div className="flex items-center space-x-2">
+                <div className="flex items-center text-gray-300 hover:bg-slate-700 hover:text-white py-2 px-4 rounded">
+                  <FiMessageSquare className="mr-2" />
+                  Messages
                 </div>
-                <span className="text-sm font-medium">{user.name}</span>
-              </button>
+
+                <button
+                  className="flex items-center space-x-2 text-gray-300 hover:text-white"
+                  onClick={toggleUserMenu}
+                >
+                  <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center text-white font-medium text-sm">
+                    {user.name.charAt(0)}
+                  </div>
+                  <span className="text-sm font-medium">{user.name}</span>
+                </button>
+              </div>
 
               {/* User dropdown menu */}
               {isUserMenuOpen && (
                 <div className="absolute top-full right-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-[10000]">
                   <div className="px-4 py-2 border-b border-slate-700">
-                    <div className="font-medium text-white text-sm">
-                      {user.name}
-                    </div>
-                    <div className="text-xs text-gray-400 capitalize">
-                      {user.userType}
-                    </div>
+                    <div className="font-medium text-white text-sm">{user.name}</div>
+                    <div className="text-xs text-gray-400 capitalize">{user.userType}</div>
                   </div>
                   <button
                     className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
@@ -933,6 +938,8 @@ export default function DashboardNav() {
               )}
             </div>
           )}
+
+
         </div>
       </div>
 

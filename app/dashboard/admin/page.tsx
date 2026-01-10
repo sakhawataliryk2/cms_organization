@@ -15,6 +15,7 @@ import {
     FiChevronDown,
     FiX,
     FiCheck,
+    FiMail,
     FiAlertCircle
 } from 'react-icons/fi';
 import { FaRegFolderOpen } from "react-icons/fa";
@@ -690,7 +691,13 @@ export default function AdminCenter() {
             name: 'The Button',
             icon: <FaRegArrowAltCircleRight size={50} color="white" />,
             path: '/dashboard/admin/the-button'
-        }
+        },
+         {
+        id: 'email-management',
+        name: 'Email Management',
+        icon: <FiMail size={50} color="white" />,
+        path: '/dashboard/admin/email-management'
+    }
     ];
 
     const handleModuleClick = (moduleId: string, path: string) => {
