@@ -1,9 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
+import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useListControls } from "@/hooks/useListSortFilter";
+import SortFilterBar from "@/components/list/SortFilterBar";
+import FiltersModal from "@/components/list/FiltersModal";
 
 interface JobSeeker {
   id: string;
@@ -16,10 +20,115 @@ interface JobSeeker {
   last_contact_date: string;
   owner: string;
   created_by_name: string;
+  customFields?: Record<string, any>;
+  custom_fields?: Record<string, any>;
 }
 
 export default function JobSeekerList() {
   const router = useRouter();
+  
+  const list = useListControls({
+    defaultSortKey: "id",
+    defaultSortDir: "desc",
+    sortOptions: [
+      { key: "id", label: "ID" },
+      { key: "full_name", label: "Name" },
+      { key: "email", label: "Email" },
+      { key: "phone", label: "Phone" },
+      { key: "status", label: "Status" },
+      { key: "last_contact_date", label: "Last Contact" },
+      { key: "owner", label: "Owner" },
+    ],
+  });
+
+  const [showFilters, setShowFilters] = useState(false);
+  const [draftFilters, setDraftFilters] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    if (showFilters) setDraftFilters(list.filters);
+  }, [showFilters, list.filters]);
+
+  const [openActionId, setOpenActionId] = useState<string | null>(null);
+  useEffect(() => {
+    const close = () => setOpenActionId(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, []);
+
+  // =====================
+  // TABLE COLUMNS (Overview List)
+  // =====================
+  const JOB_SEEKER_DEFAULT_COLUMNS = [
+    "full_name",
+    "email",
+    "phone",
+    "status",
+    "last_contact_date",
+    "owner",
+  ];
+
+  const {
+    columnFields,
+    setColumnFields,
+    showHeaderFieldModal: showColumnModal,
+    setShowHeaderFieldModal: setShowColumnModal,
+    saveHeaderConfig: saveColumnConfig,
+    isSaving: isSavingColumns,
+  } = useHeaderConfig({
+    entityType: "JOB_SEEKER",
+    defaultFields: JOB_SEEKER_DEFAULT_COLUMNS,
+    configType: "columns",
+  });
+
+  // =====================
+  // AVAILABLE FIELDS (from Modify Page)
+  // =====================
+  const [availableFields, setAvailableFields] = useState<any[]>([]);
+  const [isLoadingFields, setIsLoadingFields] = useState(false);
+
+  useEffect(() => {
+    const fetchAvailableFields = async () => {
+      setIsLoadingFields(true);
+
+      try {
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        );
+
+        const res = await fetch("/api/admin/field-management/job-seekers", {
+          method: "GET",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          credentials: "include",
+        });
+
+        const raw = await res.text();
+        let data: any = {};
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          data = {};
+        }
+
+        const fields =
+          data.fields ||
+          data.data?.fields ||
+          data.jobSeekerFields ||
+          data.data ||
+          [];
+
+        setAvailableFields(Array.isArray(fields) ? fields : []);
+      } catch (e) {
+        console.error("Error fetching available fields:", e);
+        setAvailableFields([]);
+      } finally {
+        setIsLoadingFields(false);
+      }
+    };
+
+    fetchAvailableFields();
+  }, []);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedJobSeekers, setSelectedJobSeekers] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
@@ -28,18 +137,81 @@ export default function JobSeekerList() {
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Sorting state
-  const [sortField, setSortField] = useState<
-    | "id"
-    | "full_name"
-    | "email"
-    | "phone"
-    | "status"
-    | "last_contact_date"
-    | "owner"
-    | null
-  >(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  // ✅ Columns Catalog (Standard + Custom Fields)
+  const humanize = (s: string) =>
+    s
+      .replace(/[_\-]+/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .trim();
+
+  const columnsCatalog = useMemo(() => {
+    // ✅ 1) Standard columns (fixed)
+    const standard = [
+      { key: "full_name", label: "Name", sortable: true },
+      { key: "email", label: "Email", sortable: true },
+      { key: "phone", label: "Phone", sortable: true },
+      { key: "status", label: "Status", sortable: true },
+      { key: "last_contact_date", label: "Last Contact", sortable: true },
+      { key: "owner", label: "Owner", sortable: true },
+    ];
+
+    // ✅ 2) Custom keys (auto from ALL job seekers list)
+    const customKeySet = new Set<string>();
+
+    (jobSeekers || []).forEach((js: any) => {
+      const cf = js?.customFields || js?.custom_fields || {};
+      Object.keys(cf).forEach((k) => customKeySet.add(k));
+    });
+
+    const custom = Array.from(customKeySet).map((k) => ({
+      key: `custom:${k}`,
+      label: humanize(k),
+      sortable: false,
+    }));
+
+    // ✅ 3) merge + unique
+    const merged = [...standard, ...custom];
+    const seen = new Set<string>();
+    return merged.filter((x) => {
+      if (seen.has(x.key)) return false;
+      seen.add(x.key);
+      return true;
+    });
+  }, [jobSeekers]);
+
+  const getColumnLabel = (key: string) =>
+    columnsCatalog.find((c) => c.key === key)?.label || key;
+
+  const getColumnValue = (js: any, key: string) => {
+    // ✅ custom columns
+    if (key.startsWith("custom:")) {
+      const rawKey = key.replace("custom:", "");
+      const cf = js?.customFields || js?.custom_fields || {};
+      const val = cf?.[rawKey];
+      return val === undefined || val === null || val === ""
+        ? "N/A"
+        : String(val);
+    }
+
+    // ✅ standard columns
+    switch (key) {
+      case "full_name":
+        return js.full_name || "N/A";
+      case "email":
+        return js.email || "N/A";
+      case "phone":
+        return js.phone || "N/A";
+      case "status":
+        return js.status || "N/A";
+      case "last_contact_date":
+        return js.last_contact_date || "N/A";
+      case "owner":
+        return js.owner || js.created_by_name || "Unassigned";
+      default:
+        return "N/A";
+    }
+  };
 
   // Fetch job seekers data when component mounts
   useEffect(() => {
@@ -84,68 +256,38 @@ export default function JobSeekerList() {
       jobSeeker.id?.toString().toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Handle sorting
-  const handleSort = (
-    field:
-      | "id"
-      | "full_name"
-      | "email"
-      | "phone"
-      | "status"
-      | "last_contact_date"
-      | "owner"
-  ) => {
-    if (sortField === field) {
-      // Toggle direction if same field
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    } else {
-      // Set new field with ascending direction
-      setSortField(field);
-      setSortDirection("asc");
-    }
-  };
+  const viewJobSeekers = useMemo(() => {
+    const data = filteredJobSeekers;
 
-  // Sort the filtered job seekers
-  const sortedJobSeekers = [...filteredJobSeekers].sort((a, b) => {
-    if (!sortField) return 0;
-
-    let aValue: string | number = "";
-    let bValue: string | number = "";
-
-    if (sortField === "id") {
-      // Sort numerically by ID
-      aValue = parseInt(a.id) || 0;
-      bValue = parseInt(b.id) || 0;
-    } else if (sortField === "full_name") {
-      aValue = a.full_name?.toLowerCase() || "";
-      bValue = b.full_name?.toLowerCase() || "";
-    } else if (sortField === "email") {
-      aValue = a.email?.toLowerCase() || "";
-      bValue = b.email?.toLowerCase() || "";
-    } else if (sortField === "phone") {
-      aValue = a.phone?.toLowerCase() || "";
-      bValue = b.phone?.toLowerCase() || "";
-    } else if (sortField === "status") {
-      aValue = a.status?.toLowerCase() || "";
-      bValue = b.status?.toLowerCase() || "";
-    } else if (sortField === "last_contact_date") {
-      aValue = a.last_contact_date
-        ? new Date(a.last_contact_date).getTime()
-        : 0;
-      bValue = b.last_contact_date
-        ? new Date(b.last_contact_date).getTime()
-        : 0;
-    } else if (sortField === "owner") {
-      aValue = (a.owner || a.created_by_name || "")?.toLowerCase();
-      bValue = (b.owner || b.created_by_name || "")?.toLowerCase();
-    }
-
-    if (sortDirection === "asc") {
-      return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-    } else {
-      return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
-    }
-  });
+    return list.applySortFilter<JobSeeker>(data, {
+      getValue: (row, key) => {
+        if (key.startsWith("custom:")) {
+          const rawKey = key.replace("custom:", "");
+          const cf =
+            (row as any)?.customFields || (row as any)?.custom_fields || {};
+          return cf?.[rawKey];
+        }
+        if (key === "id") {
+          return parseInt((row as any).id) || 0;
+        }
+        if (key === "last_contact_date") {
+          return (row as any).last_contact_date
+            ? new Date((row as any).last_contact_date).getTime()
+            : 0;
+        }
+        if (key === "owner") {
+          return (row as any).owner || (row as any).created_by_name || "";
+        }
+        return (row as any)[key];
+      },
+      filterFns: {
+        status: (row, value) => {
+          if (!value) return true;
+          return (row as any).status?.toLowerCase() === value.toLowerCase();
+        },
+      },
+    });
+  }, [filteredJobSeekers, list]);
 
   const handleViewJobSeeker = (id: string) => {
     router.push(`/dashboard/job-seekers/view?id=${id}`);
@@ -160,7 +302,7 @@ export default function JobSeekerList() {
       setSelectedJobSeekers([]);
     } else {
       setSelectedJobSeekers(
-        filteredJobSeekers.map((jobSeeker) => jobSeeker.id)
+        viewJobSeekers.map((jobSeeker) => jobSeeker.id)
       );
     }
     setSelectAll(!selectAll);
@@ -177,7 +319,7 @@ export default function JobSeekerList() {
     } else {
       setSelectedJobSeekers([...selectedJobSeekers, id]);
       // If all job seekers are now selected, update selectAll state
-      if ([...selectedJobSeekers, id].length === filteredJobSeekers.length) {
+      if ([...selectedJobSeekers, id].length === viewJobSeekers.length) {
         setSelectAll(true);
       }
     }
@@ -280,7 +422,7 @@ export default function JobSeekerList() {
       {/* Header */}
       <div className="flex justify-between items-center p-4 border-b border-gray-200">
         <h1 className="text-xl font-bold">Job Seekers</h1>
-        <div className="flex space-x-4">
+        <div className="flex items-center space-x-4">
           {selectedJobSeekers.length > 0 && (
             <button
               onClick={deleteSelectedJobSeekers}
@@ -301,6 +443,53 @@ export default function JobSeekerList() {
               Delete Selected ({selectedJobSeekers.length})
             </button>
           )}
+          <SortFilterBar
+            sortKey={list.sortKey}
+            sortDir={list.sortDir}
+            onChangeSortKey={list.onChangeSortKey}
+            onToggleDir={list.onToggleDir}
+            sortOptions={list.sortOptions}
+            onOpenFilters={() => setShowFilters(true)}
+            onClearFilters={list.clearFilters}
+            hasFilters={list.hasFilters}
+          />
+
+          {showFilters && (
+            <FiltersModal
+              open={showFilters}
+              onClose={() => setShowFilters(false)}
+              fields={[
+                {
+                  key: "status",
+                  label: "Status",
+                  type: "select",
+                  options: [
+                    { label: "New Lead", value: "New Lead" },
+                    { label: "Active", value: "Active" },
+                    { label: "Qualified", value: "Qualified" },
+                    { label: "Placed", value: "Placed" },
+                    { label: "Inactive", value: "Inactive" },
+                  ],
+                },
+              ]}
+              values={draftFilters}
+              onChange={(key: string, value: any) =>
+                setDraftFilters((prev) => ({ ...prev, [key]: value }))
+              }
+              onApply={() => {
+                list.setFilters(draftFilters);
+                setShowFilters(false);
+              }}
+              onReset={() => setDraftFilters({})}
+            />
+          )}
+
+          <button
+            onClick={() => setShowColumnModal(true)}
+            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+          >
+            Columns
+          </button>
           <button
             onClick={handleAddJobSeeker}
             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
@@ -361,329 +550,207 @@ export default function JobSeekerList() {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                <div className="flex items-center">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                    checked={selectAll}
-                    onChange={handleSelectAll}
-                  />
-                </div>
+              {/* Fixed checkbox header */}
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                  checked={selectAll}
+                  onChange={handleSelectAll}
+                />
               </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
+
+              {/* Fixed Actions header (LOCKED) */}
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Actions
+              </th>
+
+              {/* Fixed ID header */}
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <button
-                  onClick={() => handleSort("id")}
-                  className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+                  onClick={() => list.toggleSort("id")}
+                  className="hover:text-gray-700"
                 >
-                  <span>ID</span>
-                  <div className="flex flex-col">
-                    <svg
-                      className={`w-3 h-3 ${
-                        sortField === "id" && sortDirection === "asc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                    </svg>
-                    <svg
-                      className={`w-3 h-3 -mt-1 ${
-                        sortField === "id" && sortDirection === "desc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                    </svg>
-                  </div>
+                  ID
                 </button>
               </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                <button
-                  onClick={() => handleSort("full_name")}
-                  className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
+
+              {/* Dynamic headers */}
+              {columnFields.map((key) => (
+                <th
+                  key={key}
+                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
-                  <span>Name</span>
-                  <div className="flex flex-col">
-                    <svg
-                      className={`w-3 h-3 ${
-                        sortField === "full_name" && sortDirection === "asc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                    </svg>
-                    <svg
-                      className={`w-3 h-3 -mt-1 ${
-                        sortField === "full_name" && sortDirection === "desc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                    </svg>
-                  </div>
-                </button>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                <button
-                  onClick={() => handleSort("email")}
-                  className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
-                >
-                  <span>Email</span>
-                  <div className="flex flex-col">
-                    <svg
-                      className={`w-3 h-3 ${
-                        sortField === "email" && sortDirection === "asc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                    </svg>
-                    <svg
-                      className={`w-3 h-3 -mt-1 ${
-                        sortField === "email" && sortDirection === "desc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                    </svg>
-                  </div>
-                </button>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                <button
-                  onClick={() => handleSort("phone")}
-                  className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
-                >
-                  <span>Phone</span>
-                  <div className="flex flex-col">
-                    <svg
-                      className={`w-3 h-3 ${
-                        sortField === "phone" && sortDirection === "asc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                    </svg>
-                    <svg
-                      className={`w-3 h-3 -mt-1 ${
-                        sortField === "phone" && sortDirection === "desc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                    </svg>
-                  </div>
-                </button>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                <button
-                  onClick={() => handleSort("status")}
-                  className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
-                >
-                  <span>Status</span>
-                  <div className="flex flex-col">
-                    <svg
-                      className={`w-3 h-3 ${
-                        sortField === "status" && sortDirection === "asc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                    </svg>
-                    <svg
-                      className={`w-3 h-3 -mt-1 ${
-                        sortField === "status" && sortDirection === "desc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                    </svg>
-                  </div>
-                </button>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                <button
-                  onClick={() => handleSort("last_contact_date")}
-                  className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
-                >
-                  <span>Last Contact</span>
-                  <div className="flex flex-col">
-                    <svg
-                      className={`w-3 h-3 ${
-                        sortField === "last_contact_date" &&
-                        sortDirection === "asc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                    </svg>
-                    <svg
-                      className={`w-3 h-3 -mt-1 ${
-                        sortField === "last_contact_date" &&
-                        sortDirection === "desc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                    </svg>
-                  </div>
-                </button>
-              </th>
-              <th
-                scope="col"
-                className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-              >
-                <button
-                  onClick={() => handleSort("owner")}
-                  className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
-                >
-                  <span>Owner</span>
-                  <div className="flex flex-col">
-                    <svg
-                      className={`w-3 h-3 ${
-                        sortField === "owner" && sortDirection === "asc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" />
-                    </svg>
-                    <svg
-                      className={`w-3 h-3 -mt-1 ${
-                        sortField === "owner" && sortDirection === "desc"
-                          ? "text-blue-600"
-                          : "text-gray-400"
-                      }`}
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" />
-                    </svg>
-                  </div>
-                </button>
-              </th>
+                  {getColumnLabel(key)}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {sortedJobSeekers.length > 0 ? (
-              sortedJobSeekers.map((jobSeeker) => (
+            {viewJobSeekers.length > 0 ? (
+              viewJobSeekers.map((jobSeeker) => (
                 <tr
                   key={jobSeeker.id}
                   className="hover:bg-gray-50 cursor-pointer"
                   onClick={() => handleViewJobSeeker(jobSeeker.id)}
                 >
+                  {/* Fixed checkbox */}
                   <td
                     className="px-6 py-4 whitespace-nowrap"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div className="flex items-center">
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                        checked={selectedJobSeekers.includes(jobSeeker.id)}
-                        onChange={() => {}}
-                        onClick={(e) => handleSelectJobSeeker(jobSeeker.id, e)}
-                      />
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                      checked={selectedJobSeekers.includes(jobSeeker.id)}
+                      onChange={() => {}}
+                      onClick={(e) => handleSelectJobSeeker(jobSeeker.id, e)}
+                    />
+                  </td>
+
+                  {/* Fixed Actions (LOCKED dropdown) */}
+                  <td
+                    className="px-6 py-4 whitespace-nowrap text-sm"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div
+                      className="relative inline-block text-left"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenActionId((prev) =>
+                            prev === jobSeeker.id ? null : jobSeeker.id
+                          );
+                        }}
+                      >
+                        Actions ▾
+                      </button>
+
+                      {openActionId === jobSeeker.id && (
+                        <div
+                          className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex flex-col">
+                            <button
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleViewJobSeeker(jobSeeker.id);
+                                setOpenActionId(null);
+                              }}
+                            >
+                              View
+                            </button>
+                            <button
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                router.push(
+                                  `/dashboard/job-seekers/add?id=${jobSeeker.id}`
+                                );
+                                setOpenActionId(null);
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-red-50 text-red-600"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                setOpenActionId(null);
+
+                                if (
+                                  !window.confirm(
+                                    "Are you sure you want to delete this job seeker?"
+                                  )
+                                )
+                                  return;
+
+                                setIsDeleting(true);
+                                try {
+                                  const response = await fetch(
+                                    `/api/job-seekers/${jobSeeker.id}`,
+                                    {
+                                      method: "DELETE",
+                                      headers: {
+                                        Authorization: `Bearer ${document.cookie.replace(
+                                          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                                          "$1"
+                                        )}`,
+                                      },
+                                    }
+                                  );
+                                  if (!response.ok)
+                                    throw new Error(
+                                      "Failed to delete job seeker"
+                                    );
+                                  await fetchJobSeekers();
+                                } catch (err) {
+                                  setError(
+                                    err instanceof Error
+                                      ? err.message
+                                      : "An error occurred"
+                                  );
+                                } finally {
+                                  setIsDeleting(false);
+                                }
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </td>
+
+                  {/* Fixed ID */}
                   <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                     JS {jobSeeker.id}
                   </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      {jobSeeker.full_name}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm text-blue-600">
-                      {jobSeeker.email}
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {jobSeeker.phone}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <span
-                      className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
-                        jobSeeker.status
-                      )}`}
+
+                  {/* Dynamic columns */}
+                  {columnFields.map((key) => (
+                    <td
+                      key={key}
+                      className="px-6 py-4 whitespace-nowrap text-sm"
                     >
-                      {jobSeeker.status}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {formatDate(jobSeeker.last_contact_date) || "Not contacted"}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {jobSeeker.owner ||
-                      jobSeeker.created_by_name ||
-                      "Unassigned"}
-                  </td>
+                      {key === "status" ? (
+                        <span
+                          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
+                            getColumnValue(jobSeeker, key)
+                          )}`}
+                        >
+                          {getColumnValue(jobSeeker, key)}
+                        </span>
+                      ) : key === "email" ? (
+                        <div className="text-sm text-blue-600">
+                          {getColumnValue(jobSeeker, key)}
+                        </div>
+                      ) : key === "last_contact_date" ? (
+                        <span className="text-sm text-gray-500">
+                          {getColumnValue(jobSeeker, key) !== "N/A"
+                            ? formatDate(getColumnValue(jobSeeker, key))
+                            : "Not contacted"}
+                        </span>
+                      ) : (
+                        <span className="text-sm text-gray-900">
+                          {getColumnValue(jobSeeker, key)}
+                        </span>
+                      )}
+                    </td>
+                  ))}
                 </tr>
               ))
             ) : (
               <tr>
                 <td
-                  colSpan={8}
+                  colSpan={3 + columnFields.length}
                   className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                 >
                   {searchTerm
@@ -710,12 +777,12 @@ export default function JobSeekerList() {
           <div>
             <p className="text-sm text-gray-700">
               Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">{sortedJobSeekers.length}</span> of{" "}
-              <span className="font-medium">{sortedJobSeekers.length}</span>{" "}
+              <span className="font-medium">{viewJobSeekers.length}</span> of{" "}
+              <span className="font-medium">{viewJobSeekers.length}</span>{" "}
               results
             </p>
           </div>
-          {filteredJobSeekers.length > 0 && (
+          {viewJobSeekers.length > 0 && (
             <div>
               <nav
                 className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
@@ -761,6 +828,148 @@ export default function JobSeekerList() {
           )}
         </div>
       </div>
+
+      {/* Column Modal */}
+      {showColumnModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Customize Columns</h2>
+              <button
+                onClick={() => setShowColumnModal(false)}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            <div className="p-6 grid grid-cols-2 gap-6">
+              {/* Available */}
+              <div>
+                <h3 className="font-medium mb-3">Available Columns</h3>
+
+                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                  {columnsCatalog.map((c) => {
+                    const checked = columnFields.includes(c.key);
+                    return (
+                      <label
+                        key={c.key}
+                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setColumnFields((prev) => {
+                              if (prev.includes(c.key))
+                                return prev.filter((x) => x !== c.key);
+                              return [...prev, c.key];
+                            });
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-800">{c.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Order */}
+              <div>
+                <h3 className="font-medium mb-3">Column Order</h3>
+                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                  {columnFields.length === 0 ? (
+                    <div className="text-sm text-gray-500 italic">
+                      No columns selected
+                    </div>
+                  ) : (
+                    columnFields.map((key, idx) => (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between p-2 border rounded"
+                      >
+                        <div className="text-sm font-medium">
+                          {getColumnLabel(key)}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                            disabled={idx === 0}
+                            onClick={() => {
+                              const newFields = [...columnFields];
+                              [newFields[idx], newFields[idx - 1]] = [
+                                newFields[idx - 1],
+                                newFields[idx],
+                              ];
+                              setColumnFields(newFields);
+                            }}
+                            title="Move up"
+                          >
+                            ↑
+                          </button>
+
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                            disabled={idx === columnFields.length - 1}
+                            onClick={() => {
+                              const newFields = [...columnFields];
+                              [newFields[idx], newFields[idx + 1]] = [
+                                newFields[idx + 1],
+                                newFields[idx],
+                              ];
+                              setColumnFields(newFields);
+                            }}
+                            title="Move down"
+                          >
+                            ↓
+                          </button>
+
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-red-50 text-red-600"
+                            onClick={() => {
+                              setColumnFields((prev) =>
+                                prev.filter((x) => x !== key)
+                              );
+                            }}
+                            title="Remove"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+
+                {/* Footer buttons */}
+                <div className="flex justify-end gap-2 mt-4">
+                  <button
+                    className="px-4 py-2 border rounded hover:bg-gray-50"
+                    onClick={() => setColumnFields(JOB_SEEKER_DEFAULT_COLUMNS)}
+                  >
+                    Reset
+                  </button>
+
+                  <button
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={async () => {
+                      const success = await saveColumnConfig();
+                      if (success) {
+                        setShowColumnModal(false);
+                      }
+                    }}
+                    disabled={isSavingColumns}
+                  >
+                    {isSavingColumns ? "Saving..." : "Done"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

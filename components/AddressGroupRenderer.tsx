@@ -84,6 +84,7 @@ function UnderlineField({
   withSearchIcon?: boolean;
 }) {
   const value = values?.[field.field_name] ?? "";
+  const hasValue = value && String(value).trim() !== "";
 
   const safeField: CustomFieldDefinition = {
     ...field,
@@ -94,7 +95,11 @@ function UnderlineField({
     <div className="min-w-0">
       <div className="border-b border-gray-300 flex items-center gap-2">
         {field.is_required && (
-          <span className="w-2 h-2 bg-red-500 rounded-full inline-block" />
+          <span
+            className={`w-2 h-2 rounded-full inline-block ${
+              hasValue ? "bg-green-500" : "bg-red-500"
+            }`}
+          />
         )}
 
         {withSearchIcon && <SearchIcon />}

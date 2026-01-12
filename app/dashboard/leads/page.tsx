@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useListControls } from "@/hooks/useListSortFilter";
+import SortFilterBar from "@/components/list/SortFilterBar";
+import FiltersModal from "@/components/list/FiltersModal";
 interface Lead {
   id: string;
   first_name: string;
@@ -26,6 +29,36 @@ interface Lead {
 
 export default function LeadList() {
   const router = useRouter();
+  
+  const list = useListControls({
+    defaultSortKey: "id",
+    defaultSortDir: "desc",
+    sortOptions: [
+      { key: "id", label: "ID" },
+      { key: "name", label: "Name" },
+      { key: "status", label: "Status" },
+      { key: "email", label: "Email" },
+      { key: "phone", label: "Phone" },
+      { key: "title", label: "Title" },
+      { key: "organization", label: "Organization" },
+      { key: "owner", label: "Owner" },
+    ],
+  });
+
+  const [showFilters, setShowFilters] = useState(false);
+  const [draftFilters, setDraftFilters] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    if (showFilters) setDraftFilters(list.filters);
+  }, [showFilters, list.filters]);
+
+  const [openActionId, setOpenActionId] = useState<string | null>(null);
+  useEffect(() => {
+    const close = () => setOpenActionId(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, []);
+
   const [searchTerm, setSearchTerm] = useState("");
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
@@ -34,20 +67,6 @@ export default function LeadList() {
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  // Sorting state
-  const [sortField, setSortField] = useState<
-    | "id"
-    | "name"
-    | "status"
-    | "email"
-    | "phone"
-    | "title"
-    | "organization"
-    | "owner"
-    | null
-  >(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 const DEFAULT_LEAD_COLUMNS: string[] = [
   "name",
   "status",
@@ -136,9 +155,6 @@ const getColumnValue = (lead: any, key: string) => {
   }
 };
 
-
-const [openActionId, setOpenActionId] = useState<string | null>(null);
-
 const {
   columnFields, 
   setColumnFields, 
@@ -207,70 +223,40 @@ const {
         lead.owner.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  // Handle sorting
-  const handleSort = (
-    field:
-      | "id"
-      | "name"
-      | "status"
-      | "email"
-      | "phone"
-      | "title"
-      | "organization"
-      | "owner"
-  ) => {
-    if (sortField === field) {
-      // Toggle direction if same field
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    } else {
-      // Set new field with ascending direction
-      setSortField(field);
-      setSortDirection("asc");
-    }
-  };
+  const viewLeads = useMemo(() => {
+    const data = filteredLeads;
 
-  // Sort the filtered leads
-  const sortedLeads = [...filteredLeads].sort((a, b) => {
-    if (!sortField) return 0;
-
-    let aValue: string | number = "";
-    let bValue: string | number = "";
-
-    if (sortField === "id") {
-      // Sort numerically by ID
-      aValue = parseInt(a.id) || 0;
-      bValue = parseInt(b.id) || 0;
-    } else if (sortField === "name") {
-      const aName = a.full_name || `${a.last_name || ""}, ${a.first_name || ""}`;
-      const bName = b.full_name || `${b.last_name || ""}, ${b.first_name || ""}`;
-      aValue = aName.toLowerCase();
-      bValue = bName.toLowerCase();
-    } else if (sortField === "status") {
-      aValue = a.status?.toLowerCase() || "";
-      bValue = b.status?.toLowerCase() || "";
-    } else if (sortField === "email") {
-      aValue = a.email?.toLowerCase() || "";
-      bValue = b.email?.toLowerCase() || "";
-    } else if (sortField === "phone") {
-      aValue = a.phone?.toLowerCase() || "";
-      bValue = b.phone?.toLowerCase() || "";
-    } else if (sortField === "title") {
-      aValue = a.title?.toLowerCase() || "";
-      bValue = b.title?.toLowerCase() || "";
-    } else if (sortField === "organization") {
-      aValue = a.organization_name_from_org?.toLowerCase() || "";
-      bValue = b.organization_name_from_org?.toLowerCase() || "";
-    } else if (sortField === "owner") {
-      aValue = a.owner?.toLowerCase() || "";
-      bValue = b.owner?.toLowerCase() || "";
-    }
-
-    if (sortDirection === "asc") {
-      return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-    } else {
-      return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
-    }
-  });
+    return list.applySortFilter<Lead>(data, {
+      getValue: (row, key) => {
+        if (key.startsWith("custom:")) {
+          const rawKey = key.replace("custom:", "");
+          const cf =
+            (row as any)?.customFields || (row as any)?.custom_fields || {};
+          return cf?.[rawKey];
+        }
+        if (key === "id") {
+          return parseInt((row as any).id) || 0;
+        }
+        if (key === "name") {
+          const lead = row as Lead;
+          return lead.full_name || `${lead.last_name || ""}, ${lead.first_name || ""}`.trim();
+        }
+        if (key === "organization") {
+          return (row as any).organization_name_from_org || (row as any).organization_id || "";
+        }
+        if (key === "owner") {
+          return (row as any).owner || (row as any).created_by_name || "";
+        }
+        return (row as any)[key];
+      },
+      filterFns: {
+        status: (row, value) => {
+          if (!value) return true;
+          return (row as any).status?.toLowerCase() === value.toLowerCase();
+        },
+      },
+    });
+  }, [filteredLeads, list]);
 
   const handleViewLead = (id: string) => {
     router.push(`/dashboard/leads/view?id=${id}`);
@@ -284,7 +270,7 @@ const {
     if (selectAll) {
       setSelectedLeads([]);
     } else {
-      setSelectedLeads(filteredLeads.map((lead) => lead.id));
+      setSelectedLeads(viewLeads.map((lead) => lead.id));
     }
     setSelectAll(!selectAll);
   };
@@ -298,7 +284,7 @@ const {
     } else {
       setSelectedLeads([...selectedLeads, id]);
       // If all leads are now selected, update selectAll state
-      if ([...selectedLeads, id].length === filteredLeads.length) {
+      if ([...selectedLeads, id].length === viewLeads.length) {
         setSelectAll(true);
       }
     }
@@ -399,6 +385,47 @@ const {
               Delete Selected ({selectedLeads.length})
             </button>
           )}
+          <SortFilterBar
+            sortKey={list.sortKey}
+            sortDir={list.sortDir}
+            onChangeSortKey={list.onChangeSortKey}
+            onToggleDir={list.onToggleDir}
+            sortOptions={list.sortOptions}
+            onOpenFilters={() => setShowFilters(true)}
+            onClearFilters={list.clearFilters}
+            hasFilters={list.hasFilters}
+          />
+
+          {showFilters && (
+            <FiltersModal
+              open={showFilters}
+              onClose={() => setShowFilters(false)}
+              fields={[
+                {
+                  key: "status",
+                  label: "Status",
+                  type: "select",
+                  options: [
+                    { label: "New", value: "New" },
+                    { label: "Contacted", value: "Contacted" },
+                    { label: "Qualified", value: "Qualified" },
+                    { label: "Converted", value: "Converted" },
+                    { label: "Lost", value: "Lost" },
+                  ],
+                },
+              ]}
+              values={draftFilters}
+              onChange={(key: string, value: any) =>
+                setDraftFilters((prev) => ({ ...prev, [key]: value }))
+              }
+              onApply={() => {
+                list.setFilters(draftFilters);
+                setShowFilters(false);
+              }}
+              onReset={() => setDraftFilters({})}
+            />
+          )}
+
           <button
             onClick={() => setShowColumnModal(true)}
             className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
@@ -491,7 +518,7 @@ const {
               {/* Fixed ID header */}
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 <button
-                  onClick={() => handleSort("id")}
+                  onClick={() => list.toggleSort("id")}
                   className="hover:text-gray-700"
                 >
                   ID
@@ -512,7 +539,8 @@ const {
           </thead>
 
           <tbody className="bg-white divide-y divide-gray-200">
-            {sortedLeads.map((lead) => (
+            {viewLeads.length > 0 ? (
+              viewLeads.map((lead) => (
               <tr
                 key={lead.id}
                 className="hover:bg-gray-50 cursor-pointer"
@@ -643,7 +671,19 @@ const {
                   </td>
                 ))}
               </tr>
-            ))}
+            ))
+            ) : (
+              <tr>
+                <td
+                  colSpan={3 + columnFields.length}
+                  className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
+                >
+                  {searchTerm
+                    ? "No leads found matching your search."
+                    : 'No leads found. Click "Add Lead" to create one.'}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
@@ -662,11 +702,11 @@ const {
           <div>
             <p className="text-sm text-gray-700">
               Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">{sortedLeads.length}</span> of{" "}
-              <span className="font-medium">{sortedLeads.length}</span> results
+              <span className="font-medium">{viewLeads.length}</span> of{" "}
+              <span className="font-medium">{viewLeads.length}</span> results
             </p>
           </div>
-          {sortedLeads.length > 0 && (
+          {viewLeads.length > 0 && (
             <div>
               <nav
                 className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
@@ -810,12 +850,13 @@ const {
                           </button>
 
                           <button
-                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50"
+                            className="px-2 py-1 border rounded text-xs hover:bg-red-50 text-red-600"
                             onClick={() =>
                               setColumnFields((prev) =>
                                 prev.filter((x) => x !== key)
                               )
                             }
+                            title="Remove"
                           >
                             Remove
                           </button>
@@ -834,14 +875,16 @@ const {
                   </button>
 
                   <button
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                    disabled={!!isSavingColumns}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={isSavingColumns}
                     onClick={async () => {
-                      const ok = await saveColumnConfig(); // your hook method
-                      if (ok !== false) setShowColumnModal(false);
+                      const success = await saveColumnConfig();
+                      if (success) {
+                        setShowColumnModal(false);
+                      }
                     }}
                   >
-                    Done
+                    {isSavingColumns ? "Saving..." : "Done"}
                   </button>
                 </div>
               </div>

@@ -5,6 +5,9 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { useListControls } from "@/hooks/useListSortFilter";
+import SortFilterBar from "@/components/list/SortFilterBar";
+import FiltersModal from "@/components/list/FiltersModal";
 
 
 interface Job {
@@ -35,6 +38,28 @@ type JobColumnKey = (typeof JOB_DEFAULT_COLUMNS)[number];
 export default function JobList() {
   const router = useRouter();
   const [openActionId, setOpenActionId] = useState<string | null>(null);
+
+  const list = useListControls({
+    defaultSortKey: "id",
+    defaultSortDir: "desc",
+    sortOptions: [
+      { key: "id", label: "ID" },
+      { key: "job_title", label: "Job Title" },
+      { key: "category", label: "Category" },
+      { key: "organization_name", label: "Organization" },
+      { key: "worksite_location", label: "Location" },
+      { key: "status", label: "Status" },
+      { key: "created_at", label: "Created At" },
+      { key: "created_by_name", label: "Created By" },
+    ],
+  });
+
+  const [showFilters, setShowFilters] = useState(false);
+  const [draftFilters, setDraftFilters] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    if (showFilters) setDraftFilters(list.filters);
+  }, [showFilters, list.filters]);
 
   const {
     columnFields,
@@ -80,20 +105,6 @@ export default function JobList() {
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Sorting state
-  const [sortField, setSortField] = useState<
-    | "id"
-    | "job_title"
-    | "category"
-    | "organization_name"
-    | "worksite_location"
-    | "status"
-    | "created_at"
-    | "created_by_name"
-    | null
-  >(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
   // Fetch jobs data when component mounts
   useEffect(() => {
@@ -141,68 +152,37 @@ export default function JobList() {
       job.category?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // Handle sorting
-  const handleSort = (
-    field:
-      | "id"
-      | "job_title"
-      | "category"
-      | "organization_name"
-      | "worksite_location"
-      | "status"
-      | "created_at"
-      | "created_by_name"
-  ) => {
-    if (sortField === field) {
-      // Toggle direction if same field
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    } else {
-      // Set new field with ascending direction
-      setSortField(field);
-      setSortDirection("asc");
-    }
-  };
+  const viewJobs = useMemo(() => {
+    const data = filteredJobs;
 
-  // Sort the filtered jobs
-  const sortedJobs = [...filteredJobs].sort((a, b) => {
-    if (!sortField) return 0;
-
-    let aValue: string | number = "";
-    let bValue: string | number = "";
-
-    if (sortField === "id") {
-      // Sort numerically by ID
-      aValue = parseInt(a.id) || 0;
-      bValue = parseInt(b.id) || 0;
-    } else if (sortField === "job_title") {
-      aValue = a.job_title?.toLowerCase() || "";
-      bValue = b.job_title?.toLowerCase() || "";
-    } else if (sortField === "category") {
-      aValue = a.category?.toLowerCase() || "";
-      bValue = b.category?.toLowerCase() || "";
-    } else if (sortField === "organization_name") {
-      aValue = a.organization_name?.toLowerCase() || "";
-      bValue = b.organization_name?.toLowerCase() || "";
-    } else if (sortField === "worksite_location") {
-      aValue = a.worksite_location?.toLowerCase() || "";
-      bValue = b.worksite_location?.toLowerCase() || "";
-    } else if (sortField === "status") {
-      aValue = a.status?.toLowerCase() || "";
-      bValue = b.status?.toLowerCase() || "";
-    } else if (sortField === "created_at") {
-      aValue = new Date(a.created_at).getTime() || 0;
-      bValue = new Date(b.created_at).getTime() || 0;
-    } else if (sortField === "created_by_name") {
-      aValue = a.created_by_name?.toLowerCase() || "";
-      bValue = b.created_by_name?.toLowerCase() || "";
-    }
-
-    if (sortDirection === "asc") {
-      return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-    } else {
-      return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
-    }
-  });
+    return list.applySortFilter<Job>(data, {
+      getValue: (row, key) => {
+        if (key.startsWith("custom:")) {
+          const rawKey = key.replace("custom:", "");
+          const cf =
+            (row as any)?.customFields || (row as any)?.custom_fields || {};
+          return cf?.[rawKey];
+        }
+        // Handle date fields
+        if (key === "created_at") {
+          return new Date((row as any)[key]).getTime();
+        }
+        return (row as any)[key];
+      },
+      filterFns: {
+        status: (row, value) => {
+          if (!value || value === "") return true;
+          return (row as any).status?.toLowerCase() === value.toLowerCase();
+        },
+        category: (row, value) => {
+          if (!value || value === "") return true;
+          return (row as any).category
+            ?.toLowerCase()
+            .includes(value.toLowerCase());
+        },
+      },
+    });
+  }, [filteredJobs, list]);
 
   const handleViewJob = (id: string) => {
     router.push(`/dashboard/jobs/view?id=${id}`);
@@ -216,7 +196,7 @@ export default function JobList() {
     if (selectAll) {
       setSelectedJobs([]);
     } else {
-      setSelectedJobs(filteredJobs.map((job) => job.id));
+      setSelectedJobs(viewJobs.map((job) => job.id));
     }
     setSelectAll(!selectAll);
   };
@@ -230,7 +210,7 @@ export default function JobList() {
     } else {
       setSelectedJobs([...selectedJobs, id]);
       // If all jobs are now selected, update selectAll state
-      if ([...selectedJobs, id].length === filteredJobs.length) {
+      if ([...selectedJobs, id].length === viewJobs.length) {
         setSelectAll(true);
       }
     }
@@ -346,6 +326,51 @@ export default function JobList() {
               Delete Selected ({selectedJobs.length})
             </button>
           )}
+          <SortFilterBar
+            sortKey={list.sortKey}
+            sortDir={list.sortDir}
+            onChangeSortKey={list.onChangeSortKey}
+            onToggleDir={list.onToggleDir}
+            sortOptions={list.sortOptions}
+            onOpenFilters={() => setShowFilters(true)}
+            onClearFilters={list.clearFilters}
+            hasFilters={list.hasFilters}
+          />
+
+          {showFilters && (
+            <FiltersModal
+              open={showFilters}
+              onClose={() => setShowFilters(false)}
+              fields={[
+                {
+                  key: "status",
+                  label: "Status",
+                  type: "select",
+                  options: [
+                    { label: "Open", value: "Open" },
+                    { label: "On Hold", value: "On Hold" },
+                    { label: "Filled", value: "Filled" },
+                    { label: "Closed", value: "Closed" },
+                  ],
+                },
+                {
+                  key: "category",
+                  label: "Category",
+                  type: "text",
+                },
+              ]}
+              values={draftFilters}
+              onChange={(key: string, value: any) =>
+                setDraftFilters((prev) => ({ ...prev, [key]: value }))
+              }
+              onApply={() => {
+                list.setFilters(draftFilters);
+                setShowFilters(false);
+              }}
+              onReset={() => setDraftFilters({})}
+            />
+          )}
+
           <button
             onClick={() => setShowColumnModal(true)}
             className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
@@ -424,37 +449,29 @@ export default function JobList() {
               <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Actions
               </th>
-              {columnFields.map((colKey) => (
+              {/* Fixed ID header */}
+              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                <button
+                  onClick={() => list.toggleSort("id")}
+                  className="hover:text-gray-700"
+                >
+                  ID
+                </button>
+              </th>
+              {/* Dynamic headers */}
+              {columnFields.map((key) => (
                 <th
-                  key={colKey}
+                  key={key}
                   className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                 >
-                  {[
-                    "id",
-                    "job_title",
-                    "category",
-                    "organization_name",
-                    "worksite_location",
-                    "status",
-                    "created_at",
-                    "created_by_name",
-                  ].includes(colKey) ? (
-                    <button
-                      onClick={() => handleSort(colKey as any)}
-                      className="flex items-center space-x-1 hover:text-gray-700 focus:outline-none"
-                    >
-                      <span>{getColumnLabel(colKey)}</span>
-                    </button>
-                  ) : (
-                    <span>{getColumnLabel(colKey)}</span>
-                  )}
+                  {getColumnLabel(key)}
                 </th>
               ))}
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {sortedJobs.length > 0 ? (
-              sortedJobs.map((job) => (
+            {viewJobs.length > 0 ? (
+              viewJobs.map((job) => (
                 <tr
                   key={job.id}
                   className="hover:bg-gray-50 cursor-pointer"
@@ -548,19 +565,16 @@ export default function JobList() {
                     </div>
                   </td>
 
-                  {/* ✅ Dynamic cells (THIS WAS MISSING) */}
+                  {/* Fixed ID */}
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm font-medium text-gray-900">
+                      J {job.id}
+                    </div>
+                  </td>
+
+                  {/* Dynamic cells */}
                   {columnFields.map((colKey) => {
                     switch (colKey) {
-                      case "id":
-                        return (
-                          <td
-                            key={colKey}
-                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                          >
-                            J {job.id}
-                          </td>
-                        );
-
                       case "job_title":
                         return (
                           <td
@@ -660,7 +674,7 @@ export default function JobList() {
             ) : (
               <tr>
                 <td
-                  colSpan={columnFields.length + 2}
+                  colSpan={columnFields.length + 3}
                   className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                 >
                   {searchTerm
@@ -687,8 +701,8 @@ export default function JobList() {
           <div>
             <p className="text-sm text-gray-700">
               Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">{sortedJobs.length}</span> of{" "}
-              <span className="font-medium">{sortedJobs.length}</span> results
+              <span className="font-medium">{viewJobs.length}</span> of{" "}
+              <span className="font-medium">{viewJobs.length}</span> results
             </p>
           </div>
           {filteredJobs.length > 0 && (

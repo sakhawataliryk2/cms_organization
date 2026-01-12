@@ -47,6 +47,7 @@ export default function Dashboard() {
     const [allTasks, setAllTasks] = useState<Task[]>([]); // Store all tasks for calendar indicators
     const [filteredTasks, setFilteredTasks] = useState<Task[]>([]);
     const [taskSearchQuery, setTaskSearchQuery] = useState('');
+    const [taskFilter, setTaskFilter] = useState<'all' | 'completed' | 'pending'>('all');
     const [goalsSearchQuery, setGoalsSearchQuery] = useState('');
     const [isLoadingTasks, setIsLoadingTasks] = useState(true);
     const [tasksError, setTasksError] = useState<string | null>(null);
@@ -489,19 +490,29 @@ export default function Dashboard() {
         }
     };
 
-    // Filter tasks based on search query
+    // Filter tasks based on search query and completion status
     useEffect(() => {
-        if (!taskSearchQuery.trim()) {
-            setFilteredTasks(tasks);
-        } else {
-            const filtered = tasks.filter(task => 
+        let filtered = tasks;
+
+        // Apply completion status filter
+        if (taskFilter === 'completed') {
+            filtered = filtered.filter(task => task.is_completed === true);
+        } else if (taskFilter === 'pending') {
+            filtered = filtered.filter(task => task.is_completed === false);
+        }
+        // 'all' shows all tasks, so no filtering needed
+
+        // Apply search query filter
+        if (taskSearchQuery.trim()) {
+            filtered = filtered.filter(task => 
                 task.title.toLowerCase().includes(taskSearchQuery.toLowerCase()) ||
                 task.description?.toLowerCase().includes(taskSearchQuery.toLowerCase()) ||
                 task.status?.toLowerCase().includes(taskSearchQuery.toLowerCase())
             );
-            setFilteredTasks(filtered);
         }
-    }, [taskSearchQuery, tasks]);
+
+        setFilteredTasks(filtered);
+    }, [taskSearchQuery, taskFilter, tasks]);
 
     // Handle close/return to home
     const handleClose = () => {
@@ -911,6 +922,20 @@ export default function Dashboard() {
                 <div className="bg-white rounded-md shadow overflow-hidden flex flex-col">
                     <div className="p-2 border-b border-gray-200">
                         <h2 className="text-lg font-semibold mb-2">Tasks</h2>
+                        
+                        {/* Filter dropdown */}
+                        <div className="mb-2">
+                            <select
+                                value={taskFilter}
+                                onChange={(e) => setTaskFilter(e.target.value as 'all' | 'completed' | 'pending')}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm bg-white"
+                            >
+                                <option value="all">All Tasks</option>
+                                <option value="pending">Tasks to Do</option>
+                                <option value="completed">Completed Tasks</option>
+                            </select>
+                        </div>
+
                         {/* Search bar */}
                         <div className="relative">
                             <FiSearch className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
