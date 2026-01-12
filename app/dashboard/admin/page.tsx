@@ -2,7 +2,7 @@
 
 'use client'
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
     FiGrid,
@@ -61,6 +61,20 @@ interface ValidationResult {
     warnings: string[];
 }
 
+interface CustomFieldDefinition {
+    id: string;
+    field_name: string;
+    field_label: string;
+    field_type: string;
+    is_required: boolean;
+    is_hidden: boolean;
+    sort_order: number;
+}
+
+interface ModuleFieldConfig {
+    [moduleId: string]: CustomFieldDefinition[];
+}
+
 export default function AdminCenter() {
     const router = useRouter();
     const [showDownloadModal, setShowDownloadModal] = useState(false);
@@ -82,6 +96,20 @@ export default function AdminCenter() {
     const [isUploading, setIsUploading] = useState(false);
     const [validationErrors, setValidationErrors] = useState<string[]>([]);
     const [currentStep, setCurrentStep] = useState<'select' | 'map' | 'preview' | 'upload'>('select');
+    const [moduleFieldConfigs, setModuleFieldConfigs] = useState<ModuleFieldConfig>({});
+    const [isLoadingFields, setIsLoadingFields] = useState(false);
+    const [exportProgress, setExportProgress] = useState({ current: 0, total: 0, module: '' });
+
+    // Map module IDs to entity types for Field Management
+    const moduleToEntityType: Record<string, string> = {
+        'organizations': 'organizations',
+        'jobs': 'jobs',
+        'leads': 'leads',
+        'job-seekers': 'job-seekers',
+        'hiring-managers': 'hiring-managers',
+        'placements': 'placements',
+        'tasks': 'tasks',
+    };
 
     // Available modules for download
     const downloadModules: DownloadModule[] = [
@@ -93,6 +121,66 @@ export default function AdminCenter() {
         { id: 'placements', name: 'Placements', apiEndpoint: '/api/placements', dataKey: 'placements' },
         { id: 'tasks', name: 'Tasks', apiEndpoint: '/api/tasks', dataKey: 'tasks' },
     ];
+
+    // Fetch field configurations for selected modules
+    useEffect(() => {
+        if (selectedModules.length === 0 || !showDownloadModal) {
+            setModuleFieldConfigs({});
+            setIsLoadingFields(false);
+            return;
+        }
+
+        const fetchFieldConfigs = async () => {
+            setIsLoadingFields(true);
+            const configs: ModuleFieldConfig = {};
+
+            for (const moduleId of selectedModules) {
+                const entityType = moduleToEntityType[moduleId];
+                if (!entityType) {
+                    // Use standard fields only if no entity type mapping
+                    configs[moduleId] = getStandardFields(moduleId);
+                    continue;
+                }
+
+                try {
+                    const token = document.cookie.replace(
+                        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                        "$1"
+                    );
+                    const response = await fetch(`/api/admin/field-management/${entityType}`, {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        const fields = data.customFields || data.fields || [];
+                        // Filter out hidden fields and sort by sort_order
+                        const visibleFields = fields
+                            .filter((f: CustomFieldDefinition) => !f.is_hidden)
+                            .sort((a: CustomFieldDefinition, b: CustomFieldDefinition) => 
+                                (a.sort_order || 0) - (b.sort_order || 0)
+                            );
+                        configs[moduleId] = visibleFields;
+                    } else {
+                        // Fallback to standard fields if API fails
+                        configs[moduleId] = getStandardFields(moduleId);
+                    }
+                } catch (err) {
+                    console.error(`Error fetching fields for ${moduleId}:`, err);
+                    // Fallback to standard fields on error
+                    configs[moduleId] = getStandardFields(moduleId);
+                }
+            }
+
+            setModuleFieldConfigs(configs);
+            setIsLoadingFields(false);
+        };
+
+        fetchFieldConfigs();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [selectedModules, showDownloadModal]);
 
     // Available modules for upload with field mappings
     const uploadModules: UploadModule[] = [
@@ -203,24 +291,126 @@ export default function AdminCenter() {
         return flattened;
     };
 
-    // Convert data to CSV format
-    const convertToCSV = (data: any[], moduleName: string): string => {
+    // Get standard fields for each module
+    const getStandardFields = (moduleId: string): CustomFieldDefinition[] => {
+        const standardFieldsMap: Record<string, CustomFieldDefinition[]> = {
+            'job-seekers': [
+                { id: 'std_first_name', field_name: 'first_name', field_label: 'First Name', field_type: 'text', is_required: true, is_hidden: false, sort_order: 1 },
+                { id: 'std_last_name', field_name: 'last_name', field_label: 'Last Name', field_type: 'text', is_required: true, is_hidden: false, sort_order: 2 },
+                { id: 'std_email', field_name: 'email', field_label: 'Email', field_type: 'email', is_required: false, is_hidden: false, sort_order: 3 },
+                { id: 'std_phone', field_name: 'phone', field_label: 'Phone', field_type: 'phone', is_required: false, is_hidden: false, sort_order: 4 },
+                { id: 'std_status', field_name: 'status', field_label: 'Status', field_type: 'text', is_required: false, is_hidden: false, sort_order: 5 },
+            ],
+            'organizations': [
+                { id: 'std_name', field_name: 'name', field_label: 'Company Name', field_type: 'text', is_required: true, is_hidden: false, sort_order: 1 },
+                { id: 'std_contact_phone', field_name: 'contact_phone', field_label: 'Phone', field_type: 'phone', is_required: false, is_hidden: false, sort_order: 2 },
+                { id: 'std_website', field_name: 'website', field_label: 'Website', field_type: 'text', is_required: false, is_hidden: false, sort_order: 3 },
+                { id: 'std_status', field_name: 'status', field_label: 'Status', field_type: 'text', is_required: false, is_hidden: false, sort_order: 4 },
+            ],
+            'leads': [
+                { id: 'std_first_name', field_name: 'first_name', field_label: 'First Name', field_type: 'text', is_required: true, is_hidden: false, sort_order: 1 },
+                { id: 'std_last_name', field_name: 'last_name', field_label: 'Last Name', field_type: 'text', is_required: true, is_hidden: false, sort_order: 2 },
+                { id: 'std_email', field_name: 'email', field_label: 'Email', field_type: 'email', is_required: false, is_hidden: false, sort_order: 3 },
+                { id: 'std_phone', field_name: 'phone', field_label: 'Phone', field_type: 'phone', is_required: false, is_hidden: false, sort_order: 4 },
+                { id: 'std_title', field_name: 'title', field_label: 'Title', field_type: 'text', is_required: false, is_hidden: false, sort_order: 5 },
+                { id: 'std_status', field_name: 'status', field_label: 'Status', field_type: 'text', is_required: false, is_hidden: false, sort_order: 6 },
+            ],
+            'jobs': [
+                { id: 'std_title', field_name: 'job_title', field_label: 'Job Title', field_type: 'text', is_required: true, is_hidden: false, sort_order: 1 },
+                { id: 'std_organization_id', field_name: 'organization_id', field_label: 'Organization ID', field_type: 'text', is_required: false, is_hidden: false, sort_order: 2 },
+                { id: 'std_status', field_name: 'status', field_label: 'Status', field_type: 'text', is_required: false, is_hidden: false, sort_order: 3 },
+            ],
+            'hiring-managers': [
+                { id: 'std_first_name', field_name: 'first_name', field_label: 'First Name', field_type: 'text', is_required: true, is_hidden: false, sort_order: 1 },
+                { id: 'std_last_name', field_name: 'last_name', field_label: 'Last Name', field_type: 'text', is_required: true, is_hidden: false, sort_order: 2 },
+                { id: 'std_email', field_name: 'email', field_label: 'Email', field_type: 'email', is_required: false, is_hidden: false, sort_order: 3 },
+                { id: 'std_phone', field_name: 'phone', field_label: 'Phone', field_type: 'phone', is_required: false, is_hidden: false, sort_order: 4 },
+            ],
+            'placements': [
+                { id: 'std_job_seeker_id', field_name: 'job_seeker_id', field_label: 'Job Seeker ID', field_type: 'text', is_required: true, is_hidden: false, sort_order: 1 },
+                { id: 'std_job_id', field_name: 'job_id', field_label: 'Job ID', field_type: 'text', is_required: true, is_hidden: false, sort_order: 2 },
+                { id: 'std_status', field_name: 'status', field_label: 'Status', field_type: 'text', is_required: false, is_hidden: false, sort_order: 3 },
+            ],
+            'tasks': [
+                { id: 'std_title', field_name: 'title', field_label: 'Title', field_type: 'text', is_required: true, is_hidden: false, sort_order: 1 },
+                { id: 'std_status', field_name: 'status', field_label: 'Status', field_type: 'text', is_required: false, is_hidden: false, sort_order: 2 },
+                { id: 'std_priority', field_name: 'priority', field_label: 'Priority', field_type: 'text', is_required: false, is_hidden: false, sort_order: 3 },
+            ],
+        };
+
+        return standardFieldsMap[moduleId] || [];
+    };
+
+    // Get field order and labels from Field Management (includes standard fields)
+    const getFieldConfig = (moduleId: string): { fields: string[]; labels: Record<string, string> } => {
+        const customConfig = moduleFieldConfigs[moduleId] || [];
+        const standardFields = getStandardFields(moduleId);
+        
+        // Combine standard and custom fields
+        const allFields: CustomFieldDefinition[] = [...standardFields];
+        const standardFieldNames = new Set(standardFields.map(f => f.field_name));
+        
+        // Add custom fields that aren't already in standard fields
+        customConfig.forEach((field: CustomFieldDefinition) => {
+            if (!standardFieldNames.has(field.field_name)) {
+                allFields.push(field);
+            }
+        });
+        
+        // Sort by sort_order
+        allFields.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+        
+        const fields: string[] = [];
+        const labels: Record<string, string> = {};
+
+        allFields.forEach((field: CustomFieldDefinition) => {
+            fields.push(field.field_name);
+            labels[field.field_name] = field.field_label;
+        });
+
+        return { fields, labels };
+    };
+
+    // Convert data to CSV format with Field Management integration
+    const convertToCSV = (data: any[], moduleId: string, moduleName: string): string => {
         if (data.length === 0) return '';
         
         // Flatten all objects
         const flattenedData = data.map(item => flattenObject(item));
         
-        // Get all unique keys and sort them for consistency
+        // Get field configuration
+        const { fields: orderedFields, labels } = getFieldConfig(moduleId);
+        
+        // Get all keys from data
         const allKeys = new Set<string>();
         flattenedData.forEach(item => {
             Object.keys(item).forEach(key => allKeys.add(key));
         });
         
-        const headers = Array.from(allKeys).sort();
+        // Use ordered fields first, then add any remaining fields
+        const headers: string[] = [];
+        const usedFields = new Set<string>();
         
-        // Create CSV rows with proper escaping
+        // Add ordered fields from Field Management
+        orderedFields.forEach(field => {
+            if (allKeys.has(field)) {
+                headers.push(field);
+                usedFields.add(field);
+            }
+        });
+        
+        // Add remaining fields not in Field Management
+        Array.from(allKeys)
+            .filter(key => !usedFields.has(key))
+            .sort()
+            .forEach(key => headers.push(key));
+        
+        // Create CSV rows with proper escaping and use field labels
         const csvRows = [
-            headers.map(h => `"${h.replace(/"/g, '""')}"`).join(','),
+            headers.map(h => {
+                const label = labels[h] || h;
+                return `"${label.replace(/"/g, '""')}"`;
+            }).join(','),
             ...flattenedData.map(row =>
                 headers.map(header => {
                     const value = row[header] || '';
@@ -251,27 +441,142 @@ export default function AdminCenter() {
         URL.revokeObjectURL(url);
     };
 
-    // Download Excel file (using CSV format with .xlsx extension)
-    // Note: For proper Excel formatting with multiple sheets, consider installing 'xlsx' package
-    const downloadExcel = async (data: any[], moduleName: string) => {
-        // Convert to CSV format (Excel can open CSV files)
-        const csvContent = convertToCSV(data, moduleName);
-        const filename = `${moduleName}_${new Date().toISOString().split('T')[0]}.xlsx`;
-        
-        // Use UTF-8 BOM for Excel compatibility
-        const BOM = '\uFEFF';
-        const blob = new Blob([BOM + csvContent], { 
-            type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=utf-8;' 
-        });
-        const link = document.createElement('a');
-        const url = URL.createObjectURL(blob);
-        link.setAttribute('href', url);
-        link.setAttribute('download', filename);
-        link.style.visibility = 'hidden';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
+    // Download Excel file with multiple sheets
+    const downloadExcel = async (dataByModule: Record<string, any[]>, moduleNames: Record<string, string>) => {
+        try {
+            // Dynamic import of xlsx library
+            // @ts-ignore - xlsx is an optional dependency
+            const XLSX = await import('xlsx');
+            const workbook = XLSX.utils.book_new();
+
+            // Create a sheet for each module
+            Object.entries(dataByModule).forEach(([moduleId, data]) => {
+                if (data.length === 0) return;
+
+                const moduleName = moduleNames[moduleId] || moduleId;
+                const { fields: orderedFields, labels } = getFieldConfig(moduleId);
+                
+                // Flatten data
+                const flattenedData = data.map(item => flattenObject(item));
+                
+                // Get all keys
+                const allKeys = new Set<string>();
+                flattenedData.forEach(item => {
+                    Object.keys(item).forEach(key => allKeys.add(key));
+                });
+                
+                // Build headers with labels
+                const headers: string[] = [];
+                const headerLabels: string[] = [];
+                const usedFields = new Set<string>();
+                
+                // Add ordered fields from Field Management
+                orderedFields.forEach(field => {
+                    if (allKeys.has(field)) {
+                        headers.push(field);
+                        headerLabels.push(labels[field] || field);
+                        usedFields.add(field);
+                    }
+                });
+                
+                // Add remaining fields
+                Array.from(allKeys)
+                    .filter(key => !usedFields.has(key))
+                    .sort()
+                    .forEach(key => {
+                        headers.push(key);
+                        headerLabels.push(key);
+                    });
+                
+                // Create worksheet data with labels as headers
+                const worksheetData = [
+                    headerLabels,
+                    ...flattenedData.map(row =>
+                        headers.map(header => row[header] || '')
+                    )
+                ];
+                
+                const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+                
+                // Set column widths
+                const colWidths = headers.map(() => ({ wch: 15 }));
+                worksheet['!cols'] = colWidths;
+                
+                // Add sheet to workbook (limit sheet name to 31 characters for Excel)
+                const sheetName = moduleName.substring(0, 31);
+                XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+            });
+
+            // Generate Excel file
+            const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+            const blob = new Blob([excelBuffer], { 
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+            });
+            
+            const filename = `Export_${new Date().toISOString().split('T')[0]}.xlsx`;
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Error creating Excel file:', error);
+            // Fallback to CSV if xlsx library is not available
+            alert('Excel export requires xlsx library. Please install it: npm install xlsx');
+            // Fallback to individual CSV downloads
+            const timestamp = new Date().toISOString().split('T')[0];
+            Object.entries(dataByModule).forEach(([moduleId, data]) => {
+                if (data.length === 0) return;
+                const moduleName = moduleNames[moduleId] || moduleId;
+                const csvContent = convertToCSV(data, moduleId, moduleName);
+                downloadCSV(csvContent, `${moduleName}_${timestamp}.csv`);
+            });
+        }
+    };
+
+    // Download multiple CSV files as ZIP
+    const downloadCSVZip = async (dataByModule: Record<string, any[]>, moduleNames: Record<string, string>) => {
+        try {
+            // Dynamic import of JSZip
+            // @ts-ignore - jszip is an optional dependency
+            const JSZip = (await import('jszip')).default;
+            const zip = new JSZip();
+            const timestamp = new Date().toISOString().split('T')[0];
+
+            Object.entries(dataByModule).forEach(([moduleId, data]) => {
+                if (data.length === 0) return;
+                const moduleName = moduleNames[moduleId] || moduleId;
+                const csvContent = convertToCSV(data, moduleId, moduleName);
+                const filename = `${moduleName}_${timestamp}.csv`;
+                zip.file(filename, csvContent);
+            });
+
+            const zipBlob = await zip.generateAsync({ type: 'blob' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(zipBlob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `Export_${timestamp}.zip`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Error creating ZIP file:', error);
+            // Fallback to individual CSV downloads
+            alert('ZIP export requires jszip library. Downloading individual CSV files instead.');
+            const timestamp = new Date().toISOString().split('T')[0];
+            Object.entries(dataByModule).forEach(([moduleId, data]) => {
+                if (data.length === 0) return;
+                const moduleName = moduleNames[moduleId] || moduleId;
+                const csvContent = convertToCSV(data, moduleId, moduleName);
+                downloadCSV(csvContent, `${moduleName}_${timestamp}.csv`);
+            });
+        }
     };
 
     // Fetch data for a module
@@ -602,7 +907,7 @@ export default function AdminCenter() {
         setCurrentStep('select');
     };
 
-    // Handle export
+    // Handle export with backend API and Field Management integration
     const handleExport = async () => {
         if (selectedModules.length === 0) {
             alert('Please select at least one module to export.');
@@ -610,26 +915,82 @@ export default function AdminCenter() {
         }
 
         setIsExporting(true);
+        setExportProgress({ current: 0, total: selectedModules.length, module: '' });
 
         try {
-            const selectedModuleConfigs = downloadModules.filter(m => selectedModules.includes(m.id));
-            
-            for (const module of selectedModuleConfigs) {
-                const data = await fetchModuleData(module);
-                
-                if (data.length === 0) {
-                    console.warn(`No data found for ${module.name}`);
-                    continue;
+            const token = document.cookie.replace(
+                /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                "$1"
+            );
+
+            // Call backend export API with filters
+            const response = await fetch('/api/admin/data-downloader/export', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    modules: selectedModules,
+                    filters: {
+                        startDate: dateRange.start || null,
+                        endDate: dateRange.end || null,
+                        status: statusFilter || null,
+                    },
+                    format: exportFormat,
+                }),
+            });
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Export failed' }));
+                throw new Error(errorData.message || 'Failed to export data');
+            }
+
+            const result = await response.json();
+
+            if (!result.success) {
+                throw new Error(result.message || 'Export failed');
+            }
+
+            const dataByModule = result.data || {};
+            const moduleNames: Record<string, string> = {};
+            downloadModules.forEach(m => {
+                if (selectedModules.includes(m.id)) {
+                    moduleNames[m.id] = m.name;
                 }
+            });
 
-                const timestamp = new Date().toISOString().split('T')[0];
-                const filename = `${module.name}_${timestamp}`;
+            // Show errors if any
+            if (result.errors && Object.keys(result.errors).length > 0) {
+                const errorMessages = Object.entries(result.errors)
+                    .map(([module, error]) => `${moduleNames[module] || module}: ${error}`)
+                    .join('\n');
+                console.warn('Some modules failed to export:', errorMessages);
+            }
 
-                if (exportFormat === 'csv') {
-                    const csvContent = convertToCSV(data, module.name);
-                    downloadCSV(csvContent, `${filename}.csv`);
+            // Export based on format
+            if (exportFormat === 'excel') {
+                try {
+                    await downloadExcel(dataByModule, moduleNames);
+                } catch (error) {
+                    // Error already handled in downloadExcel with fallback
+                }
+            } else {
+                // CSV: single file if one module, ZIP if multiple
+                if (selectedModules.length === 1) {
+                    const moduleId = selectedModules[0];
+                    const data = dataByModule[moduleId] || [];
+                    if (data.length > 0) {
+                        const csvContent = convertToCSV(data, moduleId, moduleNames[moduleId]);
+                        const timestamp = new Date().toISOString().split('T')[0];
+                        downloadCSV(csvContent, `${moduleNames[moduleId]}_${timestamp}.csv`);
+                    }
                 } else {
-                    await downloadExcel(data, module.name);
+                    try {
+                        await downloadCSVZip(dataByModule, moduleNames);
+                    } catch (error) {
+                        // Error already handled in downloadCSVZip with fallback
+                    }
                 }
             }
 
@@ -637,9 +998,10 @@ export default function AdminCenter() {
             setShowDownloadModal(false);
         } catch (error) {
             console.error('Export error:', error);
-            alert('An error occurred during export. Please try again.');
+            alert(error instanceof Error ? error.message : 'An error occurred during export. Please try again.');
         } finally {
             setIsExporting(false);
+            setExportProgress({ current: 0, total: 0, module: '' });
         }
     };
 
@@ -801,6 +1163,12 @@ export default function AdminCenter() {
                                         </label>
                                     ))}
                                 </div>
+                                {isLoadingFields && selectedModules.length > 0 && (
+                                    <div className="mt-2 text-xs text-gray-500 flex items-center gap-2">
+                                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
+                                        Loading field configurations...
+                                    </div>
+                                )}
                             </div>
 
                             {/* Export Format */}
@@ -817,7 +1185,9 @@ export default function AdminCenter() {
                                             onChange={(e) => setExportFormat(e.target.value as 'csv')}
                                             className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                                         />
-                                        <span className="text-sm text-gray-700">CSV</span>
+                                        <span className="text-sm text-gray-700">
+                                            CSV {selectedModules.length > 1 && '(ZIP)'}
+                                        </span>
                                     </label>
                                     <label className="flex items-center space-x-2 cursor-pointer">
                                         <input
@@ -827,9 +1197,18 @@ export default function AdminCenter() {
                                             onChange={(e) => setExportFormat(e.target.value as 'excel')}
                                             className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                                         />
-                                        <span className="text-sm text-gray-700">Excel</span>
+                                        <span className="text-sm text-gray-700">
+                                            Excel {selectedModules.length > 1 && '(Multiple Sheets)'}
+                                        </span>
                                     </label>
                                 </div>
+                                <p className="text-xs text-gray-500 mt-2">
+                                    {exportFormat === 'excel' && selectedModules.length > 1
+                                        ? 'Each module will be exported as a separate sheet in one Excel file.'
+                                        : exportFormat === 'csv' && selectedModules.length > 1
+                                        ? 'Multiple CSV files will be bundled in a ZIP archive.'
+                                        : 'Single file export.'}
+                                </p>
                             </div>
 
                             {/* Filters */}
@@ -878,10 +1257,37 @@ export default function AdminCenter() {
                             </div>
                         </div>
 
+                        {/* Export Progress */}
+                        {isExporting && exportProgress.total > 0 && (
+                            <div className="px-6 pb-4">
+                                <div className="bg-blue-50 border border-blue-200 rounded p-4">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <span className="text-sm font-medium text-blue-700">
+                                            Exporting {exportProgress.module || 'data'}...
+                                        </span>
+                                        <span className="text-sm text-blue-600">
+                                            {exportProgress.current} / {exportProgress.total} modules
+                                        </span>
+                                    </div>
+                                    <div className="w-full bg-blue-200 rounded-full h-2">
+                                        <div
+                                            className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                            style={{ width: `${(exportProgress.current / exportProgress.total) * 100}%` }}
+                                        ></div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Modal Footer */}
                         <div className="bg-gray-50 p-4 border-t flex justify-end gap-3 sticky bottom-0">
                             <button
-                                onClick={() => setShowDownloadModal(false)}
+                                onClick={() => {
+                                    setShowDownloadModal(false);
+                                    setSelectedModules([]);
+                                    setDateRange({ start: '', end: '' });
+                                    setStatusFilter('');
+                                }}
                                 className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
                                 disabled={isExporting}
                             >
@@ -889,7 +1295,7 @@ export default function AdminCenter() {
                             </button>
                             <button
                                 onClick={handleExport}
-                                disabled={isExporting || selectedModules.length === 0}
+                                disabled={isExporting || selectedModules.length === 0 || isLoadingFields}
                                 className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
                             >
                                 {isExporting ? (
