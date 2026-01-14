@@ -255,10 +255,13 @@ export const sendCalendarInvite = async (
     }
 
     // Add attendees to the event
-    const eventWithAttendees: CalendarEvent & { attendees?: Array<{ emailAddress: { address: string }; type: string }> } = {
+    const eventWithAttendees: CalendarEvent = {
       ...event,
       attendees: attendees.map(email => ({
-        emailAddress: { address: email },
+        emailAddress: { 
+          address: email,
+          name: email.split('@')[0] || email, // Use email prefix as name, fallback to email
+        },
         type: 'required',
       })),
     };
