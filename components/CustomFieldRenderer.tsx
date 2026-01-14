@@ -331,9 +331,9 @@ export default function CustomFieldRenderer({
         field.field_label?.toLowerCase().includes("year") ||
         field.field_name?.toLowerCase().includes("year");
       
-      // Check if this is a numeric field that must be > 2000 (Number of Employees, Offices, Oasis Key)
+      // Check if this is a numeric field that allows values >= 0 (Number of Employees, Offices, Oasis Key)
       // Check by both label and field_name (Field_32, Field_25, Field_31)
-      const isMin2000Field =
+      const isNonNegativeField =
         field.field_label?.toLowerCase().includes("employees") ||
         field.field_label?.toLowerCase().includes("offices") ||
         field.field_label?.toLowerCase().includes("oasis key") ||
@@ -366,20 +366,20 @@ export default function CustomFieldRenderer({
         );
       }
 
-      if (isMin2000Field) {
-        // Fields that must be > 2000: Number of Employees, Offices, Oasis Key
+      if (isNonNegativeField) {
+        // Fields that allow values >= 0: Number of Employees, Offices, Oasis Key
         return (
           <input
             {...fieldProps}
             type="number"
-            min="2001"
+            min="0"
             step="1"
             onChange={(e) => {
               const numValue = parseFloat(e.target.value);
               if (e.target.value !== "" && !isNaN(numValue)) {
-                if (numValue <= 2000) {
-                  // Set validation error for values <= 2000
-                  e.target.setCustomValidity("Value must be greater than 2000");
+                if (numValue < 0) {
+                  // Set validation error for negative values
+                  e.target.setCustomValidity("Value must be 0 or greater");
                   e.target.classList.add("border-red-500");
                 } else {
                   e.target.setCustomValidity("");
@@ -393,8 +393,8 @@ export default function CustomFieldRenderer({
             }}
             onBlur={(e) => {
               const numValue = parseFloat(e.target.value);
-              if (e.target.value !== "" && !isNaN(numValue) && numValue <= 2000) {
-                e.target.setCustomValidity("Value must be greater than 2000");
+              if (e.target.value !== "" && !isNaN(numValue) && numValue < 0) {
+                e.target.setCustomValidity("Value must be 0 or greater");
                 e.target.classList.add("border-red-500");
               } else {
                 e.target.setCustomValidity("");
@@ -840,9 +840,9 @@ export function useCustomFields(entityType: string) {
         return /^\d{5}$/.test(trimmed);
       }
       
-      // Special validation for numeric fields that must be > 2000
+      // Special validation for numeric fields that allow values >= 0
       // Check by both label and field_name (Field_32, Field_25, Field_31)
-      const isMin2000Field =
+      const isNonNegativeField =
         field.field_label?.toLowerCase().includes("employees") ||
         field.field_label?.toLowerCase().includes("offices") ||
         field.field_label?.toLowerCase().includes("oasis key") ||
@@ -855,15 +855,43 @@ export function useCustomFields(entityType: string) {
         field.field_name === "field_25" ||
         field.field_name === "Field_31" || // Oasis Key
         field.field_name === "field_31";
-      if (isMin2000Field && field.field_type === "number") {
+      if (isNonNegativeField && field.field_type === "number") {
         const numValue = parseFloat(trimmed);
-        if (isNaN(numValue) || numValue <= 2000) {
+        // Allow values >= 0 (0, 1, 2, etc.)
+        if (isNaN(numValue) || numValue < 0) {
           return false;
         }
       }
       
-      // Special validation for URL fields
-      if (field.field_type === "url") {
+      // Special validation for phone fields (Main Phone, etc.)
+      // Check by both field_type and field_name (Field_5)
+      const isPhoneField =
+        field.field_type === "phone" ||
+        field.field_label?.toLowerCase().includes("phone") ||
+        field.field_name === "Field_5" || // Main Phone
+        field.field_name === "field_5";
+      if (isPhoneField && trimmed !== "") {
+        // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
+        // Remove all non-numeric characters to check digit count
+        const digitsOnly = trimmed.replace(/\D/g, "");
+        // Must have exactly 10 digits
+        if (digitsOnly.length !== 10) {
+          return false;
+        }
+        // Check if formatted correctly as (000) 000-0000
+        const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+        return phoneRegex.test(trimmed);
+      }
+      
+      // Special validation for URL fields (Organization Website, etc.)
+      // Check by both field_type and field_name (Field_4)
+      const isUrlField =
+        field.field_type === "url" ||
+        field.field_label?.toLowerCase().includes("website") ||
+        field.field_label?.toLowerCase().includes("url") ||
+        field.field_name === "Field_4" || // Organization Website
+        field.field_name === "field_4";
+      if (isUrlField && trimmed !== "") {
         // URL must start with http://, https://, or www.
         const urlPattern = /^(https?:\/\/|www\.).+/i;
         if (!urlPattern.test(trimmed)) {
@@ -902,7 +930,7 @@ export function useCustomFields(entityType: string) {
             errorMessage = `${field.field_label} must be exactly 5 digits`;
           }
           
-          const isMin2000Field =
+          const isNonNegativeField =
             field.field_label?.toLowerCase().includes("employees") ||
             field.field_label?.toLowerCase().includes("offices") ||
             field.field_label?.toLowerCase().includes("oasis key") ||
@@ -915,15 +943,42 @@ export function useCustomFields(entityType: string) {
             field.field_name === "field_25" ||
             field.field_name === "Field_31" || // Oasis Key
             field.field_name === "field_31";
-          if (isMin2000Field && value && !isNaN(parseFloat(String(value)))) {
+          if (isNonNegativeField && value && !isNaN(parseFloat(String(value)))) {
             const numValue = parseFloat(String(value));
-            if (numValue <= 2000) {
-              errorMessage = `${field.field_label} must be greater than 2000`;
+            if (numValue < 0) {
+              errorMessage = `${field.field_label} must be 0 or greater`;
+            }
+          }
+          
+          // Add specific error message for phone validation failures
+          // Check by both field_type and field_name (Field_5)
+          const isPhoneFieldError =
+            field.field_type === "phone" ||
+            field.field_label?.toLowerCase().includes("phone") ||
+            field.field_name === "Field_5" || // Main Phone
+            field.field_name === "field_5";
+          if (isPhoneFieldError && value && String(value).trim() !== "") {
+            const trimmed = String(value).trim();
+            const digitsOnly = trimmed.replace(/\D/g, "");
+            if (digitsOnly.length !== 10) {
+              errorMessage = `${field.field_label} must be a complete 10-digit phone number`;
+            } else {
+              const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+              if (!phoneRegex.test(trimmed)) {
+                errorMessage = `${field.field_label} must be formatted as (000) 000-0000`;
+              }
             }
           }
           
           // Add specific error message for URL validation failures
-          if (field.field_type === "url" && value && String(value).trim() !== "") {
+          // Check by both field_type and field_name (Field_4)
+          const isUrlFieldError =
+            field.field_type === "url" ||
+            field.field_label?.toLowerCase().includes("website") ||
+            field.field_label?.toLowerCase().includes("url") ||
+            field.field_name === "Field_4" || // Organization Website
+            field.field_name === "field_4";
+          if (isUrlFieldError && value && String(value).trim() !== "") {
             const trimmed = String(value).trim();
             const urlPattern = /^(https?:\/\/|www\.).+/i;
             if (!urlPattern.test(trimmed)) {

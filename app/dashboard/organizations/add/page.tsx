@@ -373,6 +373,38 @@ export default function AddOrganization() {
       ...prev,
       [name]: value,
     }));
+
+    // Sync Contract Signed on File (contractOnFile) with Field_8 in customFieldValues if Field_8 exists
+    if (name === "contractOnFile") {
+      const contractSignedOnFileField = customFields.find(
+        (f) =>
+          f.field_name === "Field_8" ||
+          f.field_name === "field_8" ||
+          f.field_name?.toLowerCase() === "field_8" ||
+          (f.field_label === "Contract Signed on File" &&
+            (f.field_name?.includes("8") ||
+              f.field_name?.toLowerCase().includes("field_8")))
+      );
+      if (contractSignedOnFileField) {
+        handleCustomFieldChange(contractSignedOnFileField.field_name, value);
+      }
+    }
+
+    // Sync Contract Signed By (contractSignedBy) with Field_9 in customFieldValues if Field_9 exists
+    if (name === "contractSignedBy") {
+      const contractSignedByField = customFields.find(
+        (f) =>
+          f.field_name === "Field_9" ||
+          f.field_name === "field_9" ||
+          f.field_name?.toLowerCase() === "field_9" ||
+          (f.field_label === "Contract Signed By" &&
+            (f.field_name?.includes("9") ||
+              f.field_name?.toLowerCase().includes("field_9")))
+      );
+      if (contractSignedByField) {
+        handleCustomFieldChange(contractSignedByField.field_name, value);
+      }
+    }
   };
 
   // const validateForm = () => {
@@ -444,6 +476,56 @@ export default function AddOrganization() {
             return;
           }
         }
+      }
+    }
+
+    // Validate conditional requirement: Contract Signed By is required when Contract Signed on File is "Yes"
+    const contractSignedOnFileField = customFields.find(
+      (f) =>
+        f.field_name === "Field_8" ||
+        f.field_name === "field_8" ||
+        f.field_name?.toLowerCase() === "field_8" ||
+        (f.field_label === "Contract Signed on File" &&
+          (f.field_name?.includes("8") ||
+            f.field_name?.toLowerCase().includes("field_8")))
+    );
+
+    const contractSignedByField = customFields.find(
+      (f) =>
+        f.field_name === "Field_9" ||
+        f.field_name === "field_9" ||
+        f.field_name?.toLowerCase() === "field_9" ||
+        (f.field_label === "Contract Signed By" &&
+          (f.field_name?.includes("9") ||
+            f.field_name?.toLowerCase().includes("field_9")))
+    );
+
+    // Check both customFieldValues (Field_8) and formData.contractOnFile
+    let contractSignedOnFileValue = "";
+    if (contractSignedOnFileField) {
+      contractSignedOnFileValue =
+        customFieldValues[contractSignedOnFileField.field_name] || "";
+    }
+    // Fallback to formData if custom field value is empty
+    if (!contractSignedOnFileValue) {
+      contractSignedOnFileValue = formData.contractOnFile || "";
+    }
+
+    if (contractSignedByField) {
+      const contractSignedByValue =
+        customFieldValues[contractSignedByField.field_name] ||
+        formData.contractSignedBy ||
+        "";
+
+      // If Contract Signed on File is "Yes", Contract Signed By is required
+      if (
+        String(contractSignedOnFileValue).trim() === "Yes" &&
+        (!contractSignedByValue || String(contractSignedByValue).trim() === "")
+      ) {
+        setError(
+          `${contractSignedByField.field_label} is required when Contract Signed on File is set to "Yes"`
+        );
+        return;
       }
     }
 
@@ -1409,13 +1491,24 @@ export default function AddOrganization() {
                       
                       return requiredFields.every((f) => {
                         const val = customFieldValues[f.field_name];
+                        
+                        // For select fields, check if a valid option is selected
+                        if (f.field_type === "select") {
+                          if (!val || String(val).trim() === "" || String(val).trim().toLowerCase() === "select an option") {
+                            return false;
+                          }
+                          return true;
+                        }
+                        
                         if (!val || String(val).trim() === "") return false;
                         
                         // Special validation for ZIP code (must be exactly 5 digits)
                         const isZipCodeField =
                           f.field_label?.toLowerCase().includes("zip") ||
                           f.field_label?.toLowerCase().includes("postal code") ||
-                          f.field_name?.toLowerCase().includes("zip");
+                          f.field_name?.toLowerCase().includes("zip") ||
+                          f.field_name === "Field_24" || // ZIP Code
+                          f.field_name === "field_24";
                         if (isZipCodeField) {
                           return /^\d{5}$/.test(String(val).trim());
                         }
@@ -1435,13 +1528,9 @@ export default function AddOrganization() {
                        {/* left side same label width space */}
                        <label className="w-48 font-medium flex items-center mt-4">
                          Address:
-                         {/* Show green check if all required fields are satisfied, red asterisk if not */}
-                         {hasRequiredAddressFields && (
-                           allValid ? (
-                             <span className="text-green-500 ml-1">✔</span>
-                           ) : (
-                             <span className="text-red-500 ml-1">*</span>
-                           )
+                         {/* Show green check only when all address sub-fields are satisfied */}
+                         {hasRequiredAddressFields && allValid && (
+                           <span className="text-green-500 ml-1">✔</span>
                          )}
                        </label>
 
@@ -1481,6 +1570,15 @@ export default function AddOrganization() {
                       (field.field_name?.includes("18") ||
                         field.field_name?.toLowerCase().includes("field_18")));
 
+                  // Special handling for Field_8 (Contract Signed on File) - detect for conditional validation
+                  const isContractSignedOnFileField =
+                    field.field_name === "Field_8" ||
+                    field.field_name === "field_8" ||
+                    field.field_name?.toLowerCase() === "field_8" ||
+                    (field.field_label === "Contract Signed on File" &&
+                      (field.field_name?.includes("8") ||
+                        field.field_name?.toLowerCase().includes("field_8")));
+
                   // Special handling for Field_9 (Contract Signed by) - render as contact lookup
                   const isContractSignedByField =
                     field.field_name === "Field_9" ||
@@ -1489,6 +1587,33 @@ export default function AddOrganization() {
                     (field.field_label === "Contract Signed By" &&
                       (field.field_name?.includes("9") ||
                         field.field_name?.toLowerCase().includes("field_9")));
+
+                  // Check if Contract Signed on File is "Yes" to conditionally require Contract Signed By
+                  // Check both customFieldValues (Field_8) and formData.contractOnFile
+                  const contractSignedOnFileField = customFields.find(
+                    (f) =>
+                      f.field_name === "Field_8" ||
+                      f.field_name === "field_8" ||
+                      f.field_name?.toLowerCase() === "field_8" ||
+                      (f.field_label === "Contract Signed on File" &&
+                        (f.field_name?.includes("8") ||
+                          f.field_name?.toLowerCase().includes("field_8")))
+                  );
+
+                  let contractSignedOnFileValue = "";
+                  if (contractSignedOnFileField?.field_name) {
+                    contractSignedOnFileValue =
+                      customFieldValues[contractSignedOnFileField.field_name] || "";
+                  }
+                  // Fallback to formData if custom field value is empty
+                  if (!contractSignedOnFileValue) {
+                    contractSignedOnFileValue = formData.contractOnFile || "";
+                  }
+
+                  // Field_9 is conditionally required when Field_8 is "Yes"
+                  const isContractSignedByRequired =
+                    isContractSignedByField &&
+                    String(contractSignedOnFileValue).trim() === "Yes";
 
                   // Helper function to check if field has a valid value
                   const hasValidValue = () => {
@@ -1519,9 +1644,9 @@ export default function AddOrganization() {
                       return /^\d{5}$/.test(trimmed);
                     }
                     
-                    // Special validation for numeric fields that must be > 2000
+                    // Special validation for numeric fields that allow values >= 0
                     // Check by both label and field_name (Field_32, Field_25, Field_31)
-                    const isMin2000Field =
+                    const isNonNegativeField =
                       field.field_label?.toLowerCase().includes("employees") ||
                       field.field_label?.toLowerCase().includes("offices") ||
                       field.field_label?.toLowerCase().includes("oasis key") ||
@@ -1534,13 +1659,41 @@ export default function AddOrganization() {
                       field.field_name === "field_25" ||
                       field.field_name === "Field_31" || // Oasis Key
                       field.field_name === "field_31";
-                    if (isMin2000Field && field.field_type === "number") {
+                    if (isNonNegativeField && field.field_type === "number") {
                       const numValue = parseFloat(trimmed);
-                      return !isNaN(numValue) && numValue > 2000;
+                      // Allow values >= 0 (0, 1, 2, etc.)
+                      return !isNaN(numValue) && numValue >= 0;
                     }
                     
-                    // Special validation for URL fields
-                    if (field.field_type === "url") {
+                    // Special validation for phone fields (Main Phone, etc.)
+                    // Check by both field_type and field_name (Field_5)
+                    const isPhoneField =
+                      field.field_type === "phone" ||
+                      field.field_label?.toLowerCase().includes("phone") ||
+                      field.field_name === "Field_5" || // Main Phone
+                      field.field_name === "field_5";
+                    if (isPhoneField && trimmed !== "") {
+                      // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
+                      // Remove all non-numeric characters to check digit count
+                      const digitsOnly = trimmed.replace(/\D/g, "");
+                      // Must have exactly 10 digits
+                      if (digitsOnly.length !== 10) {
+                        return false;
+                      }
+                      // Check if formatted correctly as (000) 000-0000
+                      const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+                      return phoneRegex.test(trimmed);
+                    }
+                    
+                    // Special validation for URL fields (Organization Website, etc.)
+                    // Check by both field_type and field_name (Field_4)
+                    const isUrlField =
+                      field.field_type === "url" ||
+                      field.field_label?.toLowerCase().includes("website") ||
+                      field.field_label?.toLowerCase().includes("url") ||
+                      field.field_name === "Field_4" || // Organization Website
+                      field.field_name === "field_4";
+                    if (isUrlField && trimmed !== "") {
                       // URL must start with http://, https://, or www.
                       const urlPattern = /^(https?:\/\/|www\.).+/i;
                       if (!urlPattern.test(trimmed)) {
@@ -1566,7 +1719,8 @@ export default function AddOrganization() {
                     <div key={field.id} className="flex items-center mb-3">
                       <label className="w-48 font-medium flex items-center">
                         {field.field_label}:
-                        {field.is_required &&
+                        {/* Show indicator for required fields OR conditionally required fields */}
+                        {(field.is_required || isContractSignedByRequired) &&
                           (hasValidValue() ? (
                             <span className="text-green-500 ml-1">✔</span>
                           ) : (

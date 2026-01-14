@@ -84,18 +84,37 @@ function UnderlineField({
   withSearchIcon?: boolean;
 }) {
   const value = values?.[field.field_name] ?? "";
-  const hasValue = value && String(value).trim() !== "";
   
-  // Special validation for ZIP code (must be exactly 5 digits)
-  // Check by both label and field_name (Field_24)
-  const isZipCodeField =
-    field.field_label?.toLowerCase().includes("zip") ||
-    field.field_label?.toLowerCase().includes("postal code") ||
-    field.field_name?.toLowerCase().includes("zip") ||
-    field.field_name === "Field_24" || // ZIP Code
-    field.field_name === "field_24";
+  // Check if field has a valid value
+  const isValid = () => {
+    // For select fields, check if a valid option is selected
+    if (field.field_type === "select") {
+      if (!value || String(value).trim() === "" || String(value).trim().toLowerCase() === "select an option") {
+        return false;
+      }
+      return true;
+    }
+    
+    const hasValue = value && String(value).trim() !== "";
+    if (!hasValue) return false;
+    
+    // Special validation for ZIP code (must be exactly 5 digits)
+    // Check by both label and field_name (Field_24)
+    const isZipCodeField =
+      field.field_label?.toLowerCase().includes("zip") ||
+      field.field_label?.toLowerCase().includes("postal code") ||
+      field.field_name?.toLowerCase().includes("zip") ||
+      field.field_name === "Field_24" || // ZIP Code
+      field.field_name === "field_24";
+    
+    if (isZipCodeField) {
+      return /^\d{5}$/.test(String(value).trim());
+    }
+    
+    return true;
+  };
   
-  const isValid = hasValue && (!isZipCodeField || /^\d{5}$/.test(String(value).trim()));
+  const fieldIsValid = isValid();
 
   const safeField: CustomFieldDefinition = {
     ...field,
@@ -105,12 +124,15 @@ function UnderlineField({
   return (
     <div className="min-w-0">
       <div className="border-b border-gray-300 flex items-center gap-2">
+        {/* Red circle or green checkmark at the beginning - consistent with other fields */}
         {field.is_required && (
-          <span
-            className={`w-2 h-2 rounded-full inline-block transition-colors duration-300 ${
-              isValid ? "bg-green-500" : "bg-red-500"
-            }`}
-          />
+          fieldIsValid ? (
+            <span className="text-green-500 text-sm transition-opacity duration-300 ease-in-out flex-shrink-0">
+              ✔
+            </span>
+          ) : (
+            <span className="w-2 h-2 rounded-full inline-block bg-red-500 transition-colors duration-300 flex-shrink-0" />
+          )
         )}
 
         {withSearchIcon && <SearchIcon />}
@@ -122,13 +144,6 @@ function UnderlineField({
             onChange={onChange}
           />
         </div>
-        
-        {/* Green checkmark when field is filled */}
-        {isValid && (
-          <span className="text-green-500 text-lg transition-opacity duration-300 ease-in-out">
-            ✅
-          </span>
-        )}
       </div>
     </div>
   );
@@ -170,6 +185,15 @@ export default function AddressGroupRenderer({
   const checkFieldComplete = (field: CustomFieldDefinition | undefined): boolean => {
     if (!field) return true; // Field doesn't exist, consider it complete for validation purposes
     const value = values?.[field.field_name] ?? "";
+    
+    // For select fields, empty string means "Select an option" (not selected)
+    if (field.field_type === "select") {
+      if (!value || String(value).trim() === "" || String(value).trim().toLowerCase() === "select an option") {
+        return false;
+      }
+      return true;
+    }
+    
     if (!value || String(value).trim() === "") return false;
     
     // Special validation for ZIP code (must be exactly 5 digits)
@@ -188,16 +212,17 @@ export default function AddressGroupRenderer({
   };
 
   // Check if all main address fields are complete
-  // Address, City, and ZIP Code must be filled
+  // Address, City, State, and ZIP Code must be filled
   // Address 2: if it exists in the form, it must be filled; if it doesn't exist, we don't check it
   const isAddressComplete = addressField ? checkFieldComplete(addressField) : false;
   const isAddress2Complete = address2Field ? checkFieldComplete(address2Field) : true; // If Address 2 field doesn't exist, consider it complete
   const isCityComplete = cityField ? checkFieldComplete(cityField) : false;
+  const isStateComplete = stateField ? checkFieldComplete(stateField) : true; // State might be optional, but if it exists and is required, check it
   const isZipComplete = zipField ? checkFieldComplete(zipField) : false;
 
-  // All main address fields are complete
-  // If Address 2 field exists, it must be filled; otherwise we only check Address, City, and ZIP Code
-  const allFieldsComplete = isAddressComplete && isAddress2Complete && isCityComplete && isZipComplete;
+  // All main address fields are complete (Address, City, State, ZIP Code)
+  // Address 2 is optional, so if it doesn't exist, we only check Address, City, State, and ZIP Code
+  const allFieldsComplete = isAddressComplete && isAddress2Complete && isCityComplete && isStateComplete && isZipComplete;
 
   return (
     <div className="address-underline">
