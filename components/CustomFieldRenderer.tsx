@@ -658,8 +658,8 @@ export default function CustomFieldRenderer({
           <input
             {...fieldProps}
             type="url"
-            pattern="https?://.+"
-            title="Please enter a valid URL starting with http:// or https://"
+            pattern="(https?://|www\.).+"
+            title="Please enter a valid URL starting with http://, https://, or www."
             required={field.is_required}
           />
         );
@@ -864,14 +864,18 @@ export function useCustomFields(entityType: string) {
       
       // Special validation for URL fields
       if (field.field_type === "url") {
-        // URL must start with http:// or https://
-        const urlPattern = /^https?:\/\/.+/i;
+        // URL must start with http://, https://, or www.
+        const urlPattern = /^(https?:\/\/|www\.).+/i;
         if (!urlPattern.test(trimmed)) {
           return false;
         }
         // Additional validation: try to create a URL object to check if it's valid
         try {
-          new URL(trimmed);
+          // If URL starts with www., prepend https:// for validation
+          const urlToValidate = trimmed.toLowerCase().startsWith('www.') 
+            ? `https://${trimmed}` 
+            : trimmed;
+          new URL(urlToValidate);
           return true;
         } catch {
           return false;
@@ -921,12 +925,16 @@ export function useCustomFields(entityType: string) {
           // Add specific error message for URL validation failures
           if (field.field_type === "url" && value && String(value).trim() !== "") {
             const trimmed = String(value).trim();
-            const urlPattern = /^https?:\/\/.+/i;
+            const urlPattern = /^(https?:\/\/|www\.).+/i;
             if (!urlPattern.test(trimmed)) {
-              errorMessage = `${field.field_label} must start with http:// or https://`;
+              errorMessage = `${field.field_label} must start with http://, https://, or www.`;
             } else {
               try {
-                new URL(trimmed);
+                // If URL starts with www., prepend https:// for validation
+                const urlToValidate = trimmed.toLowerCase().startsWith('www.') 
+                  ? `https://${trimmed}` 
+                  : trimmed;
+                new URL(urlToValidate);
               } catch {
                 errorMessage = `${field.field_label} must be a valid URL`;
               }
