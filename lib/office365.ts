@@ -240,3 +240,46 @@ export const disconnectOffice365 = (): void => {
   sessionStorage.removeItem('msal_access_token_expiry');
   sessionStorage.removeItem('msal_id_token');
 };
+
+/**
+ * Send calendar invite to multiple attendees via Office 365
+ */
+export const sendCalendarInvite = async (
+  event: CalendarEvent,
+  attendees: string[] // Array of email addresses
+): Promise<boolean> => {
+  try {
+    const token = await getOffice365Token();
+    if (!token) {
+      throw new Error('Office 365 not authenticated. Please sign in first.');
+    }
+
+    // Add attendees to the event
+    const eventWithAttendees: CalendarEvent & { attendees?: Array<{ emailAddress: { address: string }; type: string }> } = {
+      ...event,
+      attendees: attendees.map(email => ({
+        emailAddress: { address: email },
+        type: 'required',
+      })),
+    };
+
+    const response = await fetch('/api/office365/calendar', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(eventWithAttendees),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.message || 'Failed to send calendar invite');
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error sending calendar invite:', error);
+    throw error;
+  }
+};

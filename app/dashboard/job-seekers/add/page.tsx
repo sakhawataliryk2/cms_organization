@@ -1513,12 +1513,20 @@ export default function AddJobSeeker() {
                     ? parseMultiValue(fieldValue)
                     : [];
 
+                  // Helper function to check if field has a valid value
+                  const hasValidValue = () => {
+                    if (fieldValue === null || fieldValue === undefined) return false;
+                    const trimmed = String(fieldValue).trim();
+                    if (trimmed === "" || trimmed === "Select an option") return false;
+                    return true;
+                  };
+
                   return (
                     <div key={field.id} className="flex items-center mb-3">
                       <label className="w-48 font-medium flex items-center">
                         {field.field_label}:
                         {field.is_required &&
-                          (fieldValue.trim() !== "" ? (
+                          (hasValidValue() ? (
                             <span className="text-green-500 ml-1">✔</span>
                           ) : (
                             <span className="text-red-500 ml-1">*</span>

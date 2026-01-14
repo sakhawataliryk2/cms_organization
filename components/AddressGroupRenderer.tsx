@@ -85,6 +85,17 @@ function UnderlineField({
 }) {
   const value = values?.[field.field_name] ?? "";
   const hasValue = value && String(value).trim() !== "";
+  
+  // Special validation for ZIP code (must be exactly 5 digits)
+  // Check by both label and field_name (Field_24)
+  const isZipCodeField =
+    field.field_label?.toLowerCase().includes("zip") ||
+    field.field_label?.toLowerCase().includes("postal code") ||
+    field.field_name?.toLowerCase().includes("zip") ||
+    field.field_name === "Field_24" || // ZIP Code
+    field.field_name === "field_24";
+  
+  const isValid = hasValue && (!isZipCodeField || /^\d{5}$/.test(String(value).trim()));
 
   const safeField: CustomFieldDefinition = {
     ...field,
@@ -96,8 +107,8 @@ function UnderlineField({
       <div className="border-b border-gray-300 flex items-center gap-2">
         {field.is_required && (
           <span
-            className={`w-2 h-2 rounded-full inline-block ${
-              hasValue ? "bg-green-500" : "bg-red-500"
+            className={`w-2 h-2 rounded-full inline-block transition-colors duration-300 ${
+              isValid ? "bg-green-500" : "bg-red-500"
             }`}
           />
         )}
@@ -111,6 +122,13 @@ function UnderlineField({
             onChange={onChange}
           />
         </div>
+        
+        {/* Green checkmark when field is filled */}
+        {isValid && (
+          <span className="text-green-500 text-lg transition-opacity duration-300 ease-in-out">
+            ✅
+          </span>
+        )}
       </div>
     </div>
   );
@@ -147,6 +165,39 @@ export default function AddressGroupRenderer({
 
   if (!addressField && !address2Field && !cityField && !stateField && !zipField)
     return null;
+
+  // Check if a field is complete (filled and valid)
+  const checkFieldComplete = (field: CustomFieldDefinition | undefined): boolean => {
+    if (!field) return true; // Field doesn't exist, consider it complete for validation purposes
+    const value = values?.[field.field_name] ?? "";
+    if (!value || String(value).trim() === "") return false;
+    
+    // Special validation for ZIP code (must be exactly 5 digits)
+    // Check by both label and field_name (Field_24)
+    const isZipCodeField =
+      field.field_label?.toLowerCase().includes("zip") ||
+      field.field_label?.toLowerCase().includes("postal code") ||
+      field.field_name?.toLowerCase().includes("zip") ||
+      field.field_name === "Field_24" || // ZIP Code
+      field.field_name === "field_24";
+    if (isZipCodeField) {
+      return /^\d{5}$/.test(String(value).trim());
+    }
+    
+    return true;
+  };
+
+  // Check if all main address fields are complete
+  // Address, City, and ZIP Code must be filled
+  // Address 2: if it exists in the form, it must be filled; if it doesn't exist, we don't check it
+  const isAddressComplete = addressField ? checkFieldComplete(addressField) : false;
+  const isAddress2Complete = address2Field ? checkFieldComplete(address2Field) : true; // If Address 2 field doesn't exist, consider it complete
+  const isCityComplete = cityField ? checkFieldComplete(cityField) : false;
+  const isZipComplete = zipField ? checkFieldComplete(zipField) : false;
+
+  // All main address fields are complete
+  // If Address 2 field exists, it must be filled; otherwise we only check Address, City, and ZIP Code
+  const allFieldsComplete = isAddressComplete && isAddress2Complete && isCityComplete && isZipComplete;
 
   return (
     <div className="address-underline">
@@ -195,6 +246,16 @@ export default function AddressGroupRenderer({
               onChange={onChange}
             />
           )}
+        </div>
+      )}
+      
+      {/* Success message when all fields are complete */}
+      {allFieldsComplete && (
+        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md transition-all duration-300 ease-in-out transform opacity-100">
+          <p className="text-green-700 text-sm font-medium flex items-center">
+            <span className="mr-2">✅</span>
+            Address information complete.
+          </p>
         </div>
       )}
     </div>

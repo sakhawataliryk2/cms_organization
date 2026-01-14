@@ -228,7 +228,7 @@ export default function CustomFieldRenderer({
           className="h-4 w-4"
         />
       );
-    case "number":
+    case "number": {
       // Check if this field is for job salaries
       if (
         field.field_name === "minSalary" ||
@@ -294,22 +294,125 @@ export default function CustomFieldRenderer({
         );
       }
 
-      // ⚠️ All other number fields behave normal (organization, etc.)
+      // Check if this is a ZIP code field (even if defined as "number" type, treat as text for leading zeros)
+      const isZipCodeFieldNumber =
+        field.field_label?.toLowerCase().includes("zip") ||
+        field.field_label?.toLowerCase().includes("postal code") ||
+        field.field_name?.toLowerCase().includes("zip") ||
+        field.field_name === "Field_24" || // ZIP Code
+        field.field_name === "field_24";
+
+      if (isZipCodeFieldNumber) {
+        // ZIP codes should be treated as text (not number) to preserve leading zeros
+        // Must be exactly 5 digits
+        return (
+          <input
+            id={field.field_name}
+            type="text"
+            inputMode="numeric"
+            maxLength={5}
+            value={value ?? ""}
+            onChange={(e) => {
+              // Only allow digits, max 5 characters
+              const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 5);
+              e.target.value = digitsOnly;
+              // Store as string to preserve leading zeros
+              onChange(field.field_name, digitsOnly);
+            }}
+            placeholder={field.placeholder || "12345"}
+            required={field.is_required}
+            className={className}
+          />
+        );
+      }
+
+      // Check if this is a year field (Year Founded, etc.)
+      const isYearField =
+        field.field_label?.toLowerCase().includes("year") ||
+        field.field_name?.toLowerCase().includes("year");
+      
+      // Check if this is a numeric field that must be > 2000 (Number of Employees, Offices, Oasis Key)
+      // Check by both label and field_name (Field_32, Field_25, Field_31)
+      const isMin2000Field =
+        field.field_label?.toLowerCase().includes("employees") ||
+        field.field_label?.toLowerCase().includes("offices") ||
+        field.field_label?.toLowerCase().includes("oasis key") ||
+        field.field_name?.toLowerCase().includes("employees") ||
+        field.field_name?.toLowerCase().includes("offices") ||
+        field.field_name?.toLowerCase().includes("oasis") ||
+        field.field_name === "Field_32" || // # of employees
+        field.field_name === "field_32" ||
+        field.field_name === "Field_25" || // # of offices
+        field.field_name === "field_25" ||
+        field.field_name === "Field_31" || // Oasis Key
+        field.field_name === "field_31";
+
+      if (isYearField) {
+        // Year fields: 2000-2100, max 4 digits
+        return (
+          <input
+            {...fieldProps}
+            type="number"
+            min="2000"
+            max="2100"
+            maxLength={4}
+            onInput={(e) => {
+              const target = e.target as HTMLInputElement;
+              if (target.value.length > 4) {
+                target.value = target.value.slice(0, 4);
+              }
+            }}
+          />
+        );
+      }
+
+      if (isMin2000Field) {
+        // Fields that must be > 2000: Number of Employees, Offices, Oasis Key
+        return (
+          <input
+            {...fieldProps}
+            type="number"
+            min="2001"
+            step="1"
+            onChange={(e) => {
+              const numValue = parseFloat(e.target.value);
+              if (e.target.value !== "" && !isNaN(numValue)) {
+                if (numValue <= 2000) {
+                  // Set validation error for values <= 2000
+                  e.target.setCustomValidity("Value must be greater than 2000");
+                  e.target.classList.add("border-red-500");
+                } else {
+                  e.target.setCustomValidity("");
+                  e.target.classList.remove("border-red-500");
+                }
+              } else {
+                e.target.setCustomValidity("");
+                e.target.classList.remove("border-red-500");
+              }
+              fieldProps.onChange(e);
+            }}
+            onBlur={(e) => {
+              const numValue = parseFloat(e.target.value);
+              if (e.target.value !== "" && !isNaN(numValue) && numValue <= 2000) {
+                e.target.setCustomValidity("Value must be greater than 2000");
+                e.target.classList.add("border-red-500");
+              } else {
+                e.target.setCustomValidity("");
+                e.target.classList.remove("border-red-500");
+              }
+            }}
+          />
+        );
+      }
+
+      // Default number field (no special restrictions)
       return (
         <input
           {...fieldProps}
           type="number"
-          min="2000"
-          max="2100"
-          maxLength={4}
-          onInput={(e) => {
-            const target = e.target as HTMLInputElement;
-            if (target.value.length > 4) {
-              target.value = target.value.slice(0, 4);
-            }
-          }}
         />
       );
+    }
 
     case "percentage":
       return (
@@ -403,7 +506,7 @@ export default function CustomFieldRenderer({
       return (
         <input
           {...fieldProps}
-          readOnly={true}
+          // readOnly={true}
           type="date"
           value={value || ""}
           onClick={(e) => {
@@ -423,7 +526,7 @@ export default function CustomFieldRenderer({
     case "datetime":
       const inputType =
         field.field_type === "datetime" ? "datetime-local" : field.field_type;
-      console.log("FIELD TYPE:", field.field_type);
+      
       return (
         <input
           {...fieldProps}
@@ -583,6 +686,16 @@ export default function CustomFieldRenderer({
         />
       );
     default:
+      // Check if this is a ZIP code field
+      // Check by both label and field_name (Field_24)
+      const isZipCodeField =
+        field.field_label?.toLowerCase().includes("zip") ||
+        field.field_label?.toLowerCase().includes("postal code") ||
+        field.field_name?.toLowerCase().includes("zip") ||
+        field.field_name?.toLowerCase().includes("postal") ||
+        field.field_name === "Field_24" || // ZIP Code
+        field.field_name === "field_24";
+
       return (
         <div style={{ position: "relative", width: "100%" }}>
           <input
@@ -591,8 +704,17 @@ export default function CustomFieldRenderer({
             spellCheck={true}
             autoCorrect="on"
             autoCapitalize="sentences"
+            maxLength={isZipCodeField ? 5 : undefined}
+            inputMode={isZipCodeField ? "numeric" : "text"}
             onChange={(e) => {
-              fieldProps.onChange(e);
+              if (isZipCodeField) {
+                // Only allow digits, max 5 characters
+                const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 5);
+                e.target.value = digitsOnly;
+                onChange(field.field_name, digitsOnly);
+              } else {
+                fieldProps.onChange(e);
+              }
             }}
             style={{ paddingRight: "25px" }} // thoda space right pe icon ke liye
           />
@@ -681,13 +803,100 @@ export function useCustomFields(entityType: string) {
   );
 
   const validateCustomFields = React.useCallback(() => {
+    // Helper function to check if field has a valid value (matches UI logic)
+    const hasValidValue = (field: CustomFieldDefinition, value: any): boolean => {
+      // Handle null, undefined, or empty values
+      if (value === null || value === undefined) return false;
+      const trimmed = String(value).trim();
+      // Empty string means no value selected (especially for select fields)
+      if (trimmed === "") return false;
+      
+      // Special validation for date fields
+      if (field.field_type === "date") {
+        // Check if it's a valid date format (YYYY-MM-DD)
+        const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+        if (!dateRegex.test(trimmed)) return false;
+        const date = new Date(trimmed);
+        return !isNaN(date.getTime());
+      }
+      
+      // Special validation for ZIP code (must be exactly 5 digits)
+      // Check by both label and field_name (Field_24)
+      const isZipCodeField =
+        field.field_label?.toLowerCase().includes("zip") ||
+        field.field_label?.toLowerCase().includes("postal code") ||
+        field.field_name?.toLowerCase().includes("zip") ||
+        field.field_name === "Field_24" || // ZIP Code
+        field.field_name === "field_24";
+      if (isZipCodeField) {
+        return /^\d{5}$/.test(trimmed);
+      }
+      
+      // Special validation for numeric fields that must be > 2000
+      // Check by both label and field_name (Field_32, Field_25, Field_31)
+      const isMin2000Field =
+        field.field_label?.toLowerCase().includes("employees") ||
+        field.field_label?.toLowerCase().includes("offices") ||
+        field.field_label?.toLowerCase().includes("oasis key") ||
+        field.field_name?.toLowerCase().includes("employees") ||
+        field.field_name?.toLowerCase().includes("offices") ||
+        field.field_name?.toLowerCase().includes("oasis") ||
+        field.field_name === "Field_32" || // # of employees
+        field.field_name === "field_32" ||
+        field.field_name === "Field_25" || // # of offices
+        field.field_name === "field_25" ||
+        field.field_name === "Field_31" || // Oasis Key
+        field.field_name === "field_31";
+      if (isMin2000Field && field.field_type === "number") {
+        const numValue = parseFloat(trimmed);
+        if (isNaN(numValue) || numValue <= 2000) {
+          return false;
+        }
+      }
+      
+      return true;
+    };
+
     for (const field of customFields) {
       if (field.is_required && !field.is_hidden) {
         const value = customFieldValues[field.field_name];
-        if (!value || (typeof value === "string" && !value.trim())) {
+        if (!hasValidValue(field, value)) {
+          let errorMessage = `${field.field_label} is required`;
+          
+          // Add specific error messages for validation failures
+          const isZipCodeField =
+            field.field_label?.toLowerCase().includes("zip") ||
+            field.field_label?.toLowerCase().includes("postal code") ||
+            field.field_name?.toLowerCase().includes("zip") ||
+            field.field_name === "Field_24" || // ZIP Code
+            field.field_name === "field_24";
+          if (isZipCodeField && value && String(value).trim() !== "") {
+            errorMessage = `${field.field_label} must be exactly 5 digits`;
+          }
+          
+          const isMin2000Field =
+            field.field_label?.toLowerCase().includes("employees") ||
+            field.field_label?.toLowerCase().includes("offices") ||
+            field.field_label?.toLowerCase().includes("oasis key") ||
+            field.field_name?.toLowerCase().includes("employees") ||
+            field.field_name?.toLowerCase().includes("offices") ||
+            field.field_name?.toLowerCase().includes("oasis") ||
+            field.field_name === "Field_32" || // # of employees
+            field.field_name === "field_32" ||
+            field.field_name === "Field_25" || // # of offices
+            field.field_name === "field_25" ||
+            field.field_name === "Field_31" || // Oasis Key
+            field.field_name === "field_31";
+          if (isMin2000Field && value && !isNaN(parseFloat(String(value)))) {
+            const numValue = parseFloat(String(value));
+            if (numValue <= 2000) {
+              errorMessage = `${field.field_label} must be greater than 2000`;
+            }
+          }
+          
           return {
             isValid: false,
-            message: `${field.field_label} is required`,
+            message: errorMessage,
           };
         }
       }

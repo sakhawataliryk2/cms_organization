@@ -412,6 +412,41 @@ export default function AddOrganization() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    // Validate custom fields first
+    const customFieldValidation = validateCustomFields();
+    if (!customFieldValidation.isValid) {
+      setError(customFieldValidation.message);
+      return;
+    }
+
+    // Validate address fields if they exist
+    if (addressFields.length > 0) {
+      const requiredAddressFields = addressFields.filter((f) => f.is_required);
+      for (const field of requiredAddressFields) {
+        const value = customFieldValues[field.field_name];
+        if (!value || String(value).trim() === "") {
+          setError(`${field.field_label} is required`);
+          return;
+        }
+        
+        // Special validation for ZIP code
+        // Check by both label and field_name (Field_24)
+        const isZipCodeField =
+          field.field_label?.toLowerCase().includes("zip") ||
+          field.field_label?.toLowerCase().includes("postal code") ||
+          field.field_name?.toLowerCase().includes("zip") ||
+          field.field_name === "Field_24" || // ZIP Code
+          field.field_name === "field_24";
+        if (isZipCodeField) {
+          const zipValue = String(value).trim();
+          if (!/^\d{5}$/.test(zipValue)) {
+            setError(`${field.field_label} must be exactly 5 digits`);
+            return;
+          }
+        }
+      }
+    }
+
     setIsSubmitting(true);
     setError(null);
 
@@ -1367,6 +1402,31 @@ export default function AddOrganization() {
                     addressFields.length > 0 &&
                     field.id === addressAnchorId
                   ) {
+                    // Check if all required address fields are satisfied
+                    const allAddressFieldsValid = () => {
+                      const requiredFields = addressFields.filter((f) => f.is_required);
+                      if (requiredFields.length === 0) return true; // No required fields, consider valid
+                      
+                      return requiredFields.every((f) => {
+                        const val = customFieldValues[f.field_name];
+                        if (!val || String(val).trim() === "") return false;
+                        
+                        // Special validation for ZIP code (must be exactly 5 digits)
+                        const isZipCodeField =
+                          f.field_label?.toLowerCase().includes("zip") ||
+                          f.field_label?.toLowerCase().includes("postal code") ||
+                          f.field_name?.toLowerCase().includes("zip");
+                        if (isZipCodeField) {
+                          return /^\d{5}$/.test(String(val).trim());
+                        }
+                        
+                        return true;
+                      });
+                    };
+                    
+                    const hasRequiredAddressFields = addressFields.some((f) => f.is_required);
+                    const allValid = allAddressFieldsValid();
+                    
                    return (
                      <div
                        key="address-group"
@@ -1375,9 +1435,13 @@ export default function AddOrganization() {
                        {/* left side same label width space */}
                        <label className="w-48 font-medium flex items-center mt-4">
                          Address:
-                         {/* required indicator: agar address fields me koi required ho */}
-                         {addressFields.some((f) => f.is_required) && (
-                           <span className="text-red-500 ml-1">*</span>
+                         {/* Show green check if all required fields are satisfied, red asterisk if not */}
+                         {hasRequiredAddressFields && (
+                           allValid ? (
+                             <span className="text-green-500 ml-1">✔</span>
+                           ) : (
+                             <span className="text-red-500 ml-1">*</span>
+                           )
                          )}
                        </label>
 
@@ -1426,12 +1490,64 @@ export default function AddOrganization() {
                       (field.field_name?.includes("9") ||
                         field.field_name?.toLowerCase().includes("field_9")));
 
+                  // Helper function to check if field has a valid value
+                  const hasValidValue = () => {
+                    // Handle null, undefined, or empty values
+                    if (fieldValue === null || fieldValue === undefined) return false;
+                    const trimmed = String(fieldValue).trim();
+                    // Empty string means no value selected (especially for select fields)
+                    if (trimmed === "") return false;
+                    
+                    // Special validation for date fields
+                    if (field.field_type === "date") {
+                      // Check if it's a valid date format (YYYY-MM-DD)
+                      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+                      if (!dateRegex.test(trimmed)) return false;
+                      const date = new Date(trimmed);
+                      return !isNaN(date.getTime());
+                    }
+                    
+                    // Special validation for ZIP code (must be exactly 5 digits)
+                    // Check by both label and field_name (Field_24)
+                    const isZipCodeField =
+                      field.field_label?.toLowerCase().includes("zip") ||
+                      field.field_label?.toLowerCase().includes("postal code") ||
+                      field.field_name?.toLowerCase().includes("zip") ||
+                      field.field_name === "Field_24" || // ZIP Code
+                      field.field_name === "field_24";
+                    if (isZipCodeField) {
+                      return /^\d{5}$/.test(trimmed);
+                    }
+                    
+                    // Special validation for numeric fields that must be > 2000
+                    // Check by both label and field_name (Field_32, Field_25, Field_31)
+                    const isMin2000Field =
+                      field.field_label?.toLowerCase().includes("employees") ||
+                      field.field_label?.toLowerCase().includes("offices") ||
+                      field.field_label?.toLowerCase().includes("oasis key") ||
+                      field.field_name?.toLowerCase().includes("employees") ||
+                      field.field_name?.toLowerCase().includes("offices") ||
+                      field.field_name?.toLowerCase().includes("oasis") ||
+                      field.field_name === "Field_32" || // # of employees
+                      field.field_name === "field_32" ||
+                      field.field_name === "Field_25" || // # of offices
+                      field.field_name === "field_25" ||
+                      field.field_name === "Field_31" || // Oasis Key
+                      field.field_name === "field_31";
+                    if (isMin2000Field && field.field_type === "number") {
+                      const numValue = parseFloat(trimmed);
+                      return !isNaN(numValue) && numValue > 2000;
+                    }
+                    
+                    return true;
+                  };
+
                   return (
                     <div key={field.id} className="flex items-center mb-3">
                       <label className="w-48 font-medium flex items-center">
                         {field.field_label}:
                         {field.is_required &&
-                          (fieldValue.trim() !== "" ? (
+                          (hasValidValue() ? (
                             <span className="text-green-500 ml-1">✔</span>
                           ) : (
                             <span className="text-red-500 ml-1">*</span>

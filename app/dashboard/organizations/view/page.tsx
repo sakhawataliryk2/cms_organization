@@ -2544,7 +2544,7 @@ setAvailableFields(fields);
                   </label>
                   <div className="relative">
                     <div className="flex items-center border border-gray-300 rounded p-2 bg-white">
-                      <div className="w-6 h-6 rounded-full bg-orange-400 mr-2 flex-shrink-0"></div>
+                      <HiOutlineOfficeBuilding className="w-6 h-6 mr-2 flex-shrink-0 text-gray-600" />
                       <span className="flex-1 text-sm">{noteForm.about}</span>
                       <button
                         onClick={() =>
