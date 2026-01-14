@@ -653,8 +653,16 @@ export default function CustomFieldRenderer({
         </div>
       );
 
-    case "url":
-      return <input {...fieldProps} type="url" />;
+      case "url":
+        return (
+          <input
+            {...fieldProps}
+            type="url"
+            pattern="https?://.+"
+            title="Please enter a valid URL starting with http:// or https://"
+            required={field.is_required}
+          />
+        );
     case "file":
       return (
         <div>
@@ -854,6 +862,22 @@ export function useCustomFields(entityType: string) {
         }
       }
       
+      // Special validation for URL fields
+      if (field.field_type === "url") {
+        // URL must start with http:// or https://
+        const urlPattern = /^https?:\/\/.+/i;
+        if (!urlPattern.test(trimmed)) {
+          return false;
+        }
+        // Additional validation: try to create a URL object to check if it's valid
+        try {
+          new URL(trimmed);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      
       return true;
     };
 
@@ -891,6 +915,21 @@ export function useCustomFields(entityType: string) {
             const numValue = parseFloat(String(value));
             if (numValue <= 2000) {
               errorMessage = `${field.field_label} must be greater than 2000`;
+            }
+          }
+          
+          // Add specific error message for URL validation failures
+          if (field.field_type === "url" && value && String(value).trim() !== "") {
+            const trimmed = String(value).trim();
+            const urlPattern = /^https?:\/\/.+/i;
+            if (!urlPattern.test(trimmed)) {
+              errorMessage = `${field.field_label} must start with http:// or https://`;
+            } else {
+              try {
+                new URL(trimmed);
+              } catch {
+                errorMessage = `${field.field_label} must be a valid URL`;
+              }
             }
           }
           

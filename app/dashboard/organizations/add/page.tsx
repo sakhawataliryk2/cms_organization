@@ -1539,6 +1539,22 @@ export default function AddOrganization() {
                       return !isNaN(numValue) && numValue > 2000;
                     }
                     
+                    // Special validation for URL fields
+                    if (field.field_type === "url") {
+                      // URL must start with http:// or https://
+                      const urlPattern = /^https?:\/\/.+/i;
+                      if (!urlPattern.test(trimmed)) {
+                        return false;
+                      }
+                      // Additional validation: try to create a URL object to check if it's valid
+                      try {
+                        new URL(trimmed);
+                        return true;
+                      } catch {
+                        return false;
+                      }
+                    }
+                    
                     return true;
                   };
 
