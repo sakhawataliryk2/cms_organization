@@ -270,6 +270,97 @@ export default function JobList() {
     }
   };
 
+  const exportJobsToXML = async () => {
+    if (selectedJobs.length === 0) return;
+
+    try {
+      // Create comma-separated list of job IDs
+      const jobIds = selectedJobs.join(',');
+
+      // Call the export API
+      const response = await fetch(`/api/jobs/export/xml?ids=${jobIds}`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\\s*)token\\s*=\\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to export jobs');
+      }
+
+      // Get the XML content
+      const xmlBlob = await response.blob();
+
+      // Create a download link
+      const url = window.URL.createObjectURL(xmlBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `jobs_export_${Date.now()}.xml`;
+      document.body.appendChild(link);
+      link.click();
+
+      // Cleanup
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      console.log(`Successfully exported ${selectedJobs.length} jobs to XML`);
+    } catch (error) {
+      console.error('Error exporting jobs:', error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : 'An error occurred while exporting jobs'
+      );
+    }
+  };
+
+  const exportSingleJobToXML = async (jobId: string) => {
+    try {
+      // Call the export API with single job ID
+      const response = await fetch(`/api/jobs/export/xml?ids=${jobId}`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\\s*)token\\s*=\\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to export job');
+      }
+
+      // Get the XML content
+      const xmlBlob = await response.blob();
+
+      // Create a download link
+      const url = window.URL.createObjectURL(xmlBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `job_${jobId}_export_${Date.now()}.xml`;
+      document.body.appendChild(link);
+      link.click();
+
+      // Cleanup
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+
+      console.log(`Successfully exported job ${jobId} to XML`);
+    } catch (error) {
+      console.error('Error exporting job:', error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : 'An error occurred while exporting job'
+      );
+    }
+  };
+
   const formatDate = (dateString: string) => {
     if (!dateString) return "";
     const date = new Date(dateString);
@@ -279,7 +370,7 @@ export default function JobList() {
       year: "numeric",
     }).format(date);
   };
- 
+
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
@@ -307,24 +398,44 @@ export default function JobList() {
         <h1 className="text-xl font-bold">Jobs</h1>
         <div className="flex space-x-4">
           {selectedJobs.length > 0 && (
-            <button
-              onClick={deleteSelectedJobs}
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5 mr-1"
-                viewBox="0 0 20 20"
-                fill="currentColor"
+            <>
+              <button
+                onClick={exportJobsToXML}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center"
               >
-                <path
-                  fillRule="evenodd"
-                  d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              Delete Selected ({selectedJobs.length})
-            </button>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5 mr-1"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                Export to XML ({selectedJobs.length})
+              </button>
+              <button
+                onClick={deleteSelectedJobs}
+                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-5 w-5 mr-1"
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                    clipRule="evenodd"
+                  />
+                </svg>
+                Delete Selected ({selectedJobs.length})
+              </button>
+            </>
           )}
           <SortFilterBar
             sortKey={list.sortKey}
@@ -486,7 +597,7 @@ export default function JobList() {
                       type="checkbox"
                       className="h-4 w-4 text-blue-600 border-gray-300 rounded"
                       checked={selectedJobs.includes(job.id)}
-                      onChange={() => {}}
+                      onChange={() => { }}
                       onClick={(e) => handleSelectJob(job.id, e)}
                     />
                   </td>
@@ -525,6 +636,18 @@ export default function JobList() {
                               }}
                             >
                               View
+                            </button>
+
+                            <button
+                              className="w-full text-left px-3 py-2 text-sm text-green-600 hover:bg-gray-50"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                setOpenActionId(null);
+                                // Export single job directly
+                                await exportSingleJobToXML(job.id);
+                              }}
+                            >
+                              Export to XML
                             </button>
 
                             <button
