@@ -1625,11 +1625,31 @@ export default function AddOrganization() {
                     
                     // Special validation for date fields
                     if (field.field_type === "date") {
+                      // Accept both YYYY-MM-DD (storage format) and mm/dd/yyyy (display format)
+                      let dateToValidate = trimmed;
+                      
+                      // If it's in mm/dd/yyyy format, convert to YYYY-MM-DD
+                      if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+                        const [month, day, year] = trimmed.split("/");
+                        dateToValidate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+                      }
+                      
                       // Check if it's a valid date format (YYYY-MM-DD)
                       const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-                      if (!dateRegex.test(trimmed)) return false;
-                      const date = new Date(trimmed);
-                      return !isNaN(date.getTime());
+                      if (!dateRegex.test(dateToValidate)) return false;
+                      
+                      const date = new Date(dateToValidate);
+                      if (isNaN(date.getTime())) return false;
+                      
+                      // Additional validation: check if the date components match
+                      const [year, month, day] = dateToValidate.split("-");
+                      if (date.getFullYear() !== parseInt(year) ||
+                          date.getMonth() + 1 !== parseInt(month) ||
+                          date.getDate() !== parseInt(day)) {
+                        return false; // Invalid date (e.g., 02/30/2024)
+                      }
+                      
+                      return true;
                     }
                     
                     // Special validation for ZIP code (must be exactly 5 digits)
@@ -1699,13 +1719,49 @@ export default function AddOrganization() {
                       if (!urlPattern.test(trimmed)) {
                         return false;
                       }
-                      // Additional validation: try to create a URL object to check if it's valid
+                      
+                      // Stricter validation: Check for complete domain structure
+                      // For www. URLs: must have www.domain.tld format (at least www. + domain + . + tld)
+                      // For http:// URLs: must have http://domain.tld format
+                      let urlToValidate = trimmed;
+                      if (trimmed.toLowerCase().startsWith('www.')) {
+                        // Check if www. URL has complete domain (at least www.domain.tld)
+                        // Remove www. and check if remaining has at least one dot (domain.tld)
+                        const domainPart = trimmed.substring(4); // Remove "www."
+                        if (!domainPart.includes('.') || domainPart.split('.').length < 2) {
+                          return false; // Incomplete domain like "www.al"
+                        }
+                        // Check if domain part has valid structure (at least domain.tld)
+                        const domainParts = domainPart.split('.');
+                        if (domainParts.length < 2 || domainParts[0].length === 0 || domainParts[domainParts.length - 1].length < 2) {
+                          return false; // Invalid domain structure
+                        }
+                        urlToValidate = `https://${trimmed}`;
+                      } else {
+                        // For http:// or https:// URLs, check if domain part is complete
+                        const urlWithoutProtocol = trimmed.replace(/^https?:\/\//i, '');
+                        if (!urlWithoutProtocol.includes('.') || urlWithoutProtocol.split('.').length < 2) {
+                          return false; // Incomplete domain
+                        }
+                        const domainParts = urlWithoutProtocol.split('/')[0].split('.');
+                        if (domainParts.length < 2 || domainParts[0].length === 0 || domainParts[domainParts.length - 1].length < 2) {
+                          return false; // Invalid domain structure
+                        }
+                        urlToValidate = trimmed;
+                      }
+                      
+                      // Final validation: try to create a URL object to check if it's valid
                       try {
-                        // If URL starts with www., prepend https:// for validation
-                        const urlToValidate = trimmed.toLowerCase().startsWith('www.') 
-                          ? `https://${trimmed}` 
-                          : trimmed;
-                        new URL(urlToValidate);
+                        const urlObj = new URL(urlToValidate);
+                        // Additional check: ensure hostname has at least one dot (domain.tld)
+                        if (!urlObj.hostname || !urlObj.hostname.includes('.') || urlObj.hostname.split('.').length < 2) {
+                          return false;
+                        }
+                        // Ensure TLD is at least 2 characters
+                        const hostnameParts = urlObj.hostname.split('.');
+                        if (hostnameParts[hostnameParts.length - 1].length < 2) {
+                          return false;
+                        }
                         return true;
                       } catch {
                         return false;

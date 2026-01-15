@@ -33,18 +33,56 @@ export default function CustomFieldRenderer({
   // Track if we've auto-populated the date to prevent infinite loops
   const hasAutoFilledRef = React.useRef(false);
 
-  // Auto-populate today's date for "Date Added" fields
+  // Helper function to convert YYYY-MM-DD to mm/dd/yyyy
+  const formatDateToMMDDYYYY = React.useCallback((dateStr: string): string => {
+    if (!dateStr || dateStr.trim() === "") return "";
+    try {
+      // Check if it's already in mm/dd/yyyy format
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+        return dateStr;
+      }
+      // Convert from YYYY-MM-DD to mm/dd/yyyy
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        const [year, month, day] = dateStr.split("-");
+        return `${month}/${day}/${year}`;
+      }
+      return dateStr;
+    } catch {
+      return dateStr;
+    }
+  }, []);
+
+  // Helper function to convert mm/dd/yyyy to YYYY-MM-DD
+  const formatDateToYYYYMMDD = React.useCallback((dateStr: string): string => {
+    if (!dateStr || dateStr.trim() === "") return "";
+    try {
+      // Check if it's already in YYYY-MM-DD format
+      if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
+        return dateStr;
+      }
+      // Convert from mm/dd/yyyy to YYYY-MM-DD
+      if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+        const [month, day, year] = dateStr.split("/");
+        return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+      }
+      return dateStr;
+    } catch {
+      return dateStr;
+    }
+  }, []);
+
+  // Auto-populate today's date for ALL date fields (Date Added, W9 Last Inserted Date, General Liabilities date updated, Worker Compensation Date, etc.)
   React.useEffect(() => {
     if (field.field_type === "date" && !value && !hasAutoFilledRef.current) {
-      
-        // Get today's date in YYYY-MM-DD format
-        //console.log("Field name:", field.field_name);
+        // Get today's date in mm/dd/yyyy format
         const today = new Date();
-        const formattedDate = today.toISOString().split("T")[0];
-        // Set the value via onChange
+        const month = String(today.getMonth() + 1).padStart(2, "0");
+        const day = String(today.getDate()).padStart(2, "0");
+        const year = today.getFullYear();
+        const formattedDate = `${month}/${day}/${year}`;
+        // Set the value via onChange (store as mm/dd/yyyy for display, will convert to YYYY-MM-DD on submit)
         onChange(field.field_name, formattedDate);
         hasAutoFilledRef.current = true;
-     
     }
     // Reset the ref if value changes externally (e.g., when editing)
     if (value) {
@@ -502,22 +540,86 @@ export default function CustomFieldRenderer({
     //     />
     //   );
     case "date":
-      // Use fieldProps directly - defaultValue is not in fieldProps type, so no need to destructure
+      // Format date value for display (mm/dd/yyyy)
+      // Show today's date when field is empty (for all date fields)
+      const displayValue = React.useMemo(() => {
+        if (!value || value === "") {
+          // Show today's date as default when field is empty
+          const today = new Date();
+          const month = String(today.getMonth() + 1).padStart(2, "0");
+          const day = String(today.getDate()).padStart(2, "0");
+          const year = today.getFullYear();
+          return `${month}/${day}/${year}`;
+        }
+        return formatDateToMMDDYYYY(String(value));
+      }, [value, formatDateToMMDDYYYY]);
+
+      // Handle date input with mm/dd/yyyy formatting
+      const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        let inputValue = e.target.value;
+        
+        // Remove all non-digit characters
+        const digitsOnly = inputValue.replace(/\D/g, "");
+        
+        // Format as user types: mm/dd/yyyy
+        let formatted = "";
+        if (digitsOnly.length > 0) {
+          formatted = digitsOnly.substring(0, 2);
+        }
+        if (digitsOnly.length >= 3) {
+          formatted += "/" + digitsOnly.substring(2, 4);
+        }
+        if (digitsOnly.length >= 5) {
+          formatted += "/" + digitsOnly.substring(4, 8);
+        }
+        
+        // Limit to mm/dd/yyyy format (10 characters)
+        if (formatted.length > 10) {
+          formatted = formatted.substring(0, 10);
+        }
+        
+        // Update the input value
+        e.target.value = formatted;
+        
+        // Convert to YYYY-MM-DD for storage if complete
+        if (formatted.length === 10 && /^\d{2}\/\d{2}\/\d{4}$/.test(formatted)) {
+          const [month, day, year] = formatted.split("/");
+          const dateStr = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+          // Validate the date
+          const date = new Date(dateStr);
+          if (!isNaN(date.getTime())) {
+            // Store as YYYY-MM-DD for backend compatibility
+            onChange(field.field_name, dateStr);
+          } else {
+            // Invalid date, store as-is for now (will be caught by validation)
+            onChange(field.field_name, formatted);
+          }
+        } else {
+          // Incomplete date, store as-is for display
+          onChange(field.field_name, formatted);
+        }
+      };
+
       return (
         <input
-          {...fieldProps}
-          // readOnly={true}
-          type="date"
-          value={value || ""}
-          onClick={(e) => {
-            // Only call showPicker on click (user gesture), not on focus
-            const target = e.target as HTMLInputElement;
-            if (target.showPicker && typeof target.showPicker === "function") {
-              try {
-                target.showPicker();
-              } catch (error) {
-                // Silently ignore if showPicker is not supported or fails
-                // The native date picker will still work normally
+          id={field.field_name}
+          type="text"
+          value={displayValue}
+          onChange={handleDateChange}
+          placeholder="mm/dd/yyyy"
+          className={className}
+          required={field.is_required}
+          maxLength={10}
+          onBlur={(e) => {
+            // Validate on blur
+            const inputValue = e.target.value.trim();
+            if (inputValue && inputValue.length === 10) {
+              const [month, day, year] = inputValue.split("/");
+              const dateStr = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+              const date = new Date(dateStr);
+              if (!isNaN(date.getTime())) {
+                // Valid date, ensure it's stored as YYYY-MM-DD
+                onChange(field.field_name, dateStr);
               }
             }
           }}
@@ -821,11 +923,31 @@ export function useCustomFields(entityType: string) {
       
       // Special validation for date fields
       if (field.field_type === "date") {
+        // Accept both YYYY-MM-DD (storage format) and mm/dd/yyyy (display format)
+        let dateToValidate = trimmed;
+        
+        // If it's in mm/dd/yyyy format, convert to YYYY-MM-DD
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+          const [month, day, year] = trimmed.split("/");
+          dateToValidate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+        }
+        
         // Check if it's a valid date format (YYYY-MM-DD)
         const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-        if (!dateRegex.test(trimmed)) return false;
-        const date = new Date(trimmed);
-        return !isNaN(date.getTime());
+        if (!dateRegex.test(dateToValidate)) return false;
+        
+        const date = new Date(dateToValidate);
+        if (isNaN(date.getTime())) return false;
+        
+        // Additional validation: check if the date components match
+        const [year, month, day] = dateToValidate.split("-");
+        if (date.getFullYear() !== parseInt(year) ||
+            date.getMonth() + 1 !== parseInt(month) ||
+            date.getDate() !== parseInt(day)) {
+          return false; // Invalid date (e.g., 02/30/2024)
+        }
+        
+        return true;
       }
       
       // Special validation for ZIP code (must be exactly 5 digits)
@@ -897,13 +1019,49 @@ export function useCustomFields(entityType: string) {
         if (!urlPattern.test(trimmed)) {
           return false;
         }
-        // Additional validation: try to create a URL object to check if it's valid
+        
+        // Stricter validation: Check for complete domain structure
+        // For www. URLs: must have www.domain.tld format (at least www. + domain + . + tld)
+        // For http:// URLs: must have http://domain.tld format
+        let urlToValidate = trimmed;
+        if (trimmed.toLowerCase().startsWith('www.')) {
+          // Check if www. URL has complete domain (at least www.domain.tld)
+          // Remove www. and check if remaining has at least one dot (domain.tld)
+          const domainPart = trimmed.substring(4); // Remove "www."
+          if (!domainPart.includes('.') || domainPart.split('.').length < 2) {
+            return false; // Incomplete domain like "www.al"
+          }
+          // Check if domain part has valid structure (at least domain.tld)
+          const domainParts = domainPart.split('.');
+          if (domainParts.length < 2 || domainParts[0].length === 0 || domainParts[domainParts.length - 1].length < 2) {
+            return false; // Invalid domain structure
+          }
+          urlToValidate = `https://${trimmed}`;
+        } else {
+          // For http:// or https:// URLs, check if domain part is complete
+          const urlWithoutProtocol = trimmed.replace(/^https?:\/\//i, '');
+          if (!urlWithoutProtocol.includes('.') || urlWithoutProtocol.split('.').length < 2) {
+            return false; // Incomplete domain
+          }
+          const domainParts = urlWithoutProtocol.split('/')[0].split('.');
+          if (domainParts.length < 2 || domainParts[0].length === 0 || domainParts[domainParts.length - 1].length < 2) {
+            return false; // Invalid domain structure
+          }
+          urlToValidate = trimmed;
+        }
+        
+        // Final validation: try to create a URL object to check if it's valid
         try {
-          // If URL starts with www., prepend https:// for validation
-          const urlToValidate = trimmed.toLowerCase().startsWith('www.') 
-            ? `https://${trimmed}` 
-            : trimmed;
-          new URL(urlToValidate);
+          const urlObj = new URL(urlToValidate);
+          // Additional check: ensure hostname has at least one dot (domain.tld)
+          if (!urlObj.hostname || !urlObj.hostname.includes('.') || urlObj.hostname.split('.').length < 2) {
+            return false;
+          }
+          // Ensure TLD is at least 2 characters
+          const hostnameParts = urlObj.hostname.split('.');
+          if (hostnameParts[hostnameParts.length - 1].length < 2) {
+            return false;
+          }
           return true;
         } catch {
           return false;
@@ -1010,8 +1168,20 @@ export function useCustomFields(entityType: string) {
     const customFieldsToSend: Record<string, any> = {};
     customFields.forEach((field) => {
       if (!field.is_hidden) {
-        customFieldsToSend[field.field_label] =
-          customFieldValues[field.field_name];
+        let valueToSend = customFieldValues[field.field_name];
+        
+        // Convert date fields from mm/dd/yyyy to YYYY-MM-DD for backend
+        if (field.field_type === "date" && valueToSend) {
+          const dateStr = String(valueToSend).trim();
+          // If it's in mm/dd/yyyy format, convert to YYYY-MM-DD
+          if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+            const [month, day, year] = dateStr.split("/");
+            valueToSend = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+          }
+          // If it's already in YYYY-MM-DD format, use as-is
+        }
+        
+        customFieldsToSend[field.field_label] = valueToSend;
       }
     });
     return customFieldsToSend;

@@ -1514,19 +1514,31 @@ export default function AddJobSeeker() {
                     : [];
 
                   // Helper function to check if field has a valid value
-                  // const hasValidValue = () => {
-                  //   if (fieldValue === null || fieldValue === undefined) return false;
-                  //   const trimmed = String(fieldValue).trim();
-                  //   if (trimmed === "" || trimmed === "Select an option") return false;
-                  //   return true;
-                  // };
+                  const hasValidValue = () => {
+                    // Handle null, undefined, or empty values
+                    if (fieldValue === null || fieldValue === undefined) return false;
+                    const trimmed = String(fieldValue).trim();
+                    
+                    // For select fields, check if a valid option is selected (not empty and not "Select an option")
+                    if (field.field_type === "select") {
+                      if (trimmed === "" || trimmed.toLowerCase() === "select an option") {
+                        return false;
+                      }
+                      return true;
+                    }
+                    
+                    // Empty string means no value selected
+                    if (trimmed === "") return false;
+                    
+                    return true;
+                  };
 
                   return (
                     <div key={field.id} className="flex items-center mb-3">
                       <label className="w-48 font-medium flex items-center">
                         {field.field_label}:
                         {field.is_required &&
-                          (fieldValue.trim() !== "" ? (
+                          (hasValidValue() ? (
                             <span className="text-green-500 ml-1">✔</span>
                           ) : (
                             <span className="text-red-500 ml-1">*</span>

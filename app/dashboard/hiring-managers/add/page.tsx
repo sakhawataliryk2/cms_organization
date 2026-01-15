@@ -976,23 +976,28 @@ export default function AddHiringManager() {
           {/* Custom Fields Section */}
           {customFields.length > 0 && (
             <div className="mt-8">
-              {customFields.map((field) => (
-                <div key={field.id} className="flex items-center mt-4">
-                  <label className="w-48 font-medium">{field.field_label}:</label>
-                  <div className="flex-1 relative">
-                    <CustomFieldRenderer
-                      field={field}
-                      value={customFieldValues[field.field_name] || ""}
-                      onChange={handleCustomFieldChange}
-                    />
-                    {field.is_required && (
-                      <span className="absolute text-red-500 left-[-10px] top-2">
-                        *
-                      </span>
-                    )}
+              {customFields.map((field) => {
+                // Don't render hidden fields at all (neither label nor input)
+                if (field.is_hidden) return null;
+                
+                return (
+                  <div key={field.id} className="flex items-center mt-4">
+                    <label className="w-48 font-medium">{field.field_label}:</label>
+                    <div className="flex-1 relative">
+                      <CustomFieldRenderer
+                        field={field}
+                        value={customFieldValues[field.field_name] || ""}
+                        onChange={handleCustomFieldChange}
+                      />
+                      {field.is_required && (
+                        <span className="absolute text-red-500 left-[-10px] top-2">
+                          *
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
