@@ -270,6 +270,9 @@ const GoalsAndQuotas = () => {
         const apiEndpoint = categoryApiMap[category];
         if (!apiEndpoint) continue;
 
+        // Skip Placements notes (no API endpoint exists)
+        if (category === 'Placements') continue;
+
         try {
           const entitiesResponse = await fetch(`/api/${apiEndpoint}`, {
             headers: getAuthHeader(),
@@ -528,6 +531,34 @@ const GoalsAndQuotas = () => {
     }
   };
 
+  const exportToExcel = () => {
+    import('xlsx').then((XLSX) => {
+      const exportData = filteredGoalsQuotasData.map(row => ({
+        'User': row.userName,
+        'Category': row.category,
+        'Notes': row.notes,
+        'Notes Count': row.notesCount,
+        'Added to System': row.addedToSystem,
+        'Inbound Emails': row.inboundEmails,
+        'Outbound Emails': row.outboundEmails,
+        'Calls': row.calls,
+        'Texts': row.texts
+      }));
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      ws['!cols'] = [
+        { wch: 20 }, { wch: 18 }, { wch: 30 }, { wch: 12 }, { wch: 15 },
+        { wch: 15 }, { wch: 16 }, { wch: 10 }, { wch: 10 }
+      ];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Activity Report');
+      const filename = `activity_report_${dateRange.start}_to_${dateRange.end}.xlsx`;
+      XLSX.writeFile(wb, filename);
+    }).catch((error) => {
+      console.error('Error exporting to Excel:', error);
+      alert('Failed to export to Excel. Please try again.');
+    });
+  };
+
   return (
     <div className="min-h-screen bg-white">
       {/* Date range filter */}
@@ -604,84 +635,93 @@ const GoalsAndQuotas = () => {
             ACTIVITY REPORT
           </h2>
 
-          {/* User Filter */}
-          <div className="relative" ref={usersDropdownRef}>
+          <div className="flex items-center gap-3">
             <button
-              onClick={() => setIsUsersDropdownOpen(!isUsersDropdownOpen)}
-              className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              onClick={exportToExcel}
+              className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 flex items-center gap-2"
             >
-              <span className="text-sm font-medium text-gray-700">
-                {selectedUsers.length === 0
-                  ? "All Users"
-                  : selectedUsers.length === 1
-                  ? users.find((u) => u.id === selectedUsers[0])?.name ||
-                    "1 User"
-                  : `${selectedUsers.length} Users`}
-              </span>
-              <svg
-                className={`w-4 h-4 text-gray-500 transition-transform ${
-                  isUsersDropdownOpen ? "rotate-180" : ""
-                }`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M19 9l-7 7-7-7"
-                />
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
               </svg>
+              Export to Excel
             </button>
+            <div className="relative" ref={usersDropdownRef}>
+              <button
+                onClick={() => setIsUsersDropdownOpen(!isUsersDropdownOpen)}
+                className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                <span className="text-sm font-medium text-gray-700">
+                  {selectedUsers.length === 0
+                    ? "All Users"
+                    : selectedUsers.length === 1
+                      ? users.find((u) => u.id === selectedUsers[0])?.name ||
+                      "1 User"
+                      : `${selectedUsers.length} Users`}
+                </span>
+                <svg
+                  className={`w-4 h-4 text-gray-500 transition-transform ${isUsersDropdownOpen ? "rotate-180" : ""
+                    }`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 9l-7 7-7-7"
+                  />
+                </svg>
+              </button>
 
-            {isUsersDropdownOpen && (
-              <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-96 overflow-y-auto">
-                <div className="p-2 border-b border-gray-200">
-                  <button
-                    onClick={selectAllUsers}
-                    className="w-full text-left px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded"
-                  >
-                    {selectedUsers.length === users.length
-                      ? "Deselect All"
-                      : "Select All"}
-                  </button>
-                </div>
+              {isUsersDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-96 overflow-y-auto">
+                  <div className="p-2 border-b border-gray-200">
+                    <button
+                      onClick={selectAllUsers}
+                      className="w-full text-left px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded"
+                    >
+                      {selectedUsers.length === users.length
+                        ? "Deselect All"
+                        : "Select All"}
+                    </button>
+                  </div>
 
-                <div className="p-2">
-                  {users.length === 0 ? (
-                    <div className="px-3 py-2 text-sm text-gray-500">
-                      No users available
+                  <div className="p-2">
+                    {users.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-gray-500">
+                        No users available
+                      </div>
+                    ) : (
+                      users.map((user) => (
+                        <label
+                          key={user.id}
+                          className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer rounded"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedUsers.includes(user.id)}
+                            onChange={() => toggleUserSelection(user.id)}
+                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                          />
+                          <span className="text-sm text-gray-700">
+                            {user.name || user.email}
+                          </span>
+                        </label>
+                      ))
+                    )}
+                  </div>
+
+                  {selectedUsers.length > 0 && (
+                    <div className="p-2 border-t border-gray-200">
+                      <div className="px-3 py-2 text-xs text-gray-500">
+                        {selectedUsers.length} user(s) selected
+                      </div>
                     </div>
-                  ) : (
-                    users.map((user) => (
-                      <label
-                        key={user.id}
-                        className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer rounded"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedUsers.includes(user.id)}
-                          onChange={() => toggleUserSelection(user.id)}
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
-                        />
-                        <span className="text-sm text-gray-700">
-                          {user.name || user.email}
-                        </span>
-                      </label>
-                    ))
                   )}
                 </div>
-
-                {selectedUsers.length > 0 && (
-                  <div className="p-2 border-t border-gray-200">
-                    <div className="px-3 py-2 text-xs text-gray-500">
-                      {selectedUsers.length} user(s) selected
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </div>
 
@@ -749,7 +789,7 @@ const GoalsAndQuotas = () => {
                       onChange={(e) => {
                         const updated = goalsQuotasData.map((item) =>
                           item.userId === row.userId &&
-                          item.category === row.category
+                            item.category === row.category
                             ? { ...item, notes: e.target.value }
                             : item
                         );
