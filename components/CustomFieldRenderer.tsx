@@ -2,6 +2,7 @@
 
 import React from "react";
 import LookupField from "./LookupField";
+import { FiCalendar } from "react-icons/fi";
 
 interface CustomFieldDefinition {
   id: string;
@@ -539,12 +540,34 @@ export default function CustomFieldRenderer({
     //       }}
     //     />
     //   );
-    case "date":
+    case "date": {
+      // Calendar popup state
+      const [showCalendar, setShowCalendar] = React.useState(false);
+      const [currentMonth, setCurrentMonth] = React.useState(new Date());
+      const calendarRef = React.useRef<HTMLDivElement>(null);
+
+      // Parse current value to Date object
+      const getCurrentDate = React.useMemo(() => {
+        if (!value || value === "") {
+          return new Date();
+        }
+        try {
+          let dateStr = String(value);
+          // If it's in mm/dd/yyyy format, convert to YYYY-MM-DD
+          if (/^\d{2}\/\d{2}\/\d{4}$/.test(dateStr)) {
+            const [month, day, year] = dateStr.split("/");
+            dateStr = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+          }
+          const date = new Date(dateStr);
+          return isNaN(date.getTime()) ? new Date() : date;
+        } catch {
+          return new Date();
+        }
+      }, [value]);
+
       // Format date value for display (mm/dd/yyyy)
-      // Show today's date when field is empty (for all date fields)
       const displayValue = React.useMemo(() => {
         if (!value || value === "") {
-          // Show today's date as default when field is empty
           const today = new Date();
           const month = String(today.getMonth() + 1).padStart(2, "0");
           const day = String(today.getDate()).padStart(2, "0");
@@ -554,14 +577,21 @@ export default function CustomFieldRenderer({
         return formatDateToMMDDYYYY(String(value));
       }, [value, formatDateToMMDDYYYY]);
 
-      // Handle date input with mm/dd/yyyy formatting
+      // Handle date selection from calendar
+      const handleDateSelect = (selectedDate: Date) => {
+        const year = selectedDate.getFullYear();
+        const month = String(selectedDate.getMonth() + 1).padStart(2, "0");
+        const day = String(selectedDate.getDate()).padStart(2, "0");
+        const dateStr = `${year}-${month}-${day}`;
+        onChange(field.field_name, dateStr);
+        setShowCalendar(false);
+      };
+
+      // Handle manual input with mm/dd/yyyy formatting
       const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         let inputValue = e.target.value;
-        
-        // Remove all non-digit characters
         const digitsOnly = inputValue.replace(/\D/g, "");
         
-        // Format as user types: mm/dd/yyyy
         let formatted = "";
         if (digitsOnly.length > 0) {
           formatted = digitsOnly.substring(0, 2);
@@ -573,58 +603,235 @@ export default function CustomFieldRenderer({
           formatted += "/" + digitsOnly.substring(4, 8);
         }
         
-        // Limit to mm/dd/yyyy format (10 characters)
         if (formatted.length > 10) {
           formatted = formatted.substring(0, 10);
         }
         
-        // Update the input value
         e.target.value = formatted;
         
-        // Convert to YYYY-MM-DD for storage if complete
         if (formatted.length === 10 && /^\d{2}\/\d{2}\/\d{4}$/.test(formatted)) {
           const [month, day, year] = formatted.split("/");
           const dateStr = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-          // Validate the date
           const date = new Date(dateStr);
           if (!isNaN(date.getTime())) {
-            // Store as YYYY-MM-DD for backend compatibility
             onChange(field.field_name, dateStr);
           } else {
-            // Invalid date, store as-is for now (will be caught by validation)
             onChange(field.field_name, formatted);
           }
         } else {
-          // Incomplete date, store as-is for display
           onChange(field.field_name, formatted);
         }
       };
 
+      // Calendar functions
+      const getDaysInMonth = (date: Date) => {
+        return new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+      };
+
+      const getFirstDayOfMonth = (date: Date) => {
+        return new Date(date.getFullYear(), date.getMonth(), 1).getDay();
+      };
+
+      const getCalendarDays = () => {
+        const daysInMonth = getDaysInMonth(currentMonth);
+        const firstDay = getFirstDayOfMonth(currentMonth);
+        const days: (Date | null)[] = [];
+
+        // Add empty cells for days before the first day of the month
+        for (let i = 0; i < firstDay; i++) {
+          days.push(null);
+        }
+
+        // Add days of the month
+        for (let day = 1; day <= daysInMonth; day++) {
+          days.push(new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day));
+        }
+
+        return days;
+      };
+
+      const navigateMonth = (direction: "prev" | "next") => {
+        setCurrentMonth((prev) => {
+          const newDate = new Date(prev);
+          if (direction === "prev") {
+            newDate.setMonth(prev.getMonth() - 1);
+          } else {
+            newDate.setMonth(prev.getMonth() + 1);
+          }
+          return newDate;
+        });
+      };
+
+      const goToToday = () => {
+        const today = new Date();
+        setCurrentMonth(today);
+        handleDateSelect(today);
+      };
+
+      const clearDate = () => {
+        onChange(field.field_name, "");
+        setShowCalendar(false);
+      };
+
+      // Close calendar when clicking outside
+      React.useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+          if (calendarRef.current && !calendarRef.current.contains(event.target as Node)) {
+            setShowCalendar(false);
+          }
+        };
+
+        if (showCalendar) {
+          document.addEventListener("mousedown", handleClickOutside);
+        }
+
+        return () => {
+          document.removeEventListener("mousedown", handleClickOutside);
+        };
+      }, [showCalendar]);
+
+      const monthNames = [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+      ];
+      const dayNames = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+      const calendarDays = getCalendarDays();
+      const currentDateObj = getCurrentDate;
+
       return (
-        <input
-          id={field.field_name}
-          type="text"
-          value={displayValue}
-          onChange={handleDateChange}
-          placeholder="mm/dd/yyyy"
-          className={className}
-          required={field.is_required}
-          maxLength={10}
-          onBlur={(e) => {
-            // Validate on blur
-            const inputValue = e.target.value.trim();
-            if (inputValue && inputValue.length === 10) {
-              const [month, day, year] = inputValue.split("/");
-              const dateStr = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-              const date = new Date(dateStr);
-              if (!isNaN(date.getTime())) {
-                // Valid date, ensure it's stored as YYYY-MM-DD
-                onChange(field.field_name, dateStr);
-              }
-            }
-          }}
-        />
+        <div className="relative" ref={calendarRef}>
+          <div className="relative flex items-center">
+            <input
+              id={field.field_name}
+              type="text"
+              value={displayValue}
+              onChange={handleDateChange}
+              placeholder="mm/dd/yyyy"
+              className={className}
+              required={field.is_required}
+              maxLength={10}
+              onBlur={(e) => {
+                const inputValue = e.target.value.trim();
+                if (inputValue && inputValue.length === 10) {
+                  const [month, day, year] = inputValue.split("/");
+                  const dateStr = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+                  const date = new Date(dateStr);
+                  if (!isNaN(date.getTime())) {
+                    onChange(field.field_name, dateStr);
+                  }
+                }
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => setShowCalendar(!showCalendar)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+              title="Open calendar"
+            >
+              <FiCalendar className="w-5 h-5" />
+            </button>
+          </div>
+
+          {showCalendar && (
+            <div className="absolute z-50 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg p-4 w-80">
+              {/* Calendar Header */}
+              <div className="flex items-center justify-between mb-4">
+                <button
+                  type="button"
+                  onClick={() => navigateMonth("prev")}
+                  className="p-1 hover:bg-gray-100 rounded"
+                  title="Previous month"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-lg">
+                    {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => navigateMonth("next")}
+                    className="p-1 hover:bg-gray-100 rounded"
+                    title="Next month"
+                  >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+
+              {/* Day Names */}
+              <div className="grid grid-cols-7 gap-1 mb-2">
+                {dayNames.map((day) => (
+                  <div key={day} className="text-center text-xs font-medium text-gray-600 py-1">
+                    {day}
+                  </div>
+                ))}
+              </div>
+
+              {/* Calendar Days */}
+              <div className="grid grid-cols-7 gap-1">
+                {calendarDays.map((day, index) => {
+                  if (!day) {
+                    return <div key={`empty-${index}`} className="aspect-square" />;
+                  }
+
+                  const isToday =
+                    day.getDate() === new Date().getDate() &&
+                    day.getMonth() === new Date().getMonth() &&
+                    day.getFullYear() === new Date().getFullYear();
+
+                  const isSelected =
+                    day.getDate() === currentDateObj.getDate() &&
+                    day.getMonth() === currentDateObj.getMonth() &&
+                    day.getFullYear() === currentDateObj.getFullYear();
+
+                  return (
+                    <button
+                      key={day.toISOString()}
+                      type="button"
+                      onClick={() => handleDateSelect(day)}
+                      className={`
+                        aspect-square flex items-center justify-center text-sm rounded
+                        ${isSelected
+                          ? "bg-blue-600 text-white font-semibold"
+                          : isToday
+                          ? "bg-blue-100 text-blue-700 font-semibold"
+                          : "hover:bg-gray-100 text-gray-700"
+                        }
+                      `}
+                    >
+                      {day.getDate()}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Calendar Footer */}
+              <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={goToToday}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                >
+                  Today
+                </button>
+                <button
+                  type="button"
+                  onClick={clearDate}
+                  className="text-sm text-gray-600 hover:text-gray-800 font-medium"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       );
+    }
     case "datetime":
       const inputType =
         field.field_type === "datetime" ? "datetime-local" : field.field_type;
@@ -918,6 +1125,20 @@ export function useCustomFields(entityType: string) {
       // Handle null, undefined, or empty values
       if (value === null || value === undefined) return false;
       const trimmed = String(value).trim();
+      
+      // Special validation for select fields - check if "Select an option" is selected
+      if (field.field_type === "select") {
+        if (trimmed === "" || trimmed.toLowerCase() === "select an option") {
+          return false;
+        }
+        // For multi-select fields (comma-separated), check if at least one value is selected
+        if (trimmed.includes(",")) {
+          const values = trimmed.split(",").map(v => v.trim()).filter(Boolean);
+          return values.length > 0;
+        }
+        return true;
+      }
+      
       // Empty string means no value selected (especially for select fields)
       if (trimmed === "") return false;
       

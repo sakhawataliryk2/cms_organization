@@ -1519,12 +1519,31 @@ export default function AddJobSeeker() {
                     if (fieldValue === null || fieldValue === undefined) return false;
                     const trimmed = String(fieldValue).trim();
                     
-                    // For select fields, check if a valid option is selected (not empty and not "Select an option")
+                    // For select fields, check if a valid option is selected
                     if (field.field_type === "select") {
-                      if (trimmed === "" || trimmed.toLowerCase() === "select an option") {
+                      // Empty string means "Select an option" is selected
+                      if (trimmed === "") return false;
+                      // Also check if it matches the default option text (case-insensitive)
+                      if (trimmed.toLowerCase() === "select an option" || 
+                          trimmed.toLowerCase() === "select owner" ||
+                          trimmed.toLowerCase() === "select department" ||
+                          trimmed.toLowerCase() === "select status") {
+                        return false;
+                      }
+                      // Check if the value exists in the field options
+                      const normalizedOptions = Array.isArray(field.options)
+                        ? field.options.filter((opt): opt is string => typeof opt === "string")
+                        : [];
+                      // If options exist, verify the value is one of them
+                      if (normalizedOptions.length > 0 && !normalizedOptions.includes(trimmed)) {
                         return false;
                       }
                       return true;
+                    }
+                    
+                    // For multi-value fields, check if at least one value is selected
+                    if (isMultiValueField) {
+                      return multiValueArray.length > 0;
                     }
                     
                     // Empty string means no value selected
