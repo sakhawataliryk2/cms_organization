@@ -9,11 +9,56 @@ import PanelWithHeader from "@/components/PanelWithHeader";
 import { FaLinkedin, FaFacebookSquare } from "react-icons/fa";
 import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, sendCalendarInvite, type EmailMessage, type CalendarEvent } from "@/lib/office365";
 import { FiUsers, FiUpload, FiFile, FiX } from "react-icons/fi";
+import { TbGripVertical } from "react-icons/tb";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import OnboardingTab from "./onboarding/OnboardingTab";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
+// Sortable Panel Component with drag handle
+function SortablePanel({
+  id,
+  children,
+}: {
+  id: string;
+  children: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
 
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="relative group">
+      <button
+        {...attributes}
+        {...listeners}
+        className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Drag to reorder"
+      >
+        <TbGripVertical className="w-5 h-5 text-gray-600" />
+      </button>
+      {children}
+    </div>
+  );
+}
 
 export default function JobSeekerView() {
   const router = useRouter();
@@ -34,6 +79,11 @@ export default function JobSeekerView() {
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
+
+  // Tasks state
+  const [tasks, setTasks] = useState<Array<any>>([]);
+  const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+  const [tasksError, setTasksError] = useState<string | null>(null);
 
   // Add Note form state
   const [noteForm, setNoteForm] = useState({
@@ -60,6 +110,13 @@ export default function JobSeekerView() {
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
     resume: ["profile", "skills", "experience"],
+    overview: [
+      "status",
+      "currentOrganization",
+      "title",
+      "email",
+      "mobilePhone",
+    ],
     jobSeekerDetails: [
       "status",
       "currentOrganization",
@@ -73,6 +130,15 @@ export default function JobSeekerView() {
       "owner",
     ],
   });
+
+  // Panel order state for drag-and-drop
+  const [panelOrder, setPanelOrder] = useState<string[]>([
+    "resume",
+    "overview",
+    "jobSeekerDetails",
+    "recentNotes",
+    "openTasks",
+  ]);
   // ===== PENCIL-HEADER-MODAL (Job Seeker Header Fields) =====
 
   type HeaderFieldDef = {
@@ -415,6 +481,40 @@ Best regards`;
     }
   };
 
+
+  // Load panel order from localStorage on mount
+  useEffect(() => {
+    const savedOrder = localStorage.getItem("jobSeekerSummaryPanelOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setPanelOrder(parsed);
+        }
+      } catch (e) {
+        console.error("Error parsing saved panel order:", e);
+      }
+    }
+  }, []);
+
+  // Save panel order to localStorage when it changes
+  useEffect(() => {
+    if (panelOrder.length > 0) {
+      localStorage.setItem("jobSeekerSummaryPanelOrder", JSON.stringify(panelOrder));
+    }
+  }, [panelOrder]);
+
+  // Handle drag end for panel reordering
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      setPanelOrder((items) => {
+        const oldIndex = items.indexOf(active.id as string);
+        const newIndex = items.indexOf(over.id as string);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  };
 
   // Fetch job seeker when component mounts
   useEffect(() => {
@@ -827,10 +927,11 @@ Best regards`;
       console.log("Formatted job seeker data:", formattedJobSeeker);
       setJobSeeker(formattedJobSeeker);
 
-      // Now fetch notes and history
+      // Now fetch notes, history, documents, and tasks
       fetchNotes(id);
       fetchHistory(id);
       fetchDocuments(id);
+      fetchTasks(id);
     } catch (err) {
       console.error("Error fetching job seeker:", err);
       setError(
@@ -930,12 +1031,77 @@ Best regards`;
     }
   };
 
-  // Handle adding a new note
+  // Fetch tasks for the job seeker (only non-completed tasks)
+  const fetchTasks = async (jobSeekerId: string) => {
+    setIsLoadingTasks(true);
+    setTasksError(null);
+
+    try {
+      // Fetch all tasks
+      const tasksResponse = await fetch(`/api/tasks`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      if (!tasksResponse.ok) {
+        const errorData = await tasksResponse.json();
+        throw new Error(errorData.message || "Failed to fetch tasks");
+      }
+
+      const tasksData = await tasksResponse.json();
+
+      // Filter tasks:
+      // 1. Not completed (status !== "Completed" and is_completed !== true)
+      // 2. Related to this job seeker by task.job_seeker_id == jobSeekerId
+      const jobSeekerTasks = (tasksData.tasks || []).filter((task: any) => {
+        // Exclude completed tasks
+        if (task.is_completed === true || task.status === "Completed") {
+          return false;
+        }
+
+        // Check if task is related to this job seeker
+        const taskJobSeekerId = task.job_seeker_id?.toString();
+        return taskJobSeekerId && taskJobSeekerId === jobSeekerId.toString();
+      });
+
+      setTasks(jobSeekerTasks);
+    } catch (err) {
+      console.error("Error fetching tasks:", err);
+      setTasksError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while fetching tasks"
+      );
+    } finally {
+      setIsLoadingTasks(false);
+    }
+  };
+
   // Handle adding a new note
   const handleAddNote = async () => {
     if (!noteForm.text.trim() || !jobSeekerId) return;
 
     try {
+      const requestBody = {
+        text: noteForm.text,
+        note_type: noteForm.action || "General Note", // Map action to note_type for backend
+        // Backend only uses text and note_type, but we can send other fields for future use
+        action: noteForm.action,
+        copy_note: noteForm.copyNote === "Yes",
+        replace_general_contact_comments:
+          noteForm.replaceGeneralContactComments,
+        additional_references: noteForm.additionalReferences,
+        schedule_next_action: noteForm.scheduleNextAction,
+        email_notification: noteForm.emailNotification,
+      };
+
+      console.log("Adding note for job seeker:", jobSeekerId);
+      console.log("Request body:", requestBody);
+
       const response = await fetch(`/api/job-seekers/${jobSeekerId}/notes`, {
         method: "POST",
         headers: {
@@ -945,26 +1111,34 @@ Best regards`;
             "$1"
           )}`,
         },
-        body: JSON.stringify({
-          text: noteForm.text,
-          action: noteForm.action,
-          copy_note: noteForm.copyNote === "Yes",
-          replace_general_contact_comments:
-            noteForm.replaceGeneralContactComments,
-          additional_references: noteForm.additionalReferences,
-          schedule_next_action: noteForm.scheduleNextAction,
-          email_notification: noteForm.emailNotification,
-        }),
+        body: JSON.stringify(requestBody),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to add note");
+      console.log("Response status:", response.status);
+      console.log("Response ok:", response.ok);
+
+      // Get response as text first for debugging
+      const responseText = await response.text();
+      let data;
+      
+      try {
+        data = JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("Error parsing response:", parseError);
+        console.error("Raw response:", responseText);
+        throw new Error("Invalid response format from server");
       }
 
-      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || data.error || "Failed to add note");
+      }
 
       // Add the new note to the list
-      setNotes([data.note, ...notes]);
+      // Handle both response structures: { note } or { success: true, note }
+      const newNote = data.note || data;
+      if (newNote) {
+        setNotes([newNote, ...notes]);
+      }
 
       // Clear the form
       setNoteForm({
@@ -981,11 +1155,19 @@ Best regards`;
       });
       setShowAddNote(false);
 
-      // Refresh history
+      // Refresh history and notes
       fetchHistory(jobSeekerId);
+      fetchNotes(jobSeekerId);
+
+      // Show success message
+      alert("Note added successfully");
     } catch (err) {
       console.error("Error adding note:", err);
-      alert("Failed to add note. Please try again.");
+      alert(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while adding a note"
+      );
     }
   };
 
@@ -1058,6 +1240,9 @@ Best regards`;
       handleEdit();
     } else if (action === "delete" && jobSeekerId) {
       handleDelete(jobSeekerId);
+    } else if (action === "add-note") {
+      setShowAddNote(true);
+      setActiveTab("notes");
     } else if (action === "add-task") {
       // Navigate to add task page with job seeker context
       if (jobSeekerId) {
@@ -1689,330 +1874,458 @@ Best regards`;
         <div className="grid grid-cols-7 gap-4">
           {/* Display content based on active tab */}
           {activeTab === "summary" && (
-            <>
-              {/* Left Column - Resume Section (4/7 width) */}
-              <div className="col-span-4">
-                <PanelWithHeader
-                  title="Resume"
-                  onEdit={() => handleEditPanel("resume")}
-                >
-                  <div className="space-y-0 border border-gray-200 rounded">
-                    {visibleFields.resume.includes("profile") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Profile:
-                        </div>
-                        <div className="flex-1 p-2 text-sm">
-                          {jobSeeker.resume.profile}
-                        </div>
-                      </div>
-                    )}
-                    {visibleFields.resume.includes("skills") &&
-                      jobSeeker.skills &&
-                      jobSeeker.skills.length > 0 && (
-                        <div className="flex border-b border-gray-200 last:border-b-0">
-                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                            Skills:
-                          </div>
-                          <div className="flex-1 p-2">
-                            <div className="flex flex-wrap gap-2">
-                              {jobSeeker.skills.map(
-                                (skill: string, index: number) => (
-                                  <span
-                                    key={index}
-                                    className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm"
-                                  >
-                                    {skill}
-                                  </span>
-                                )
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    {visibleFields.resume.includes("experience") &&
-                      jobSeeker.resume.experience &&
-                      jobSeeker.resume.experience.length > 0 && (
-                        <div className="flex border-b border-gray-200 last:border-b-0">
-                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                            Work Experience:
-                          </div>
-                          <div className="flex-1 p-2">
-                            {jobSeeker.resume.experience.map(
-                              (exp: any, index: number) => (
-                                <div key={index} className="mb-4 last:mb-0">
-                                  <div className="flex justify-between mb-1">
-                                    <div className="font-bold text-sm">
-                                      {exp.title} {exp.location}
-                                    </div>
-                                    <div className="text-sm">{exp.period}</div>
-                                  </div>
-                                  <ul className="list-disc pl-5 mt-1">
-                                    {exp.responsibilities.map(
-                                      (resp: string, respIndex: number) => (
-                                        <li
-                                          key={respIndex}
-                                          className="text-sm mb-1"
-                                        >
-                                          {resp}
-                                        </li>
-                                      )
-                                    )}
-                                  </ul>
-                                </div>
-                              )
-                            )}
-                          </div>
-                        </div>
-                      )}
-                  </div>
-                </PanelWithHeader>
-              </div>
-
-              {/* Right Column - Job Seeker Details */}
-              <div className="col-span-3">
-                <PanelWithHeader
-                  title="Job Seeker Details"
-                  onEdit={() => handleEditPanel("jobSeekerDetails")}
-                >
-                  <div className="space-y-0 border border-gray-200 rounded">
-                    {visibleFields.jobSeekerDetails.includes("status") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Status:
-                        </div>
-                        <div className="flex-1 p-2">
-                          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                            {jobSeeker.status}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                    {visibleFields.jobSeekerDetails.includes(
-                      "currentOrganization"
-                    ) && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Current Organization:
-                        </div>
-                        <div className="flex-1 p-2 text-blue-600">
-                          {jobSeeker.currentOrganization}
-                        </div>
-                      </div>
-                    )}
-                    {visibleFields.jobSeekerDetails.includes("title") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Title:
-                        </div>
-                        <div className="flex-1 p-2">{jobSeeker.title}</div>
-                      </div>
-                    )}
-                    {visibleFields.jobSeekerDetails.includes("email") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Email:
-                        </div>
-                        <div className="flex-1 p-2 text-blue-600">
-                          {jobSeeker.email}
-                        </div>
-                      </div>
-                    )}
-                    {visibleFields.jobSeekerDetails.includes("mobilePhone") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Mobile Phone:
-                        </div>
-                        <div className="flex-1 p-2">
-                          {jobSeeker.mobilePhone}
-                        </div>
-                      </div>
-                    )}
-                    {visibleFields.jobSeekerDetails.includes("address") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Address:
-                        </div>
-                        <div className="flex-1 p-2">
-                          {jobSeeker.fullAddress}
-                        </div>
-                      </div>
-                    )}
-                    {visibleFields.jobSeekerDetails.includes(
-                      "desiredSalary"
-                    ) && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Desired Salary:
-                        </div>
-                        <div className="flex-1 p-2">
-                          {jobSeeker.desiredSalary}
-                        </div>
-                      </div>
-                    )}
-                    {visibleFields.jobSeekerDetails.includes("dateAdded") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Date Added:
-                        </div>
-                        <div className="flex-1 p-2">{jobSeeker.dateAdded}</div>
-                      </div>
-                    )}
-                    {visibleFields.jobSeekerDetails.includes(
-                      "lastContactDate"
-                    ) && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Last Contact:
-                        </div>
-                        <div className="flex-1 p-2">
-                          {jobSeeker.lastContactDate}
-                        </div>
-                      </div>
-                    )}
-                    {visibleFields.jobSeekerDetails.includes("owner") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          User Owner:
-                        </div>
-                        <div className="flex-1 p-2">{jobSeeker.owner}</div>
-                      </div>
-                    )}
-                    {/* Display custom fields */}
-                    {jobSeeker.customFields &&
-                      Object.keys(jobSeeker.customFields).map((fieldKey) => {
-                        if (visibleFields.jobSeekerDetails.includes(fieldKey)) {
-                          const field = availableFields.find(
-                            (f) =>
-                              (f.field_name || f.field_label || f.id) ===
-                              fieldKey
-                          );
-                          const fieldLabel =
-                            field?.field_label || field?.field_name || fieldKey;
-                          const fieldValue = jobSeeker.customFields[fieldKey];
-                          return (
-                            <div
-                              key={fieldKey}
-                              className="flex border-b border-gray-200 last:border-b-0"
+            <DndContext
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={panelOrder}
+                strategy={verticalListSortingStrategy}
+              >
+                <div className="col-span-7 space-y-4">
+                  {panelOrder.map((panelId) => {
+                    if (panelId === "resume") {
+                      return (
+                        <SortablePanel key={panelId} id={panelId}>
+                          <PanelWithHeader
+                              title="Resume"
+                              onEdit={() => handleEditPanel("resume")}
                             >
-                              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                {fieldLabel}:
+                              <div className="space-y-0 border border-gray-200 rounded">
+                                {visibleFields.resume.includes("profile") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      Profile:
+                                    </div>
+                                    <div className="flex-1 p-2 text-sm">
+                                      {jobSeeker.resume.profile}
+                                    </div>
+                                  </div>
+                                )}
+                                {visibleFields.resume.includes("skills") &&
+                                  jobSeeker.skills &&
+                                  jobSeeker.skills.length > 0 && (
+                                    <div className="flex border-b border-gray-200 last:border-b-0">
+                                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                        Skills:
+                                      </div>
+                                      <div className="flex-1 p-2">
+                                        <div className="flex flex-wrap gap-2">
+                                          {jobSeeker.skills.map(
+                                            (skill: string, index: number) => (
+                                              <span
+                                                key={index}
+                                                className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm"
+                                              >
+                                                {skill}
+                                              </span>
+                                            )
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  )}
+                                {visibleFields.resume.includes("experience") &&
+                                  jobSeeker.resume.experience &&
+                                  jobSeeker.resume.experience.length > 0 && (
+                                    <div className="flex border-b border-gray-200 last:border-b-0">
+                                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                        Work Experience:
+                                      </div>
+                                      <div className="flex-1 p-2">
+                                        {jobSeeker.resume.experience.map(
+                                          (exp: any, index: number) => (
+                                            <div key={index} className="mb-4 last:mb-0">
+                                              <div className="flex justify-between mb-1">
+                                                <div className="font-bold text-sm">
+                                                  {exp.title} {exp.location}
+                                                </div>
+                                                <div className="text-sm">{exp.period}</div>
+                                              </div>
+                                              <ul className="list-disc pl-5 mt-1">
+                                                {exp.responsibilities.map(
+                                                  (resp: string, respIndex: number) => (
+                                                    <li
+                                                      key={respIndex}
+                                                      className="text-sm mb-1"
+                                                    >
+                                                      {resp}
+                                                    </li>
+                                                  )
+                                                )}
+                                              </ul>
+                                            </div>
+                                          )
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
                               </div>
-                              <div className="flex-1 p-2">
-                                {String(fieldValue || "-")}
+                            </PanelWithHeader>
+                        </SortablePanel>
+                      );
+                    }
+
+                    if (panelId === "overview") {
+                      return (
+                        <SortablePanel key={panelId} id={panelId}>
+                          <PanelWithHeader
+                              title="Overview"
+                              onEdit={() => handleEditPanel("overview")}
+                            >
+                              <div className="space-y-0 border border-gray-200 rounded">
+                                {visibleFields.overview.includes("status") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      Status:
+                                    </div>
+                                    <div className="flex-1 p-2">
+                                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
+                                        {jobSeeker.status}
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+                                {visibleFields.overview.includes("currentOrganization") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      Current Organization:
+                                    </div>
+                                    <div className="flex-1 p-2 text-blue-600">
+                                      {jobSeeker.currentOrganization}
+                                    </div>
+                                  </div>
+                                )}
+                                {visibleFields.overview.includes("title") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      Title:
+                                    </div>
+                                    <div className="flex-1 p-2">{jobSeeker.title}</div>
+                                  </div>
+                                )}
+                                {visibleFields.overview.includes("email") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      Email:
+                                    </div>
+                                    <div className="flex-1 p-2 text-blue-600">
+                                      {jobSeeker.email}
+                                    </div>
+                                  </div>
+                                )}
+                                {visibleFields.overview.includes("mobilePhone") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      Mobile Phone:
+                                    </div>
+                                    <div className="flex-1 p-2">
+                                      {jobSeeker.mobilePhone}
+                                    </div>
+                                  </div>
+                                )}
+                                {/* Display custom fields for overview */}
+                                {jobSeeker.customFields &&
+                                  Object.keys(jobSeeker.customFields).map((fieldKey) => {
+                                    if (visibleFields.overview.includes(fieldKey)) {
+                                      const field = availableFields.find(
+                                        (f) =>
+                                          (f.field_name || f.field_label || f.id) ===
+                                          fieldKey
+                                      );
+                                      const fieldLabel =
+                                        field?.field_label || field?.field_name || fieldKey;
+                                      const fieldValue = jobSeeker.customFields[fieldKey];
+                                      return (
+                                        <div
+                                          key={fieldKey}
+                                          className="flex border-b border-gray-200 last:border-b-0"
+                                        >
+                                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                            {fieldLabel}:
+                                          </div>
+                                          <div className="flex-1 p-2">
+                                            {String(fieldValue || "-")}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  })}
                               </div>
-                            </div>
-                          );
-                        }
-                        return null;
-                      })}
-                  </div>
-                </PanelWithHeader>
+                            </PanelWithHeader>
+                        </SortablePanel>
+                      );
+                    }
 
-                {/* Recent Notes Section */}
-                {/* <div className="bg-white rounded-lg shadow mt-4">
-                <div className="border-b border-gray-300 p-2 font-medium">
-                  Recent Notes
+                    if (panelId === "jobSeekerDetails") {
+                      return (
+                        <SortablePanel key={panelId} id={panelId}>
+                          <PanelWithHeader
+                              title="Job Seeker Details"
+                              onEdit={() => handleEditPanel("jobSeekerDetails")}
+                            >
+                              <div className="space-y-0 border border-gray-200 rounded">
+                                {visibleFields.jobSeekerDetails.includes("status") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      Status:
+                                    </div>
+                                    <div className="flex-1 p-2">
+                                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
+                                        {jobSeeker.status}
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+                                {visibleFields.jobSeekerDetails.includes("currentOrganization") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      Current Organization:
+                                    </div>
+                                    <div className="flex-1 p-2 text-blue-600">
+                                      {jobSeeker.currentOrganization}
+                                    </div>
+                                  </div>
+                                )}
+                                {visibleFields.jobSeekerDetails.includes("title") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      Title:
+                                    </div>
+                                    <div className="flex-1 p-2">{jobSeeker.title}</div>
+                                  </div>
+                                )}
+                                {visibleFields.jobSeekerDetails.includes("email") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      Email:
+                                    </div>
+                                    <div className="flex-1 p-2 text-blue-600">
+                                      {jobSeeker.email}
+                                    </div>
+                                  </div>
+                                )}
+                                {visibleFields.jobSeekerDetails.includes("mobilePhone") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      Mobile Phone:
+                                    </div>
+                                    <div className="flex-1 p-2">
+                                      {jobSeeker.mobilePhone}
+                                    </div>
+                                  </div>
+                                )}
+                                {visibleFields.jobSeekerDetails.includes("address") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      Address:
+                                    </div>
+                                    <div className="flex-1 p-2">
+                                      {jobSeeker.fullAddress}
+                                    </div>
+                                  </div>
+                                )}
+                                {visibleFields.jobSeekerDetails.includes("desiredSalary") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      Desired Salary:
+                                    </div>
+                                    <div className="flex-1 p-2">
+                                      {jobSeeker.desiredSalary}
+                                    </div>
+                                  </div>
+                                )}
+                                {visibleFields.jobSeekerDetails.includes("dateAdded") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      Date Added:
+                                    </div>
+                                    <div className="flex-1 p-2">{jobSeeker.dateAdded}</div>
+                                  </div>
+                                )}
+                                {visibleFields.jobSeekerDetails.includes("lastContactDate") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      Last Contact:
+                                    </div>
+                                    <div className="flex-1 p-2">
+                                      {jobSeeker.lastContactDate}
+                                    </div>
+                                  </div>
+                                )}
+                                {visibleFields.jobSeekerDetails.includes("owner") && (
+                                  <div className="flex border-b border-gray-200 last:border-b-0">
+                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                      User Owner:
+                                    </div>
+                                    <div className="flex-1 p-2">{jobSeeker.owner}</div>
+                                  </div>
+                                )}
+                                {/* Display custom fields */}
+                                {jobSeeker.customFields &&
+                                  Object.keys(jobSeeker.customFields).map((fieldKey) => {
+                                    if (visibleFields.jobSeekerDetails.includes(fieldKey)) {
+                                      const field = availableFields.find(
+                                        (f) =>
+                                          (f.field_name || f.field_label || f.id) ===
+                                          fieldKey
+                                      );
+                                      const fieldLabel =
+                                        field?.field_label || field?.field_name || fieldKey;
+                                      const fieldValue = jobSeeker.customFields[fieldKey];
+                                      return (
+                                        <div
+                                          key={fieldKey}
+                                          className="flex border-b border-gray-200 last:border-b-0"
+                                        >
+                                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                            {fieldLabel}:
+                                          </div>
+                                          <div className="flex-1 p-2">
+                                            {String(fieldValue || "-")}
+                                          </div>
+                                        </div>
+                                      );
+                                    }
+                                    return null;
+                                  })}
+                              </div>
+                            </PanelWithHeader>
+                        </SortablePanel>
+                      );
+                    }
+
+                    if (panelId === "recentNotes") {
+                      return (
+                        <SortablePanel key={panelId} id={panelId}>
+                          <PanelWithHeader title="Recent Notes:">
+                              <div className="border border-gray-200 rounded">
+                                <div className="p-2">
+                                  {notes.length > 0 ? (
+                                    <div>
+                                      {notes.slice(0, 3).map((note) => (
+                                        <div
+                                          key={note.id}
+                                          className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
+                                        >
+                                          <div className="flex justify-between text-sm mb-1">
+                                            <span className="font-medium">
+                                              {note.created_by_name || "Unknown User"}
+                                            </span>
+                                            <span className="text-gray-500">
+                                              {new Date(note.created_at).toLocaleString()}
+                                            </span>
+                                          </div>
+                                          <p className="text-sm text-gray-700">
+                                            {note.text.length > 100
+                                              ? `${note.text.substring(0, 100)}...`
+                                              : note.text}
+                                          </p>
+                                        </div>
+                                      ))}
+                                      {notes.length > 3 && (
+                                        <button
+                                          onClick={() => setActiveTab("notes")}
+                                          className="text-blue-500 text-sm hover:underline"
+                                        >
+                                          View all {notes.length} notes
+                                        </button>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <p className="text-gray-500 italic">No recent notes</p>
+                                  )}
+                                </div>
+                              </div>
+                            </PanelWithHeader>
+                        </SortablePanel>
+                      );
+                    }
+
+                    if (panelId === "openTasks") {
+                      return (
+                        <SortablePanel key={panelId} id={panelId}>
+                          <PanelWithHeader title="Open Tasks:">
+                              <div className="border border-gray-200 rounded">
+                                {isLoadingTasks ? (
+                                  <div className="flex justify-center py-4">
+                                    <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+                                  </div>
+                                ) : tasksError ? (
+                                  <div className="p-2 text-red-500 text-sm">{tasksError}</div>
+                                ) : tasks.length > 0 ? (
+                                  <div className="divide-y divide-gray-200">
+                                    {tasks.map((task) => (
+                                      <div
+                                        key={task.id}
+                                        className="p-3 hover:bg-gray-50 cursor-pointer"
+                                        onClick={() =>
+                                          router.push(`/dashboard/tasks/view?id=${task.id}`)
+                                        }
+                                      >
+                                        <div className="flex justify-between items-start mb-1">
+                                          <h4 className="font-medium text-blue-600 hover:underline">
+                                            {task.title}
+                                          </h4>
+                                          {task.priority && (
+                                            <span
+                                              className={`px-2 py-0.5 rounded text-xs ${
+                                                task.priority === "High"
+                                                  ? "bg-red-100 text-red-800"
+                                                  : task.priority === "Medium"
+                                                  ? "bg-yellow-100 text-yellow-800"
+                                                  : "bg-gray-100 text-gray-800"
+                                              }`}
+                                            >
+                                              {task.priority}
+                                            </span>
+                                          )}
+                                        </div>
+                                        {task.description && (
+                                          <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                                            {task.description}
+                                          </p>
+                                        )}
+                                        <div className="flex justify-between items-center text-xs text-gray-500">
+                                          <div className="flex space-x-3">
+                                            {task.due_date && (
+                                              <span>
+                                                Due:{" "}
+                                                {new Date(task.due_date).toLocaleDateString()}
+                                              </span>
+                                            )}
+                                            {task.assigned_to_name && (
+                                              <span>
+                                                Assigned to: {task.assigned_to_name}
+                                              </span>
+                                            )}
+                                          </div>
+                                          {task.status && (
+                                            <span className="text-gray-600">
+                                              {task.status}
+                                            </span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="p-4 text-center text-gray-500 italic">
+                                    No open tasks
+                                  </div>
+                                )}
+                              </div>
+                            </PanelWithHeader>
+                        </SortablePanel>
+                      );
+                    }
+
+                    return null;
+                  })}
                 </div>
-                <div className="p-4">
-                  <div className="flex justify-end mb-3">
-                    <button
-                      className="text-sm text-blue-600 hover:underline"
-                      onClick={() => setShowAddNote(true)}
-                    >
-                      Add Note
-                    </button>
-                  </div>
-
-                  
-                  {notes.length > 0 ? (
-                    <div>
-                      {notes.slice(0, 2).map((note) => (
-                        <div
-                          key={note.id}
-                          className="mb-3 pb-3 border-b last:border-0"
-                        >
-                          <div className="flex justify-between text-sm mb-1">
-                            <span className="font-medium">
-                              {note.created_by_name || "Unknown User"}
-                            </span>
-                            <span className="text-gray-500">
-                              {new Date(note.created_at).toLocaleString()}
-                            </span>
-                          </div>
-                          <p className="text-sm text-gray-700">
-                            {note.text.length > 100
-                              ? `${note.text.substring(0, 100)}...`
-                              : note.text}
-                          </p>
-                        </div>
-                      ))}
-                      {notes.length > 2 && (
-                        <button
-                          onClick={() => setActiveTab("notes")}
-                          className="text-blue-500 text-sm hover:underline"
-                        >
-                          View all {notes.length} notes
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-center text-gray-500 p-4">
-                      No notes have been added yet.
-                    </div>
-                  )}
-
-                  
-                  {showAddNote && (
-                    <div className="mt-4 p-3 bg-gray-50 rounded border">
-                      <h3 className="font-medium mb-2">Add New Note</h3>
-                      <div className="mb-3">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Note Type <span className="text-red-500">*</span>
-                        </label>
-                        <select
-                          value={noteType}
-                          onChange={(e) => setNoteType(e.target.value)}
-                          className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="General Note">General Note</option>
-                          <option value="Phone Call">Phone Call</option>
-                          <option value="Email">Email</option>
-                          <option value="Interview">Interview</option>
-                        </select>
-                      </div>
-                      <textarea
-                        value={newNote}
-                        onChange={(e) => setNewNote(e.target.value)}
-                        placeholder="Enter your note here..."
-                        className="w-full p-2 border rounded mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        rows={3}
-                      />
-                      <div className="flex justify-end space-x-2">
-                        <button
-                          onClick={() => {
-                            setShowAddNote(false);
-                            setNewNote("");
-                            setNoteType("General Note");
-                          }}
-                          className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          onClick={handleAddNote}
-                          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-                          disabled={!newNote.trim()}
-                        >
-                          Save Note
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div> */}
-              </div>
-            </>
+              </SortableContext>
+            </DndContext>
           )}
 
           {/* Notes Tab */}
@@ -2206,9 +2519,208 @@ Best regards`;
             </div>
           )}
 
-         {activeTab === "onboarding" && (
-  <OnboardingTab jobSeeker={jobSeeker} />
-)}
+          {activeTab === "onboarding" && (
+            <div className="col-span-7">
+              <OnboardingTab jobSeeker={jobSeeker} />
+            </div>
+          )}
+
+          {/* Notes Tab */}
+          {activeTab === "notes" && (
+            <div className="col-span-7">{renderNotesTab()}</div>
+          )}
+
+          {/* History Tab */}
+          {activeTab === "history" && (
+            <div className="col-span-7">{renderHistoryTab()}</div>
+          )}
+
+          {/* Modify Tab */}
+          {activeTab === "modify" && (
+            <div className="col-span-7">{renderModifyTab()}</div>
+          )}
+
+          {/* Docs Tab */}
+          {activeTab === "docs" && (
+            <div className="col-span-7">
+              <div className="bg-white p-4 rounded shadow-sm">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-lg font-semibold">Documents</h2>
+                  <button
+                    onClick={triggerFileInput}
+                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center space-x-2"
+                  >
+                    <FiUpload size={16} />
+                    <span>Add Docs</span>
+                  </button>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
+                  />
+                </div>
+
+                {/* Drag and Drop Area */}
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
+                    isDragging
+                      ? "border-blue-500 bg-blue-50"
+                      : "border-gray-300 bg-gray-50 hover:border-gray-400"
+                  }`}
+                >
+                  {isUploading ? (
+                    <div className="flex flex-col items-center">
+                      <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mb-2"></div>
+                      <p className="text-gray-600">Uploading document...</p>
+                    </div>
+                  ) : (
+                    <>
+                      <FiUpload className="mx-auto text-4xl text-gray-400 mb-4" />
+                      <p className="text-gray-600 mb-2">
+                        Drag and drop files here, or click "Add Docs" button
+                        above
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        Supported formats: PDF, DOC, DOCX, TXT, JPG, PNG (Max
+                        10MB)
+                      </p>
+                      {uploadError && (
+                        <p className="text-red-500 text-sm mt-2">
+                          {uploadError}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Documents List */}
+                {isLoadingDocuments ? (
+                  <div className="flex justify-center py-4 mt-4">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                  </div>
+                ) : documentError ? (
+                  <div className="text-red-500 py-4 mt-4">{documentError}</div>
+                ) : documents.length > 0 ? (
+                  <div className="mt-6">
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-gray-100 border-b">
+                            <th className="text-left p-3 font-medium">
+                              Document Name
+                            </th>
+                            <th className="text-left p-3 font-medium">Type</th>
+                            <th className="text-left p-3 font-medium">Size</th>
+                            <th className="text-left p-3 font-medium">
+                              Created By
+                            </th>
+                            <th className="text-left p-3 font-medium">
+                              Created At
+                            </th>
+                            <th className="text-left p-3 font-medium">
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {documents.map((doc) => (
+                            <tr
+                              key={doc.id}
+                              className="border-b hover:bg-gray-50"
+                            >
+                              <td className="p-3">
+                                <div className="flex items-center space-x-2">
+                                  <FiFile className="text-gray-400" />
+                                  <span className="text-blue-600 hover:underline cursor-pointer">
+                                    {doc.document_name ||
+                                      doc.name ||
+                                      "Untitled Document"}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="p-3 text-gray-600">
+                                {doc.document_type || doc.type || "General"}
+                              </td>
+                              <td className="p-3 text-gray-600">
+                                {doc.file_size
+                                  ? `${(doc.file_size / 1024).toFixed(2)} KB`
+                                  : "-"}
+                              </td>
+                              <td className="p-3 text-gray-600">
+                                {doc.created_by_name || "Unknown"}
+                              </td>
+                              <td className="p-3 text-gray-600">
+                                {doc.created_at
+                                  ? new Date(
+                                      doc.created_at
+                                    ).toLocaleDateString()
+                                  : "-"}
+                              </td>
+                              <td className="p-3">
+                                <button
+                                  onClick={() => handleDeleteDocument(doc.id)}
+                                  className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
+                                  title="Delete document"
+                                >
+                                  <FiX size={18} />
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 mt-4">
+                    <p className="text-gray-500 italic">
+                      No documents have been uploaded yet.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {activeTab === "references" && (
+            <div className="col-span-7">
+              <div className="bg-white p-4 rounded shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold">References</h2>
+                  <button
+                    onClick={() => setShowReferenceModal(true)}
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  >
+                    Send Reference Form
+                  </button>
+                </div>
+                <p className="text-gray-600">
+                  Use the button above to send reference documents to a
+                  reference contact via email.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "applications" && (
+            <div className="col-span-7">
+              <div className="bg-white p-4 rounded shadow-sm">
+                <h2 className="text-lg font-semibold mb-4">Applications</h2>
+                <p className="text-gray-500 italic">No applications found</p>
+              </div>
+            </div>
+          )}
+
+          {activeTab === "onboarding" && (
+            <div className="col-span-7">
+              <OnboardingTab jobSeeker={jobSeeker} />
+            </div>
+          )}
 
         </div>
       </div>
@@ -2461,6 +2973,102 @@ Best regards`;
                     )}
                   </div>
                 </div>
+              ) : editingPanel === "overview" ? (
+                // Overview panel: Show available fields
+                <>
+                  <div className="mb-4">
+                    <h3 className="font-medium mb-3">
+                      Available Fields from Modify Page:
+                    </h3>
+                    <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                      {isLoadingFields ? (
+                        <div className="text-center py-4 text-gray-500">
+                          Loading fields...
+                        </div>
+                      ) : availableFields.length > 0 ? (
+                        availableFields.map((field) => {
+                          const fieldKey =
+                            field.field_name || field.field_label || field.id;
+                          const isVisible =
+                            visibleFields[editingPanel]?.includes(fieldKey) ||
+                            false;
+                          return (
+                            <div
+                              key={field.id || fieldKey}
+                              className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                            >
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isVisible}
+                                  onChange={() =>
+                                    toggleFieldVisibility(editingPanel, fieldKey)
+                                  }
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <label className="text-sm text-gray-700">
+                                  {field.field_label ||
+                                    field.field_name ||
+                                    fieldKey}
+                                </label>
+                              </div>
+                              <span className="text-xs text-gray-500">
+                                {field.field_type || "text"}
+                              </span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="text-center py-4 text-gray-500">
+                          <p>No custom fields available</p>
+                          <p className="text-xs mt-1">
+                            Fields from the modify page will appear here
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <h3 className="font-medium mb-3">Standard Fields:</h3>
+                    <div className="space-y-2 border border-gray-200 rounded p-3">
+                      {[
+                        { key: "status", label: "Status" },
+                        { key: "currentOrganization", label: "Current Organization" },
+                        { key: "title", label: "Title" },
+                        { key: "email", label: "Email" },
+                        { key: "mobilePhone", label: "Mobile Phone" },
+                      ].map((field) => {
+                        const isVisible =
+                          visibleFields[editingPanel]?.includes(field.key) ||
+                          false;
+                        return (
+                          <div
+                            key={field.key}
+                            className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={isVisible}
+                                onChange={() =>
+                                  toggleFieldVisibility(editingPanel, field.key)
+                                }
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              />
+                              <label className="text-sm text-gray-700">
+                                {field.label}
+                              </label>
+                            </div>
+                            <span className="text-xs text-gray-500">
+                              standard
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </>
               ) : (
                 // Other panels (jobSeekerDetails): Keep existing behavior
                 <>

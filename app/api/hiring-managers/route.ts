@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
-// Get all hiring managers
+// Get all hiring managers (with optional organization_id filter)
 export async function GET(request: NextRequest) {
     try {
         // Get the token from cookies
@@ -15,9 +15,20 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // Make a request to your backend API
+        // Get organization_id from query parameters
+        const { searchParams } = new URL(request.url);
+        const organizationId = searchParams.get('organization_id');
+
+        // Build API URL with organization_id if provided
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-        const response = await fetch(`${apiUrl}/api/hiring-managers`, {
+        let backendUrl = `${apiUrl}/api/hiring-managers`;
+        
+        // If organization_id is provided, use the backend endpoint that filters by organization
+        if (organizationId) {
+            backendUrl = `${apiUrl}/api/hiring-managers/organization/${organizationId}`;
+        }
+
+        const response = await fetch(backendUrl, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',

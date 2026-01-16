@@ -1,7 +1,7 @@
 // app/dashboard/jobs/add/page.tsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -9,6 +9,9 @@ import { getCookie } from "cookies-next";
 import CustomFieldRenderer, {
   useCustomFields,
 } from "@/components/CustomFieldRenderer";
+import AddressGroupRenderer, {
+  getAddressFields,
+} from "@/components/AddressGroupRenderer";
 
 // Define field type for typesafety
 interface FormField {
@@ -101,6 +104,25 @@ export default function AddJob() {
     validateCustomFields,
     getCustomFieldsForSubmission,
   } = useCustomFields("jobs");
+
+  // Sort custom fields by sort_order
+  const sortedCustomFields = useMemo(
+    () =>
+      [...customFields].sort(
+        (a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+      ),
+    [customFields]
+  );
+
+  // Calculate address fields once using useMemo
+  const addressFields = useMemo(
+    () => getAddressFields(customFields),
+    [customFields]
+  );
+  const addressAnchorId = useMemo(
+    () => (addressFields.length ? addressFields[0].id : null),
+    [addressFields]
+  );
 
   // Calculate Client Bill Rate (Field_13) from Pay Rate (Field_11) and Mark-up % (Field_12 or Field_512)
   const calculateClientBillRate = (payRate: string, markupPercent: string): string => {
@@ -297,13 +319,29 @@ export default function AddJob() {
           (org) => org.name === fieldValue || org.id.toString() === fieldValue
         );
         if (selectedOrg && selectedOrg.id.toString() !== currentOrganizationId) {
-          setCurrentOrganizationId(selectedOrg.id.toString());
+          const newOrgId = selectedOrg.id.toString();
+          setCurrentOrganizationId(newOrgId);
+          
+          // Clear Field_4 (Billing Contact) and Field_503 (Timecard Approver) when organization changes
+          setCustomFieldValues((prev) => {
+            const updated = { ...prev };
+            // Clear billing contacts
+            if (updated["Field_4"]) {
+              updated["Field_4"] = "";
+            }
+            // Clear timecard approvers
+            if (updated["Field_503"]) {
+              updated["Field_503"] = "";
+            }
+            return updated;
+          });
         }
       }
     }
-  }, [customFieldValues["Field_3"], organizations, customFields, customFieldsLoading, currentOrganizationId]);
+  }, [customFieldValues["Field_3"], organizations, customFields, customFieldsLoading, currentOrganizationId, setCustomFieldValues]);
 
-  // Fetch organization contacts (hiring managers) for Field_4 (Billing Contact)
+  // Fetch organization contacts (hiring managers) for Field_4 (Billing Contact) and Field_503 (Timecard Approver)
+  // Uses API-level filtering by organization_id
   useEffect(() => {
     const fetchOrganizationContacts = async () => {
       const orgId = currentOrganizationId || organizationIdFromUrl;
@@ -313,7 +351,8 @@ export default function AddJob() {
       }
 
       try {
-        const response = await fetch("/api/hiring-managers", {
+        // Use query parameter for API-level filtering
+        const response = await fetch(`/api/hiring-managers?organization_id=${orgId}`, {
           headers: {
             Authorization: `Bearer ${document.cookie.replace(
               /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
@@ -323,15 +362,15 @@ export default function AddJob() {
         });
         if (response.ok) {
           const data = await response.json();
-          // Filter hiring managers by organization_id
-          const orgContacts = (data.hiringManagers || []).filter(
-            (hm: any) =>
-              hm.organization_id?.toString() === orgId.toString()
-          );
-          setOrganizationContacts(orgContacts);
+          // Backend already filters by organization_id, so use the response directly
+          setOrganizationContacts(data.hiringManagers || []);
+        } else {
+          console.error("Failed to fetch organization contacts:", response.statusText);
+          setOrganizationContacts([]);
         }
       } catch (error) {
         console.error("Error fetching organization contacts:", error);
+        setOrganizationContacts([]);
       }
     };
     fetchOrganizationContacts();
@@ -1282,9 +1321,46 @@ useEffect(() => {
                                     </h3>
                                 </div> */}
 
-                {customFields.map((field) => {
+                {sortedCustomFields.map((field) => {
                   // Don't render hidden fields at all (neither label nor input)
                   if (field.is_hidden) return null;
+
+                  // ✅ Render Address Group exactly where first address field exists
+                  if (
+                    addressFields.length > 0 &&
+                    addressAnchorId &&
+                    field.id === addressAnchorId
+                  ) {
+                    return (
+                      <div
+                        key="address-group"
+                        className="flex items-start mb-3"
+                      >
+                        <label className="w-48 font-medium flex items-center mt-4">
+                          Address:
+                          {addressFields.some((f) => f.is_required) && (
+                            <span className="text-red-500 ml-1">*</span>
+                          )}
+                        </label>
+
+                        <div className="flex-1">
+                          <AddressGroupRenderer
+                            fields={addressFields}
+                            values={customFieldValues}
+                            onChange={handleCustomFieldChange}
+                            isEditMode={isEditMode}
+                          />
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Skip address fields if they're being rendered in the grouped layout
+                  // Compare by ID to ensure we filter correctly
+                  const addressFieldIds = addressFields.map((f) => f.id);
+                  if (addressFieldIds.includes(field.id)) {
+                    return null;
+                  }
 
                   const fieldValue = customFieldValues[field.field_name] || "";
 
@@ -1363,7 +1439,107 @@ useEffect(() => {
                     );
                   }
 
-                  // Special handling for Field_4 (Billing Contact) and Field_503 (Timecard Approved) - multi-select contact lookup
+                  // Special handling for Field_15 (Required Skills) - multi-select dropdown
+                  if (field.field_name === "Field_15" && field.field_type === "select") {
+                    // Parse existing value (comma-separated string or array)
+                    const selectedSkills = Array.isArray(fieldValue)
+                      ? fieldValue
+                      : typeof fieldValue === "string" && fieldValue.trim()
+                      ? fieldValue.split(",").map((skill) => skill.trim()).filter(Boolean)
+                      : [];
+
+                    const handleSkillsChange = (skills: string[]) => {
+                      // Save as comma-separated string for backend compatibility
+                      const valueToSave = skills.length > 0 ? skills.join(", ") : "";
+                      handleCustomFieldChange(field.field_name, valueToSave);
+                    };
+
+                    // Get available options from field.options
+                    const availableOptions = Array.isArray(field.options)
+                      ? field.options.filter((opt): opt is string => typeof opt === "string")
+                      : [];
+
+                    return (
+                      <div key={field.id} className="flex items-start mb-3">
+                        <label className="w-48 font-medium flex items-center pt-2">
+                          {field.field_label}:
+                          {field.is_required &&
+                            (selectedSkills.length > 0 ? (
+                              <span className="text-green-500 ml-1">✔</span>
+                            ) : (
+                              <span className="text-red-500 ml-1">*</span>
+                            ))}
+                        </label>
+
+                        <div className="flex-1 relative">
+                          <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500">
+                            <div className="max-h-48 overflow-y-auto p-2">
+                              {availableOptions.length === 0 ? (
+                                <div className="text-gray-500 text-sm p-2">
+                                  No skills options available
+                                </div>
+                              ) : (
+                                availableOptions.map((option) => {
+                                  const isSelected = selectedSkills.includes(option);
+
+                                  return (
+                                    <label
+                                      key={option}
+                                      className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={isSelected}
+                                        onChange={(e) => {
+                                          const newSkills = e.target.checked
+                                            ? [...selectedSkills, option]
+                                            : selectedSkills.filter((skill) => skill !== option);
+                                          handleSkillsChange(newSkills);
+                                        }}
+                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                                      />
+                                      <span className="text-sm text-gray-700">{option}</span>
+                                    </label>
+                                  );
+                                })
+                              )}
+                            </div>
+                            {selectedSkills.length > 0 && (
+                              <div className="border-t border-gray-300 p-2 bg-gray-50">
+                                <div className="text-xs text-gray-600 mb-1">
+                                  Selected: {selectedSkills.length} skill(s)
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                  {selectedSkills.map((skill) => (
+                                    <span
+                                      key={skill}
+                                      className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                                    >
+                                      {skill}
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const newSkills = selectedSkills.filter(
+                                            (s) => s !== skill
+                                          );
+                                          handleSkillsChange(newSkills);
+                                        }}
+                                        className="ml-1 text-blue-600 hover:text-blue-800"
+                                      >
+                                        ×
+                                      </button>
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  // Special handling for Field_4 (Billing Contact) and Field_503 (Timecard Approver) - multi-select contact lookup
                   if (field.field_name === "Field_4" || field.field_name === "Field_503") {
                     // Parse existing value (comma-separated string or array)
                     const selectedContactIds = Array.isArray(fieldValue)
@@ -1378,10 +1554,15 @@ useEffect(() => {
                       handleCustomFieldChange(field.field_name, valueToSave);
                     };
 
+                    // Determine field label with "(Organization Only)" suffix
+                    const fieldLabel = field.field_name === "Field_4" 
+                      ? `${field.field_label} (Organization Only)`
+                      : `${field.field_label} (Organization Only)`;
+
                     return (
                       <div key={field.id} className="flex items-start mb-3">
                         <label className="w-48 font-medium flex items-center pt-2">
-                          {field.field_label}:
+                          {fieldLabel}:
                           {field.is_required &&
                             (selectedContactIds.length > 0 ? (
                               <span className="text-green-500 ml-1">✔</span>
@@ -1400,7 +1581,7 @@ useEffect(() => {
                               <div className="max-h-48 overflow-y-auto p-2">
                                 {organizationContacts.length === 0 ? (
                                   <div className="text-gray-500 text-sm p-2">
-                                    No contacts available for this organization
+                                    No Hiring Managers found for this organization
                                   </div>
                                 ) : (
                                   organizationContacts.map((contact) => {

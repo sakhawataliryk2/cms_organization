@@ -270,13 +270,29 @@ export default function AddDirectHireJob() {
           (org) => org.name === fieldValue || org.id.toString() === fieldValue
         );
         if (selectedOrg && selectedOrg.id.toString() !== currentOrganizationId) {
-          setCurrentOrganizationId(selectedOrg.id.toString());
+          const newOrgId = selectedOrg.id.toString();
+          setCurrentOrganizationId(newOrgId);
+          
+          // Clear Field_4 (Billing Contact) and Field_503 (Timecard Approver) when organization changes
+          setCustomFieldValues((prev) => {
+            const updated = { ...prev };
+            // Clear billing contacts
+            if (updated["Field_4"]) {
+              updated["Field_4"] = "";
+            }
+            // Clear timecard approvers
+            if (updated["Field_503"]) {
+              updated["Field_503"] = "";
+            }
+            return updated;
+          });
         }
       }
     }
-  }, [customFieldValues["Field_3"], organizations, customFields, customFieldsLoading, currentOrganizationId]);
+  }, [customFieldValues["Field_3"], organizations, customFields, customFieldsLoading, currentOrganizationId, setCustomFieldValues]);
 
-  // Fetch organization contacts (hiring managers) for Field_4 (Billing Contact)
+  // Fetch organization contacts (hiring managers) for Field_4 (Billing Contact) and Field_503 (Timecard Approver)
+  // Uses API-level filtering by organization_id
   useEffect(() => {
     const fetchOrganizationContacts = async () => {
       const orgId = currentOrganizationId || organizationIdFromUrl;
@@ -286,7 +302,8 @@ export default function AddDirectHireJob() {
       }
 
       try {
-        const response = await fetch("/api/hiring-managers", {
+        // Use query parameter for API-level filtering
+        const response = await fetch(`/api/hiring-managers?organization_id=${orgId}`, {
           headers: {
             Authorization: `Bearer ${document.cookie.replace(
               /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
@@ -296,15 +313,15 @@ export default function AddDirectHireJob() {
         });
         if (response.ok) {
           const data = await response.json();
-          // Filter hiring managers by organization_id
-          const orgContacts = (data.hiringManagers || []).filter(
-            (hm: any) =>
-              hm.organization_id?.toString() === orgId.toString()
-          );
-          setOrganizationContacts(orgContacts);
+          // Backend already filters by organization_id, so use the response directly
+          setOrganizationContacts(data.hiringManagers || []);
+        } else {
+          console.error("Failed to fetch organization contacts:", response.statusText);
+          setOrganizationContacts([]);
         }
       } catch (error) {
         console.error("Error fetching organization contacts:", error);
+        setOrganizationContacts([]);
       }
     };
     fetchOrganizationContacts();
@@ -879,7 +896,7 @@ export default function AddDirectHireJob() {
                     );
                   }
 
-                  // Special handling for Field_4 (Billing Contact) and Field_503 (Timecard Approved) - multi-select contact lookup
+                  // Special handling for Field_4 (Billing Contact) and Field_503 (Timecard Approver) - multi-select contact lookup
                   if (field.field_name === "Field_4" || field.field_name === "Field_503") {
                     // Parse existing value (comma-separated string or array)
                     const selectedContactIds = Array.isArray(fieldValue)
@@ -894,10 +911,15 @@ export default function AddDirectHireJob() {
                       handleCustomFieldChange(field.field_name, valueToSave);
                     };
 
+                    // Determine field label with "(Organization Only)" suffix
+                    const fieldLabel = field.field_name === "Field_4" 
+                      ? `${field.field_label} (Organization Only)`
+                      : `${field.field_label} (Organization Only)`;
+
                     return (
                       <div key={field.id} className="flex items-start mb-3">
                         <label className="w-48 font-medium flex items-center pt-2">
-                          {field.field_label}:
+                          {fieldLabel}:
                           {field.is_required &&
                             (selectedContactIds.length > 0 ? (
                               <span className="text-green-500 ml-1">✔</span>
@@ -916,7 +938,7 @@ export default function AddDirectHireJob() {
                               <div className="max-h-48 overflow-y-auto p-2">
                                 {organizationContacts.length === 0 ? (
                                   <div className="text-gray-500 text-sm p-2">
-                                    No contacts available for this organization
+                                    No Hiring Managers found for this organization
                                   </div>
                                 ) : (
                                   organizationContacts.map((contact) => {
