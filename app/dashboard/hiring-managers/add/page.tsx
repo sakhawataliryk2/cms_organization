@@ -40,6 +40,8 @@ export default function AddHiringManager() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeUsers, setActiveUsers] = useState<User[]>([]);
   const [organizationName, setOrganizationName] = useState<string>("");
+  const [organizationPhone, setOrganizationPhone] = useState<string>("");
+  const [organizationAddress, setOrganizationAddress] = useState<string>("");
   const hasFetchedRef = useRef(false); // Track if we've already fetched hiring manager data
   const hasPrefilledOrgRef = useRef(false); // Track if we've prefilled organization
 
@@ -74,15 +76,45 @@ export default function AddHiringManager() {
     address: "",
   });
 
-  // Fetch organization name if organizationId is provided
-  const fetchOrganizationName = useCallback(async (orgId: string) => {
+  // Fetch organization data (name, phone, address) if organizationId is provided
+  const fetchOrganizationData = useCallback(async (orgId: string) => {
     try {
       const response = await fetch(`/api/organizations/${orgId}`);
       if (response.ok) {
         const data = await response.json();
-        const orgName = data.organization?.name || "";
+        const org = data.organization || {};
+        
+        // Extract organization data with fallbacks
+        const orgName = org.name || "";
+        const orgPhone = org.contact_phone || org.phone || "";
+        const orgAddress = org.address || "";
+        
+        // Validate required fields
+        if (!orgName) {
+          console.warn(`Organization ${orgId} is missing a name`);
+        }
+        
+        // Set state for organization data
         setOrganizationName(orgName);
+        setOrganizationPhone(orgPhone);
+        setOrganizationAddress(orgAddress);
+        
         // Prefill organizationId in form
+        setFormData(prev => ({
+          ...prev,
+          organizationId: orgId,
+          // Only auto-populate if fields are empty (don't overwrite user input)
+          phone: prev.phone || orgPhone || "",
+          address: prev.address || orgAddress || "",
+        }));
+        
+        // Auto-populate custom fields once they're loaded
+        // This will be handled in a useEffect that watches customFields
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.error("Failed to fetch organization:", response.statusText, errorData);
+        setError(`Failed to load organization data: ${errorData.message || response.statusText}`);
+        // Still set the organizationId even if fetch fails
         setFormData(prev => ({
           ...prev,
           organizationId: orgId
@@ -90,6 +122,7 @@ export default function AddHiringManager() {
       }
     } catch (error) {
       console.error("Error fetching organization:", error);
+      setError(`Error loading organization: ${error instanceof Error ? error.message : "Unknown error"}`);
       // Still set the organizationId even if fetch fails
       setFormData(prev => ({
         ...prev,
@@ -120,9 +153,9 @@ export default function AddHiringManager() {
     // Prefill organizationId from URL if provided (and not in edit mode)
     if (organizationIdFromUrl && !hiringManagerId && !hasPrefilledOrgRef.current) {
       hasPrefilledOrgRef.current = true;
-      fetchOrganizationName(organizationIdFromUrl);
+      fetchOrganizationData(organizationIdFromUrl);
     }
-  }, [organizationIdFromUrl, hiringManagerId, fetchOrganizationName]);
+  }, [organizationIdFromUrl, hiringManagerId, fetchOrganizationData]);
 
   // Fetch active users
   const fetchActiveUsers = async () => {
@@ -321,6 +354,65 @@ export default function AddHiringManager() {
       [name]: value,
     }));
   };
+
+  // Auto-populate organization fields when organization data is fetched and custom fields are loaded
+  useEffect(() => {
+    if (customFields.length === 0 || !organizationIdFromUrl || hasPrefilledOrgRef.current === false) return;
+    if (hiringManagerId) return; // Don't auto-populate in edit mode
+
+    // Auto-populate custom fields with organization data
+    const updates: Record<string, any> = {};
+
+    customFields.forEach((field) => {
+      const fieldLabel = field.field_label.toLowerCase();
+      const currentValue = customFieldValues[field.field_name];
+      
+      // Organization Name fields - show readable name only (no ID)
+      // Only update if field is empty or matches old organization data
+      if (
+        (fieldLabel.includes("organization") || fieldLabel.includes("company")) &&
+        !fieldLabel.includes("phone") &&
+        !fieldLabel.includes("address") &&
+        organizationName
+      ) {
+        // Only update if empty or if it matches the organization ID (old value)
+        if (!currentValue || currentValue === organizationIdFromUrl || currentValue === String(organizationIdFromUrl)) {
+          updates[field.field_name] = organizationName;
+        }
+      }
+      
+      // Company Phone fields - only update if empty
+      if (
+        (fieldLabel.includes("company phone") || 
+         fieldLabel.includes("company phone number") ||
+         (fieldLabel.includes("phone") && fieldLabel.includes("company"))) &&
+        organizationPhone &&
+        !currentValue
+      ) {
+        updates[field.field_name] = organizationPhone;
+      }
+      
+      // Organization Address fields - only update if empty
+      if (
+        (fieldLabel.includes("organization address") ||
+         fieldLabel.includes("company address") ||
+         (fieldLabel.includes("address") && (fieldLabel.includes("organization") || fieldLabel.includes("company")))) &&
+        organizationAddress &&
+        !currentValue
+      ) {
+        updates[field.field_name] = organizationAddress;
+      }
+    });
+
+    // Apply updates if any
+    if (Object.keys(updates).length > 0) {
+      Object.entries(updates).forEach(([fieldName, value]) => {
+        if (customFieldValues[fieldName] !== value) {
+          handleCustomFieldChange(fieldName, value);
+        }
+      });
+    }
+  }, [customFields, organizationName, organizationPhone, organizationAddress, organizationIdFromUrl, hiringManagerId, customFieldValues, handleCustomFieldChange]);
 
   // Real-time sync: When formFields change, update corresponding custom fields
   useEffect(() => {
@@ -980,15 +1072,37 @@ export default function AddHiringManager() {
                 // Don't render hidden fields at all (neither label nor input)
                 if (field.is_hidden) return null;
                 
+                // Determine if field should be read-only
+                const fieldLabel = field.field_label.toLowerCase();
+                const isOrganizationNameField = 
+                  (fieldLabel.includes("organization") || fieldLabel.includes("company")) &&
+                  !fieldLabel.includes("phone") &&
+                  !fieldLabel.includes("address");
+                const shouldBeReadOnly = 
+                  isOrganizationNameField && 
+                  organizationIdFromUrl && 
+                  !hiringManagerId; // Read-only when auto-populated from URL in create mode
+                
                 return (
                   <div key={field.id} className="flex items-center mt-4">
                     <label className="w-48 font-medium">{field.field_label}:</label>
                     <div className="flex-1 relative">
-                      <CustomFieldRenderer
-                        field={field}
-                        value={customFieldValues[field.field_name] || ""}
-                        onChange={handleCustomFieldChange}
-                      />
+                      {shouldBeReadOnly ? (
+                        // Render read-only organization name (readable name only, no ID)
+                        <input
+                          type="text"
+                          value={organizationName || customFieldValues[field.field_name] || ""}
+                          readOnly
+                          className="w-full p-2 border-b border-gray-300 bg-gray-50 text-gray-600 cursor-not-allowed"
+                          title="Organization name is auto-populated from the selected organization"
+                        />
+                      ) : (
+                        <CustomFieldRenderer
+                          field={field}
+                          value={customFieldValues[field.field_name] || ""}
+                          onChange={handleCustomFieldChange}
+                        />
+                      )}
                       {field.is_required && (
                         <span className="absolute text-red-500 left-[-10px] top-2">
                           *

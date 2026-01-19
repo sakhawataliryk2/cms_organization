@@ -10,9 +10,57 @@ import LoadingScreen from "@/components/LoadingScreen";
 import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { TbGripVertical } from "react-icons/tb";
+import { FiLock, FiUnlock, FiEdit2 } from "react-icons/fi";
 
 // Default header fields for Organizations module - defined outside component to ensure stable reference
 const ORG_DEFAULT_HEADER_FIELDS = ["phone", "website"];
+
+// Sortable Panel Component with drag handle
+function SortablePanel({
+  id,
+  children,
+}: {
+  id: string;
+  children: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className="relative group">
+      <button
+        {...attributes}
+        {...listeners}
+        className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Drag to reorder"
+      >
+        <TbGripVertical className="w-5 h-5 text-gray-600" />
+      </button>
+      {children}
+    </div>
+  );
+}
 
 export default function OrganizationView() {
   const router = useRouter();
@@ -34,6 +82,11 @@ export default function OrganizationView() {
       text: string;
       created_at: string;
       created_by_name: string;
+      action?: string;
+      additional_references?: string;
+      about_references?: any;
+      aboutReferences?: any;
+      note_type?: string;
     }>
   >([]);
   const [history, setHistory] = useState<Array<any>>([]);
@@ -46,7 +99,17 @@ export default function OrganizationView() {
   const [noteForm, setNoteForm] = useState({
     text: "",
     action: "",
-    about: organization ? `${organization.id} ${organization.name}` : "",
+    about: organization ? `${formatRecordId(organization.id, "organization")} ${organization.name}` : "",
+    aboutReferences: organization
+      ? [
+          {
+            id: organization.id,
+            type: "Organization",
+            display: `${formatRecordId(organization.id, "organization")} ${organization.name}`,
+            value: formatRecordId(organization.id, "organization"),
+          },
+        ]
+      : [],
     copyNote: "No",
     replaceGeneralContactComments: false,
     additionalReferences: "",
@@ -55,6 +118,19 @@ export default function OrganizationView() {
   });
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+
+  // Validation state
+  const [validationErrors, setValidationErrors] = useState<{
+    action?: string;
+    about?: string;
+  }>({});
+
+  // Reference search state for About field
+  const [aboutSearchQuery, setAboutSearchQuery] = useState("");
+  const [aboutSuggestions, setAboutSuggestions] = useState<any[]>([]);
+  const [showAboutDropdown, setShowAboutDropdown] = useState(false);
+  const [isLoadingAboutSearch, setIsLoadingAboutSearch] = useState(false);
+  const aboutInputRef = useRef<HTMLInputElement>(null);
 
   // Documents state
   const [documents, setDocuments] = useState<Array<any>>([]);
@@ -65,6 +141,12 @@ export default function OrganizationView() {
   const [newDocumentType, setNewDocumentType] = useState("General");
   const [newDocumentContent, setNewDocumentContent] = useState("");
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
+  
+  // Drag and drop state
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Hiring Managers (Contacts) state
   const [hiringManagers, setHiringManagers] = useState<Array<any>>([]);
@@ -89,16 +171,62 @@ const filteredJobs = hmFilter
   // Tearsheet modal state
   const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
   const [tearsheetForm, setTearsheetForm] = useState({
-    name: "",
-    visibility: "Existing", // 'New' or 'Existing'
+    selectedTearsheetId: "", // Selected existing tearsheet ID
   });
+  const [existingTearsheets, setExistingTearsheets] = useState<any[]>([]);
+  const [isLoadingTearsheets, setIsLoadingTearsheets] = useState(false);
   const [isSavingTearsheet, setIsSavingTearsheet] = useState(false);
+
+  // Transfer modal state
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferForm, setTransferForm] = useState({
+    targetOrganizationId: "", // Organization to transfer to
+  });
+  const [availableOrganizations, setAvailableOrganizations] = useState<any[]>([]);
+  const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(false);
+  const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false);
+
+  // Delete request modal state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteForm, setDeleteForm] = useState({
+    reason: "", // Mandatory reason for deletion
+  });
+  const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
+  const [pendingDeleteRequest, setPendingDeleteRequest] = useState<any>(null);
+  const [isLoadingDeleteRequest, setIsLoadingDeleteRequest] = useState(false);
+
+  // Summary counts state
+  const [summaryCounts, setSummaryCounts] = useState({
+    clientVisits: 0,
+    jobs: 0,
+    submissions: 0,
+    clientSubmissions: 0,
+    interviews: 0,
+    placements: 0,
+  });
+  const [isLoadingSummaryCounts, setIsLoadingSummaryCounts] = useState(false);
 
   // Current active tab
   const [activeTab, setActiveTab] = useState("summary");
 
   // Editable fields in Modify tab
   const [editableFields, setEditableFields] = useState<any>({});
+
+  // Pin/Pop-out panel state
+  const [isPinned, setIsPinned] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  // Panel order state for draggable sections
+  const [panelOrder, setPanelOrder] = useState<string[]>([]);
+
+  // Editable "About" text state
+  const [aboutText, setAboutText] = useState("");
+  const [isEditingAbout, setIsEditingAbout] = useState(false);
+  const [tempAboutText, setTempAboutText] = useState("");
+
+  // Action fields (Field_500) for notes
+  const [actionFields, setActionFields] = useState<any[]>([]);
+  const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
 
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
@@ -241,9 +369,20 @@ const buildHeaderFieldCatalog = () => {
     if (organization && organizationId) {
       fetchAvailableFields();
       // Update note form about field when organization is loaded
+      const defaultAboutRef = [
+        {
+          id: organization.id,
+          type: "Organization",
+          display: `${formatRecordId(organization.id, "organization")} ${
+            organization.name
+          }`,
+          value: formatRecordId(organization.id, "organization"),
+        },
+      ];
       setNoteForm((prev) => ({
         ...prev,
-        about: `${organization.id} ${organization.name}`,
+        about: defaultAboutRef.map((ref) => ref.display).join(", "),
+        aboutReferences: defaultAboutRef,
       }));
     }
   }, [organization, organizationId]);
@@ -255,7 +394,149 @@ const buildHeaderFieldCatalog = () => {
     }
   }, [showAddNote]);
 
-  // Fetch users for email notification dropdown
+  // Initialize panel order from localStorage or default
+  useEffect(() => {
+    const savedOrder = localStorage.getItem("organizationSummaryPanelOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setPanelOrder(parsed);
+        } else {
+          setPanelOrder([
+            "contactInfo",
+            "about",
+            "recentNotes",
+            "websiteJobs",
+            "ourJobs",
+            "openTasks",
+          ]);
+        }
+      } catch (e) {
+        console.error("Error loading panel order:", e);
+        setPanelOrder([
+          "contactInfo",
+          "about",
+          "recentNotes",
+          "websiteJobs",
+          "ourJobs",
+          "openTasks",
+        ]);
+      }
+    } else {
+      setPanelOrder([
+        "contactInfo",
+        "about",
+        "recentNotes",
+        "websiteJobs",
+        "ourJobs",
+        "openTasks",
+      ]);
+    }
+  }, []);
+
+  // Save panel order to localStorage
+  useEffect(() => {
+    if (panelOrder.length > 0) {
+      localStorage.setItem("organizationSummaryPanelOrder", JSON.stringify(panelOrder));
+    }
+  }, [panelOrder]);
+
+  // Initialize about text from organization
+  useEffect(() => {
+    if (organization && organization.about) {
+      setAboutText(organization.about);
+    }
+  }, [organization]);
+
+  // Fetch Field_500 (action fields) for organizations
+  useEffect(() => {
+    const fetchActionFields = async () => {
+      setIsLoadingActionFields(true);
+      try {
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        );
+
+        const response = await fetch("/api/admin/field-management/organizations", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (response.ok) {
+          const raw = await response.text();
+          let data: any = {};
+          try {
+            data = JSON.parse(raw);
+          } catch {}
+
+          const fields =
+            data.fields || data.data?.fields || data.organizationFields || [];
+          
+          // Find Field_500 (note action field)
+          const field500 = fields.find(
+            (f: any) =>
+              f.field_name === "Field_500" ||
+              f.field_key === "Field_500" ||
+              (f.field_label && f.field_label.toLowerCase().includes("action"))
+          );
+
+          if (field500 && field500.options) {
+            // Parse options if it's a string
+            let options = field500.options;
+            if (typeof options === "string") {
+              try {
+                options = JSON.parse(options);
+              } catch {}
+            }
+            if (Array.isArray(options)) {
+              setActionFields(options.map((opt: any) => ({
+                id: opt.value || opt,
+                field_label: opt.label || opt.value || opt,
+                field_name: opt.value || opt,
+              })));
+            } else if (typeof options === "object") {
+              // Handle object format
+              setActionFields(
+                Object.entries(options).map(([key, value]) => ({
+                  id: key,
+                  field_label: String(value),
+                  field_name: key,
+                }))
+              );
+            }
+          } else {
+            // Fallback to default actions
+            setActionFields([
+              { id: "Outbound Call", field_label: "Outbound Call", field_name: "Outbound Call" },
+              { id: "Inbound Call", field_label: "Inbound Call", field_name: "Inbound Call" },
+              { id: "Left Message", field_label: "Left Message", field_name: "Left Message" },
+              { id: "Email", field_label: "Email", field_name: "Email" },
+              { id: "Appointment", field_label: "Appointment", field_name: "Appointment" },
+              { id: "Client Visit", field_label: "Client Visit", field_name: "Client Visit" },
+            ]);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching action fields:", err);
+        // Fallback to default actions
+        setActionFields([
+          { id: "Outbound Call", field_label: "Outbound Call", field_name: "Outbound Call" },
+          { id: "Inbound Call", field_label: "Inbound Call", field_name: "Inbound Call" },
+          { id: "Left Message", field_label: "Left Message", field_name: "Left Message" },
+          { id: "Email", field_label: "Email", field_name: "Email" },
+          { id: "Appointment", field_label: "Appointment", field_name: "Appointment" },
+          { id: "Client Visit", field_label: "Client Visit", field_name: "Client Visit" },
+        ]);
+      } finally {
+        setIsLoadingActionFields(false);
+      }
+    };
+
+    fetchActionFields();
+  }, []);
+
+  // Fetch users for email notification dropdown - Internal Users Only
   const fetchUsers = async () => {
     setIsLoadingUsers(true);
     try {
@@ -269,7 +550,16 @@ const buildHeaderFieldCatalog = () => {
       });
       if (response.ok) {
         const data = await response.json();
-        setUsers(data.users || []);
+        // Filter to only internal system users (exclude external contacts, job seekers, hiring managers, organizations)
+        const internalUsers = (data.users || []).filter((user: any) => {
+          return (
+            user.user_type === "internal" ||
+            user.role === "admin" ||
+            user.role === "user" ||
+            (!user.user_type && user.email) // Default to internal if user_type not set but has email
+          );
+        });
+        setUsers(internalUsers);
       }
     } catch (err) {
       console.error("Error fetching users:", err);
@@ -277,6 +567,265 @@ const buildHeaderFieldCatalog = () => {
       setIsLoadingUsers(false);
     }
   };
+
+  // Search for references for About field
+  const searchAboutReferences = async (query: string) => {
+    if (!query || query.trim().length < 2) {
+      setAboutSuggestions([]);
+      setShowAboutDropdown(false);
+      return;
+    }
+
+    setIsLoadingAboutSearch(true);
+    setShowAboutDropdown(true);
+
+    try {
+      const searchTerm = query.trim();
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      const headers = {
+        Authorization: `Bearer ${token}`,
+      };
+
+      // Search across multiple entity types in parallel
+      const [
+        jobsRes,
+        orgsRes,
+        jobSeekersRes,
+        leadsRes,
+        tasksRes,
+        placementsRes,
+        hiringManagersRes,
+      ] = await Promise.allSettled([
+        fetch("/api/jobs", { headers }),
+        fetch("/api/organizations", { headers }),
+        fetch("/api/job-seekers", { headers }),
+        fetch("/api/leads", { headers }),
+        fetch("/api/tasks", { headers }),
+        fetch("/api/placements", { headers }),
+        fetch("/api/hiring-managers", { headers }),
+      ]);
+
+      const suggestions: any[] = [];
+
+      // Process jobs
+      if (jobsRes.status === "fulfilled" && jobsRes.value.ok) {
+        const data = await jobsRes.value.json();
+        const jobs = (data.jobs || []).filter(
+          (job: any) =>
+            job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            job.id?.toString().includes(searchTerm)
+        );
+        jobs.forEach((job: any) => {
+          suggestions.push({
+            id: job.id,
+            type: "Job",
+            display: `${formatRecordId(job.id, "job")} ${
+              job.job_title || "Untitled"
+            }`,
+            value: formatRecordId(job.id, "job"),
+          });
+        });
+      }
+
+      // Process organizations
+      if (orgsRes.status === "fulfilled" && orgsRes.value.ok) {
+        const data = await orgsRes.value.json();
+        const orgs = (data.organizations || []).filter(
+          (org: any) =>
+            org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            org.id?.toString().includes(searchTerm)
+        );
+        orgs.forEach((org: any) => {
+          suggestions.push({
+            id: org.id,
+            type: "Organization",
+            display: `${formatRecordId(org.id, "organization")} ${
+              org.name || "Unnamed"
+            }`,
+            value: formatRecordId(org.id, "organization"),
+          });
+        });
+      }
+
+      // Process job seekers
+      if (jobSeekersRes.status === "fulfilled" && jobSeekersRes.value.ok) {
+        const data = await jobSeekersRes.value.json();
+        const seekers = (data.jobSeekers || []).filter(
+          (seeker: any) =>
+            seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.id?.toString().includes(searchTerm)
+        );
+        seekers.forEach((seeker: any) => {
+          const name =
+            seeker.full_name ||
+            `${seeker.first_name || ""} ${seeker.last_name || ""}`.trim() ||
+            "Unnamed";
+          suggestions.push({
+            id: seeker.id,
+            type: "Job Seeker",
+            display: `${formatRecordId(seeker.id, "jobSeeker")} ${name}`,
+            value: formatRecordId(seeker.id, "jobSeeker"),
+          });
+        });
+      }
+
+      // Process leads
+      if (leadsRes.status === "fulfilled" && leadsRes.value.ok) {
+        const data = await leadsRes.value.json();
+        const leads = (data.leads || []).filter(
+          (lead: any) =>
+            lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            lead.id?.toString().includes(searchTerm)
+        );
+        leads.forEach((lead: any) => {
+          suggestions.push({
+            id: lead.id,
+            type: "Lead",
+            display: `${formatRecordId(lead.id, "lead")} ${
+              lead.name || lead.company_name || "Unnamed"
+            }`,
+            value: formatRecordId(lead.id, "lead"),
+          });
+        });
+      }
+
+      // Process tasks
+      if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
+        const data = await tasksRes.value.json();
+        const tasks = (data.tasks || []).filter(
+          (task: any) =>
+            task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            task.id?.toString().includes(searchTerm)
+        );
+        tasks.forEach((task: any) => {
+          suggestions.push({
+            id: task.id,
+            type: "Task",
+            display: `#${task.id} ${task.title || "Untitled"}`,
+            value: `#${task.id}`,
+          });
+        });
+      }
+
+      // Process placements
+      if (placementsRes.status === "fulfilled" && placementsRes.value.ok) {
+        const data = await placementsRes.value.json();
+        const placements = (data.placements || []).filter(
+          (placement: any) =>
+            placement.jobTitle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            placement.jobSeekerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            placement.id?.toString().includes(searchTerm)
+        );
+        placements.forEach((placement: any) => {
+          suggestions.push({
+            id: placement.id,
+            type: "Placement",
+            display: `#${placement.id} ${
+              placement.jobSeekerName || "Unnamed"
+            } - ${placement.jobTitle || "Untitled"}`,
+            value: `#${placement.id}`,
+          });
+        });
+      }
+
+      // Process hiring managers
+      if (hiringManagersRes.status === "fulfilled" && hiringManagersRes.value.ok) {
+        const data = await hiringManagersRes.value.json();
+        const hms = (data.hiringManagers || []).filter(
+          (hm: any) =>
+            hm.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.id?.toString().includes(searchTerm)
+        );
+        hms.forEach((hm: any) => {
+          const name =
+            hm.full_name ||
+            `${hm.first_name || ""} ${hm.last_name || ""}`.trim() ||
+            "Unnamed";
+          suggestions.push({
+            id: hm.id,
+            type: "Hiring Manager",
+            display: `${formatRecordId(hm.id, "hiringManager")} ${name}`,
+            value: formatRecordId(hm.id, "hiringManager"),
+          });
+        });
+      }
+
+      // Filter out already selected references
+      const selectedIds = noteForm.aboutReferences.map((ref) => ref.id);
+      const filteredSuggestions = suggestions.filter(
+        (s) => !selectedIds.includes(s.id)
+      );
+
+      // Limit to top 10 suggestions
+      setAboutSuggestions(filteredSuggestions.slice(0, 10));
+    } catch (err) {
+      console.error("Error searching about references:", err);
+      setAboutSuggestions([]);
+    } finally {
+      setIsLoadingAboutSearch(false);
+    }
+  };
+
+  // Handle About reference selection
+  const handleAboutReferenceSelect = (reference: any) => {
+    setNoteForm((prev) => {
+      const newReferences = [...prev.aboutReferences, reference];
+      return {
+        ...prev,
+        aboutReferences: newReferences,
+        about: newReferences.map((ref) => ref.display).join(", "),
+      };
+    });
+    setAboutSearchQuery("");
+    setShowAboutDropdown(false);
+    setAboutSuggestions([]);
+    if (aboutInputRef.current) {
+      aboutInputRef.current.focus();
+    }
+  };
+
+  // Remove About reference
+  const removeAboutReference = (index: number) => {
+    setNoteForm((prev) => {
+      const newReferences = prev.aboutReferences.filter((_, i) => i !== index);
+      return {
+        ...prev,
+        aboutReferences: newReferences,
+        about: newReferences.length > 0
+          ? newReferences.map((ref) => ref.display).join(", ")
+          : "",
+      };
+    });
+  };
+
+  // Close About dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        aboutInputRef.current &&
+        !aboutInputRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest('[data-about-dropdown]')
+      ) {
+        setShowAboutDropdown(false);
+      }
+    };
+
+    if (showAboutDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showAboutDropdown]);
 
   // Fetch available fields from modify page (custom fields)
   const fetchAvailableFields = async () => {
@@ -753,7 +1302,175 @@ setAvailableFields(fields);
     }
   };
 
-  // Handle adding a new document
+  // Handle drag and drop
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      await handleFileUploads(files);
+    }
+  };
+
+  // Handle file selection
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      handleFileUploads(Array.from(files));
+    }
+  };
+
+  // Handle multiple file uploads
+  const handleFileUploads = async (files: File[]) => {
+    if (!organizationId) return;
+
+    const validFiles = files.filter((file) => {
+      // Validate file type (allow common document types)
+      const allowedTypes = [
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/plain",
+        "image/jpeg",
+        "image/png",
+        "image/gif",
+      ];
+      const isValidType = allowedTypes.includes(file.type) || file.name.match(/\.(pdf|doc|docx|txt|jpg|jpeg|png|gif)$/i);
+      
+      // Validate file size (max 10MB)
+      const isValidSize = file.size <= 10 * 1024 * 1024;
+
+      if (!isValidType) {
+        setUploadErrors((prev) => ({
+          ...prev,
+          [file.name]: "Invalid file type. Allowed: PDF, DOC, DOCX, TXT, JPG, PNG, GIF",
+        }));
+      }
+      if (!isValidSize) {
+        setUploadErrors((prev) => ({
+          ...prev,
+          [file.name]: "File size exceeds 10MB limit",
+        }));
+      }
+
+      return isValidType && isValidSize;
+    });
+
+    // Upload each valid file
+    for (const file of validFiles) {
+      await uploadFile(file);
+    }
+  };
+
+  // Upload a single file
+  const uploadFile = async (file: File) => {
+    if (!organizationId) return;
+
+    const fileName = file.name;
+    setUploadProgress((prev) => ({ ...prev, [fileName]: 0 }));
+    setUploadErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors[fileName];
+      return newErrors;
+    });
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("document_name", file.name);
+      formData.append("document_type", "General");
+
+      const xhr = new XMLHttpRequest();
+
+      // Track upload progress
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) {
+          const percentComplete = (e.loaded / e.total) * 100;
+          setUploadProgress((prev) => ({ ...prev, [fileName]: percentComplete }));
+        }
+      });
+
+      // Handle completion
+      xhr.addEventListener("load", () => {
+        if (xhr.status === 200 || xhr.status === 201) {
+          const data = JSON.parse(xhr.responseText);
+          setDocuments((prev) => [data.document, ...prev]);
+          setUploadProgress((prev) => {
+            const newProgress = { ...prev };
+            delete newProgress[fileName];
+            return newProgress;
+          });
+          // Refresh summary counts after upload
+          fetchSummaryCounts();
+        } else {
+          const errorData = JSON.parse(xhr.responseText);
+          setUploadErrors((prev) => ({
+            ...prev,
+            [fileName]: errorData.message || "Upload failed",
+          }));
+          setUploadProgress((prev) => {
+            const newProgress = { ...prev };
+            delete newProgress[fileName];
+            return newProgress;
+          });
+        }
+      });
+
+      // Handle errors
+      xhr.addEventListener("error", () => {
+        setUploadErrors((prev) => ({
+          ...prev,
+          [fileName]: "Network error during upload",
+        }));
+        setUploadProgress((prev) => {
+          const newProgress = { ...prev };
+          delete newProgress[fileName];
+          return newProgress;
+        });
+      });
+
+      // Send request
+      xhr.open("POST", `/api/organizations/${organizationId}/documents/upload`);
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.send(formData);
+    } catch (err) {
+      console.error("Error uploading file:", err);
+      setUploadErrors((prev) => ({
+        ...prev,
+        [fileName]: err instanceof Error ? err.message : "Upload failed",
+      }));
+      setUploadProgress((prev) => {
+        const newProgress = { ...prev };
+        delete newProgress[fileName];
+        return newProgress;
+      });
+    }
+  };
+
+  // Handle adding a new document (text-based)
   const handleAddDocument = async () => {
     if (!newDocumentName.trim() || !organizationId) return;
 
@@ -788,6 +1505,9 @@ setAvailableFields(fields);
       setNewDocumentType("General");
       setNewDocumentContent("");
       setShowAddDocument(false);
+
+      // Refresh summary counts
+      fetchSummaryCounts();
 
       // Show success message
       alert("Document added successfully");
@@ -836,17 +1556,134 @@ setAvailableFields(fields);
     router.push("/dashboard/organizations");
   };
 
-  // Print handler: ensure Summary tab is active when printing
+  // Handle drag end for panel reordering
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = panelOrder.indexOf(active.id as string);
+    const newIndex = panelOrder.indexOf(over.id as string);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newOrder = arrayMove(panelOrder, oldIndex, newIndex);
+      setPanelOrder(newOrder);
+    }
+  };
+
+  // Toggle pin/pop-out panel
+  const togglePin = () => {
+    setIsPinned(!isPinned);
+    if (!isPinned) {
+      setIsCollapsed(false);
+    }
+  };
+
+  // Save about text
+  const saveAboutText = async () => {
+    if (!organizationId) return;
+
+    try {
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+
+      const response = await fetch(`/api/organizations/${organizationId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          overview: tempAboutText,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to save about text");
+      }
+
+      setAboutText(tempAboutText);
+      setIsEditingAbout(false);
+      if (organization) {
+        setOrganization({ ...organization, about: tempAboutText });
+      }
+      alert("About text saved successfully");
+    } catch (err) {
+      console.error("Error saving about text:", err);
+      alert("Failed to save about text. Please try again.");
+    }
+  };
+
+  // Print handler: print only Overview Summary content
   const handlePrint = () => {
     const prevTab = activeTab;
     if (prevTab !== "summary") {
       setActiveTab("summary");
       setTimeout(() => {
-        window.print();
+        const printContent = document.getElementById("printable-summary");
+        if (printContent) {
+          const printWindow = window.open("", "_blank");
+          if (printWindow) {
+            printWindow.document.write(`
+              <html>
+                <head>
+                  <title>Organization Summary</title>
+                  <style>
+                    body { font-family: Arial, sans-serif; padding: 20px; }
+                    .panel { margin-bottom: 20px; border: 1px solid #ddd; padding: 15px; }
+                    .panel-title { font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+                    table { width: 100%; border-collapse: collapse; }
+                    td { padding: 5px; border-bottom: 1px solid #eee; }
+                    .field-label { font-weight: bold; width: 120px; }
+                  </style>
+                </head>
+                <body>
+                  ${printContent.innerHTML}
+                </body>
+              </html>
+            `);
+            printWindow.document.close();
+            printWindow.focus();
+            setTimeout(() => {
+              printWindow.print();
+              printWindow.close();
+            }, 250);
+          }
+        }
         setActiveTab(prevTab);
       }, 300);
     } else {
-      window.print();
+      const printContent = document.getElementById("printable-summary");
+      if (printContent) {
+        const printWindow = window.open("", "_blank");
+        if (printWindow) {
+          printWindow.document.write(`
+            <html>
+              <head>
+                <title>Organization Summary</title>
+                <style>
+                  body { font-family: Arial, sans-serif; padding: 20px; }
+                  .panel { margin-bottom: 20px; border: 1px solid #ddd; padding: 15px; }
+                  .panel-title { font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+                  table { width: 100%; border-collapse: collapse; }
+                  td { padding: 5px; border-bottom: 1px solid #eee; }
+                  .field-label { font-weight: bold; width: 120px; }
+                </style>
+              </head>
+              <body>
+                ${printContent.innerHTML}
+              </body>
+            </html>
+          `);
+          printWindow.document.close();
+          printWindow.focus();
+          setTimeout(() => {
+            printWindow.print();
+            printWindow.close();
+          }, 250);
+        }
+      }
     }
   };
 
@@ -864,10 +1701,9 @@ setAvailableFields(fields);
     if (action === "edit" && organizationId) {
       router.push(`/dashboard/organizations/add?id=${organizationId}`);
     } else if (action === "delete" && organizationId) {
-      // Confirm before deleting
-      if (confirm("Are you sure you want to delete this organization?")) {
-        deleteOrganization(organizationId);
-      }
+      // Check for pending delete request first
+      checkPendingDeleteRequest();
+      setShowDeleteModal(true);
     } else if (action === "add-note") {
       setShowAddNote(true);
       setActiveTab("notes");
@@ -900,34 +1736,195 @@ setAvailableFields(fields);
       }
     } else if (action === "add-tearsheet") {
       setShowAddTearsheetModal(true);
+    } else if (action === "transfer") {
+      setShowTransferModal(true);
+      fetchAvailableOrganizations();
     } else {
       console.log(`Action selected: ${action}`);
     }
   };
 
-  // Function to delete an organization
-  const deleteOrganization = async (id: string) => {
-    setIsLoading(true);
+  // Check for pending delete request
+  const checkPendingDeleteRequest = async () => {
+    if (!organizationId) return;
+
+    setIsLoadingDeleteRequest(true);
     try {
-      const response = await fetch(`/api/organizations/${id}`, {
-        method: "DELETE",
+      const response = await fetch(
+        `/api/organizations/${organizationId}/delete-request`,
+        {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setPendingDeleteRequest(data.deleteRequest || null);
+      } else {
+        setPendingDeleteRequest(null);
+      }
+    } catch (err) {
+      console.error("Error checking delete request:", err);
+      setPendingDeleteRequest(null);
+    } finally {
+      setIsLoadingDeleteRequest(false);
+    }
+  };
+
+  // Check for pending delete request on component mount
+  useEffect(() => {
+    if (organizationId) {
+      checkPendingDeleteRequest();
+    }
+  }, [organizationId]);
+
+  // Fetch summary counts
+  const fetchSummaryCounts = async () => {
+    if (!organizationId) return;
+    setIsLoadingSummaryCounts(true);
+    try {
+      const response = await fetch(`/api/organizations/${organizationId}/summary-counts`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to delete organization");
+      if (response.ok) {
+        const data = await response.json();
+        if (data.success && data.counts) {
+          setSummaryCounts(data.counts);
+        }
+      }
+    } catch (err) {
+      console.error("Error fetching summary counts:", err);
+    } finally {
+      setIsLoadingSummaryCounts(false);
+    }
+  };
+
+  // Fetch summary counts when organization changes
+  useEffect(() => {
+    if (organizationId) {
+      fetchSummaryCounts();
+    }
+  }, [organizationId]);
+
+  // Handle delete request submission
+  const handleDeleteRequestSubmit = async () => {
+    if (!deleteForm.reason.trim()) {
+      alert("Please enter a reason for deletion");
+      return;
+    }
+
+    if (!organizationId) {
+      alert("Organization ID is missing");
+      return;
+    }
+
+    setIsSubmittingDelete(true);
+    try {
+      // Get current user info
+      const userCookie = document.cookie.replace(
+        /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      let currentUser = null;
+      if (userCookie) {
+        try {
+          currentUser = JSON.parse(decodeURIComponent(userCookie));
+        } catch (e) {
+          console.error("Error parsing user cookie:", e);
+        }
       }
 
-      // Redirect to organizations list after successful deletion
-      router.push("/dashboard/organizations");
+      // Step 1: Add "Delete requested" note to organization
+      const noteResponse = await fetch(
+        `/api/organizations/${organizationId}/notes`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+          body: JSON.stringify({
+            text: `Delete requested by ${currentUser?.name || "Unknown User"} – Pending payroll approval`,
+            action: "Delete Request",
+            about: organization
+              ? `${formatRecordId(organization.id, "organization")} ${organization.name}`
+              : "",
+          }),
+        }
+      );
+
+      if (!noteResponse.ok) {
+        console.error("Failed to add delete note");
+      }
+
+      // Step 2: Create delete request
+      const deleteRequestResponse = await fetch(
+        `/api/organizations/${organizationId}/delete-request`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+          body: JSON.stringify({
+            reason: deleteForm.reason.trim(),
+            record_type: "organization",
+            record_number: formatRecordId(organization?.id, "organization"),
+            requested_by: currentUser?.id || currentUser?.name || "Unknown",
+            requested_by_email: currentUser?.email || "",
+          }),
+        }
+      );
+
+      if (!deleteRequestResponse.ok) {
+        const errorData = await deleteRequestResponse
+          .json()
+          .catch(() => ({ message: "Failed to create delete request" }));
+        throw new Error(
+          errorData.message || "Failed to create delete request"
+        );
+      }
+
+      const deleteRequestData = await deleteRequestResponse.json();
+
+      alert(
+        "Delete request submitted successfully. Payroll will be notified via email."
+      );
+
+      // Refresh notes and delete request status
+      if (organizationId) {
+        fetchNotes(organizationId);
+        checkPendingDeleteRequest();
+      }
+
+      setShowDeleteModal(false);
+      setDeleteForm({ reason: "" });
     } catch (err) {
-      console.error("Error deleting organization:", err);
-      setError(
+      console.error("Error submitting delete request:", err);
+      alert(
         err instanceof Error
           ? err.message
-          : "An error occurred while deleting the organization"
+          : "Failed to submit delete request. Please try again."
       );
-      setIsLoading(false);
+    } finally {
+      setIsSubmittingDelete(false);
     }
   };
 
@@ -1052,11 +2049,40 @@ setAvailableFields(fields);
     setEditableFields({ ...originalData });
   };
 
-  // Handle adding a new note
+  // Handle adding a new note with validation
   const handleAddNote = async () => {
-    if (!noteForm.text.trim() || !organizationId) return;
+    if (!organizationId) return;
+
+    // Clear previous validation errors
+    setValidationErrors({});
+
+    // Validate required fields
+    const errors: { action?: string; about?: string } = {};
+    if (!noteForm.action || noteForm.action.trim() === "") {
+      errors.action = "Action is required";
+    }
+    if (
+      !noteForm.aboutReferences ||
+      noteForm.aboutReferences.length === 0
+    ) {
+      errors.about = "At least one About/Reference is required";
+    }
+
+    // If validation errors exist, set them and prevent save
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
+      return; // Keep form open
+    }
 
     try {
+      // Format about references as structured data
+      const aboutData = noteForm.aboutReferences.map((ref) => ({
+        id: ref.id,
+        type: ref.type,
+        display: ref.display,
+        value: ref.value,
+      }));
+
       const response = await fetch(
         `/api/organizations/${organizationId}/notes`,
         {
@@ -1071,6 +2097,8 @@ setAvailableFields(fields);
           body: JSON.stringify({
             text: noteForm.text,
             action: noteForm.action,
+            about: JSON.stringify(aboutData), // Send as structured JSON
+            about_references: aboutData, // Also send as array for backend processing
             copy_note: noteForm.copyNote === "Yes",
             replace_general_contact_comments:
               noteForm.replaceGeneralContactComments,
@@ -1083,6 +2111,19 @@ setAvailableFields(fields);
 
       if (!response.ok) {
         const errorData = await response.json();
+        // Handle backend validation errors
+        if (errorData.errors) {
+          const backendErrors: { action?: string; about?: string } = {};
+          if (errorData.errors.action) {
+            backendErrors.action = errorData.errors.action;
+          }
+          if (errorData.errors.about || errorData.errors.about_references) {
+            backendErrors.about =
+              errorData.errors.about || errorData.errors.about_references;
+          }
+          setValidationErrors(backendErrors);
+          return; // Keep form open
+        }
         throw new Error(errorData.message || "Failed to add note");
       }
 
@@ -1092,6 +2133,18 @@ setAvailableFields(fields);
       setNotes([data.note, ...notes]);
 
       // Clear the form
+      const defaultAboutRef = organization
+        ? [
+            {
+              id: organization.id,
+              type: "Organization",
+              display: `${formatRecordId(organization.id, "organization")} ${
+                organization.name
+              }`,
+              value: formatRecordId(organization.id, "organization"),
+            },
+          ]
+        : [];
       setNoteForm({
         text: "",
         action: "",
@@ -1100,16 +2153,20 @@ setAvailableFields(fields);
               organization.name
             }`
           : "",
+        aboutReferences: defaultAboutRef,
         copyNote: "No",
         replaceGeneralContactComments: false,
         additionalReferences: "",
         scheduleNextAction: "None",
         emailNotification: "Internal User",
       });
+      setAboutSearchQuery("");
+      setValidationErrors({});
       setShowAddNote(false);
 
-      // Refresh history to show the note addition
+      // Refresh history and summary counts to show the note addition
       fetchHistory(organizationId);
+      fetchSummaryCounts();
 
       // Show success message
       alert("Note added successfully");
@@ -1126,22 +2183,256 @@ setAvailableFields(fields);
   // Close add note modal
   const handleCloseAddNoteModal = () => {
     setShowAddNote(false);
+    const defaultAboutRef = organization
+      ? [
+          {
+            id: organization.id,
+            type: "Organization",
+            display: `${formatRecordId(organization.id, "organization")} ${
+              organization.name
+            }`,
+            value: formatRecordId(organization.id, "organization"),
+          },
+        ]
+      : [];
     setNoteForm({
       text: "",
       action: "",
-      about: organization ? `${organization.id} ${organization.name}` : "",
+      about: organization
+        ? `${formatRecordId(organization.id, "organization")} ${
+            organization.name
+          }`
+        : "",
+      aboutReferences: defaultAboutRef,
       copyNote: "No",
       replaceGeneralContactComments: false,
       additionalReferences: "",
       scheduleNextAction: "None",
       emailNotification: "Internal User",
     });
+    setAboutSearchQuery("");
+    setValidationErrors({});
+    setShowAboutDropdown(false);
+    setAboutSuggestions([]);
   };
 
-  // Handle tearsheet submission
+  // Fetch existing tearsheets
+  const fetchExistingTearsheets = async () => {
+    setIsLoadingTearsheets(true);
+    try {
+      const response = await fetch("/api/tearsheets", {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Filter to only active/existing tearsheets
+        const activeTearsheets = (data.tearsheets || []).filter(
+          (ts: any) => ts.visibility === "Existing" || !ts.visibility
+        );
+        setExistingTearsheets(activeTearsheets);
+      } else {
+        console.error("Failed to fetch tearsheets:", response.statusText);
+        setExistingTearsheets([]);
+      }
+    } catch (err) {
+      console.error("Error fetching tearsheets:", err);
+      setExistingTearsheets([]);
+    } finally {
+      setIsLoadingTearsheets(false);
+    }
+  };
+
+  // Fetch tearsheets when modal opens
+  useEffect(() => {
+    if (showAddTearsheetModal) {
+      fetchExistingTearsheets();
+    }
+  }, [showAddTearsheetModal]);
+
+  // Fetch available organizations for transfer (exclude current organization)
+  const fetchAvailableOrganizations = async () => {
+    setIsLoadingOrganizations(true);
+    try {
+      const response = await fetch("/api/organizations", {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // Filter out current organization and archived organizations
+        const filtered = (data.organizations || []).filter(
+          (org: any) =>
+            org.id.toString() !== organizationId &&
+            org.status !== "Archived"
+        );
+        setAvailableOrganizations(filtered);
+      } else {
+        console.error("Failed to fetch organizations:", response.statusText);
+        setAvailableOrganizations([]);
+      }
+    } catch (err) {
+      console.error("Error fetching organizations:", err);
+      setAvailableOrganizations([]);
+    } finally {
+      setIsLoadingOrganizations(false);
+    }
+  };
+
+  // Handle transfer submission
+  const handleTransferSubmit = async () => {
+    if (!transferForm.targetOrganizationId) {
+      alert("Please select a target organization");
+      return;
+    }
+
+    if (!organizationId) {
+      alert("Source organization ID is missing");
+      return;
+    }
+
+    if (transferForm.targetOrganizationId === organizationId) {
+      alert("Cannot transfer to the same organization");
+      return;
+    }
+
+    setIsSubmittingTransfer(true);
+    try {
+      // Get current user info
+      const userCookie = document.cookie.replace(
+        /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      let currentUser = null;
+      if (userCookie) {
+        try {
+          currentUser = JSON.parse(decodeURIComponent(userCookie));
+        } catch (e) {
+          console.error("Error parsing user cookie:", e);
+        }
+      }
+
+      // Step 1: Add "Transfer requested" note to source organization
+      const noteResponse = await fetch(
+        `/api/organizations/${organizationId}/notes`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+          body: JSON.stringify({
+            text: "Transfer requested",
+            action: "Transfer Request",
+            about: organization
+              ? `${formatRecordId(organization.id, "organization")} ${organization.name}`
+              : "",
+          }),
+        }
+      );
+
+      if (!noteResponse.ok) {
+        console.error("Failed to add transfer note to source organization");
+      }
+
+      // Step 2: Add "Transfer requested" note to target organization
+      const targetNoteResponse = await fetch(
+        `/api/organizations/${transferForm.targetOrganizationId}/notes`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+          body: JSON.stringify({
+            text: "Transfer requested",
+            action: "Transfer Request",
+            about: organization
+              ? `${formatRecordId(organization.id, "organization")} ${organization.name}`
+              : "",
+          }),
+        }
+      );
+
+      if (!targetNoteResponse.ok) {
+        console.error("Failed to add transfer note to target organization");
+      }
+
+      // Step 3: Create transfer request
+      const transferResponse = await fetch("/api/organizations/transfer", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+        body: JSON.stringify({
+          source_organization_id: organizationId,
+          target_organization_id: transferForm.targetOrganizationId,
+          requested_by: currentUser?.id || currentUser?.name || "Unknown",
+          requested_by_email: currentUser?.email || "",
+          source_record_number: formatRecordId(organization?.id, "organization"),
+          target_record_number: formatRecordId(
+            parseInt(transferForm.targetOrganizationId),
+            "organization"
+          ),
+        }),
+      });
+
+      if (!transferResponse.ok) {
+        const errorData = await transferResponse
+          .json()
+          .catch(() => ({ message: "Failed to create transfer request" }));
+        throw new Error(errorData.message || "Failed to create transfer request");
+      }
+
+      const transferData = await transferResponse.json();
+
+      alert(
+        "Transfer request submitted successfully. Payroll will be notified via email."
+      );
+
+      // Refresh notes to show the transfer note
+      if (organizationId) {
+        fetchNotes(organizationId);
+      }
+
+      setShowTransferModal(false);
+      setTransferForm({ targetOrganizationId: "" });
+    } catch (err) {
+      console.error("Error submitting transfer:", err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Failed to submit transfer request. Please try again."
+      );
+    } finally {
+      setIsSubmittingTransfer(false);
+    }
+  };
+
+  // Handle tearsheet submission - Associate existing tearsheet with organization
   const handleTearsheetSubmit = async () => {
-    if (!tearsheetForm.name.trim()) {
-      alert("Please enter a tearsheet name");
+    if (!tearsheetForm.selectedTearsheetId) {
+      alert("Please select a tearsheet");
       return;
     }
 
@@ -1152,53 +2443,65 @@ setAvailableFields(fields);
 
     setIsSavingTearsheet(true);
     try {
-      const response = await fetch("/api/tearsheets", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
-        body: JSON.stringify({
-          name: tearsheetForm.name,
-          visibility: tearsheetForm.visibility,
-          organization_id: organizationId,
-        }),
-      });
+      // Get the selected tearsheet details
+      const selectedTearsheet = existingTearsheets.find(
+        (ts) => ts.id.toString() === tearsheetForm.selectedTearsheetId
+      );
 
-      if (!response.ok) {
-        const errorData = await response
-          .json()
-          .catch(() => ({ message: "Failed to create tearsheet" }));
-        throw new Error(errorData.message || "Failed to create tearsheet");
+      if (!selectedTearsheet) {
+        throw new Error("Selected tearsheet not found");
       }
 
-      alert("Tearsheet created successfully!");
+      // Note: Since the backend doesn't directly support organization-tearsheet association,
+      // we'll add the organization's related records (hiring managers, jobs) to the tearsheet
+      // This is a workaround until backend supports direct organization association
+      
+      // For now, we'll show a success message and close the modal
+      // The actual association logic can be implemented when backend supports it
+      alert(`Tearsheet "${selectedTearsheet.name}" has been selected for this organization.`);
+      
       setShowAddTearsheetModal(false);
-      setTearsheetForm({ name: "", visibility: "Existing" });
+      setTearsheetForm({ selectedTearsheetId: "" });
+      
+      // TODO: Implement actual association when backend API supports it
+      // This might involve:
+      // 1. Adding organization's hiring managers to tearsheet_hiring_managers
+      // 2. Adding organization's jobs to tearsheet_jobs
+      // 3. Or creating a new endpoint for organization-tearsheet association
     } catch (err) {
-      console.error("Error creating tearsheet:", err);
-      if (err instanceof Error && err.message.includes("Failed to fetch")) {
-        alert(
-          "Tearsheet creation feature is being set up. The tearsheet will be created once the API is ready."
-        );
-        setShowAddTearsheetModal(false);
-        setTearsheetForm({ name: "", visibility: "Existing" });
-      } else {
-        alert(
-          err instanceof Error
-            ? err.message
-            : "Failed to create tearsheet. Please try again."
-        );
-      }
+      console.error("Error associating tearsheet:", err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : "Failed to associate tearsheet. Please try again."
+      );
     } finally {
       setIsSavingTearsheet(false);
     }
   };
 
   // Update the actionOptions to remove the edit option since we'll handle it in Modify tab
+  const getDeleteLabel = () => {
+    if (isLoadingDeleteRequest) return "Delete (Loading...)";
+    if (pendingDeleteRequest) {
+      if (pendingDeleteRequest.status === "pending") {
+        return "Delete (Pending Approval)";
+      } else if (pendingDeleteRequest.status === "denied") {
+        return "Delete (Previously Denied)";
+      } else if (pendingDeleteRequest.status === "approved") {
+        return "Delete (Archived)";
+      }
+    }
+    return "Delete";
+  };
+
+  const isDeleteDisabled = () => {
+    return (
+      isLoadingDeleteRequest ||
+      (pendingDeleteRequest && pendingDeleteRequest.status === "pending")
+    );
+  };
+
   const actionOptions = [
     { label: "Add Note", action: () => handleActionSelected("add-note") },
     {
@@ -1212,7 +2515,11 @@ setAvailableFields(fields);
       action: () => handleActionSelected("add-tearsheet"),
     },
     { label: "Transfer", action: () => handleActionSelected("transfer") },
-    { label: "Delete", action: () => handleActionSelected("delete") },
+    {
+      label: getDeleteLabel(),
+      action: () => handleActionSelected("delete"),
+      disabled: isDeleteDisabled(),
+    },
   ];
 
   const tabs = [
@@ -1262,46 +2569,106 @@ setAvailableFields(fields);
   };
 
   // Render notes tab content
-  const renderNotesTab = () => (
-    <div className="bg-white p-4 rounded shadow-sm">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold">Organization Notes</h2>
-        <button
-          onClick={() => setShowAddNote(true)}
-          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-        >
-          Add Note
-        </button>
-      </div>
+  const renderNotesTab = () => {
+    // Helper function to parse about_references
+    const parseAboutReferences = (refs: any) => {
+      if (!refs) return [];
+      if (typeof refs === "string") {
+        try {
+          return JSON.parse(refs);
+        } catch {
+          return [];
+        }
+      }
+      if (Array.isArray(refs)) return refs;
+      return [];
+    };
 
-      {/* Notes List */}
-      {isLoadingNotes ? (
-        <div className="flex justify-center py-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+    return (
+      <div className="bg-white p-4 rounded shadow-sm">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Organization Notes</h2>
+          <button
+            onClick={() => setShowAddNote(true)}
+            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+          >
+            Add Note
+          </button>
         </div>
-      ) : noteError ? (
-        <div className="text-red-500 py-2">{noteError}</div>
-      ) : notes.length > 0 ? (
-        <div className="space-y-4">
-          {notes.map((note) => (
-            <div key={note.id} className="p-3 border rounded hover:bg-gray-50">
-              <div className="flex justify-between items-start mb-2">
-                <span className="font-medium text-blue-600">
-                  {note.created_by_name || "Unknown User"}
-                </span>
-                <span className="text-sm text-gray-500">
-                  {new Date(note.created_at).toLocaleString()}
-                </span>
-              </div>
-              <p className="text-gray-700">{note.text}</p>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-gray-500 italic">No notes have been added yet.</p>
-      )}
-    </div>
-  );
+
+        {/* Notes List */}
+        {isLoadingNotes ? (
+          <div className="flex justify-center py-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        ) : noteError ? (
+          <div className="text-red-500 py-2">{noteError}</div>
+        ) : notes.length > 0 ? (
+          <div className="space-y-4">
+            {notes.map((note) => {
+              // Find action label from actionFields
+              const actionLabel =
+                actionFields.find(
+                  (af) =>
+                    af.field_name === note.action ||
+                    af.field_label === note.action
+                )?.field_label || note.action || "General Note";
+
+              // Parse about_references
+              const aboutRefs = parseAboutReferences(
+                (note as any).about_references || (note as any).aboutReferences
+              );
+
+              return (
+                <div key={note.id} className="p-4 border rounded hover:bg-gray-50">
+                  <div className="flex justify-between items-start mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-blue-600">
+                        {note.created_by_name || "Unknown User"}
+                      </span>
+                      {actionLabel && (
+                        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded">
+                          {actionLabel}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-sm text-gray-500">
+                      {new Date(note.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                  
+                  {/* About References */}
+                  {aboutRefs.length > 0 && (
+                    <div className="mb-2 flex flex-wrap gap-2">
+                      <span className="text-xs font-medium text-gray-600">References:</span>
+                      {aboutRefs.map((ref: any, idx: number) => {
+                        const displayText =
+                          typeof ref === "string"
+                            ? ref
+                            : ref.display || ref.value || `${ref.type} #${ref.id}`;
+                        return (
+                          <span
+                            key={idx}
+                            className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded border"
+                          >
+                            {displayText}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <p className="text-gray-700">{note.text}</p>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-gray-500 italic">No notes have been added yet.</p>
+        )}
+      </div>
+    );
+  };
 
   // Render history tab content
   const renderHistoryTab = () => (
@@ -1613,7 +2980,21 @@ setAvailableFields(fields);
       {/* Quick Action Buttons */}
       <div className="flex bg-gray-300 p-2 space-x-2">
         {quickActions.map((action) => {
-          // Special styling for Jobs action with count
+          // Client Visit with count
+          if (action.id === "client-visit") {
+            return (
+              <button
+                key={action.id}
+                className="bg-white px-4 py-1 rounded-full shadow font-medium"
+                onClick={() => setActiveTab("summary")}
+              >
+                {isLoadingSummaryCounts
+                  ? "Loading..."
+                  : `${summaryCounts.clientVisits} Client Visit${summaryCounts.clientVisits !== 1 ? "s" : ""}`}
+              </button>
+            );
+          }
+          // Jobs with count
           if (action.id === "jobs") {
             return (
               <button
@@ -1621,9 +3002,65 @@ setAvailableFields(fields);
                 className="bg-green-500 text-white px-4 py-1 rounded-full shadow font-medium"
                 onClick={() => setActiveTab("jobs")}
               >
-                {isLoadingJobs
+                {isLoadingJobs || isLoadingSummaryCounts
                   ? "Loading..."
-                  : `${jobs.length} ${jobs.length === 1 ? "Job" : "Jobs"}`}
+                  : `${summaryCounts.jobs} ${summaryCounts.jobs === 1 ? "Job" : "Jobs"}`}
+              </button>
+            );
+          }
+          // Submissions with count
+          if (action.id === "submissions") {
+            return (
+              <button
+                key={action.id}
+                className="bg-white px-4 py-1 rounded-full shadow font-medium"
+                onClick={() => setActiveTab("notes")}
+              >
+                {isLoadingSummaryCounts
+                  ? "Loading..."
+                  : `${summaryCounts.submissions} Submission${summaryCounts.submissions !== 1 ? "s" : ""}`}
+              </button>
+            );
+          }
+          // Client Submissions with count
+          if (action.id === "client-submissions") {
+            return (
+              <button
+                key={action.id}
+                className="bg-white px-4 py-1 rounded-full shadow font-medium"
+                onClick={() => setActiveTab("notes")}
+              >
+                {isLoadingSummaryCounts
+                  ? "Loading..."
+                  : `${summaryCounts.clientSubmissions} Client Submission${summaryCounts.clientSubmissions !== 1 ? "s" : ""}`}
+              </button>
+            );
+          }
+          // Interviews with count
+          if (action.id === "interviews") {
+            return (
+              <button
+                key={action.id}
+                className="bg-white px-4 py-1 rounded-full shadow font-medium"
+                onClick={() => setActiveTab("notes")}
+              >
+                {isLoadingSummaryCounts
+                  ? "Loading..."
+                  : `${summaryCounts.interviews} Interview${summaryCounts.interviews !== 1 ? "s" : ""}`}
+              </button>
+            );
+          }
+          // Placements with count
+          if (action.id === "placements") {
+            return (
+              <button
+                key={action.id}
+                className="bg-white px-4 py-1 rounded-full shadow font-medium"
+                onClick={() => setActiveTab("summary")}
+              >
+                {isLoadingSummaryCounts
+                  ? "Loading..."
+                  : `${summaryCounts.placements} Placement${summaryCounts.placements !== 1 ? "s" : ""}`}
               </button>
             );
           }
@@ -1642,16 +3079,409 @@ setAvailableFields(fields);
       <div className="p-4">
         {/* Display content based on active tab */}
         {activeTab === "summary" && (
-          <div className="grid grid-cols-7 gap-4">
-            {/* Left Column - 4/7 width */}
-            <div className="col-span-4 space-y-4">
-              {/* Organization Contact Info */}
-              <PanelWithHeader
-                title="Organization Contact Info:"
-                onEdit={() => handleEditPanel("contactInfo")}
-                // onRefresh={() => refreshPanel('contact')}
-                // onClose={() => closePanel('contact')}
+          <div className="relative">
+            {/* Pin/Pop-out Toggle Button */}
+            <div className="absolute top-0 right-0 z-10">
+              <button
+                onClick={togglePin}
+                className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
+                title={isPinned ? "Unpin panel" : "Pin panel"}
               >
+                {isPinned ? (
+                  <FiLock className="w-5 h-5 text-blue-600" />
+                ) : (
+                  <FiUnlock className="w-5 h-5 text-gray-600" />
+                )}
+              </button>
+            </div>
+
+            {/* Floating Panel (when pinned) */}
+            {isPinned && (
+              <div
+                className={`fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${
+                  isCollapsed ? "w-12" : "w-1/3"
+                } border-l border-gray-300`}
+              >
+                <div className="flex flex-col h-full">
+                  <div className="flex items-center justify-between p-3 border-b border-gray-300 bg-gray-50">
+                    <h3 className="font-semibold text-sm">Overview Summary</h3>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setIsCollapsed(!isCollapsed)}
+                        className="p-1 hover:bg-gray-200 rounded"
+                        title={isCollapsed ? "Expand" : "Collapse"}
+                      >
+                        {isCollapsed ? "▶" : "◀"}
+                      </button>
+                      <button
+                        onClick={togglePin}
+                        className="p-1 hover:bg-gray-200 rounded"
+                        title="Unpin"
+                      >
+                        <FiUnlock className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                  {!isCollapsed && (
+                    <div className="flex-1 overflow-y-auto p-4">
+                      <div id="printable-summary">
+                        <DndContext
+                          collisionDetection={closestCenter}
+                          onDragEnd={handleDragEnd}
+                        >
+                          <SortableContext
+                            items={panelOrder}
+                            strategy={verticalListSortingStrategy}
+                          >
+                            <div className="space-y-4">
+                              {panelOrder.map((panelId) => {
+                                if (panelId === "contactInfo") {
+                                  return (
+                                    <SortablePanel key={panelId} id={panelId}>
+                                      <PanelWithHeader
+                                        title="Organization Contact Info:"
+                                        onEdit={() => handleEditPanel("contactInfo")}
+                                      >
+                                        <div className="space-y-0 border border-gray-200 rounded">
+                                          {visibleFields.contactInfo.includes("name") && (
+                                            <div className="flex border-b border-gray-200 last:border-b-0">
+                                              <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                                Name:
+                                              </div>
+                                              <div className="flex-1 p-2 text-blue-600">
+                                                {organization?.contact?.name || "-"}
+                                              </div>
+                                            </div>
+                                          )}
+                                          {visibleFields.contactInfo.includes("nickname") && (
+                                            <div className="flex border-b border-gray-200 last:border-b-0">
+                                              <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                                Nickname:
+                                              </div>
+                                              <div className="flex-1 p-2">
+                                                {organization?.contact?.nickname || "-"}
+                                              </div>
+                                            </div>
+                                          )}
+                                          {visibleFields.contactInfo.includes("phone") && (
+                                            <div className="flex border-b border-gray-200 last:border-b-0">
+                                              <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                                Phone:
+                                              </div>
+                                              <div className="flex-1 p-2">
+                                                {organization?.contact?.phone || "-"}
+                                              </div>
+                                            </div>
+                                          )}
+                                          {visibleFields.contactInfo.includes("address") && (
+                                            <div className="flex border-b border-gray-200 last:border-b-0">
+                                              <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                                Address:
+                                              </div>
+                                              <div className="flex-1 p-2">
+                                                {organization?.contact?.address || "-"}
+                                              </div>
+                                            </div>
+                                          )}
+                                          {visibleFields.contactInfo.includes("website") && (
+                                            <div className="flex border-b border-gray-200 last:border-b-0">
+                                              <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                                Website:
+                                              </div>
+                                              <div className="flex-1 p-2 text-blue-600">
+                                                <a
+                                                  href={organization?.contact?.website}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                >
+                                                  {organization?.contact?.website || "-"}
+                                                </a>
+                                              </div>
+                                            </div>
+                                          )}
+                                          {organization?.customFields &&
+                                            Object.keys(organization.customFields).map((fieldKey) => {
+                                              if (visibleFields.contactInfo.includes(fieldKey)) {
+                                                const field = availableFields.find(
+                                                  (f) =>
+                                                    (f.field_name || f.field_label || f.id) === fieldKey
+                                                );
+                                                const fieldLabel =
+                                                  field?.field_label || field?.field_name || fieldKey;
+                                                const fieldValue = organization.customFields[fieldKey];
+                                                return (
+                                                  <div
+                                                    key={fieldKey}
+                                                    className="flex border-b border-gray-200 last:border-b-0"
+                                                  >
+                                                    <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                                      {fieldLabel}:
+                                                    </div>
+                                                    <div className="flex-1 p-2">
+                                                      {String(fieldValue || "-")}
+                                                    </div>
+                                                  </div>
+                                                );
+                                              }
+                                              return null;
+                                            })}
+                                        </div>
+                                      </PanelWithHeader>
+                                    </SortablePanel>
+                                  );
+                                }
+                                if (panelId === "about") {
+                                  return (
+                                    <SortablePanel key={panelId} id={panelId}>
+                                      <PanelWithHeader
+                                        title="About the Organization:"
+                                        onEdit={() => {
+                                          setIsEditingAbout(true);
+                                          setTempAboutText(aboutText);
+                                        }}
+                                      >
+                                        <div className="border border-gray-200 rounded">
+                                          {isEditingAbout ? (
+                                            <div className="p-2">
+                                              <textarea
+                                                value={tempAboutText}
+                                                onChange={(e) => setTempAboutText(e.target.value)}
+                                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                rows={6}
+                                              />
+                                              <div className="flex justify-end gap-2 mt-2">
+                                                <button
+                                                  onClick={() => {
+                                                    setIsEditingAbout(false);
+                                                    setTempAboutText("");
+                                                  }}
+                                                  className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
+                                                >
+                                                  Cancel
+                                                </button>
+                                                <button
+                                                  onClick={saveAboutText}
+                                                  className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+                                                >
+                                                  Save
+                                                </button>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <div className="p-2">
+                                              <p className="text-gray-700 whitespace-pre-wrap">
+                                                {aboutText || "No description provided"}
+                                              </p>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </PanelWithHeader>
+                                    </SortablePanel>
+                                  );
+                                }
+                                if (panelId === "recentNotes") {
+                                  return (
+                                    <SortablePanel key={panelId} id={panelId}>
+                                      <PanelWithHeader title="Recent Notes:">
+                                        <div className="border border-gray-200 rounded">
+                                          {notes.length > 0 ? (
+                                            <div className="p-2">
+                                              {notes.slice(0, 5).map((note: any) => {
+                                                // Find action label from actionFields
+                                                const actionLabel =
+                                                  actionFields.find(
+                                                    (af) =>
+                                                      af.field_name === note.action ||
+                                                      af.field_label === note.action
+                                                  )?.field_label || note.action || "General Note";
+
+                                                return (
+                                                  <div
+                                                    key={note.id}
+                                                    className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
+                                                  >
+                                                    <div className="flex justify-between text-sm mb-1">
+                                                      <span className="font-medium">
+                                                        {note.created_by_name || "Unknown User"}
+                                                      </span>
+                                                      <span className="text-gray-500">
+                                                        {new Date(note.created_at).toLocaleString()}
+                                                      </span>
+                                                    </div>
+                                                    {actionLabel && (
+                                                      <div className="mb-1">
+                                                        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded">
+                                                          {actionLabel}
+                                                        </span>
+                                                      </div>
+                                                    )}
+                                                    {note.additional_references && (
+                                                      <div className="mb-1 text-xs text-gray-600">
+                                                        References: {note.additional_references}
+                                                      </div>
+                                                    )}
+                                                    <p className="text-sm text-gray-700">
+                                                      {note.text.length > 100
+                                                        ? `${note.text.substring(0, 100)}...`
+                                                        : note.text}
+                                                    </p>
+                                                  </div>
+                                                );
+                                              })}
+                                              {notes.length > 5 && (
+                                                <button
+                                                  onClick={() => setActiveTab("notes")}
+                                                  className="text-blue-500 text-sm hover:underline mt-2"
+                                                >
+                                                  View all {notes.length} notes
+                                                </button>
+                                              )}
+                                            </div>
+                                          ) : (
+                                            <p className="text-gray-500 italic p-2">No recent notes</p>
+                                          )}
+                                        </div>
+                                      </PanelWithHeader>
+                                    </SortablePanel>
+                                  );
+                                }
+                                if (panelId === "websiteJobs") {
+                                  return (
+                                    <SortablePanel key={panelId} id={panelId}>
+                                      <PanelWithHeader title="Open Jobs from Website:">
+                                        <div className="border border-gray-200 rounded">
+                                          <div className="p-2">
+                                            <p className="text-gray-500 italic">No open jobs found</p>
+                                          </div>
+                                        </div>
+                                      </PanelWithHeader>
+                                    </SortablePanel>
+                                  );
+                                }
+                                if (panelId === "ourJobs") {
+                                  return (
+                                    <SortablePanel key={panelId} id={panelId}>
+                                      <PanelWithHeader title="Our Open Jobs:">
+                                        <div className="border border-gray-200 rounded">
+                                          <div className="p-2">
+                                            <p className="text-gray-500 italic">No open jobs</p>
+                                          </div>
+                                        </div>
+                                      </PanelWithHeader>
+                                    </SortablePanel>
+                                  );
+                                }
+                                if (panelId === "openTasks") {
+                                  return (
+                                    <SortablePanel key={panelId} id={panelId}>
+                                      <PanelWithHeader title="Open Tasks:">
+                                        <div className="border border-gray-200 rounded">
+                                          {isLoadingTasks ? (
+                                            <div className="flex justify-center py-4">
+                                              <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+                                            </div>
+                                          ) : tasksError ? (
+                                            <div className="p-2 text-red-500 text-sm">{tasksError}</div>
+                                          ) : tasks.length > 0 ? (
+                                            <div className="divide-y divide-gray-200">
+                                              {tasks.map((task) => (
+                                                <div
+                                                  key={task.id}
+                                                  className="p-3 hover:bg-gray-50 cursor-pointer"
+                                                  onClick={() =>
+                                                    router.push(`/dashboard/tasks/view?id=${task.id}`)
+                                                  }
+                                                >
+                                                  <div className="flex justify-between items-start mb-1">
+                                                    <h4 className="font-medium text-blue-600 hover:underline">
+                                                      {task.title}
+                                                    </h4>
+                                                    {task.priority && (
+                                                      <span
+                                                        className={`px-2 py-0.5 rounded text-xs ${
+                                                          task.priority === "High"
+                                                            ? "bg-red-100 text-red-800"
+                                                            : task.priority === "Medium"
+                                                            ? "bg-yellow-100 text-yellow-800"
+                                                            : "bg-gray-100 text-gray-800"
+                                                        }`}
+                                                      >
+                                                        {task.priority}
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                  {task.description && (
+                                                    <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                                                      {task.description}
+                                                    </p>
+                                                  )}
+                                                  <div className="flex justify-between items-center text-xs text-gray-500">
+                                                    <div className="flex space-x-3">
+                                                      {task.due_date && (
+                                                        <span>
+                                                          Due:{" "}
+                                                          {new Date(task.due_date).toLocaleDateString()}
+                                                        </span>
+                                                      )}
+                                                      {task.assigned_to_name && (
+                                                        <span>
+                                                          Assigned to: {task.assigned_to_name}
+                                                        </span>
+                                                      )}
+                                                    </div>
+                                                    {task.status && (
+                                                      <span className="text-gray-600">{task.status}</span>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              ))}
+                                            </div>
+                                          ) : (
+                                            <div className="p-4 text-center text-gray-500 italic">
+                                              No open tasks
+                                            </div>
+                                          )}
+                                        </div>
+                                      </PanelWithHeader>
+                                    </SortablePanel>
+                                  );
+                                }
+                                return null;
+                              })}
+                            </div>
+                          </SortableContext>
+                        </DndContext>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Regular Summary View (when not pinned) */}
+            {!isPinned && (
+              <div id="printable-summary">
+                <DndContext
+                  collisionDetection={closestCenter}
+                  onDragEnd={handleDragEnd}
+                >
+                  <SortableContext
+                    items={panelOrder}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="grid grid-cols-7 gap-4">
+                      {/* Left Column - 4/7 width */}
+                      <div className="col-span-4 space-y-4">
+                        {panelOrder
+                          .filter((id) => ["contactInfo", "about"].includes(id))
+                          .map((panelId) => {
+                            if (panelId === "contactInfo") {
+                              return (
+                                <SortablePanel key={panelId} id={panelId}>
+                                  <PanelWithHeader
+                                    title="Organization Contact Info:"
+                                    onEdit={() => handleEditPanel("contactInfo")}
+                                  >
                 <div className="space-y-0 border border-gray-200 rounded">
                   {visibleFields.contactInfo.includes("name") && (
                     <div className="flex border-b border-gray-200 last:border-b-0">
@@ -1737,181 +3567,244 @@ setAvailableFields(fields);
                       return null;
                     })}
                 </div>
-              </PanelWithHeader>
+                                  </PanelWithHeader>
+                                </SortablePanel>
+                              );
+                            }
+                            if (panelId === "about") {
+                              return (
+                                <SortablePanel key={panelId} id={panelId}>
+                                  <PanelWithHeader
+                                    title="About the Organization:"
+                                    onEdit={() => {
+                                      setIsEditingAbout(true);
+                                      setTempAboutText(aboutText);
+                                    }}
+                                  >
+                                    <div className="border border-gray-200 rounded">
+                                      {isEditingAbout ? (
+                                        <div className="p-2">
+                                          <textarea
+                                            value={tempAboutText}
+                                            onChange={(e) => setTempAboutText(e.target.value)}
+                                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            rows={6}
+                                          />
+                                          <div className="flex justify-end gap-2 mt-2">
+                                            <button
+                                              onClick={() => {
+                                                setIsEditingAbout(false);
+                                                setTempAboutText("");
+                                              }}
+                                              className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
+                                            >
+                                              Cancel
+                                            </button>
+                                            <button
+                                              onClick={saveAboutText}
+                                              className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+                                            >
+                                              Save
+                                            </button>
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="p-2">
+                                          <p className="text-gray-700 whitespace-pre-wrap">
+                                            {aboutText || "No description provided"}
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  </PanelWithHeader>
+                                </SortablePanel>
+                              );
+                            }
+                            return null;
+                          })}
+                      </div>
 
-              {/* About the Organization */}
-              <PanelWithHeader
-                title="About the Organization:"
-                onEdit={() => handleEditPanel("about")}
-                // onRefresh={() => refreshPanel('about')}
-                // onClose={() => closePanel('about')}
-              >
-                <div className="border border-gray-200 rounded">
-                  {visibleFields.about.includes("about") && (
-                    <div className="p-2">
-                      <p className="text-gray-700">{organization.about}</p>
-                    </div>
-                  )}
-                </div>
-              </PanelWithHeader>
-            </div>
+                      {/* Right Column - 3/7 width */}
+                      <div className="col-span-3 space-y-4">
+                        {panelOrder
+                          .filter((id) =>
+                            ["recentNotes", "websiteJobs", "ourJobs", "openTasks"].includes(id)
+                          )
+                          .map((panelId) => {
+                            if (panelId === "recentNotes") {
+                              return (
+                                <SortablePanel key={panelId} id={panelId}>
+                                  <PanelWithHeader title="Recent Notes:">
+                                    <div className="border border-gray-200 rounded">
+                                      {notes.length > 0 ? (
+                                        <div className="p-2">
+                                          {notes.slice(0, 5).map((note: any) => {
+                                            const actionLabel =
+                                              actionFields.find(
+                                                (af) =>
+                                                  af.field_name === note.action ||
+                                                  af.field_label === note.action
+                                              )?.field_label || note.action || "General Note";
 
-            {/* Right Column - 3/7 width */}
-            <div className="col-span-3 space-y-4">
-              {/* Recent Notes */}
-              <PanelWithHeader
-                title="Recent Notes:"
-                // onEdit={() => handleEditPanel('recentNotes')}
-                // onRefresh={() => refreshPanel('notes')}
-                // onClose={() => closePanel('notes')}
-              >
-                <div className="border border-gray-200 rounded">
-                  {visibleFields.recentNotes.includes("notes") && (
-                    <div className="p-2">
-                      {notes.length > 0 ? (
-                        <div>
-                          {notes.slice(0, 3).map((note) => (
-                            <div
-                              key={note.id}
-                              className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
-                            >
-                              <div className="flex justify-between text-sm mb-1">
-                                <span className="font-medium">
-                                  {note.created_by_name || "Unknown User"}
-                                </span>
-                                <span className="text-gray-500">
-                                  {new Date(note.created_at).toLocaleString()}
-                                </span>
-                              </div>
-                              <p className="text-sm text-gray-700">
-                                {note.text.length > 100
-                                  ? `${note.text.substring(0, 100)}...`
-                                  : note.text}
-                              </p>
-                            </div>
-                          ))}
-                          {notes.length > 3 && (
-                            <button
-                              onClick={() => setActiveTab("notes")}
-                              className="text-blue-500 text-sm hover:underline"
-                            >
-                              View all {notes.length} notes
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="text-gray-500 italic">No recent notes</p>
-                      )}
+                                            return (
+                                              <div
+                                                key={note.id}
+                                                className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
+                                              >
+                                                <div className="flex justify-between text-sm mb-1">
+                                                  <span className="font-medium">
+                                                    {note.created_by_name || "Unknown User"}
+                                                  </span>
+                                                  <span className="text-gray-500">
+                                                    {new Date(note.created_at).toLocaleString()}
+                                                  </span>
+                                                </div>
+                                                {actionLabel && (
+                                                  <div className="mb-1">
+                                                    <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded">
+                                                      {actionLabel}
+                                                    </span>
+                                                  </div>
+                                                )}
+                                                {note.additional_references && (
+                                                  <div className="mb-1 text-xs text-gray-600">
+                                                    References: {note.additional_references}
+                                                  </div>
+                                                )}
+                                                <p className="text-sm text-gray-700">
+                                                  {note.text.length > 100
+                                                    ? `${note.text.substring(0, 100)}...`
+                                                    : note.text}
+                                                </p>
+                                              </div>
+                                            );
+                                          })}
+                                          {notes.length > 5 && (
+                                            <button
+                                              onClick={() => setActiveTab("notes")}
+                                              className="text-blue-500 text-sm hover:underline mt-2"
+                                            >
+                                              View all {notes.length} notes
+                                            </button>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <p className="text-gray-500 italic p-2">No recent notes</p>
+                                      )}
+                                    </div>
+                                  </PanelWithHeader>
+                                </SortablePanel>
+                              );
+                            }
+                            if (panelId === "websiteJobs") {
+                              return (
+                                <SortablePanel key={panelId} id={panelId}>
+                                  <PanelWithHeader title="Open Jobs from Website:">
+                                    <div className="border border-gray-200 rounded">
+                                      <div className="p-2">
+                                        <p className="text-gray-500 italic">No open jobs found</p>
+                                      </div>
+                                    </div>
+                                  </PanelWithHeader>
+                                </SortablePanel>
+                              );
+                            }
+                            if (panelId === "ourJobs") {
+                              return (
+                                <SortablePanel key={panelId} id={panelId}>
+                                  <PanelWithHeader title="Our Open Jobs:">
+                                    <div className="border border-gray-200 rounded">
+                                      <div className="p-2">
+                                        <p className="text-gray-500 italic">No open jobs</p>
+                                      </div>
+                                    </div>
+                                  </PanelWithHeader>
+                                </SortablePanel>
+                              );
+                            }
+                            if (panelId === "openTasks") {
+                              return (
+                                <SortablePanel key={panelId} id={panelId}>
+                                  <PanelWithHeader title="Open Tasks:">
+                                    <div className="border border-gray-200 rounded">
+                                      {isLoadingTasks ? (
+                                        <div className="flex justify-center py-4">
+                                          <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+                                        </div>
+                                      ) : tasksError ? (
+                                        <div className="p-2 text-red-500 text-sm">{tasksError}</div>
+                                      ) : tasks.length > 0 ? (
+                                        <div className="divide-y divide-gray-200">
+                                          {tasks.map((task) => (
+                                            <div
+                                              key={task.id}
+                                              className="p-3 hover:bg-gray-50 cursor-pointer"
+                                              onClick={() =>
+                                                router.push(`/dashboard/tasks/view?id=${task.id}`)
+                                              }
+                                            >
+                                              <div className="flex justify-between items-start mb-1">
+                                                <h4 className="font-medium text-blue-600 hover:underline">
+                                                  {task.title}
+                                                </h4>
+                                                {task.priority && (
+                                                  <span
+                                                    className={`px-2 py-0.5 rounded text-xs ${
+                                                      task.priority === "High"
+                                                        ? "bg-red-100 text-red-800"
+                                                        : task.priority === "Medium"
+                                                        ? "bg-yellow-100 text-yellow-800"
+                                                        : "bg-gray-100 text-gray-800"
+                                                    }`}
+                                                  >
+                                                    {task.priority}
+                                                  </span>
+                                                )}
+                                              </div>
+                                              {task.description && (
+                                                <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                                                  {task.description}
+                                                </p>
+                                              )}
+                                              <div className="flex justify-between items-center text-xs text-gray-500">
+                                                <div className="flex space-x-3">
+                                                  {task.due_date && (
+                                                    <span>
+                                                      Due:{" "}
+                                                      {new Date(task.due_date).toLocaleDateString()}
+                                                    </span>
+                                                  )}
+                                                  {task.assigned_to_name && (
+                                                    <span>
+                                                      Assigned to: {task.assigned_to_name}
+                                                    </span>
+                                                  )}
+                                                </div>
+                                                {task.status && (
+                                                  <span className="text-gray-600">{task.status}</span>
+                                                )}
+                                              </div>
+                                            </div>
+                                          ))}
+                                        </div>
+                                      ) : (
+                                        <div className="p-4 text-center text-gray-500 italic">
+                                          No open tasks
+                                        </div>
+                                      )}
+                                    </div>
+                                  </PanelWithHeader>
+                                </SortablePanel>
+                              );
+                            }
+                            return null;
+                          })}
+                      </div>
                     </div>
-                  )}
-                </div>
-              </PanelWithHeader>
-
-              {/* Open Jobs from Website */}
-              <PanelWithHeader
-                title="Open Jobs from Website:"
-                onEdit={() => handleEditPanel("websiteJobs")}
-                // onRefresh={() => refreshPanel('website-jobs')}
-                // onClose={() => closePanel('website-jobs')}
-              >
-                <div className="border border-gray-200 rounded">
-                  {visibleFields.websiteJobs.includes("jobs") && (
-                    <div className="p-2">
-                      <p className="text-gray-500 italic">No open jobs found</p>
-                    </div>
-                  )}
-                </div>
-              </PanelWithHeader>
-
-              {/* Our Open Jobs */}
-              <PanelWithHeader
-                title="Our Open Jobs:"
-                // onEdit={() => handleEditPanel('ourJobs')}
-                // onRefresh={() => refreshPanel('our-jobs')}
-                // onClose={() => closePanel('our-jobs')}
-              >
-                <div className="border border-gray-200 rounded">
-                  {visibleFields.ourJobs.includes("jobs") && (
-                    <div className="p-2">
-                      <p className="text-gray-500 italic">No open jobs</p>
-                    </div>
-                  )}
-                </div>
-              </PanelWithHeader>
-
-              {/* Open Tasks */}
-              <PanelWithHeader title="Open Tasks:">
-                <div className="border border-gray-200 rounded">
-                  {isLoadingTasks ? (
-                    <div className="flex justify-center py-4">
-                      <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
-                    </div>
-                  ) : tasksError ? (
-                    <div className="p-2 text-red-500 text-sm">{tasksError}</div>
-                  ) : tasks.length > 0 ? (
-                    <div className="divide-y divide-gray-200">
-                      {tasks.map((task) => (
-                        <div
-                          key={task.id}
-                          className="p-3 hover:bg-gray-50 cursor-pointer"
-                          onClick={() =>
-                            router.push(`/dashboard/tasks/view?id=${task.id}`)
-                          }
-                        >
-                          <div className="flex justify-between items-start mb-1">
-                            <h4 className="font-medium text-blue-600 hover:underline">
-                              {task.title}
-                            </h4>
-                            {task.priority && (
-                              <span
-                                className={`px-2 py-0.5 rounded text-xs ${
-                                  task.priority === "High"
-                                    ? "bg-red-100 text-red-800"
-                                    : task.priority === "Medium"
-                                    ? "bg-yellow-100 text-yellow-800"
-                                    : "bg-gray-100 text-gray-800"
-                                }`}
-                              >
-                                {task.priority}
-                              </span>
-                            )}
-                          </div>
-                          {task.description && (
-                            <p className="text-sm text-gray-600 mb-2 line-clamp-2">
-                              {task.description}
-                            </p>
-                          )}
-                          <div className="flex justify-between items-center text-xs text-gray-500">
-                            <div className="flex space-x-3">
-                              {task.due_date && (
-                                <span>
-                                  Due:{" "}
-                                  {new Date(task.due_date).toLocaleDateString()}
-                                </span>
-                              )}
-                              {task.assigned_to_name && (
-                                <span>
-                                  Assigned to: {task.assigned_to_name}
-                                </span>
-                              )}
-                            </div>
-                            {task.status && (
-                              <span className="text-gray-600">
-                                {task.status}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="p-4 text-center text-gray-500 italic">
-                      No open tasks
-                    </div>
-                  )}
-                </div>
-              </PanelWithHeader>
-            </div>
+                  </SortableContext>
+                </DndContext>
+              </div>
+            )}
           </div>
         )}
 
@@ -2062,13 +3955,105 @@ setAvailableFields(fields);
           <div className="bg-white p-4 rounded shadow-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold">Documents</h2>
-              <button
-                onClick={() => setShowAddDocument(true)}
-                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-              >
-                Add Document
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
+                >
+                  Upload Files
+                </button>
+                <button
+                  onClick={() => setShowAddDocument(true)}
+                  className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                >
+                  Add Text Document
+                </button>
+              </div>
             </div>
+
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+              accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
+            />
+
+            {/* Drag and Drop Zone */}
+            <div
+              onDragEnter={handleDragEnter}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 transition-colors ${
+                isDragging
+                  ? "border-blue-500 bg-blue-50"
+                  : "border-gray-300 bg-gray-50 hover:border-gray-400"
+              }`}
+            >
+              <div className="flex flex-col items-center">
+                <svg
+                  className="w-12 h-12 text-gray-400 mb-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                  />
+                </svg>
+                <p className="text-gray-600 mb-2">
+                  Drag and drop files here, or{" "}
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-blue-500 hover:underline"
+                  >
+                    browse
+                  </button>
+                </p>
+                <p className="text-sm text-gray-500">
+                  Supported formats: PDF, DOC, DOCX, TXT, JPG, PNG, GIF (Max 10MB per file)
+                </p>
+              </div>
+            </div>
+
+            {/* Upload Progress */}
+            {Object.keys(uploadProgress).length > 0 && (
+              <div className="mb-4 space-y-2">
+                {Object.entries(uploadProgress).map(([fileName, progress]) => (
+                  <div key={fileName} className="bg-gray-100 rounded p-2">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-sm font-medium">{fileName}</span>
+                      <span className="text-sm text-gray-600">{Math.round(progress)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div
+                        className="bg-blue-500 h-2 rounded-full transition-all"
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Upload Errors */}
+            {Object.keys(uploadErrors).length > 0 && (
+              <div className="mb-4 space-y-2">
+                {Object.entries(uploadErrors).map(([fileName, error]) => (
+                  <div key={fileName} className="bg-red-50 border border-red-200 rounded p-2">
+                    <p className="text-sm text-red-800">
+                      <strong>{fileName}:</strong> {error}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Add Document Form */}
             {showAddDocument && (
@@ -2515,46 +4500,158 @@ setAvailableFields(fields);
                   />
                 </div>
 
-                {/* Action Dropdown */}
+                {/* Action Dropdown - Required */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Action
+                    Action <span className="text-red-500">*</span>
                   </label>
-                  <select
-                    value={noteForm.action}
-                    onChange={(e) =>
-                      setNoteForm((prev) => ({ ...prev, action: e.target.value }))
-                    }
-                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Select Action</option>
-                    <option value="Outbound Call">Outbound Call</option>
-                    <option value="Inbound Call">Inbound Call</option>
-                    <option value="Left Message">Left Message</option>
-                    <option value="Email">Email</option>
-                    <option value="Appointment">Appointment</option>
-                    <option value="Client Visit">Client Visit</option>
-                  </select>
+                  {isLoadingActionFields ? (
+                    <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                      Loading actions...
+                    </div>
+                  ) : (
+                    <>
+                      <select
+                        value={noteForm.action}
+                        onChange={(e) => {
+                          setNoteForm((prev) => ({ ...prev, action: e.target.value }));
+                          // Clear validation error when user selects an action
+                          if (validationErrors.action) {
+                            setValidationErrors((prev) => {
+                              const newErrors = { ...prev };
+                              delete newErrors.action;
+                              return newErrors;
+                            });
+                          }
+                        }}
+                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 ${
+                          validationErrors.action
+                            ? "border-red-500 focus:ring-red-500"
+                            : "border-gray-300 focus:ring-blue-500"
+                        }`}
+                      >
+                        <option value="">Select Action</option>
+                        {actionFields.map((field) => (
+                          <option
+                            key={field.id || field.field_name}
+                            value={field.field_label || field.field_name}
+                          >
+                            {field.field_label || field.field_name}
+                          </option>
+                        ))}
+                      </select>
+                      {validationErrors.action && (
+                        <p className="mt-1 text-sm text-red-500">
+                          {validationErrors.action}
+                        </p>
+                      )}
+                    </>
+                  )}
                 </div>
 
-                {/* About Section */}
+                {/* About Section - Required, Multiple References */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    About
+                    About / Reference <span className="text-red-500">*</span>
                   </label>
-                  <div className="relative">
-                    <div className="flex items-center border border-gray-300 rounded p-2 bg-white">
-                      <HiOutlineOfficeBuilding className="w-6 h-6 mr-2 flex-shrink-0 text-gray-600" />
-                      <span className="flex-1 text-sm">{noteForm.about}</span>
-                      <button
-                        onClick={() =>
-                          setNoteForm((prev) => ({ ...prev, about: "" }))
+                  <div className="relative" ref={aboutInputRef}>
+                    {/* Selected References Tags */}
+                    {noteForm.aboutReferences.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
+                        {noteForm.aboutReferences.map((ref, index) => (
+                          <span
+                            key={`${ref.type}-${ref.id}-${index}`}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
+                          >
+                            <HiOutlineOfficeBuilding className="w-4 h-4" />
+                            {ref.display}
+                            <button
+                              type="button"
+                              onClick={() => removeAboutReference(index)}
+                              className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
+                              title="Remove"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Search Input */}
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={aboutSearchQuery}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setAboutSearchQuery(value);
+                          searchAboutReferences(value);
+                        }}
+                        onFocus={() => {
+                          if (aboutSearchQuery.trim().length >= 2) {
+                            setShowAboutDropdown(true);
+                          }
+                        }}
+                        placeholder={
+                          noteForm.aboutReferences.length === 0
+                            ? "Search and select records (e.g., Job, Lead, Placement)..."
+                            : "Add another reference..."
                         }
-                        className="ml-2 text-gray-500 hover:text-gray-700 text-xs"
-                      >
-                        CLEAR ALL X
-                      </button>
+                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 pr-8 ${
+                          validationErrors.about
+                            ? "border-red-500 focus:ring-red-500"
+                            : "border-gray-300 focus:ring-blue-500"
+                        }`}
+                      />
+                      <span className="absolute right-2 top-2 text-gray-400 text-sm">
+                        Q
+                      </span>
                     </div>
+
+                    {/* Validation Error */}
+                    {validationErrors.about && (
+                      <p className="mt-1 text-sm text-red-500">
+                        {validationErrors.about}
+                      </p>
+                    )}
+
+                    {/* Suggestions Dropdown */}
+                    {showAboutDropdown && (
+                      <div
+                        data-about-dropdown
+                        className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
+                      >
+                        {isLoadingAboutSearch ? (
+                          <div className="p-3 text-center text-gray-500 text-sm">
+                            Searching...
+                          </div>
+                        ) : aboutSuggestions.length > 0 ? (
+                          aboutSuggestions.map((suggestion, idx) => (
+                            <button
+                              key={`${suggestion.type}-${suggestion.id}-${idx}`}
+                              type="button"
+                              onClick={() => handleAboutReferenceSelect(suggestion)}
+                              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
+                            >
+                              <HiOutlineOfficeBuilding className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {suggestion.display}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {suggestion.type}
+                                </div>
+                              </div>
+                            </button>
+                          ))
+                        ) : aboutSearchQuery.trim().length >= 2 ? (
+                          <div className="p-3 text-center text-gray-500 text-sm">
+                            No results found
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -2582,26 +4679,40 @@ setAvailableFields(fields);
                   </div>
                 </div>
 
-                {/* Email Notification Section */}
+                {/* Email Notification Section - Internal Users Only */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
                     <span className="mr-2">📧</span>
                     Email Notification
                   </label>
                   <div className="relative">
-                    <input
-                      type="text"
-                      value={noteForm.emailNotification}
-                      onChange={(e) =>
-                        setNoteForm((prev) => ({
-                          ...prev,
-                          emailNotification: e.target.value,
-                        }))
-                      }
-                      placeholder="Internal User"
-                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                    {isLoadingUsers ? (
+                      <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                        Loading users...
+                      </div>
+                    ) : (
+                      <select
+                        value={noteForm.emailNotification}
+                        onChange={(e) =>
+                          setNoteForm((prev) => ({
+                            ...prev,
+                            emailNotification: e.target.value,
+                          }))
+                        }
+                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="Internal User">Internal User</option>
+                        {users.map((user) => (
+                          <option key={user.id} value={user.email || user.name}>
+                            {user.name || user.email} {user.email && `(${user.email})`}
+                          </option>
+                        ))}
+                      </select>
+                    )}
                   </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Only internal system users are available for notification
+                  </p>
                 </div>
               </div>
 
@@ -2616,7 +4727,6 @@ setAvailableFields(fields);
                 <button
                   onClick={handleAddNote}
                   className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  disabled={!noteForm.text.trim()}
                 >
                   SAVE
                 </button>
@@ -2626,17 +4736,17 @@ setAvailableFields(fields);
         </div>
       )}
 
-      {/* Add Tearsheet Modal */}
-      {showAddTearsheetModal && (
+      {/* Transfer Modal */}
+      {showTransferModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
             {/* Header */}
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold">Tearsheets</h2>
+              <h2 className="text-lg font-semibold">Transfer Organization</h2>
               <button
                 onClick={() => {
-                  setShowAddTearsheetModal(false);
-                  setTearsheetForm({ name: "", visibility: "Existing" });
+                  setShowTransferModal(false);
+                  setTransferForm({ targetOrganizationId: "" });
                 }}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -2646,69 +4756,291 @@ setAvailableFields(fields);
 
             {/* Form Content */}
             <div className="p-6 space-y-6">
-              {/* Tearsheet Name */}
+              {/* Source Organization Info */}
+              <div className="bg-gray-50 p-4 rounded">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Source Organization
+                </label>
+                <p className="text-sm text-gray-900 font-medium">
+                  {organization
+                    ? `${formatRecordId(organization.id, "organization")} ${organization.name}`
+                    : "N/A"}
+                </p>
+              </div>
+
+              {/* Target Organization Selection */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   <span className="text-red-500 mr-1">•</span>
-                  Tearsheet name
+                  Select Target Organization
                 </label>
-                <input
-                  type="text"
-                  value={tearsheetForm.name}
-                  onChange={(e) =>
-                    setTearsheetForm((prev) => ({
-                      ...prev,
-                      name: e.target.value,
-                    }))
-                  }
-                  placeholder="Enter tearsheet name"
-                  className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                  required
-                />
+                {isLoadingOrganizations ? (
+                  <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
+                    Loading organizations...
+                  </div>
+                ) : availableOrganizations.length === 0 ? (
+                  <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
+                    No available organizations found
+                  </div>
+                ) : (
+                  <select
+                    value={transferForm.targetOrganizationId}
+                    onChange={(e) =>
+                      setTransferForm((prev) => ({
+                        ...prev,
+                        targetOrganizationId: e.target.value,
+                      }))
+                    }
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  >
+                    <option value="">Select target organization...</option>
+                    {availableOrganizations.map((org) => (
+                      <option key={org.id} value={org.id}>
+                        {formatRecordId(org.id, "organization")} {org.name}
+                        {org.status && ` (${org.status})`}
+                      </option>
+                    ))}
+                  </select>
+                )}
               </div>
 
-              {/* Visibility */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Visibility
+              {/* Transfer Info */}
+              <div className="bg-blue-50 border border-blue-200 rounded p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> This will create a transfer request. Payroll will be
+                  notified via email and must approve or deny the transfer. Notes will be
+                  automatically added to both organizations.
+                </p>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowTransferModal(false);
+                  setTransferForm({ targetOrganizationId: "" });
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSubmittingTransfer}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={handleTransferSubmit}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                disabled={
+                  isSubmittingTransfer || !transferForm.targetOrganizationId
+                }
+              >
+                {isSubmittingTransfer ? "SUBMITTING..." : "SUBMIT TRANSFER"}
+                {!isSubmittingTransfer && (
+                  <svg
+                    className="w-4 h-4 ml-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Request Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+            {/* Header */}
+            <div className="flex justify-between items-center p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold">Request Deletion</h2>
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteForm({ reason: "" });
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            {/* Form Content */}
+            <div className="p-6 space-y-6">
+              {/* Organization Info */}
+              <div className="bg-gray-50 p-4 rounded">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Organization to Delete
                 </label>
-                <div
-                  className="inline-flex rounded-md border border-gray-300 overflow-hidden"
-                  role="group"
-                >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setTearsheetForm((prev) => ({
-                        ...prev,
-                        visibility: "New",
-                      }))
-                    }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === "New"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
-                    }`}
-                  >
-                    New
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setTearsheetForm((prev) => ({
-                        ...prev,
-                        visibility: "Existing",
-                      }))
-                    }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === "Existing"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 hover:bg-gray-50"
-                    }`}
-                  >
-                    Existing
-                  </button>
+                <p className="text-sm text-gray-900 font-medium">
+                  {organization
+                    ? `${formatRecordId(organization.id, "organization")} ${organization.name}`
+                    : "N/A"}
+                </p>
+              </div>
+
+              {/* Pending Request Warning */}
+              {pendingDeleteRequest && pendingDeleteRequest.status === "pending" && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded p-4">
+                  <p className="text-sm text-yellow-800">
+                    <strong>Pending Request:</strong> A delete request is already pending payroll approval.
+                  </p>
                 </div>
+              )}
+
+              {/* Denied Request Info */}
+              {pendingDeleteRequest && pendingDeleteRequest.status === "denied" && (
+                <div className="bg-red-50 border border-red-200 rounded p-4">
+                  <p className="text-sm text-red-800">
+                    <strong>Previous Request Denied:</strong> {pendingDeleteRequest.denial_reason || "No reason provided"}
+                  </p>
+                </div>
+              )}
+
+              {/* Reason Field - Required */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <span className="text-red-500 mr-1">•</span>
+                  Reason for Deletion
+                </label>
+                <textarea
+                  value={deleteForm.reason}
+                  onChange={(e) =>
+                    setDeleteForm((prev) => ({
+                      ...prev,
+                      reason: e.target.value,
+                    }))
+                  }
+                  placeholder="Please provide a detailed reason for deleting this organization..."
+                  className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${
+                    !deleteForm.reason.trim()
+                      ? "border-red-300 focus:ring-red-500"
+                      : "border-gray-300 focus:ring-blue-500"
+                  }`}
+                  rows={5}
+                  required
+                />
+                {!deleteForm.reason.trim() && (
+                  <p className="mt-1 text-sm text-red-500">
+                    Reason is required
+                  </p>
+                )}
+              </div>
+
+              {/* Info Box */}
+              <div className="bg-blue-50 border border-blue-200 rounded p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> This will create a delete request. Payroll will be notified via email and must approve or deny the deletion. The record will be archived (not deleted) until payroll approval.
+                </p>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteForm({ reason: "" });
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSubmittingDelete}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={handleDeleteRequestSubmit}
+                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                disabled={isSubmittingDelete || !deleteForm.reason.trim() || (pendingDeleteRequest && pendingDeleteRequest.status === "pending")}
+              >
+                {isSubmittingDelete ? "SUBMITTING..." : "SUBMIT DELETE REQUEST"}
+                {!isSubmittingDelete && (
+                  <svg
+                    className="w-4 h-4 ml-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
+                  </svg>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Tearsheet Modal - Selection Only */}
+      {showAddTearsheetModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+            {/* Header */}
+            <div className="flex justify-between items-center p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold">Select Tearsheet</h2>
+              <button
+                onClick={() => {
+                  setShowAddTearsheetModal(false);
+                  setTearsheetForm({ selectedTearsheetId: "" });
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            {/* Form Content */}
+            <div className="p-6 space-y-6">
+              {/* Tearsheet Selection */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <span className="text-red-500 mr-1">•</span>
+                  Select Existing Tearsheet
+                </label>
+                {isLoadingTearsheets ? (
+                  <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
+                    Loading tearsheets...
+                  </div>
+                ) : existingTearsheets.length === 0 ? (
+                  <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
+                    No existing tearsheets available
+                  </div>
+                ) : (
+                  <select
+                    value={tearsheetForm.selectedTearsheetId}
+                    onChange={(e) =>
+                      setTearsheetForm((prev) => ({
+                        ...prev,
+                        selectedTearsheetId: e.target.value,
+                      }))
+                    }
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  >
+                    <option value="">Select a tearsheet...</option>
+                    {existingTearsheets.map((tearsheet) => (
+                      <option key={tearsheet.id} value={tearsheet.id}>
+                        {tearsheet.name}
+                        {tearsheet.owner_name && ` (Owner: ${tearsheet.owner_name})`}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <p className="mt-2 text-xs text-gray-500">
+                  Only existing tearsheets can be selected. New tearsheets must be created from the Tearsheets page.
+                </p>
               </div>
             </div>
 
@@ -2717,19 +5049,19 @@ setAvailableFields(fields);
               <button
                 onClick={() => {
                   setShowAddTearsheetModal(false);
-                  setTearsheetForm({ name: "", visibility: "Existing" });
+                  setTearsheetForm({ selectedTearsheetId: "" });
                 }}
                 className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isSavingTearsheet}
               >
-                BACK
+                CANCEL
               </button>
               <button
                 onClick={handleTearsheetSubmit}
                 className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
-                disabled={isSavingTearsheet || !tearsheetForm.name.trim()}
+                disabled={isSavingTearsheet || !tearsheetForm.selectedTearsheetId}
               >
-                SAVE
+                ASSOCIATE
                 <svg
                   className="w-4 h-4 ml-2"
                   fill="none"

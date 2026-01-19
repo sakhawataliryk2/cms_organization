@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from 'react';
 interface ActionOption {
     label: string;
     action: () => void;
+    disabled?: boolean;
 }
 
 interface ActionDropdownProps {
@@ -44,6 +45,7 @@ export default function ActionDropdown({
     }, []);
 
     const handleOptionClick = (option: ActionOption) => {
+        if (option.disabled) return;
         option.action();
         setIsOpen(false);
     };
@@ -63,7 +65,11 @@ export default function ActionDropdown({
                         {options.map((option, index) => (
                             <li
                                 key={index}
-                                className={optionClassName}
+                                className={`${optionClassName} ${
+                                    option.disabled
+                                        ? "opacity-50 cursor-not-allowed text-gray-400"
+                                        : ""
+                                }`}
                                 onClick={() => handleOptionClick(option)}
                             >
                                 {option.label}

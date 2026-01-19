@@ -1,14 +1,19 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
-import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
-import { useListControls } from "@/hooks/useListSortFilter";
-import SortFilterBar from "@/components/list/SortFilterBar";
-import FiltersModal from "@/components/list/FiltersModal";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  horizontalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { TbGripVertical } from "react-icons/tb";
+import { FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
 
 interface Organization {
   id: string;
@@ -21,44 +26,195 @@ interface Organization {
   created_by_name: string;
   job_orders_count?: number;
   placements_count?: number;
-
   customFields?: Record<string, any>;
   custom_fields?: Record<string, any>;
 }
 
+type ColumnSortState = "asc" | "desc" | null;
+type ColumnFilterState = string | null;
 
+// Sortable Column Header Component
+function SortableColumnHeader({
+  id,
+  columnKey,
+  label,
+  sortState,
+  filterValue,
+  onSort,
+  onFilterChange,
+  filterType,
+  filterOptions,
+  children,
+}: {
+  id: string;
+  columnKey: string;
+  label: string;
+  sortState: ColumnSortState;
+  filterValue: ColumnFilterState;
+  onSort: () => void;
+  onFilterChange: (value: string) => void;
+  filterType: "text" | "select" | "number";
+  filterOptions?: { label: string; value: string }[];
+  children?: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const [showFilter, setShowFilter] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  // Close filter on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        filterRef.current &&
+        !filterRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
+      ) {
+        setShowFilter(false);
+      }
+    };
+
+    if (showFilter) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showFilter, id]);
+
+  return (
+    <th
+      ref={setNodeRef}
+      style={style}
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
+    >
+      <div className="flex items-center gap-2">
+        {/* Drag Handle */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Drag to reorder column"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={16} />
+        </button>
+
+        {/* Column Label */}
+        <span className="flex-1">{label}</span>
+
+        {/* Sort Control */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSort();
+          }}
+          className="text-gray-400 hover:text-gray-600 transition-colors"
+          title={
+            sortState === "asc"
+              ? "Sort descending"
+              : sortState === "desc"
+              ? "Clear sort"
+              : "Sort ascending"
+          }
+        >
+          {sortState === "asc" ? (
+            <FiArrowUp size={14} />
+          ) : sortState === "desc" ? (
+            <FiArrowDown size={14} />
+          ) : (
+            <div className="w-3.5 h-3.5 border border-gray-300 rounded" />
+          )}
+        </button>
+
+        {/* Filter Toggle */}
+        <button
+          data-filter-toggle={id}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowFilter(!showFilter);
+          }}
+          className={`text-gray-400 hover:text-gray-600 transition-colors ${
+            filterValue ? "text-blue-600" : ""
+          }`}
+          title="Filter column"
+        >
+          <FiFilter size={14} />
+        </button>
+      </div>
+
+      {/* Filter Dropdown */}
+      {showFilter && (
+        <div
+          ref={filterRef}
+          className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-300 shadow-lg p-2 mt-1"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {filterType === "text" && (
+            <input
+              type="text"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "number" && (
+            <input
+              type="number"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "select" && filterOptions && (
+            <select
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            >
+              <option value="">All</option>
+              {filterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {filterValue && (
+            <button
+              onClick={() => {
+                onFilterChange("");
+                setShowFilter(false);
+              }}
+              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+            >
+              Clear Filter
+            </button>
+          )}
+        </div>
+      )}
+    </th>
+  );
+}
 
 export default function OrganizationList() {
   const router = useRouter();
-const list = useListControls({
-  defaultSortKey: "id",
-  defaultSortDir: "desc",
-  sortOptions: [
-    { key: "id", label: "ID" },
-    { key: "name", label: "Company Name" },
-    { key: "status", label: "Status" },
-    { key: "contact_phone", label: "Phone Number" },
-    { key: "address", label: "Address" },
-    { key: "job_orders_count", label: "Job Orders" },
-    { key: "placements_count", label: "Placements" },
-  ],
-});
-
-const [showFilters, setShowFilters] = useState(false);
-const [draftFilters, setDraftFilters] = useState<Record<string, any>>({});
-
-useEffect(() => {
-  if (showFilters) setDraftFilters(list.filters);
-}, [showFilters, list.filters]);
-
-
-
-  const [openActionId, setOpenActionId] = useState<string | null>(null);
-  useEffect(() => {
-    const close = () => setOpenActionId(null);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, []);
 
   // =====================
   // TABLE COLUMNS (Overview List)
@@ -84,6 +240,83 @@ useEffect(() => {
     defaultFields: ORG_DEFAULT_COLUMNS,
     configType: "columns",
   });
+
+  // Load column order from localStorage on mount
+  useEffect(() => {
+    const savedOrder = localStorage.getItem("organizationColumnOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Only use saved order if it contains valid column keys
+          const validOrder = parsed.filter((key) =>
+            [...ORG_DEFAULT_COLUMNS, ...columnFields].includes(key)
+          );
+          if (validOrder.length > 0) {
+            setColumnFields(validOrder);
+          }
+        }
+      } catch (e) {
+        console.error("Error loading column order:", e);
+      }
+    }
+  }, []);
+
+  // Save column order to localStorage whenever it changes
+  useEffect(() => {
+    if (columnFields.length > 0) {
+      localStorage.setItem("organizationColumnOrder", JSON.stringify(columnFields));
+    }
+  }, [columnFields]);
+
+  // Per-column sorting state
+  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
+
+  // Per-column filtering state
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+
+  // Handle column sort toggle
+  const handleColumnSort = (columnKey: string) => {
+    setColumnSorts((prev) => {
+      const current = prev[columnKey];
+      if (current === "asc") {
+        return { ...prev, [columnKey]: "desc" };
+      } else if (current === "desc") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      } else {
+        return { ...prev, [columnKey]: "asc" };
+      }
+    });
+  };
+
+  // Handle column filter change
+  const handleColumnFilter = (columnKey: string, value: string) => {
+    setColumnFilters((prev) => {
+      if (!value || value.trim() === "") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      }
+      return { ...prev, [columnKey]: value };
+    });
+  };
+
+  // Handle drag end for column reordering
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = columnFields.indexOf(active.id as string);
+    const newIndex = columnFields.indexOf(over.id as string);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newOrder = arrayMove(columnFields, oldIndex, newIndex);
+      setColumnFields(newOrder);
+    }
+  };
+
   // =====================
   // AVAILABLE FIELDS (from Modify Page)
   // =====================
@@ -93,7 +326,6 @@ useEffect(() => {
   useEffect(() => {
     const fetchAvailableFields = async () => {
       setIsLoadingFields(true);
-
       try {
         const token = document.cookie.replace(
           /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
@@ -106,11 +338,7 @@ useEffect(() => {
           credentials: "include",
         });
 
-        console.log("field-management status:", res.status);
-
         const raw = await res.text();
-        console.log("field-management raw:", raw);
-
         let data: any = {};
         try {
           data = JSON.parse(raw);
@@ -125,8 +353,6 @@ useEffect(() => {
           data.data ||
           [];
 
-        console.log("parsed fields length:", fields?.length);
-
         setAvailableFields(Array.isArray(fields) ? fields : []);
       } catch (e) {
         console.error("Error fetching available fields:", e);
@@ -139,30 +365,22 @@ useEffect(() => {
     fetchAvailableFields();
   }, []);
 
-  const [searchTerm, setSearchTerm] = useState("");
   const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [selectedOrganizations, setSelectedOrganizations] = useState<string[]>(
-    []
-  );
+  const [selectedOrganizations, setSelectedOrganizations] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // // Sorting state
-  // const [sortField, setSortField] = useState<
-  //   | "id"
-  //   | "name"
-  //   | "status"
-  //   | "contact_phone"
-  //   | "address"
-  //   | "job_orders_count"
-  //   | "placements_count"
-  //   | null
-  // >(null);
-  // const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-  // ✅ Columns Catalog (Standard + Modify Page Custom Fields)
+  const [openActionId, setOpenActionId] = useState<string | null>(null);
+  useEffect(() => {
+    const close = () => setOpenActionId(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, []);
+
+  // Columns Catalog
   const humanize = (s: string) =>
     s
       .replace(/[_\-]+/g, " ")
@@ -171,19 +389,16 @@ useEffect(() => {
       .trim();
 
   const columnsCatalog = useMemo(() => {
-    // ✅ 1) Standard columns (fixed)
     const standard = [
-      { key: "name", label: "Company Name", sortable: true },
-      { key: "status", label: "Status", sortable: true },
-      { key: "contact_phone", label: "Phone Number", sortable: true },
-      { key: "address", label: "Address", sortable: true },
-      { key: "job_orders_count", label: "Job Orders", sortable: true },
-      { key: "placements_count", label: "Placements", sortable: true },
+      { key: "name", label: "Company Name", sortable: true, filterType: "text" as const },
+      { key: "status", label: "Status", sortable: true, filterType: "select" as const },
+      { key: "contact_phone", label: "Phone Number", sortable: true, filterType: "text" as const },
+      { key: "address", label: "Address", sortable: true, filterType: "text" as const },
+      { key: "job_orders_count", label: "Job Orders", sortable: true, filterType: "number" as const },
+      { key: "placements_count", label: "Placements", sortable: true, filterType: "number" as const },
     ];
 
-    // ✅ 2) Custom keys (auto from ALL organizations list)
     const customKeySet = new Set<string>();
-
     (organizations || []).forEach((org: any) => {
       const cf = org?.customFields || org?.custom_fields || {};
       Object.keys(cf).forEach((k) => customKeySet.add(k));
@@ -193,9 +408,9 @@ useEffect(() => {
       key: `custom:${k}`,
       label: humanize(k),
       sortable: false,
+      filterType: "text" as const,
     }));
 
-    // ✅ 3) merge + unique
     const merged = [...standard, ...custom];
     const seen = new Set<string>();
     return merged.filter((x) => {
@@ -208,8 +423,10 @@ useEffect(() => {
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
 
+  const getColumnInfo = (key: string) =>
+    columnsCatalog.find((c) => c.key === key);
+
   const getColumnValue = (org: any, key: string) => {
-    // ✅ custom columns
     if (key.startsWith("custom:")) {
       const rawKey = key.replace("custom:", "");
       const cf = org?.customFields || org?.custom_fields || {};
@@ -219,7 +436,6 @@ useEffect(() => {
         : String(val);
     }
 
-    // ✅ standard columns
     switch (key) {
       case "name":
         return org.name || "N/A";
@@ -269,92 +485,68 @@ useEffect(() => {
     }
   };
 
-  const filteredOrganizations = organizations.filter(
-    (org) =>
-      org.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (org.website &&
-        org.website.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (org.status &&
-        org.status.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (org.contact_phone &&
-        org.contact_phone.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (org.address &&
-        org.address.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  // Get unique status values for filter dropdown
+  const statusOptions = useMemo(() => {
+    const statuses = new Set<string>();
+    organizations.forEach((org) => {
+      if (org.status) statuses.add(org.status);
+    });
+    return Array.from(statuses).map((s) => ({ label: s, value: s }));
+  }, [organizations]);
 
-//   // Handle sorting
-//   const handleSort = (
-//     field:
-//       | "id"
-//       | "name"
-//       | "status"
-//       | "contact_phone"
-//       | "address"
-//       | "job_orders_count"
-//       | "placements_count"
-//   ) => {
-//     if (sortField === field) {
-//       // Toggle direction if same field
-//       setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-//     } else {
-//       // Set new field with ascending direction
-//       setSortField(field);
-//       setSortDirection("asc");
-//     }
-//   };
-// 
-//   // Sort the filtered organizations
-//   const sortedOrganizations = [...filteredOrganizations].sort((a, b) => {
-//     if (!sortField) return 0;
-// 
-//     let aValue: string | number = "";
-//     let bValue: string | number = "";
-// 
-//     if (sortField === "id") {
-//       // Sort numerically by ID
-//       aValue = parseInt(a.id) || 0;
-//       bValue = parseInt(b.id) || 0;
-//     } else if (sortField === "name") {
-//       aValue = a.name?.toLowerCase() || "";
-//       bValue = b.name?.toLowerCase() || "";
-//     } else if (sortField === "status") {
-//       aValue = a.status?.toLowerCase() || "";
-//       bValue = b.status?.toLowerCase() || "";
-//     } else if (sortField === "contact_phone") {
-//       aValue = a.contact_phone?.toLowerCase() || "";
-//       bValue = b.contact_phone?.toLowerCase() || "";
-//     } else if (sortField === "address") {
-//       aValue = a.address?.toLowerCase() || "";
-//       bValue = b.address?.toLowerCase() || "";
-//     } else if (sortField === "job_orders_count") {
-//       aValue = a.job_orders_count || 0;
-//       bValue = b.job_orders_count || 0;
-//     } else if (sortField === "placements_count") {
-//       aValue = a.placements_count || 0;
-//       bValue = b.placements_count || 0;
-//     }
-// 
-//     if (sortDirection === "asc") {
-//       return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-//     } else {
-//       return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
-//     }
-//   });
-const viewOrganizations = useMemo(() => {
-  const data = filteredOrganizations;
+  // Apply per-column filtering and sorting
+  const filteredAndSortedOrganizations = useMemo(() => {
+    let result = [...organizations];
 
-  return list.applySortFilter<Organization>(data, {
-    getValue: (row, key) => {
-      if (key.startsWith("custom:")) {
-        const rawKey = key.replace("custom:", "");
-        const cf =
-          (row as any)?.customFields || (row as any)?.custom_fields || {};
-        return cf?.[rawKey];
-      }
-      return (row as any)[key];
-    },
-  });
-}, [filteredOrganizations, list]);
+    // Apply filters
+    Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
+      if (!filterValue || filterValue.trim() === "") return;
+
+      result = result.filter((org) => {
+        const value = getColumnValue(org, columnKey);
+        const valueStr = String(value).toLowerCase();
+        const filterStr = String(filterValue).toLowerCase();
+
+        // For number columns, do exact match
+        const columnInfo = getColumnInfo(columnKey);
+        if (columnInfo?.filterType === "number") {
+          return String(value) === String(filterValue);
+        }
+
+        // For text columns, do contains match
+        return valueStr.includes(filterStr);
+      });
+    });
+
+    // Apply sorting (multiple columns supported, but we'll use the first active sort)
+    const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
+    if (activeSorts.length > 0) {
+      // Sort by the first active sort column
+      const [sortKey, sortDir] = activeSorts[0];
+      result.sort((a, b) => {
+        const aValue = getColumnValue(a, sortKey);
+        const bValue = getColumnValue(b, sortKey);
+
+        // Handle numeric values
+        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
+        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
+
+        let cmp = 0;
+        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+          cmp = aNum - bNum;
+        } else {
+          cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+        }
+
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [organizations, columnFilters, columnSorts]);
 
   const handleViewOrganization = (id: string) => {
     router.push(`/dashboard/organizations/view?id=${id}`);
@@ -368,24 +560,21 @@ const viewOrganizations = useMemo(() => {
     if (selectAll) {
       setSelectedOrganizations([]);
     } else {
-      setSelectedOrganizations(filteredOrganizations.map((org) => org.id));
+      setSelectedOrganizations(filteredAndSortedOrganizations.map((org) => org.id));
     }
     setSelectAll(!selectAll);
   };
 
   const handleSelectOrganization = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent row click event
+    e.stopPropagation();
 
     if (selectedOrganizations.includes(id)) {
-      setSelectedOrganizations(
-        selectedOrganizations.filter((orgId) => orgId !== id)
-      );
+      setSelectedOrganizations(selectedOrganizations.filter((orgId) => orgId !== id));
       if (selectAll) setSelectAll(false);
     } else {
       setSelectedOrganizations([...selectedOrganizations, id]);
-      // If all orgs are now selected, update selectAll state
       if (
-        [...selectedOrganizations, id].length === filteredOrganizations.length
+        [...selectedOrganizations, id].length === filteredAndSortedOrganizations.length
       ) {
         setSelectAll(true);
       }
@@ -393,10 +582,8 @@ const viewOrganizations = useMemo(() => {
   };
 
   const deleteSelectedOrganizations = async () => {
-    // Don't do anything if no organizations are selected
     if (selectedOrganizations.length === 0) return;
 
-    // Confirm deletion
     const confirmMessage =
       selectedOrganizations.length === 1
         ? "Are you sure you want to delete this organization?"
@@ -408,27 +595,20 @@ const viewOrganizations = useMemo(() => {
     setDeleteError(null);
 
     try {
-      // Create promises for all delete operations
       const deletePromises = selectedOrganizations.map((id) =>
         fetch(`/api/organizations/${id}`, {
           method: "DELETE",
         })
       );
 
-      // Execute all delete operations
       const results = await Promise.allSettled(deletePromises);
-
-      // Check for failures
       const failures = results.filter((result) => result.status === "rejected");
 
       if (failures.length > 0) {
         throw new Error(`Failed to delete ${failures.length} organizations`);
       }
 
-      // Refresh organizations after successful deletion
       await fetchOrganizations();
-
-      // Clear selection after deletion
       setSelectedOrganizations([]);
       setSelectAll(false);
     } catch (err) {
@@ -441,16 +621,6 @@ const viewOrganizations = useMemo(() => {
     } finally {
       setIsDeleting(false);
     }
-  };
-
-  const formatDate = (dateString: string) => {
-    if (!dateString) return "";
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat("en-US", {
-      month: "2-digit",
-      day: "2-digit",
-      year: "numeric",
-    }).format(date);
   };
 
   if (isLoading) {
@@ -486,46 +656,6 @@ const viewOrganizations = useMemo(() => {
               </svg>
               Delete Selected ({selectedOrganizations.length})
             </button>
-          )}
-          <SortFilterBar
-            sortKey={list.sortKey}
-            sortDir={list.sortDir}
-            onChangeSortKey={list.onChangeSortKey}
-            onToggleDir={list.onToggleDir}
-            sortOptions={list.sortOptions}
-            onOpenFilters={() => setShowFilters(true)}
-            onClearFilters={list.clearFilters}
-            hasFilters={list.hasFilters}
-          />
-
-          {showFilters && (
-            <FiltersModal
-              open={showFilters}
-              onClose={() => setShowFilters(false)}
-              fields={[
-                {
-                  key: "status",
-                  label: "Status",
-                  type: "select",
-                  options: [
-                    { label: "Qualified Lead", value: "Qualified Lead" },
-                    { label: "Archive", value: "Archive" },
-                    { label: "Passive Account", value: "Passive Account" },
-                    { label: "Offer Out", value: "Offer Out" },
-                    { label: "Yes", value: "Yes" },
-                  ],
-                },
-              ]}
-              values={draftFilters}
-              onChange={(key: string, value: any) =>
-                setDraftFilters((prev) => ({ ...prev, [key]: value }))
-              }
-              onApply={() => {
-                list.setFilters(draftFilters);
-                setShowFilters(false);
-              }}
-              onReset={() => setDraftFilters({})}
-            />
           )}
 
           <button
@@ -569,202 +699,179 @@ const viewOrganizations = useMemo(() => {
         </div>
       )}
 
-      <div className="p-4 border-b border-gray-200 flex items-center gap-3">
-        <div className="relative w-full">
-          <input
-            type="text"
-            placeholder="Search organizations..."
-            className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          <div className="absolute left-3 top-2.5 text-gray-400">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </div>
-        </div>
-      </div>
-
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              {/* Fixed checkbox header */}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                  checked={selectAll}
-                  onChange={handleSelectAll}
-                />
-              </th>
-
-              {/* Fixed Actions header (LOCKED) */}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-
-              {/* Fixed ID header */}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <button
-                  onClick={() => list.toggleSort("id")}
-                  className="hover:text-gray-700"
-                >
-                  ID
-                </button>
-              </th>
-
-              {/* Dynamic headers */}
-              {columnFields.map((key) => (
-                <th
-                  key={key}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  {getColumnLabel(key)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-
-          <tbody className="bg-white divide-y divide-gray-200">
-            {viewOrganizations.map((org) => (
-              <tr
-                key={org.id}
-                className="hover:bg-gray-50 cursor-pointer"
-                onClick={() => handleViewOrganization(org.id)}
-              >
-                {/* Fixed checkbox */}
-                <td
-                  className="px-6 py-4 whitespace-nowrap"
-                  onClick={(e) => e.stopPropagation()}
-                >
+        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                {/* Fixed checkbox header */}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   <input
                     type="checkbox"
                     className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                    checked={selectedOrganizations.includes(org.id)}
-                    onChange={() => {}}
-                    onClick={(e) => handleSelectOrganization(org.id, e)}
+                    checked={selectAll}
+                    onChange={handleSelectAll}
                   />
-                </td>
+                </th>
 
-                {/* Fixed Actions (LOCKED dropdown) */}
-                <td
-                  className="px-6 py-4 whitespace-nowrap text-sm"
-                  onClick={(e) => e.stopPropagation()}
+                {/* Fixed Actions header */}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+
+                {/* Draggable Dynamic headers */}
+                <SortableContext
+                  items={columnFields}
+                  strategy={horizontalListSortingStrategy}
                 >
-                  <div
-                    className="relative inline-block text-left"
+                  {columnFields.map((key) => {
+                    const columnInfo = getColumnInfo(key);
+                    if (!columnInfo) return null;
+
+                    return (
+                      <SortableColumnHeader
+                        key={key}
+                        id={key}
+                        columnKey={key}
+                        label={getColumnLabel(key)}
+                        sortState={columnSorts[key] || null}
+                        filterValue={columnFilters[key] || null}
+                        onSort={() => handleColumnSort(key)}
+                        onFilterChange={(value) => handleColumnFilter(key, value)}
+                        filterType={columnInfo.filterType}
+                        filterOptions={
+                          key === "status" ? statusOptions : undefined
+                        }
+                      />
+                    );
+                  })}
+                </SortableContext>
+              </tr>
+            </thead>
+
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredAndSortedOrganizations.map((org) => (
+                <tr
+                  key={org.id}
+                  className="hover:bg-gray-50 cursor-pointer"
+                  onClick={() => handleViewOrganization(org.id)}
+                >
+                  {/* Fixed checkbox */}
+                  <td
+                    className="px-6 py-4 whitespace-nowrap"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <button
-                      type="button"
-                      className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setOpenActionId((prev) =>
-                          prev === org.id ? null : org.id
-                        );
-                      }}
-                    >
-                      Actions ▾
-                    </button>
-
-                    {openActionId === org.id && (
-                      <div
-                        className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="flex flex-col">
-                          <button
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenActionId(null);
-                              handleViewOrganization(org.id);
-                            }}
-                          >
-                            View
-                          </button>
-
-                          <button
-                            className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-50"
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              setOpenActionId(null);
-
-                              if (
-                                !window.confirm(
-                                  "Are you sure you want to delete this organization?"
-                                )
-                              )
-                                return;
-
-                              setIsDeleting(true);
-                              try {
-                                const response = await fetch(
-                                  `/api/organizations/${org.id}`,
-                                  { method: "DELETE" }
-                                );
-                                if (!response.ok)
-                                  throw new Error(
-                                    "Failed to delete organization"
-                                  );
-                                await fetchOrganizations();
-                              } catch (err) {
-                                setDeleteError(
-                                  err instanceof Error
-                                    ? err.message
-                                    : "An error occurred"
-                                );
-                              } finally {
-                                setIsDeleting(false);
-                              }
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </td>
-
-                {/* Fixed ID */}
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-gray-900">
-                    O {org.id}
-                  </div>
-                </td>
-
-                {/* Dynamic cells */}
-                {columnFields.map((key) => (
-                  <td
-                    key={key}
-                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                  >
-                    {key === "status" ? (
-                      <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                        {getColumnValue(org, key)}
-                      </span>
-                    ) : (
-                      getColumnValue(org, key)
-                    )}
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                      checked={selectedOrganizations.includes(org.id)}
+                      onChange={() => {}}
+                      onClick={(e) => handleSelectOrganization(org.id, e)}
+                    />
                   </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+
+                  {/* Fixed Actions */}
+                  <td
+                    className="px-6 py-4 whitespace-nowrap text-sm"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <div
+                      className="relative inline-block text-left"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <button
+                        type="button"
+                        className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenActionId((prev) =>
+                            prev === org.id ? null : org.id
+                          );
+                        }}
+                      >
+                        Actions ▾
+                      </button>
+
+                      {openActionId === org.id && (
+                        <div
+                          className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex flex-col">
+                            <button
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setOpenActionId(null);
+                                handleViewOrganization(org.id);
+                              }}
+                            >
+                              View
+                            </button>
+
+                            <button
+                              className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-50"
+                              onClick={async (e) => {
+                                e.stopPropagation();
+                                setOpenActionId(null);
+
+                                if (
+                                  !window.confirm(
+                                    "Are you sure you want to delete this organization?"
+                                  )
+                                )
+                                  return;
+
+                                setIsDeleting(true);
+                                try {
+                                  const response = await fetch(
+                                    `/api/organizations/${org.id}`,
+                                    { method: "DELETE" }
+                                  );
+                                  if (!response.ok)
+                                    throw new Error(
+                                      "Failed to delete organization"
+                                    );
+                                  await fetchOrganizations();
+                                } catch (err) {
+                                  setDeleteError(
+                                    err instanceof Error
+                                      ? err.message
+                                      : "An error occurred"
+                                  );
+                                } finally {
+                                  setIsDeleting(false);
+                                }
+                              }}
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </td>
+
+                  {/* Dynamic cells */}
+                  {columnFields.map((key) => (
+                    <td
+                      key={key}
+                      className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                    >
+                      {key === "status" ? (
+                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                          {getColumnValue(org, key)}
+                        </span>
+                      ) : (
+                        getColumnValue(org, key)
+                      )}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </DndContext>
       </div>
 
       {/* Pagination */}
@@ -781,12 +888,17 @@ const viewOrganizations = useMemo(() => {
           <div>
             <p className="text-sm text-gray-700">
               Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">{viewOrganizations.length}</span> of{" "}
-              <span className="font-medium">{viewOrganizations.length}</span>{" "}
+              <span className="font-medium">
+                {filteredAndSortedOrganizations.length}
+              </span>{" "}
+              of{" "}
+              <span className="font-medium">
+                {filteredAndSortedOrganizations.length}
+              </span>{" "}
               results
             </p>
           </div>
-          {viewOrganizations.length > 0 && (
+          {filteredAndSortedOrganizations.length > 0 && (
             <div>
               <nav
                 className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
@@ -832,6 +944,8 @@ const viewOrganizations = useMemo(() => {
           )}
         </div>
       </div>
+
+      {/* Column Customization Modal */}
       {showColumnModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
