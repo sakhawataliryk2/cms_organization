@@ -15,6 +15,9 @@ import {
   FiX,
   FiArrowLeft,
   FiInfo,
+  FiArrowUp,
+  FiArrowDown,
+  FiFilter,
 } from "react-icons/fi";
 
 // Define Field interface for type safety
@@ -47,15 +50,106 @@ interface HistoryEntry {
   performed_at: string;
 }
 
+// Reusable Sortable & Filterable Header Component
+interface SortableFilterableHeaderProps {
+  label: string;
+  columnKey: string;
+  sortConfig: { key: string; direction: "asc" | "desc" } | null;
+  filterValue: string;
+  onSort: (key: string) => void;
+  onFilterChange: (key: string, value: string) => void;
+  filterType?: "text" | "boolean" | "number" | "date";
+  filterPlaceholder?: string;
+}
+
+const SortableFilterableHeader = ({
+  label,
+  columnKey,
+  sortConfig,
+  filterValue,
+  onSort,
+  onFilterChange,
+  filterType = "text",
+  filterPlaceholder = "Filter...",
+}: SortableFilterableHeaderProps) => {
+  const isSorted = sortConfig?.key === columnKey;
+  const sortDirection = isSorted ? sortConfig.direction : null;
+
+  return (
+    <th className="p-3 font-normal">
+      <div className="flex flex-col gap-1">
+        {/* Header with Sort Controls */}
+        <div className="flex items-center gap-1">
+          <span className="text-sm">{label}</span>
+          <button
+            onClick={() => onSort(columnKey)}
+            className="p-1 hover:bg-gray-200 rounded flex items-center"
+            title={
+              isSorted
+                ? `Sorted ${sortDirection === "asc" ? "ascending" : "descending"} - Click to ${sortDirection === "asc" ? "descend" : "ascend"}`
+                : "Click to sort"
+            }
+          >
+            {sortDirection === "asc" ? (
+              <FiArrowUp size={14} className="text-blue-600" />
+            ) : sortDirection === "desc" ? (
+              <FiArrowDown size={14} className="text-blue-600" />
+            ) : (
+              <div className="flex flex-col">
+                <FiArrowUp size={10} className="text-gray-400 -mb-1" />
+                <FiArrowDown size={10} className="text-gray-400" />
+              </div>
+            )}
+          </button>
+        </div>
+
+        {/* Filter Control */}
+        <div className="relative">
+          {filterType === "boolean" ? (
+            <select
+              value={filterValue}
+              onChange={(e) => onFilterChange(columnKey, e.target.value)}
+              className="w-full px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <option value="">All</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          ) : (
+            <input
+              type={filterType === "number" ? "number" : filterType === "date" ? "date" : "text"}
+              value={filterValue}
+              onChange={(e) => onFilterChange(columnKey, e.target.value)}
+              placeholder={filterPlaceholder}
+              className="w-full px-2 py-1 text-xs border rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
+          {filterValue && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onFilterChange(columnKey, "");
+              }}
+              className="absolute right-1 top-1 text-gray-400 hover:text-gray-600"
+              title="Clear filter"
+            >
+              <FiX size={12} />
+            </button>
+          )}
+        </div>
+      </div>
+    </th>
+  );
+};
+
 const FieldMapping = () => {
   const searchParams = useSearchParams();
   const router = useRouter();
   const section = searchParams.get("section") || "jobs";
 
   const [showCount, setShowCount] = useState("200");
-  const [searchTerm, setSearchTerm] = useState("");
-  const [nameSearchTerm, setNameSearchTerm] = useState("");
-  const [editTypeSearchTerm, setEditTypeSearchTerm] = useState("");
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,6 +190,24 @@ const FieldMapping = () => {
   });
   const [editingSortOrder, setEditingSortOrder] = useState<string | null>(null);
   const [tempSortOrder, setTempSortOrder] = useState<number>(0);
+
+  // Sorting state
+  const [sortConfig, setSortConfig] = useState<{
+    key: string;
+    direction: "asc" | "desc";
+  } | null>(null);
+
+  // Filtering state (per column)
+  const [columnFilters, setColumnFilters] = useState<Record<string, string>>({
+    field_name: "",
+    field_label: "",
+    field_type: "",
+    is_hidden: "",
+    is_required: "",
+    sort_order: "",
+    updated_at: "",
+    updated_by: "",
+  });
 
   const editTypeOptions = [
     "text",
@@ -234,15 +346,26 @@ const FieldMapping = () => {
     const { name, value, type } = e.target;
     const checked = (e.target as HTMLInputElement).checked;
 
-    setEditFormData((prev) => ({
-      ...prev,
-      [name]:
-        type === "checkbox"
-          ? checked
-          : type === "number"
-          ? parseInt(value) || 0
-          : value,
-    }));
+    setEditFormData((prev) => {
+      const newData = {
+        ...prev,
+        [name]:
+          type === "checkbox"
+            ? checked
+            : type === "number"
+            ? parseInt(value) || 0
+            : value,
+      };
+
+      // Critical: Enforce Hidden & Required mutual exclusivity
+      if (name === "isRequired" && checked === true) {
+        newData.isHidden = false;
+      } else if (name === "isHidden" && checked === true) {
+        newData.isRequired = false;
+      }
+
+      return newData;
+    });
   };
 
   const handleOptionsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
@@ -378,10 +501,18 @@ const FieldMapping = () => {
     }
   };
 
-  // Fixed toggle functions with API calls
+  // Fixed toggle functions with API calls - with mutual exclusivity
   const toggleFieldRequired = async (field: CustomField) => {
     try {
-      const updateData = { isRequired: !field.is_required };
+      // If setting Required to true, ensure Hidden is false
+      const newRequiredValue = !field.is_required;
+      const updateData: any = { isRequired: newRequiredValue };
+      
+      // Critical: If Required is being set to true, also set Hidden to false
+      if (newRequiredValue === true) {
+        updateData.isHidden = false;
+      }
+
       console.log("Toggling field required status:", updateData);
       console.log("Field ID:", field.id);
       console.log("API URL:", `/api/admin/field-management/fields/${field.id}`);
@@ -432,7 +563,15 @@ const FieldMapping = () => {
 
   const toggleFieldHidden = async (field: CustomField) => {
     try {
-      const updateData = { isHidden: !field.is_hidden };
+      // If setting Hidden to true, ensure Required is false
+      const newHiddenValue = !field.is_hidden;
+      const updateData: any = { isHidden: newHiddenValue };
+      
+      // Critical: If Hidden is being set to true, also set Required to false
+      if (newHiddenValue === true) {
+        updateData.isRequired = false;
+      }
+
       console.log("Toggling field hidden status:", updateData);
       console.log("Field ID:", field.id);
       console.log("API URL:", `/api/admin/field-management/fields/${field.id}`);
@@ -717,20 +856,174 @@ const FieldMapping = () => {
     );
   };
 
+  // Handle column sorting
+  const handleSort = (key: string) => {
+    setSortConfig((current) => {
+      if (current?.key === key) {
+        // Toggle direction if same column
+        return {
+          key,
+          direction: current.direction === "asc" ? "desc" : "asc",
+        };
+      }
+      // New column, default to ascending
+      return { key, direction: "asc" };
+    });
+  };
+
+  // Handle column filtering
+  const handleFilterChange = (columnKey: string, value: string) => {
+    setColumnFilters((prev) => ({
+      ...prev,
+      [columnKey]: value,
+    }));
+  };
+
+  // Apply column filters
   const filteredFields = customFields.filter((field) => {
-    const matchesField = field.field_label
-      .toLowerCase()
-      .includes(searchTerm.toLowerCase());
-    const matchesName = field.field_name
-      .toLowerCase()
-      .includes(nameSearchTerm.toLowerCase());
-    const matchesEditType = field.field_type
-      .toLowerCase()
-      .includes(editTypeSearchTerm.toLowerCase());
-    return matchesField && matchesName && matchesEditType;
+    // Field Name filter
+    if (
+      columnFilters.field_name &&
+      !field.field_name
+        .toLowerCase()
+        .includes(columnFilters.field_name.toLowerCase())
+    ) {
+      return false;
+    }
+
+    // Field Label filter
+    if (
+      columnFilters.field_label &&
+      !field.field_label
+        .toLowerCase()
+        .includes(columnFilters.field_label.toLowerCase())
+    ) {
+      return false;
+    }
+
+    // Field Type filter
+    if (
+      columnFilters.field_type &&
+      !field.field_type
+        .toLowerCase()
+        .includes(columnFilters.field_type.toLowerCase())
+    ) {
+      return false;
+    }
+
+    // Hidden filter (boolean)
+    if (columnFilters.is_hidden) {
+      const filterValue = columnFilters.is_hidden.toLowerCase();
+      if (filterValue === "yes" || filterValue === "true" || filterValue === "1") {
+        if (!field.is_hidden) return false;
+      } else if (filterValue === "no" || filterValue === "false" || filterValue === "0") {
+        if (field.is_hidden) return false;
+      } else if (filterValue !== "") {
+        // Partial match on string representation
+        if (!String(field.is_hidden).toLowerCase().includes(filterValue)) {
+          return false;
+        }
+      }
+    }
+
+    // Required filter (boolean)
+    if (columnFilters.is_required) {
+      const filterValue = columnFilters.is_required.toLowerCase();
+      if (filterValue === "yes" || filterValue === "true" || filterValue === "1") {
+        if (!field.is_required) return false;
+      } else if (filterValue === "no" || filterValue === "false" || filterValue === "0") {
+        if (field.is_required) return false;
+      } else if (filterValue !== "") {
+        if (!String(field.is_required).toLowerCase().includes(filterValue)) {
+          return false;
+        }
+      }
+    }
+
+    // Sort Order filter (number)
+    if (
+      columnFilters.sort_order &&
+      !String(field.sort_order)
+        .toLowerCase()
+        .includes(columnFilters.sort_order.toLowerCase())
+    ) {
+      return false;
+    }
+
+    // Updated At filter (date)
+    if (
+      columnFilters.updated_at &&
+      !formatDate(field.updated_at)
+        .toLowerCase()
+        .includes(columnFilters.updated_at.toLowerCase())
+    ) {
+      return false;
+    }
+
+    // Updated By filter
+    if (
+      columnFilters.updated_by &&
+      !(field.updated_by_name || field.created_by_name || "System")
+        .toLowerCase()
+        .includes(columnFilters.updated_by.toLowerCase())
+    ) {
+      return false;
+    }
+
+    return true;
   });
 
-  const visibleFields = filteredFields.slice(0, parseInt(showCount));
+  // Apply sorting
+  const sortedFields = [...filteredFields].sort((a, b) => {
+    if (!sortConfig) return 0;
+
+    const { key, direction } = sortConfig;
+    let aValue: any;
+    let bValue: any;
+
+    switch (key) {
+      case "field_name":
+        aValue = a.field_name.toLowerCase();
+        bValue = b.field_name.toLowerCase();
+        break;
+      case "field_label":
+        aValue = a.field_label.toLowerCase();
+        bValue = b.field_label.toLowerCase();
+        break;
+      case "field_type":
+        aValue = a.field_type.toLowerCase();
+        bValue = b.field_type.toLowerCase();
+        break;
+      case "is_hidden":
+        aValue = a.is_hidden ? 1 : 0;
+        bValue = b.is_hidden ? 1 : 0;
+        break;
+      case "is_required":
+        aValue = a.is_required ? 1 : 0;
+        bValue = b.is_required ? 1 : 0;
+        break;
+      case "sort_order":
+        aValue = a.sort_order;
+        bValue = b.sort_order;
+        break;
+      case "updated_at":
+        aValue = new Date(a.updated_at).getTime();
+        bValue = new Date(b.updated_at).getTime();
+        break;
+      case "updated_by":
+        aValue = (a.updated_by_name || a.created_by_name || "System").toLowerCase();
+        bValue = (b.updated_by_name || b.created_by_name || "System").toLowerCase();
+        break;
+      default:
+        return 0;
+    }
+
+    if (aValue < bValue) return direction === "asc" ? -1 : 1;
+    if (aValue > bValue) return direction === "asc" ? 1 : -1;
+    return 0;
+  });
+
+  const visibleFields = sortedFields.slice(0, parseInt(showCount));
 
   return (
     <div className="bg-gray-200 min-h-screen">
@@ -820,80 +1113,93 @@ const FieldMapping = () => {
                 <tr className="bg-gray-100 text-left text-sm">
                   <th className="p-3 font-normal w-16">Actions</th>
 
-                  <th className="p-3 font-normal">
-                    <div className="flex items-center">
-                      {fieldColumnNames.field2}
-                      <div className="ml-1 relative">
-                        <input
-                          type="text"
-                          className="w-32 px-2 py-1 border rounded"
-                          value={nameSearchTerm}
-                          onChange={(e) => setNameSearchTerm(e.target.value)}
-                          placeholder="Search..."
-                        />
+                  <SortableFilterableHeader
+                    label={fieldColumnNames.field2}
+                    columnKey="field_name"
+                    sortConfig={sortConfig}
+                    filterValue={columnFilters.field_name}
+                    onSort={handleSort}
+                    onFilterChange={handleFilterChange}
+                    filterType="text"
+                    filterPlaceholder="Filter name..."
+                  />
 
-                        <FiSearch
-                          size={14}
-                          className="absolute right-2 top-2 text-gray-400"
-                        />
-                      </div>
-                    </div>
-                  </th>
+                  <SortableFilterableHeader
+                    label={fieldColumnNames.field1}
+                    columnKey="field_label"
+                    sortConfig={sortConfig}
+                    filterValue={columnFilters.field_label}
+                    onSort={handleSort}
+                    onFilterChange={handleFilterChange}
+                    filterType="text"
+                    filterPlaceholder="Filter label..."
+                  />
 
-                  {/* ider paste krna h */}
-                  <th className="p-3 font-normal w-48">
-                    <div className="flex items-center">
-                      {fieldColumnNames.field1}
-                      <div className="ml-1 relative">
-                        <input
-                          type="text"
-                          className="w-24 px-2 py-1 border rounded"
-                          value={searchTerm}
-                          onChange={(e) => setSearchTerm(e.target.value)}
-                          placeholder="Search..."
-                        />
-                        <FiSearch
-                          size={14}
-                          className="absolute right-2 top-2 text-gray-400"
-                        />
-                      </div>
-                    </div>
-                  </th>
-                  <th className="p-3 font-normal">
-                    <div className="flex items-center">
-                      {fieldColumnNames.field3}
-                      <div className="ml-1 relative">
-                        <input
-                          type="text"
-                          className="w-32 px-2 py-1 border rounded"
-                          value={editTypeSearchTerm}
-                          onChange={(e) =>
-                            setEditTypeSearchTerm(e.target.value)
-                          }
-                          placeholder="Search..."
-                        />
-                        <FiSearch
-                          size={14}
-                          className="absolute right-2 top-2 text-gray-400"
-                        />
-                      </div>
-                    </div>
-                  </th>
-                  <th className="p-3 font-normal text-center w-20">
-                    {fieldColumnNames.field4}
-                  </th>
-                  <th className="p-3 font-normal text-center w-20">
-                    {fieldColumnNames.field5}
-                  </th>
-                  <th className="p-3 font-normal w-24">
-                    {fieldColumnNames.field6}
-                  </th>
-                  <th className="p-3 font-normal w-40">
-                    {fieldColumnNames.field7}
-                  </th>
-                  <th className="p-3 font-normal w-32">
-                    {fieldColumnNames.field8}
-                  </th>
+                  <SortableFilterableHeader
+                    label={fieldColumnNames.field3}
+                    columnKey="field_type"
+                    sortConfig={sortConfig}
+                    filterValue={columnFilters.field_type}
+                    onSort={handleSort}
+                    onFilterChange={handleFilterChange}
+                    filterType="text"
+                    filterPlaceholder="Filter type..."
+                  />
+
+                  <SortableFilterableHeader
+                    label={fieldColumnNames.field4}
+                    columnKey="is_hidden"
+                    sortConfig={sortConfig}
+                    filterValue={columnFilters.is_hidden}
+                    onSort={handleSort}
+                    onFilterChange={handleFilterChange}
+                    filterType="boolean"
+                    filterPlaceholder="All"
+                  />
+
+                  <SortableFilterableHeader
+                    label={fieldColumnNames.field5}
+                    columnKey="is_required"
+                    sortConfig={sortConfig}
+                    filterValue={columnFilters.is_required}
+                    onSort={handleSort}
+                    onFilterChange={handleFilterChange}
+                    filterType="boolean"
+                    filterPlaceholder="All"
+                  />
+
+                  <SortableFilterableHeader
+                    label={fieldColumnNames.field6}
+                    columnKey="sort_order"
+                    sortConfig={sortConfig}
+                    filterValue={columnFilters.sort_order}
+                    onSort={handleSort}
+                    onFilterChange={handleFilterChange}
+                    filterType="number"
+                    filterPlaceholder="Filter order..."
+                  />
+
+                  <SortableFilterableHeader
+                    label={fieldColumnNames.field7}
+                    columnKey="updated_at"
+                    sortConfig={sortConfig}
+                    filterValue={columnFilters.updated_at}
+                    onSort={handleSort}
+                    onFilterChange={handleFilterChange}
+                    filterType="text"
+                    filterPlaceholder="Filter date..."
+                  />
+
+                  <SortableFilterableHeader
+                    label={fieldColumnNames.field8}
+                    columnKey="updated_by"
+                    sortConfig={sortConfig}
+                    filterValue={columnFilters.updated_by}
+                    onSort={handleSort}
+                    onFilterChange={handleFilterChange}
+                    filterType="text"
+                    filterPlaceholder="Filter user..."
+                  />
                 </tr>
               </thead>
               <tbody>
@@ -944,18 +1250,23 @@ const FieldMapping = () => {
                           e.stopPropagation();
                           toggleFieldHidden(field);
                         }}
+                        disabled={field.is_required}
                         className={`h-4 w-4 rounded flex items-center justify-center ${
-                          field.is_hidden
+                          field.is_required
+                            ? "bg-gray-200 cursor-not-allowed opacity-50"
+                            : field.is_hidden
                             ? "bg-red-500 hover:bg-red-600 text-white"
                             : "bg-gray-300 hover:bg-gray-400"
                         }`}
                         title={
-                          field.is_hidden
+                          field.is_required
+                            ? "Cannot hide a required field - Uncheck Required first"
+                            : field.is_hidden
                             ? "Hidden - Click to show"
                             : "Visible - Click to hide"
                         }
                       >
-                        {field.is_hidden && (
+                        {field.is_hidden && !field.is_required && (
                           <span className="text-xs leading-none">✓</span>
                         )}
                       </button>
@@ -967,18 +1278,23 @@ const FieldMapping = () => {
                           e.stopPropagation();
                           toggleFieldRequired(field);
                         }}
+                        disabled={field.is_hidden}
                         className={`h-4 w-4 rounded flex items-center justify-center ${
-                          field.is_required
+                          field.is_hidden
+                            ? "bg-gray-200 cursor-not-allowed opacity-50"
+                            : field.is_required
                             ? "bg-blue-500 hover:bg-blue-600 text-white"
                             : "bg-gray-300 hover:bg-gray-400"
                         }`}
                         title={
-                          field.is_required
+                          field.is_hidden
+                            ? "Cannot require a hidden field - Uncheck Hidden first"
+                            : field.is_required
                             ? "Required - Click to make optional"
                             : "Optional - Click to make required"
                         }
                       >
-                        {field.is_required && (
+                        {field.is_required && !field.is_hidden && (
                           <span className="text-xs leading-none">✓</span>
                         )}
                       </button>
@@ -1036,7 +1352,7 @@ const FieldMapping = () => {
 
           {/* Footer Info */}
           <div className="bg-gray-100 p-2 text-sm text-gray-600">
-            Showing {visibleFields.length} of {filteredFields.length} entries
+            Showing {visibleFields.length} of {sortedFields.length} entries (Total: {customFields.length})
           </div>
         </>
       )}
@@ -1224,9 +1540,19 @@ const FieldMapping = () => {
                       name="isRequired"
                       checked={editFormData.isRequired}
                       onChange={handleEditFormChange}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      disabled={editFormData.isHidden}
+                      className={`h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${
+                        editFormData.isHidden ? "opacity-50 cursor-not-allowed" : ""
+                      }`}
                     />
-                    <span className="ml-2 text-sm">Required</span>
+                    <span className={`ml-2 text-sm ${editFormData.isHidden ? "text-gray-500" : ""}`}>
+                      Required
+                      {editFormData.isHidden && (
+                        <span className="text-xs text-gray-400 block">
+                          (Cannot require hidden fields)
+                        </span>
+                      )}
+                    </span>
                   </label>
 
                   <label className="flex items-center">
@@ -1235,9 +1561,19 @@ const FieldMapping = () => {
                       name="isHidden"
                       checked={editFormData.isHidden}
                       onChange={handleEditFormChange}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      disabled={editFormData.isRequired}
+                      className={`h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${
+                        editFormData.isRequired ? "opacity-50 cursor-not-allowed" : ""
+                      }`}
                     />
-                    <span className="ml-2 text-sm">Hidden</span>
+                    <span className={`ml-2 text-sm ${editFormData.isRequired ? "text-gray-500" : ""}`}>
+                      Hidden
+                      {editFormData.isRequired && (
+                        <span className="text-xs text-gray-400 block">
+                          (Cannot hide required fields)
+                        </span>
+                      )}
+                    </span>
                   </label>
                 </div>
               </div>

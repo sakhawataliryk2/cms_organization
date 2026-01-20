@@ -3,7 +3,7 @@
 'use client'
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
     FiGrid,
     FiUpload,
@@ -77,8 +77,11 @@ interface ModuleFieldConfig {
 
 export default function AdminCenter() {
     const router = useRouter();
+    const searchParams = useSearchParams();
     const [showDownloadModal, setShowDownloadModal] = useState(false);
-    const [selectedModules, setSelectedModules] = useState<string[]>([]);
+    const [selectedModule, setSelectedModule] = useState<string>(''); // Single module selection
+    const [selectedFields, setSelectedFields] = useState<string[]>([]); // Selected fields for export
+    const [statusOptions, setStatusOptions] = useState<{ label: string; value: string }[]>([]); // Dynamic status options
     const [exportFormat, setExportFormat] = useState<'csv' | 'excel'>('csv');
     const [isExporting, setIsExporting] = useState(false);
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
@@ -99,6 +102,26 @@ export default function AdminCenter() {
     const [moduleFieldConfigs, setModuleFieldConfigs] = useState<ModuleFieldConfig>({});
     const [isLoadingFields, setIsLoadingFields] = useState(false);
     const [exportProgress, setExportProgress] = useState({ current: 0, total: 0, module: '' });
+
+    // Auto-open upload modal if ?upload=true query parameter is present
+    useEffect(() => {
+        const shouldOpenUpload = searchParams.get('upload') === 'true';
+        if (shouldOpenUpload) {
+            // Reset upload state
+            setUploadFile(null);
+            setCsvHeaders([]);
+            setParsedData([]);
+            setFieldMappings({});
+            setUploadProgress({ current: 0, total: 0 });
+            setUploadResults(null);
+            setValidationErrors([]);
+            setCurrentStep('select');
+            setShowUploadModal(true);
+            // Clean up URL by removing query parameter
+            router.replace('/dashboard/admin', { scroll: false });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [searchParams]);
 
     // Map module IDs to entity types for Field Management
     const moduleToEntityType: Record<string, string> = {
@@ -122,26 +145,24 @@ export default function AdminCenter() {
         { id: 'tasks', name: 'Tasks', apiEndpoint: '/api/tasks', dataKey: 'tasks' },
     ];
 
-    // Fetch field configurations for selected modules
+    // Fetch field configurations and status options for selected module
     useEffect(() => {
-        if (selectedModules.length === 0 || !showDownloadModal) {
+        if (!selectedModule || !showDownloadModal) {
             setModuleFieldConfigs({});
             setIsLoadingFields(false);
+            setStatusOptions([]);
             return;
         }
 
-        const fetchFieldConfigs = async () => {
+        const fetchModuleData = async () => {
             setIsLoadingFields(true);
+            const entityType = moduleToEntityType[selectedModule];
             const configs: ModuleFieldConfig = {};
-
-            for (const moduleId of selectedModules) {
-                const entityType = moduleToEntityType[moduleId];
-                if (!entityType) {
-                    // Use standard fields only if no entity type mapping
-                    configs[moduleId] = getStandardFields(moduleId);
-                    continue;
-                }
-
+            
+            // Fetch fields
+            if (!entityType) {
+                configs[selectedModule] = getStandardFields(selectedModule);
+            } else {
                 try {
                     const token = document.cookie.replace(
                         /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
@@ -156,31 +177,61 @@ export default function AdminCenter() {
                     if (response.ok) {
                         const data = await response.json();
                         const fields = data.customFields || data.fields || [];
-                        // Filter out hidden fields and sort by sort_order
                         const visibleFields = fields
                             .filter((f: CustomFieldDefinition) => !f.is_hidden)
                             .sort((a: CustomFieldDefinition, b: CustomFieldDefinition) => 
                                 (a.sort_order || 0) - (b.sort_order || 0)
                             );
-                        configs[moduleId] = visibleFields;
+                        configs[selectedModule] = visibleFields;
                     } else {
-                        // Fallback to standard fields if API fails
-                        configs[moduleId] = getStandardFields(moduleId);
+                        configs[selectedModule] = getStandardFields(selectedModule);
                     }
                 } catch (err) {
-                    console.error(`Error fetching fields for ${moduleId}:`, err);
-                    // Fallback to standard fields on error
-                    configs[moduleId] = getStandardFields(moduleId);
+                    console.error(`Error fetching fields for ${selectedModule}:`, err);
+                    configs[selectedModule] = getStandardFields(selectedModule);
                 }
+            }
+
+            // Fetch status options
+            try {
+                const token = document.cookie.replace(
+                    /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                    "$1"
+                );
+                const module = downloadModules.find(m => m.id === selectedModule);
+                if (module) {
+                    const response = await fetch(module.apiEndpoint, {
+                        headers: {
+                            Authorization: `Bearer ${token}`,
+                        },
+                    });
+
+                    if (response.ok) {
+                        const data = await response.json();
+                        const items = data[module.dataKey] || data.data || [];
+                        // Extract unique status values
+                        const statusSet = new Set<string>();
+                        items.forEach((item: any) => {
+                            if (item.status) {
+                                statusSet.add(item.status);
+                            }
+                        });
+                        const statuses = Array.from(statusSet).sort().map(s => ({ label: s, value: s }));
+                        setStatusOptions(statuses);
+                    }
+                }
+            } catch (err) {
+                console.error(`Error fetching status options for ${selectedModule}:`, err);
+                setStatusOptions([]);
             }
 
             setModuleFieldConfigs(configs);
             setIsLoadingFields(false);
         };
 
-        fetchFieldConfigs();
+        fetchModuleData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedModules, showDownloadModal]);
+    }, [selectedModule, showDownloadModal]);
 
     // Available modules for upload with field mappings
     const uploadModules: UploadModule[] = [
@@ -242,23 +293,12 @@ export default function AdminCenter() {
         },
     ];
 
-    // Toggle module selection
-    const toggleModule = (moduleId: string) => {
-        setSelectedModules(prev =>
-            prev.includes(moduleId)
-                ? prev.filter(id => id !== moduleId)
-                : [...prev, moduleId]
-        );
-    };
-
-    // Select all modules
-    const selectAllModules = () => {
-        setSelectedModules(downloadModules.map(m => m.id));
-    };
-
-    // Deselect all modules
-    const deselectAllModules = () => {
-        setSelectedModules([]);
+    // Handle module selection (single select)
+    const handleModuleSelect = (moduleId: string) => {
+        setSelectedModule(moduleId);
+        setSelectedFields([]); // Reset field selection when module changes
+        setStatusFilter(''); // Reset status filter when module changes
+        setStatusOptions([]); // Reset status options
     };
 
     // Flatten nested objects and arrays for CSV/Excel export
@@ -371,39 +411,61 @@ export default function AdminCenter() {
         return { fields, labels };
     };
 
+    // Get all available fields for the selected module
+    const getAvailableFields = (): CustomFieldDefinition[] => {
+        if (!selectedModule) return [];
+        const customConfig = moduleFieldConfigs[selectedModule] || [];
+        const standardFields = getStandardFields(selectedModule);
+        
+        const allFields: CustomFieldDefinition[] = [...standardFields];
+        const standardFieldNames = new Set(standardFields.map(f => f.field_name));
+        
+        customConfig.forEach((field: CustomFieldDefinition) => {
+            if (!standardFieldNames.has(field.field_name)) {
+                allFields.push(field);
+            }
+        });
+        
+        return allFields.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+    };
+
+    // Handle field selection
+    const toggleField = (fieldName: string) => {
+        setSelectedFields(prev =>
+            prev.includes(fieldName)
+                ? prev.filter(f => f !== fieldName)
+                : [...prev, fieldName]
+        );
+    };
+
+    // Select all fields
+    const selectAllFields = () => {
+        const fields = getAvailableFields();
+        setSelectedFields(fields.map(f => f.field_name));
+    };
+
+    // Deselect all fields
+    const deselectAllFields = () => {
+        setSelectedFields([]);
+    };
+
     // Convert data to CSV format with Field Management integration
-    const convertToCSV = (data: any[], moduleId: string, moduleName: string): string => {
+    const convertToCSV = (data: any[], moduleId: string, moduleName: string, fieldsToInclude?: string[]): string => {
         if (data.length === 0) return '';
         
         // Flatten all objects
         const flattenedData = data.map(item => flattenObject(item));
         
         // Get field configuration
-        const { fields: orderedFields, labels } = getFieldConfig(moduleId);
+        const { labels } = getFieldConfig(moduleId);
         
-        // Get all keys from data
-        const allKeys = new Set<string>();
-        flattenedData.forEach(item => {
-            Object.keys(item).forEach(key => allKeys.add(key));
-        });
-        
-        // Use ordered fields first, then add any remaining fields
-        const headers: string[] = [];
-        const usedFields = new Set<string>();
-        
-        // Add ordered fields from Field Management
-        orderedFields.forEach(field => {
-            if (allKeys.has(field)) {
-                headers.push(field);
-                usedFields.add(field);
-            }
-        });
-        
-        // Add remaining fields not in Field Management
-        Array.from(allKeys)
-            .filter(key => !usedFields.has(key))
-            .sort()
-            .forEach(key => headers.push(key));
+        // Use selected fields if provided, otherwise use all fields
+        const headers = fieldsToInclude && fieldsToInclude.length > 0 
+            ? fieldsToInclude.filter(field => {
+                // Verify field exists in at least one data item
+                return flattenedData.some(item => item.hasOwnProperty(field));
+            })
+            : Object.keys(flattenedData[0] || {});
         
         // Create CSV rows with proper escaping and use field labels
         const csvRows = [
@@ -442,7 +504,7 @@ export default function AdminCenter() {
     };
 
     // Download Excel file with multiple sheets
-    const downloadExcel = async (dataByModule: Record<string, any[]>, moduleNames: Record<string, string>) => {
+    const downloadExcel = async (dataByModule: Record<string, any[]>, moduleNames: Record<string, string>, fieldsToInclude?: string[]) => {
         try {
             // Dynamic import of xlsx library
             // @ts-ignore - xlsx is an optional dependency
@@ -454,39 +516,18 @@ export default function AdminCenter() {
                 if (data.length === 0) return;
 
                 const moduleName = moduleNames[moduleId] || moduleId;
-                const { fields: orderedFields, labels } = getFieldConfig(moduleId);
+                const { labels } = getFieldConfig(moduleId);
                 
                 // Flatten data
                 const flattenedData = data.map(item => flattenObject(item));
                 
-                // Get all keys
-                const allKeys = new Set<string>();
-                flattenedData.forEach(item => {
-                    Object.keys(item).forEach(key => allKeys.add(key));
-                });
+                // Use selected fields if provided, otherwise use all fields
+                const headers = fieldsToInclude && fieldsToInclude.length > 0
+                    ? fieldsToInclude.filter(field => flattenedData.some(item => item.hasOwnProperty(field)))
+                    : Object.keys(flattenedData[0] || {});
                 
-                // Build headers with labels
-                const headers: string[] = [];
-                const headerLabels: string[] = [];
-                const usedFields = new Set<string>();
-                
-                // Add ordered fields from Field Management
-                orderedFields.forEach(field => {
-                    if (allKeys.has(field)) {
-                        headers.push(field);
-                        headerLabels.push(labels[field] || field);
-                        usedFields.add(field);
-                    }
-                });
-                
-                // Add remaining fields
-                Array.from(allKeys)
-                    .filter(key => !usedFields.has(key))
-                    .sort()
-                    .forEach(key => {
-                        headers.push(key);
-                        headerLabels.push(key);
-                    });
+                // Build header labels
+                const headerLabels = headers.map(field => labels[field] || field);
                 
                 // Create worksheet data with labels as headers
                 const worksheetData = [
@@ -909,13 +950,18 @@ export default function AdminCenter() {
 
     // Handle export with backend API and Field Management integration
     const handleExport = async () => {
-        if (selectedModules.length === 0) {
-            alert('Please select at least one module to export.');
+        if (!selectedModule) {
+            alert('Please select a module to export.');
+            return;
+        }
+
+        if (selectedFields.length === 0) {
+            alert('Please select at least one field to export.');
             return;
         }
 
         setIsExporting(true);
-        setExportProgress({ current: 0, total: selectedModules.length, module: '' });
+        setExportProgress({ current: 0, total: 1, module: selectedModule });
 
         try {
             const token = document.cookie.replace(
@@ -923,7 +969,10 @@ export default function AdminCenter() {
                 "$1"
             );
 
-            // Call backend export API with filters
+            const module = downloadModules.find(m => m.id === selectedModule);
+            const moduleName = module?.name || selectedModule;
+
+            // Call backend export API with filters and selected fields
             const response = await fetch('/api/admin/data-downloader/export', {
                 method: 'POST',
                 headers: {
@@ -931,7 +980,8 @@ export default function AdminCenter() {
                     Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify({
-                    modules: selectedModules,
+                    module: selectedModule,
+                    selectedFields: selectedFields,
                     filters: {
                         startDate: dateRange.start || null,
                         endDate: dateRange.end || null,
@@ -952,49 +1002,26 @@ export default function AdminCenter() {
                 throw new Error(result.message || 'Export failed');
             }
 
-            const dataByModule = result.data || {};
-            const moduleNames: Record<string, string> = {};
-            downloadModules.forEach(m => {
-                if (selectedModules.includes(m.id)) {
-                    moduleNames[m.id] = m.name;
-                }
-            });
-
-            // Show errors if any
-            if (result.errors && Object.keys(result.errors).length > 0) {
-                const errorMessages = Object.entries(result.errors)
-                    .map(([module, error]) => `${moduleNames[module] || module}: ${error}`)
-                    .join('\n');
-                console.warn('Some modules failed to export:', errorMessages);
-            }
+            const data = result.data || [];
+            const moduleNames: Record<string, string> = { [selectedModule]: moduleName };
 
             // Export based on format
             if (exportFormat === 'excel') {
                 try {
-                    await downloadExcel(dataByModule, moduleNames);
+                    await downloadExcel({ [selectedModule]: data }, moduleNames, selectedFields);
                 } catch (error) {
                     // Error already handled in downloadExcel with fallback
                 }
             } else {
-                // CSV: single file if one module, ZIP if multiple
-                if (selectedModules.length === 1) {
-                    const moduleId = selectedModules[0];
-                    const data = dataByModule[moduleId] || [];
-                    if (data.length > 0) {
-                        const csvContent = convertToCSV(data, moduleId, moduleNames[moduleId]);
-                        const timestamp = new Date().toISOString().split('T')[0];
-                        downloadCSV(csvContent, `${moduleNames[moduleId]}_${timestamp}.csv`);
-                    }
-                } else {
-                    try {
-                        await downloadCSVZip(dataByModule, moduleNames);
-                    } catch (error) {
-                        // Error already handled in downloadCSVZip with fallback
-                    }
+                // CSV: single file export
+                if (data.length > 0) {
+                    const csvContent = convertToCSV(data, selectedModule, moduleName, selectedFields);
+                    const timestamp = new Date().toISOString().split('T')[0];
+                    downloadCSV(csvContent, `${moduleName}_${timestamp}.csv`);
                 }
             }
 
-            alert(`Successfully exported ${selectedModules.length} module(s)!`);
+            alert(`Successfully exported ${moduleName}!`);
             setShowDownloadModal(false);
         } catch (error) {
             console.error('Export error:', error);
@@ -1125,51 +1152,92 @@ export default function AdminCenter() {
 
                         {/* Modal Content */}
                         <div className="p-6 space-y-6">
-                            {/* Module Selection */}
+                            {/* Module Selection - Single Select */}
                             <div>
-                                <div className="flex justify-between items-center mb-3">
-                                    <label className="text-sm font-medium text-gray-700">
-                                        Select Modules to Export
-                                    </label>
-                                    <div className="flex gap-2">
-                                        <button
-                                            onClick={selectAllModules}
-                                            className="text-xs text-blue-600 hover:text-blue-800"
-                                        >
-                                            Select All
-                                        </button>
-                                        <span className="text-gray-400">|</span>
-                                        <button
-                                            onClick={deselectAllModules}
-                                            className="text-xs text-blue-600 hover:text-blue-800"
-                                        >
-                                            Deselect All
-                                        </button>
+                                <label className="text-sm font-medium text-gray-700 mb-3 block">
+                                    Select Module to Export <span className="text-red-500">*</span>
+                                </label>
+                                <div className="border border-gray-200 rounded p-4">
+                                    <div className="space-y-2">
+                                        {downloadModules.map((module) => (
+                                            <label
+                                                key={module.id}
+                                                className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                                            >
+                                                <input
+                                                    type="radio"
+                                                    name="moduleSelection"
+                                                    value={module.id}
+                                                    checked={selectedModule === module.id}
+                                                    onChange={() => handleModuleSelect(module.id)}
+                                                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
+                                                />
+                                                <span className="text-sm text-gray-700">{module.name}</span>
+                                            </label>
+                                        ))}
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-3 border border-gray-200 rounded p-4 max-h-64 overflow-y-auto">
-                                    {downloadModules.map((module) => (
-                                        <label
-                                            key={module.id}
-                                            className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
-                                        >
-                                            <input
-                                                type="checkbox"
-                                                checked={selectedModules.includes(module.id)}
-                                                onChange={() => toggleModule(module.id)}
-                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                            />
-                                            <span className="text-sm text-gray-700">{module.name}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                                {isLoadingFields && selectedModules.length > 0 && (
+                                {!selectedModule && (
+                                    <p className="mt-2 text-xs text-red-500">Please select a module to continue</p>
+                                )}
+                                {isLoadingFields && selectedModule && (
                                     <div className="mt-2 text-xs text-gray-500 flex items-center gap-2">
                                         <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
                                         Loading field configurations...
                                     </div>
                                 )}
                             </div>
+
+                            {/* Field Selection */}
+                            {selectedModule && !isLoadingFields && (
+                                <div>
+                                    <div className="flex justify-between items-center mb-3">
+                                        <label className="text-sm font-medium text-gray-700">
+                                            Select Fields to Export <span className="text-red-500">*</span>
+                                        </label>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={selectAllFields}
+                                                className="text-xs text-blue-600 hover:text-blue-800"
+                                            >
+                                                Select All
+                                            </button>
+                                            <span className="text-gray-400">|</span>
+                                            <button
+                                                onClick={deselectAllFields}
+                                                className="text-xs text-blue-600 hover:text-blue-800"
+                                            >
+                                                Deselect All
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="border border-gray-200 rounded p-4 max-h-64 overflow-y-auto">
+                                        {getAvailableFields().length > 0 ? (
+                                            <div className="space-y-2">
+                                                {getAvailableFields().map((field) => (
+                                                    <label
+                                                        key={field.field_name}
+                                                        className="flex items-center space-x-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                                                    >
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={selectedFields.includes(field.field_name)}
+                                                            onChange={() => toggleField(field.field_name)}
+                                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                        />
+                                                        <span className="text-sm text-gray-700">{field.field_label}</span>
+                                                    </label>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-sm text-gray-500 text-center py-4">No fields available</p>
+                                        )}
+                                    </div>
+                                    {selectedFields.length === 0 && (
+                                        <p className="mt-2 text-xs text-red-500">Please select at least one field to export</p>
+                                    )}
+                                </div>
+                            )}
 
                             {/* Export Format */}
                             <div>
@@ -1185,9 +1253,7 @@ export default function AdminCenter() {
                                             onChange={(e) => setExportFormat(e.target.value as 'csv')}
                                             className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                                         />
-                                        <span className="text-sm text-gray-700">
-                                            CSV {selectedModules.length > 1 && '(ZIP)'}
-                                        </span>
+                                        <span className="text-sm text-gray-700">CSV</span>
                                     </label>
                                     <label className="flex items-center space-x-2 cursor-pointer">
                                         <input
@@ -1197,18 +1263,10 @@ export default function AdminCenter() {
                                             onChange={(e) => setExportFormat(e.target.value as 'excel')}
                                             className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500"
                                         />
-                                        <span className="text-sm text-gray-700">
-                                            Excel {selectedModules.length > 1 && '(Multiple Sheets)'}
-                                        </span>
+                                        <span className="text-sm text-gray-700">Excel</span>
                                     </label>
                                 </div>
-                                <p className="text-xs text-gray-500 mt-2">
-                                    {exportFormat === 'excel' && selectedModules.length > 1
-                                        ? 'Each module will be exported as a separate sheet in one Excel file.'
-                                        : exportFormat === 'csv' && selectedModules.length > 1
-                                        ? 'Multiple CSV files will be bundled in a ZIP archive.'
-                                        : 'Single file export.'}
-                                </p>
+                                <p className="text-xs text-gray-500 mt-2">Single file export.</p>
                             </div>
 
                             {/* Filters */}
@@ -1241,19 +1299,30 @@ export default function AdminCenter() {
                                     </div>
                                 </div>
 
-                                {/* Status Filter */}
-                                <div>
-                                    <label className="text-xs text-gray-600 mb-1 block">
-                                        Status Filter (optional)
-                                    </label>
-                                    <input
-                                        type="text"
-                                        value={statusFilter}
-                                        onChange={(e) => setStatusFilter(e.target.value)}
-                                        placeholder="Filter by status..."
-                                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                    />
-                                </div>
+                                {/* Status Filter - Dynamic Dropdown */}
+                                {selectedModule && (
+                                    <div>
+                                        <label className="text-xs text-gray-600 mb-1 block">
+                                            Status Filter (optional)
+                                        </label>
+                                        <select
+                                            value={statusFilter}
+                                            onChange={(e) => setStatusFilter(e.target.value)}
+                                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            disabled={statusOptions.length === 0}
+                                        >
+                                            <option value="">All Statuses</option>
+                                            {statusOptions.map((option) => (
+                                                <option key={option.value} value={option.value}>
+                                                    {option.label}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        {statusOptions.length === 0 && !isLoadingFields && (
+                                            <p className="mt-1 text-xs text-gray-500">No status options available</p>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         </div>
 
@@ -1284,9 +1353,11 @@ export default function AdminCenter() {
                             <button
                                 onClick={() => {
                                     setShowDownloadModal(false);
-                                    setSelectedModules([]);
+                                    setSelectedModule('');
+                                    setSelectedFields([]);
                                     setDateRange({ start: '', end: '' });
                                     setStatusFilter('');
+                                    setStatusOptions([]);
                                 }}
                                 className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
                                 disabled={isExporting}
@@ -1295,7 +1366,7 @@ export default function AdminCenter() {
                             </button>
                             <button
                                 onClick={handleExport}
-                                disabled={isExporting || selectedModules.length === 0 || isLoadingFields}
+                                disabled={isExporting || !selectedModule || selectedFields.length === 0 || isLoadingFields}
                                 className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
                             >
                                 {isExporting ? (

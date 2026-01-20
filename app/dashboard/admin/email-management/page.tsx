@@ -133,8 +133,17 @@ const EmailManagementPage: React.FC = () => {
 
       {showModal && (
         <div className="fixed inset-0 bg-gray-800 bg-opacity-50 flex justify-center items-center px-4">
-          <div className="bg-white p-8 rounded-lg shadow-lg w-[800px] max-w-full">
-            <h3 className="text-2xl font-semibold mb-6 text-gray-800">
+          <div className="bg-white p-8 rounded-lg shadow-lg w-[800px] max-w-full relative">
+            {/* Close button in top right corner */}
+            <button
+              onClick={() => setShowModal(false)}
+              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 transition-colors"
+              aria-label="Close modal"
+            >
+              <FiX className="w-6 h-6" />
+            </button>
+            
+            <h3 className="text-2xl font-semibold mb-6 text-gray-800 pr-8">
               {editingTemplate ? "Edit Template" : "➕ Create EmailTemplate"}
             </h3>
 

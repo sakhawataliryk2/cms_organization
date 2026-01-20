@@ -14,11 +14,14 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { modules, filters, format } = body;
+        
+        // Support both new format (module + selectedFields) and legacy format (modules array)
+        const { module, modules, selectedFields, filters, format } = body;
+        const moduleId = module || (modules && modules.length > 0 ? modules[0] : null);
 
-        if (!modules || !Array.isArray(modules) || modules.length === 0) {
+        if (!moduleId) {
             return NextResponse.json(
-                { success: false, message: 'No modules selected for export' },
+                { success: false, message: 'No module selected for export' },
                 { status: 400 }
             );
         }
@@ -38,44 +41,42 @@ export async function POST(request: NextRequest) {
             'tasks': { entityType: 'tasks', endpoint: 'tasks' },
         };
 
-        // Fetch data for each module
-        for (const moduleId of modules) {
-            const moduleConfig = moduleMap[moduleId];
-            if (!moduleConfig) {
-                errors[moduleId] = `Unknown module: ${moduleId}`;
-                continue;
+        const moduleConfig = moduleMap[moduleId];
+        if (!moduleConfig) {
+            return NextResponse.json(
+                { success: false, message: `Unknown module: ${moduleId}` },
+                { status: 400 }
+            );
+        }
+
+        try {
+            // Build query parameters for filtering
+            const queryParams = new URLSearchParams();
+            if (filters?.startDate) {
+                queryParams.append('startDate', filters.startDate);
+            }
+            if (filters?.endDate) {
+                queryParams.append('endDate', filters.endDate);
+            }
+            if (filters?.status) {
+                queryParams.append('status', filters.status);
             }
 
-            try {
-                // Build query parameters for filtering
-                const queryParams = new URLSearchParams();
-                if (filters?.startDate) {
-                    queryParams.append('startDate', filters.startDate);
-                }
-                if (filters?.endDate) {
-                    queryParams.append('endDate', filters.endDate);
-                }
-                if (filters?.status) {
-                    queryParams.append('status', filters.status);
-                }
+            const queryString = queryParams.toString();
+            const url = `${apiUrl}/api/${moduleConfig.endpoint}${queryString ? `?${queryString}` : ''}`;
 
-                const queryString = queryParams.toString();
-                const url = `${apiUrl}/api/${moduleConfig.endpoint}${queryString ? `?${queryString}` : ''}`;
+            const response = await fetch(url, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+            });
 
-                const response = await fetch(url, {
-                    method: 'GET',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        Authorization: `Bearer ${token}`,
-                    },
-                });
-
-                if (!response.ok) {
-                    const errorData = await response.json().catch(() => ({ message: 'Failed to fetch data' }));
-                    errors[moduleId] = errorData.message || `Failed to fetch ${moduleId}`;
-                    continue;
-                }
-
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Failed to fetch data' }));
+                errors[moduleId] = errorData.message || `Failed to fetch ${moduleId}`;
+            } else {
                 const data = await response.json();
                 
                 // Extract data array (handle different response structures)
@@ -103,19 +104,39 @@ export async function POST(request: NextRequest) {
                 if (filters?.status) {
                     moduleData = moduleData.filter((item: any) => {
                         const itemStatus = item.status || item.Status || '';
-                        return String(itemStatus).toLowerCase().includes(filters.status.toLowerCase());
+                        return String(itemStatus).toLowerCase() === filters.status.toLowerCase();
+                    });
+                }
+
+                // Filter fields if selectedFields is provided
+                if (selectedFields && Array.isArray(selectedFields) && selectedFields.length > 0) {
+                    moduleData = moduleData.map((item: any) => {
+                        const filteredItem: any = {};
+                        selectedFields.forEach((field: string) => {
+                            // Handle nested field paths (e.g., 'address.street')
+                            const fieldParts = field.split('.');
+                            let value = item;
+                            for (const part of fieldParts) {
+                                value = value?.[part];
+                            }
+                            if (value !== undefined) {
+                                filteredItem[field] = value;
+                            }
+                        });
+                        return filteredItem;
                     });
                 }
 
                 exportData[moduleId] = moduleData;
-            } catch (err) {
-                errors[moduleId] = err instanceof Error ? err.message : 'Unknown error';
             }
+        } catch (err) {
+            errors[moduleId] = err instanceof Error ? err.message : 'Unknown error';
         }
 
+        // Return data as array for single module (backward compatible format)
         return NextResponse.json({
             success: true,
-            data: exportData,
+            data: Object.keys(errors).length === 0 ? exportData[moduleId] || [] : {},
             errors: Object.keys(errors).length > 0 ? errors : undefined,
         });
     } catch (error) {

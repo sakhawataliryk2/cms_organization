@@ -24,11 +24,10 @@ import {
   FiGrid,
   FiX,
   FiLogOut,
+  FiUpload,
 } from "react-icons/fi";
 import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { FaRegUserCircle } from "react-icons/fa";
-import { ImDownload } from "react-icons/im";
-import FileUpload from "./FileUpload";
 
 interface User {
   name: string;
@@ -53,7 +52,6 @@ export default function DashboardNav() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchResults, setSearchResults] = useState<SearchResults | null>(null);
   const [isSearching, setIsSearching] = useState<boolean>(false);
-  const [isFileUploadOpen, setIsFileUploadOpen] = useState<boolean>(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState<boolean>(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState<boolean>(false);
 
@@ -408,10 +406,6 @@ export default function DashboardNav() {
       (results.hiringManagers?.length || 0) +
       (results.placements?.length || 0)
     );
-  };
-
-  const handleParseClick = () => {
-    setIsFileUploadOpen(true);
   };
 
   // Navigation to add menu item
@@ -1021,25 +1015,19 @@ export default function DashboardNav() {
           </button>
         </div>
 
-        {/* Footer with "Parse" button - always visible */}
+        {/* Footer with "Upload CSV" button - always visible */}
         <div className="p-4 border-t border-slate-700">
           <div className="flex justify-between items-center">
-            <span className="text-blue-300 text-sm">Parse</span>
+            <span className="text-blue-300 text-sm">Upload CSV</span>
             <button
               className="text-white bg-slate-700 p-1 rounded hover:bg-slate-600"
-              onClick={handleParseClick}
+              onClick={() => router.push('/dashboard/admin?upload=true')}
             >
-              <ImDownload size={16} />
+              <FiUpload size={16} />
             </button>
           </div>
         </div>
       </div>
-
-      {/* File upload modal */}
-      <FileUpload
-        isOpen={isFileUploadOpen}
-        onClose={() => setIsFileUploadOpen(false)}
-      />
     </>
   );
 }

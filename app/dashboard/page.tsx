@@ -295,100 +295,97 @@ export default function Dashboard() {
         fetchBroadcastMessages();
     }, []);
 
-    // Fetch appointments (using mock data similar to planner page)
-    const fetchAppointments = async () => {
+    // Refresh tasks and appointments when date range changes
+    useEffect(() => {
+        if (activityRange.start && activityRange.end) {
+            fetchAllTasks();
+            fetchAppointments();
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activityRange.start, activityRange.end]);
+
+    // Fetch appointments with date range filtering
+    const fetchAppointments = async (range?: { start: string; end: string }) => {
         setIsLoadingAppointments(true);
         setAppointmentsError(null);
         try {
-            // Mock appointments data - in production, this would fetch from API
-            const mockAppointments: Appointment[] = [
-                {
-                    id: 1,
-                    time: '9:00 AM',
-                    type: 'Meeting',
-                    client: 'Tech Corp',
-                    job: 'Senior Developer',
-                    references: ['Stephanie Marcus', 'Sophia Esposito'],
-                    owner: 'Devi Arnold',
-                    date: new Date().toISOString().split('T')[0]
-                },
-                {
-                    id: 2,
-                    time: '9:30 AM',
-                    type: 'Meeting',
-                    client: 'Startup Inc',
-                    job: 'Product Manager',
-                    references: ['Toni Arruda', 'Allison Silva'],
-                    owner: 'Briana Dozois',
-                    date: new Date().toISOString().split('T')[0]
-                },
-                {
-                    id: 3,
-                    time: '10:00 AM',
-                    type: 'Interview',
-                    client: 'Consulting Firm',
-                    job: 'Business Analyst',
-                    references: ['Evan Waicberg', 'Rachel Howell'],
-                    owner: 'Justin Shields',
-                    date: new Date().toISOString().split('T')[0]
-                },
-                {
-                    id: 4,
-                    time: '2:00 PM',
-                    type: 'Call',
-                    client: 'Finance Co',
-                    job: 'Financial Advisor',
-                    references: ['Evan Waicberg'],
-                    owner: 'Devi Arnold',
-                    date: new Date().toISOString().split('T')[0]
-                },
-                {
-                    id: 5,
-                    time: '3:30 PM',
-                    type: 'Meeting',
-                    client: 'Marketing Agency',
-                    job: 'Creative Director',
-                    references: ['Stephanie Marcus'],
-                    owner: 'Briana Dozois',
-                    date: new Date().toISOString().split('T')[0]
-                }
-            ];
-            
-            // Filter appointments for today and upcoming
-            const today = new Date();
-            today.setHours(0, 0, 0, 0);
-            const filteredAppointments = mockAppointments.filter((apt) => {
-                if (!apt.date) return false;
-                const aptDate = new Date(apt.date);
-                aptDate.setHours(0, 0, 0, 0);
-                return aptDate >= today;
+            const dateRange = range || activityRange;
+            if (!dateRange.start || !dateRange.end) {
+                setAppointments([]);
+                setIsLoadingAppointments(false);
+                return;
+            }
+
+            const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+            const queryParams = new URLSearchParams({
+                startDate: dateRange.start,
+                endDate: dateRange.end,
             });
+
+            const response = await fetch(`/api/planner/appointments?${queryParams.toString()}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+
+            if (!response.ok) {
+                throw new Error('Failed to fetch appointments');
+            }
+
+            const data = await response.json();
+            const appointmentsList = data.appointments || data.data || [];
             
+            // Map API response to Appointment interface
+            const mappedAppointments: Appointment[] = appointmentsList.map((apt: any) => ({
+                id: apt.id,
+                time: apt.time || '',
+                type: apt.type || '',
+                client: apt.client || apt.organization_name || '',
+                job: apt.job || apt.job_title || '',
+                references: apt.references || [],
+                owner: apt.owner || apt.created_by_name || '',
+                date: apt.date || apt.start_date || '',
+            }));
+
             // Sort by date and time
-            filteredAppointments.sort((a, b) => {
+            mappedAppointments.sort((a, b) => {
+                if (!a.date || !b.date) return 0;
                 if (a.date !== b.date) {
-                    return a.date!.localeCompare(b.date!);
+                    return a.date.localeCompare(b.date);
                 }
                 return a.time.localeCompare(b.time);
             });
             
-            setAppointments(filteredAppointments.slice(0, 5)); // Show up to 5 appointments
+            setAppointments(mappedAppointments);
         } catch (err) {
             console.error('Error fetching appointments:', err);
             setAppointmentsError(err instanceof Error ? err.message : 'An error occurred while fetching appointments');
+            setAppointments([]);
         } finally {
             setIsLoadingAppointments(false);
         }
     };
 
-    // Fetch all tasks (for initial load or when no date is selected)
+    // Fetch all tasks with date range filtering
     const fetchAllTasks = async () => {
         setIsLoadingTasks(true);
         setTasksError(null);
         try {
-            const response = await fetch('/api/tasks', {
+            const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+            let url = '/api/tasks';
+            
+            // Add date range query parameters if available
+            if (activityRange.start && activityRange.end) {
+                const queryParams = new URLSearchParams({
+                    startDate: activityRange.start,
+                    endDate: activityRange.end,
+                });
+                url += `?${queryParams.toString()}`;
+            }
+
+            const response = await fetch(url, {
                 headers: {
-                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+                    'Authorization': `Bearer ${token}`
                 }
             });
             
@@ -400,10 +397,22 @@ export default function Dashboard() {
             const allTasksData = data.tasks || [];
             setAllTasks(allTasksData); // Store all tasks for calendar indicators
             
-            // Get up to 5 recent tasks for dashboard when no date is selected
-            const recentTasks = allTasksData.slice(0, 5);
-            setTasks(recentTasks);
-            setFilteredTasks(recentTasks);
+            // Filter tasks by date range on frontend if backend doesn't support it
+            let filteredTasksData = allTasksData;
+            if (activityRange.start && activityRange.end) {
+                const startDate = new Date(activityRange.start);
+                const endDate = new Date(activityRange.end);
+                endDate.setHours(23, 59, 59, 999); // Include the entire end date
+                
+                filteredTasksData = allTasksData.filter((task: Task) => {
+                    if (!task.due_date) return false;
+                    const taskDate = new Date(task.due_date);
+                    return taskDate >= startDate && taskDate <= endDate;
+                });
+            }
+            
+            setTasks(filteredTasksData);
+            setFilteredTasks(filteredTasksData);
         } catch (err) {
             console.error('Error fetching tasks:', err);
             setTasksError(err instanceof Error ? err.message : 'An error occurred while fetching tasks');
@@ -819,13 +828,39 @@ export default function Dashboard() {
                 <FiX size={24} />
             </Link>
             
+            {/* Date Range Picker - Top Left */}
+            <div className="mb-4 px-2">
+                <div className="bg-white rounded-md shadow p-4 inline-block">
+                    <div className="flex items-center gap-4">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">Start Date</label>
+                            <input
+                                type="date"
+                                value={activityRange.start}
+                                onChange={(e) => setActivityRange(prev => ({ ...prev, start: e.target.value }))}
+                                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-700 mb-1">End Date</label>
+                            <input
+                                type="date"
+                                value={activityRange.end}
+                                onChange={(e) => setActivityRange(prev => ({ ...prev, end: e.target.value }))}
+                                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            />
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-grow mb-4">
                 {/* Appointments Calendar */}
-                <div className="bg-white rounded-md shadow overflow-hidden">
+                <div className="bg-white rounded-md shadow overflow-hidden flex flex-col">
                     <div className="p-2 border-b border-gray-200">
                         <h2 className="text-lg font-semibold">Calendar</h2>
                     </div>
-                    <div className="p-4">
+                    <div className="p-4 flex-1">
                         {/* Calendar navigation */}
                         <div className="flex items-center justify-between mb-4">
                             <button
@@ -914,6 +949,61 @@ export default function Dashboard() {
                         {/* Available text */}
                         <div className="mt-4 text-center text-gray-400 text-xs">
                             Available
+                        </div>
+                    </div>
+
+                    {/* Appointments List View */}
+                    <div className="border-t border-gray-200">
+                        <div className="p-2 border-b border-gray-200">
+                            <h3 className="text-sm font-semibold text-gray-700">Appointments</h3>
+                        </div>
+                        <div className="p-4 max-h-64 overflow-y-auto">
+                            {isLoadingAppointments ? (
+                                <div className="text-center py-4 text-sm text-gray-500">Loading appointments...</div>
+                            ) : appointmentsError ? (
+                                <div className="text-center py-4">
+                                    <p className="text-sm text-red-600 mb-2">Error loading appointments</p>
+                                    <p className="text-xs text-gray-500">{appointmentsError}</p>
+                                    <button
+                                        onClick={() => fetchAppointments()}
+                                        className="mt-2 text-xs text-blue-600 hover:text-blue-800"
+                                    >
+                                        Retry
+                                    </button>
+                                </div>
+                            ) : appointments.length === 0 ? (
+                                <div className="text-center py-4">
+                                    <p className="text-sm text-gray-500">No appointments found</p>
+                                    <p className="text-xs text-gray-400 mt-1">
+                                        {activityRange.start && activityRange.end 
+                                            ? `in the selected date range` 
+                                            : 'Select a date range to view appointments'}
+                                    </p>
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    {appointments.map((apt) => (
+                                        <div
+                                            key={apt.id}
+                                            className="p-2 border border-gray-200 rounded text-xs hover:bg-gray-50"
+                                        >
+                                            <div className="font-medium text-gray-700">
+                                                {apt.date && new Date(apt.date).toLocaleDateString('en-US', { 
+                                                    month: 'short', 
+                                                    day: 'numeric', 
+                                                    year: 'numeric' 
+                                                })} {apt.time}
+                                            </div>
+                                            <div className="text-gray-600 mt-1">
+                                                <div className="font-medium">{apt.type}</div>
+                                                {apt.client && <div>Client: {apt.client}</div>}
+                                                {apt.job && <div>Job: {apt.job}</div>}
+                                                {apt.owner && <div className="text-gray-500 text-xs mt-1">Owner: {apt.owner}</div>}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -1375,41 +1465,20 @@ export default function Dashboard() {
             {/* Activity Report Section */}
             <div className="px-6 pb-6 mt-8">
                 {/* Activity Report Header */}
-                <div className="mb-4 flex flex-col md:flex-row md:items-end md:justify-between gap-3">
+                <div className="mb-4">
                     <div>
                         <h2 className="text-lg font-semibold text-gray-900">
                             ACTIVITY REPORT
                         </h2>
                         <div className="text-xs text-gray-500">
-                            Counts are filtered to <span className="font-medium">{user?.name || user?.email || 'current user'}</span> and the selected date range.
+                            Counts are filtered to <span className="font-medium">{user?.name || user?.email || 'current user'}</span> and the selected date range ({activityRange.start} to {activityRange.end}).
                         </div>
                         {activityReportError && (
                             <div className="text-xs text-red-600 mt-1">{activityReportError}</div>
                         )}
-                    </div>
-
-                    <div className="flex flex-col sm:flex-row sm:items-end gap-3">
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">Start</label>
-                            <input
-                                type="date"
-                                value={activityRange.start}
-                                onChange={(e) => setActivityRange(prev => ({ ...prev, start: e.target.value }))}
-                                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-medium text-gray-700 mb-1">End</label>
-                            <input
-                                type="date"
-                                value={activityRange.end}
-                                onChange={(e) => setActivityRange(prev => ({ ...prev, end: e.target.value }))}
-                                className="px-3 py-2 border border-gray-300 rounded-md text-sm"
-                            />
-                        </div>
-                        <div className="text-xs text-gray-500 pb-1">
-                            {isLoadingActivityReport ? 'Refreshing…' : (activityReport?.range ? `Range: ${activityReport.range.start} → ${activityReport.range.end}` : '')}
-                        </div>
+                        {isLoadingActivityReport && (
+                            <div className="text-xs text-gray-500 mt-1">Refreshing...</div>
+                        )}
                     </div>
                 </div>
 
