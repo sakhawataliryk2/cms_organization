@@ -83,14 +83,28 @@ export default function Dashboard() {
         start: toISODateInput(getMonthStart(new Date())),
         end: toISODateInput(new Date()),
     }));
+    const [dateRangeError, setDateRangeError] = useState<string | null>(null);
     const [isLoadingActivityReport, setIsLoadingActivityReport] = useState(false);
     const [activityReportError, setActivityReportError] = useState<string | null>(null);
     const [activityReport, setActivityReport] = useState<any>(null);
 
+    // Validate date range
+    const validateDateRange = (start: string, end: string): boolean => {
+        if (!start || !end) {
+            setDateRangeError('Both start and end dates are required');
+            return false;
+        }
+        if (start > end) {
+            setDateRangeError('End date cannot be earlier than start date');
+            return false;
+        }
+        setDateRangeError(null);
+        return true;
+    };
+
     const fetchActivityReport = async (range: { start: string; end: string }) => {
         if (!user?.id) return;
-        if (!range.start || !range.end) return;
-        if (range.start > range.end) return;
+        if (!validateDateRange(range.start, range.end)) return;
 
         setIsLoadingActivityReport(true);
         setActivityReportError(null);
@@ -112,8 +126,11 @@ export default function Dashboard() {
         }
     };
 
-    // Refresh whenever date range changes
+    // Refresh whenever date range changes (only if valid)
     useEffect(() => {
+        if (!validateDateRange(activityRange.start, activityRange.end)) {
+            return;
+        }
         const handle = setTimeout(() => {
             fetchActivityReport(activityRange);
         }, 250);
@@ -236,6 +253,24 @@ export default function Dashboard() {
         });
     };
 
+    // Check if a date has appointments
+    const hasAppointments = (date: Date) => {
+        if (appointments.length === 0) return false;
+        const dateString = formatDateForAPI(date);
+        return appointments.some((apt: Appointment) => {
+            if (!apt.date) return false;
+            const aptDate = new Date(apt.date);
+            return formatDateForAPI(aptDate) === dateString;
+        });
+    };
+
+    // Check if a date is within the selected date range
+    const isInDateRange = (date: Date) => {
+        if (!activityRange.start || !activityRange.end || dateRangeError) return true; // Show all if invalid
+        const dateString = formatDateForAPI(date);
+        return dateString >= activityRange.start && dateString <= activityRange.end;
+    };
+
     // Format date to YYYY-MM-DD for API comparison
     const formatDateForAPI = (date: Date): string => {
         const year = date.getFullYear();
@@ -295,12 +330,13 @@ export default function Dashboard() {
         fetchBroadcastMessages();
     }, []);
 
-    // Refresh tasks and appointments when date range changes
+    // Refresh tasks and appointments when date range changes (only if valid)
     useEffect(() => {
-        if (activityRange.start && activityRange.end) {
-            fetchAllTasks();
-            fetchAppointments();
+        if (!validateDateRange(activityRange.start, activityRange.end)) {
+            return;
         }
+        fetchAllTasks();
+        fetchAppointments();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activityRange.start, activityRange.end]);
 
@@ -837,8 +873,18 @@ export default function Dashboard() {
                             <input
                                 type="date"
                                 value={activityRange.start}
-                                onChange={(e) => setActivityRange(prev => ({ ...prev, start: e.target.value }))}
-                                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                onChange={(e) => {
+                                    const newStart = e.target.value;
+                                    setActivityRange(prev => ({ ...prev, start: newStart }));
+                                    // Auto-correct end date if needed
+                                    if (newStart && activityRange.end && newStart > activityRange.end) {
+                                        setActivityRange({ start: newStart, end: newStart });
+                                    }
+                                }}
+                                max={activityRange.end || undefined}
+                                className={`px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                    dateRangeError ? 'border-red-300' : 'border-gray-300'
+                                }`}
                             />
                         </div>
                         <div>
@@ -846,11 +892,22 @@ export default function Dashboard() {
                             <input
                                 type="date"
                                 value={activityRange.end}
-                                onChange={(e) => setActivityRange(prev => ({ ...prev, end: e.target.value }))}
-                                className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                onChange={(e) => {
+                                    const newEnd = e.target.value;
+                                    setActivityRange(prev => ({ ...prev, end: newEnd }));
+                                }}
+                                min={activityRange.start || undefined}
+                                className={`px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                    dateRangeError ? 'border-red-300' : 'border-gray-300'
+                                }`}
                             />
                         </div>
                     </div>
+                    {dateRangeError && (
+                        <div className="mt-2 text-xs text-red-600">
+                            {dateRangeError}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -907,6 +964,8 @@ export default function Dashboard() {
                                     const isTodayDate = isToday(date);
                                     const isSelectedDate = isSelected(date);
                                     const hasTasksDate = hasTasks(date);
+                                    const hasAppointmentsDate = hasAppointments(date);
+                                    const inRange = isInDateRange(date);
                                     
                                     return (
                                         <button
@@ -915,15 +974,19 @@ export default function Dashboard() {
                                             className={`
                                                 text-center py-2 text-sm rounded transition-colors relative
                                                 ${!isCurrentMonth ? 'text-gray-300' : 'text-gray-700'}
+                                                ${!inRange && isCurrentMonth ? 'opacity-40' : ''}
                                                 ${isTodayDate && !isSelectedDate ? 'bg-blue-100 font-semibold' : ''}
                                                 ${isSelectedDate ? 'bg-blue-500 text-white font-semibold' : ''}
-                                                ${!isSelectedDate && !isTodayDate && isCurrentMonth ? 'hover:bg-gray-100' : ''}
-                                                ${hasTasksDate && !isSelectedDate && isCurrentMonth ? 'bg-green-50' : ''}
+                                                ${!isSelectedDate && !isTodayDate && isCurrentMonth && inRange ? 'hover:bg-gray-100' : ''}
+                                                ${hasTasksDate && !isSelectedDate && isCurrentMonth && inRange ? 'bg-green-50' : ''}
                                             `}
                                         >
                                             {day}
-                                            {hasTasksDate && !isSelectedDate && (
-                                                <span className="absolute bottom-1 left-1/2 transform -translate-x-1/2 w-1 h-1 bg-green-500 rounded-full"></span>
+                                            {hasTasksDate && !isSelectedDate && inRange && (
+                                                <span className="absolute bottom-1 left-1/3 transform -translate-x-1/2 w-1 h-1 bg-green-500 rounded-full"></span>
+                                            )}
+                                            {hasAppointmentsDate && !isSelectedDate && inRange && (
+                                                <span className="absolute bottom-1 right-1/3 transform translate-x-1/2 w-1 h-1 bg-purple-500 rounded-full"></span>
                                             )}
                                         </button>
                                     );

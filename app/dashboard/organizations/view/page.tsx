@@ -2568,6 +2568,34 @@ setAvailableFields(fields);
     );
   };
 
+  // Helper function to navigate to a referenced record
+  const navigateToReference = (ref: any) => {
+    if (!ref || !ref.id) return;
+
+    const refType = typeof ref === "string" ? null : (ref.type || "").toLowerCase().replace(/\s+/g, "");
+    const refId = typeof ref === "string" ? null : ref.id;
+
+    if (!refId) return;
+
+    // Map reference types to routes (normalized - spaces removed, lowercase)
+    const routeMap: Record<string, string> = {
+      organization: `/dashboard/organizations/view?id=${refId}`,
+      job: `/dashboard/jobs/view?id=${refId}`,
+      jobseeker: `/dashboard/job-seekers/view?id=${refId}`,
+      lead: `/dashboard/leads/view?id=${refId}`,
+      task: `/dashboard/tasks/view?id=${refId}`,
+      placement: `/dashboard/placements/view?id=${refId}`,
+      hiringmanager: `/dashboard/hiring-managers/view?id=${refId}`,
+    };
+
+    const route = routeMap[refType];
+    if (route) {
+      router.push(route);
+    } else {
+      console.warn(`Unknown reference type: ${refType}`);
+    }
+  };
+
   // Render notes tab content
   const renderNotesTab = () => {
     // Helper function to parse about_references
@@ -2620,45 +2648,117 @@ setAvailableFields(fields);
               );
 
               return (
-                <div key={note.id} className="p-4 border rounded hover:bg-gray-50">
-                  <div className="flex justify-between items-start mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-blue-600">
-                        {note.created_by_name || "Unknown User"}
-                      </span>
-                      {actionLabel && (
-                        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded">
-                          {actionLabel}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-sm text-gray-500">
-                      {new Date(note.created_at).toLocaleString()}
-                    </span>
-                  </div>
-                  
-                  {/* About References */}
-                  {aboutRefs.length > 0 && (
-                    <div className="mb-2 flex flex-wrap gap-2">
-                      <span className="text-xs font-medium text-gray-600">References:</span>
-                      {aboutRefs.map((ref: any, idx: number) => {
-                        const displayText =
-                          typeof ref === "string"
-                            ? ref
-                            : ref.display || ref.value || `${ref.type} #${ref.id}`;
-                        return (
-                          <span
-                            key={idx}
-                            className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded border"
-                          >
-                            {displayText}
+                <div id={`note-${note.id}`} key={note.id} className="p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors">
+                  {/* Note Header: Metadata Section */}
+                  <div className="border-b border-gray-200 pb-3 mb-3">
+                    <div className="flex justify-between items-start">
+                      <div className="flex flex-col gap-2">
+                        {/* Created By and Action */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-blue-600">
+                            {note.created_by_name || "Unknown User"}
                           </span>
-                        );
-                      })}
+                          {actionLabel && (
+                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-medium">
+                              {actionLabel}
+                            </span>
+                          )}
+                          {/* Source Module Badge */}
+                          <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded border">
+                            Organization
+                          </span>
+                        </div>
+                        {/* Date & Time */}
+                        <div className="text-xs text-gray-500">
+                          {new Date(note.created_at).toLocaleString("en-US", {
+                            month: "2-digit",
+                            day: "2-digit",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </div>
+                      </div>
+                      {/* Action Buttons */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            // View action - scroll to note or highlight
+                            const noteElement = document.getElementById(`note-${note.id}`);
+                            if (noteElement) {
+                              noteElement.scrollIntoView({ behavior: "smooth", block: "center" });
+                              noteElement.classList.add("ring-2", "ring-blue-500");
+                              setTimeout(() => {
+                                noteElement.classList.remove("ring-2", "ring-blue-500");
+                              }, 2000);
+                            }
+                          }}
+                          className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                          title="View"
+                        >
+                          View
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Affiliated References Section */}
+                  {aboutRefs.length > 0 && (
+                    <div className="mb-3 pb-3 border-b border-gray-100">
+                      <div className="flex items-start gap-2">
+                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide min-w-[80px]">
+                          References:
+                        </span>
+                        <div className="flex flex-wrap gap-2 flex-1">
+                          {aboutRefs.map((ref: any, idx: number) => {
+                            const displayText =
+                              typeof ref === "string"
+                                ? ref
+                                : ref.display || ref.value || `${ref.type} #${ref.id}`;
+                            const refType = typeof ref === "string" ? null : (ref.type || "").toLowerCase().replace(/\s+/g, "");
+                            const refId = typeof ref === "string" ? null : ref.id;
+                            const isClickable = refId && refType;
+
+                            return (
+                              <button
+                                key={idx}
+                                onClick={() => navigateToReference(ref)}
+                                disabled={!isClickable}
+                                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-all ${
+                                  isClickable
+                                    ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer"
+                                    : "bg-gray-100 text-gray-700 border-gray-200 cursor-default"
+                                }`}
+                                title={isClickable ? `View ${refType}` : "Reference not available"}
+                              >
+                                <svg
+                                  className="w-3 h-3"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  viewBox="0 0 24 24"
+                                >
+                                  <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                                  />
+                                </svg>
+                                {displayText}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   )}
 
-                  <p className="text-gray-700">{note.text}</p>
+                  {/* Note Content */}
+                  <div className="mt-2">
+                    <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">
+                      {note.text}
+                    </p>
+                  </div>
                 </div>
               );
             })}

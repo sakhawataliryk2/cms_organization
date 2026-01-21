@@ -4,7 +4,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { FiChevronRight } from 'react-icons/fi';
+import { FiChevronRight, FiX } from 'react-icons/fi';
 
 interface Section {
     id: string;
@@ -32,8 +32,21 @@ export default function FieldManagement() {
         router.push(`/dashboard/admin/field-mapping?section=${sectionId}`);
     };
 
+    const handleClose = () => {
+        router.push('/dashboard/admin');
+    };
+
     return (
-        <div className="bg-gray-200 min-h-screen p-8">
+        <div className="bg-gray-200 min-h-screen p-8 relative">
+            {/* Close Button */}
+            <button
+                onClick={handleClose}
+                className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 transition-colors"
+                aria-label="Close"
+                title="Close"
+            >
+                <FiX className="w-6 h-6" />
+            </button>
             <div className="max-w-2xl">
                 {sections.map((section) => (
                     <div key={section.id} className="mb-1">

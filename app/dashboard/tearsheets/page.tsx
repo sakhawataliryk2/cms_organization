@@ -107,16 +107,20 @@ const TearsheetsPage = () => {
   const trackTearsheetView = async (tearsheetId: number) => {
     try {
       const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-      await fetch(`/api/tearsheets/${tearsheetId}/view`, {
+      const response = await fetch(`/api/tearsheets/${tearsheetId}/view`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
         },
       });
-      // Refresh tearsheets to update last_opened_at
-      fetchTearsheets();
+      
+      if (response.ok) {
+        // Refresh tearsheets to update last_opened_at in the UI
+        fetchTearsheets();
+      }
     } catch (err) {
       console.error('Error tracking tearsheet view:', err);
+      // Don't throw - tracking failure shouldn't block user action
     }
   };
 
@@ -176,6 +180,9 @@ const TearsheetsPage = () => {
     if (count === 0) return;
 
     setIsLoadingRecords(true);
+    // Track view when clicking count buttons
+    await trackTearsheetView(tearsheetId);
+    
     try {
       const res = await fetch(`/api/tearsheets/${tearsheetId}/records?type=${type}`);
       const data = await res.json();
@@ -477,26 +484,29 @@ const TearsheetsPage = () => {
                   rows.map((r) => (
                     <tr key={r.id} className="hover:bg-gray-50">
                       <td className="px-6 py-3 text-sm">
-                        <ActionDropdown
-                          label="Actions"
-                          options={[
-                            {
-                              label: 'Send Internally',
-                              action: () => {
-                                setSelectedTearsheetForAction(r);
-                                handleSendInternally();
+                        <div className="min-w-[120px]">
+                          <ActionDropdown
+                            label="Actions"
+                            options={[
+                              {
+                                label: 'Send Internally',
+                                action: () => {
+                                  setSelectedTearsheetForAction(r);
+                                  handleSendInternally();
+                                },
                               },
-                            },
-                            {
-                              label: 'Delete',
-                              action: () => {
-                                setSelectedTearsheetForAction(r);
-                                handleDeleteClick();
+                              {
+                                label: 'Delete',
+                                action: () => {
+                                  setSelectedTearsheetForAction(r);
+                                  handleDeleteClick();
+                                },
                               },
-                            },
-                          ]}
-                          buttonClassName="px-3 py-1 bg-gray-100 border border-gray-300 rounded flex items-center text-gray-600 hover:bg-gray-200"
-                        />
+                            ]}
+                            buttonClassName="px-3 py-1 bg-gray-100 border border-gray-300 rounded flex items-center text-gray-600 hover:bg-gray-200 whitespace-nowrap"
+                            menuClassName="absolute right-0 mt-1 w-56 bg-white border border-gray-300 shadow-lg rounded z-10"
+                          />
+                        </div>
                       </td>
                       <td className="px-6 py-3 text-sm font-medium text-gray-900">
                         <button

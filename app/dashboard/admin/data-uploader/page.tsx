@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { FiX, FiDownload } from 'react-icons/fi';
 import LoadingScreen from '@/components/LoadingScreen';
 
 interface CustomFieldDefinition {
@@ -270,12 +271,21 @@ export default function DataUploader() {
     };
 
     const handleNext = () => {
-        if (currentStep === 1 && !selectedFile) {
-            alert('Please select a CSV file first');
+        if (currentStep === 1) {
+            // Step 1: Record type selection - no file required yet
+            setCurrentStep(2);
             return;
         }
-        if (currentStep === 2 && csvHeaders.length === 0) {
-            alert('Please upload a valid CSV file');
+        if (currentStep === 2) {
+            if (!selectedFile) {
+                alert('Please select a CSV file first');
+                return;
+            }
+            if (csvHeaders.length === 0) {
+                alert('Please upload a valid CSV file');
+                return;
+            }
+            setCurrentStep(3);
             return;
         }
         if (currentStep === 3) {
@@ -462,6 +472,99 @@ export default function DataUploader() {
         }
     };
 
+    const handleClose = () => {
+        handleReset();
+        router.push('/dashboard/admin');
+    };
+
+    // Download CSV Template
+    const handleDownloadTemplate = async () => {
+        try {
+            // Fetch available fields for the selected record type
+            const entityType = RECORD_TYPE_TO_ENTITY_TYPE[recordType];
+            if (!entityType) {
+                alert('Invalid record type');
+                return;
+            }
+
+            const token = document.cookie.replace(
+                /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                "$1"
+            );
+
+            let fields: CustomFieldDefinition[] = [];
+            try {
+                const response = await fetch(`/api/admin/field-management/${entityType}`, {
+                    headers: {
+                        Authorization: `Bearer ${token}`,
+                    },
+                });
+
+                const standardFields = getStandardFields(entityType);
+                let customFields: CustomFieldDefinition[] = [];
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const fetchedFields = data.customFields || data.fields || [];
+                    // Filter out hidden fields for template
+                    const visibleFields = fetchedFields.filter((f: CustomFieldDefinition) => !f.is_hidden);
+                    visibleFields.sort((a: CustomFieldDefinition, b: CustomFieldDefinition) => 
+                        (a.sort_order || 0) - (b.sort_order || 0)
+                    );
+                    customFields = visibleFields;
+                }
+
+                // Combine standard and custom fields
+                const allFields = [...standardFields];
+                const standardFieldNames = new Set(standardFields.map(f => f.field_name));
+                customFields.forEach(field => {
+                    if (!standardFieldNames.has(field.field_name)) {
+                        allFields.push(field);
+                    }
+                });
+
+                // Sort all fields by sort_order
+                allFields.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+                fields = allFields;
+            } catch (err) {
+                console.error('Error fetching fields for template:', err);
+                // Fallback to standard fields only
+                fields = getStandardFields(entityType);
+            }
+
+            if (fields.length === 0) {
+                alert('No fields available for this record type');
+                return;
+            }
+
+            // Generate CSV header row with proper CSV escaping
+            const escapeCSV = (str: string): string => {
+                if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                    return `"${str.replace(/"/g, '""')}"`;
+                }
+                return str;
+            };
+
+            const headers = fields.map(f => escapeCSV(f.field_label));
+            const csvContent = headers.join(',') + '\n';
+
+            // Create a blob and download
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `${recordType.replace(/\s+/g, '_')}_Template.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        } catch (err) {
+            console.error('Error downloading template:', err);
+            alert('Failed to download template. Please try again.');
+        }
+    };
+
     const getPreviewRows = () => {
         return csvRows.slice(0, 10);
     };
@@ -473,8 +576,17 @@ export default function DataUploader() {
 
     return (
         <div className="bg-gray-200 min-h-screen p-8">
-            <div className="max-w-6xl mx-auto bg-white rounded shadow p-6">
-                <h1 className="text-2xl font-semibold mb-6">CSV Data Upload</h1>
+            <div className="max-w-6xl mx-auto bg-white rounded shadow p-6 relative">
+                {/* Close Button */}
+                <button
+                    onClick={handleClose}
+                    className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 transition-colors"
+                    aria-label="Close"
+                    title="Close"
+                >
+                    <FiX className="w-6 h-6" />
+                </button>
+                <h1 className="text-2xl font-semibold mb-6 pr-10">CSV Data Upload</h1>
 
                 {/* Step Indicator */}
                 <div className="mb-8">
@@ -524,17 +636,32 @@ export default function DataUploader() {
                                 <p className="text-gray-600 mb-4">
                                     Choose which category of records you would like to import.
                                 </p>
-                                <select
-                                    value={recordType}
-                                    onChange={(e) => setRecordType(e.target.value)}
-                                    className="w-full md:w-64 border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                >
-                                    {recordTypes.map((type) => (
-                                        <option key={type} value={type}>
-                                            {type}
-                                        </option>
-                                    ))}
-                                </select>
+                                <div className="flex items-center space-x-4 mb-4">
+                                    <select
+                                        value={recordType}
+                                        onChange={(e) => setRecordType(e.target.value)}
+                                        className="w-full md:w-64 border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        {recordTypes.map((type) => (
+                                            <option key={type} value={type}>
+                                                {type}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <button
+                                        onClick={handleDownloadTemplate}
+                                        className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                    >
+                                        <FiDownload className="w-4 h-4" />
+                                        <span>Download Template</span>
+                                    </button>
+                                </div>
+                                <div className="p-4 bg-blue-50 border border-blue-200 rounded">
+                                    <p className="text-sm text-blue-800">
+                                        <strong>Tip:</strong> Download the CSV template to see the required field structure for {recordType} records. 
+                                        The template includes all available fields with proper headers.
+                                    </p>
+                                </div>
                             </div>
                         </div>
                     )}
@@ -589,42 +716,76 @@ export default function DataUploader() {
                                         <div className="text-gray-400">Loading available fields...</div>
                                     </div>
                                 ) : (
-                                    <div className="space-y-4">
-                                        {availableFields.map((field) => (
-                                            <div key={field.id} className="flex items-center space-x-4 p-3 border rounded">
-                                                <div className="w-64">
-                                                    <label className="text-sm font-medium text-gray-700">
-                                                        {field.field_label}
-                                                        {field.is_required && (
-                                                            <span className="text-red-500 ml-1">*</span>
-                                                        )}
-                                                        <span className="text-xs text-gray-500 ml-2">
-                                                            ({field.field_type})
-                                                        </span>
-                                                    </label>
-                                                </div>
-                                                <div className="flex-1">
-                                                    <select
-                                                        value={fieldMappings[field.field_name] || ''}
-                                                        onChange={(e) =>
-                                                            setFieldMappings((prev) => ({
-                                                                ...prev,
-                                                                [field.field_name]: e.target.value,
-                                                            }))
-                                                        }
-                                                        className="w-full border border-gray-300 rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                    >
-                                                        <option value="">-- Select CSV Column --</option>
-                                                        {csvHeaders.map((header) => (
-                                                            <option key={header} value={header}>
-                                                                {header}
-                                                            </option>
+                                    <>
+                                        {/* Validation Warning */}
+                                        {(() => {
+                                            const requiredFields = availableFields.filter(f => f.is_required);
+                                            const unmappedRequired = requiredFields.filter(f => !fieldMappings[f.field_name]);
+                                            return unmappedRequired.length > 0 && (
+                                                <div className="mb-4 p-4 bg-yellow-50 border border-yellow-200 rounded">
+                                                    <p className="text-yellow-800 font-semibold mb-2">
+                                                        ⚠️ {unmappedRequired.length} required field(s) not mapped:
+                                                    </p>
+                                                    <ul className="list-disc list-inside text-sm text-yellow-700">
+                                                        {unmappedRequired.map(f => (
+                                                            <li key={f.id}>{f.field_label}</li>
                                                         ))}
-                                                    </select>
+                                                    </ul>
                                                 </div>
-                                            </div>
-                                        ))}
-                                    </div>
+                                            );
+                                        })()}
+                                        <div className="space-y-4">
+                                            {availableFields.map((field) => {
+                                                const isRequired = field.is_required;
+                                                const isMapped = !!fieldMappings[field.field_name];
+                                                const isRequiredAndUnmapped = isRequired && !isMapped;
+                                                
+                                                return (
+                                                    <div 
+                                                        key={field.id} 
+                                                        className={`flex items-center space-x-4 p-3 border rounded ${
+                                                            isRequiredAndUnmapped ? 'border-red-300 bg-red-50' : ''
+                                                        }`}
+                                                    >
+                                                        <div className="w-64">
+                                                            <label className="text-sm font-medium text-gray-700">
+                                                                {field.field_label}
+                                                                {field.is_required && (
+                                                                    <span className="text-red-500 ml-1">*</span>
+                                                                )}
+                                                                <span className="text-xs text-gray-500 ml-2">
+                                                                    ({field.field_type})
+                                                                </span>
+                                                            </label>
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <select
+                                                                value={fieldMappings[field.field_name] || ''}
+                                                                onChange={(e) =>
+                                                                    setFieldMappings((prev) => ({
+                                                                        ...prev,
+                                                                        [field.field_name]: e.target.value,
+                                                                    }))
+                                                                }
+                                                                className={`w-full border rounded p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                                                                    isRequiredAndUnmapped 
+                                                                        ? 'border-red-500 bg-white' 
+                                                                        : 'border-gray-300'
+                                                                }`}
+                                                            >
+                                                                <option value="">-- Select CSV Column --</option>
+                                                                {csvHeaders.map((header) => (
+                                                                    <option key={header} value={header}>
+                                                                        {header}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </>
                                 )}
                             </div>
                         </div>
