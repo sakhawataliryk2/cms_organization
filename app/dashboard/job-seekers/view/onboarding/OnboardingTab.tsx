@@ -14,7 +14,8 @@ type OnboardingStatus =
   | "IN_PROGRESS"
   | "SUBMITTED"
   | "APPROVED"
-  | "REJECTED";
+  | "REJECTED"
+  | "COMPLETED"; 
 
 type OnboardingItem = {
   id: number;
@@ -23,7 +24,6 @@ type OnboardingItem = {
 };
 
 export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
-const API_BASE = process.env.API_BASE_URL || ""; 
   const [showModal, setShowModal] = useState(false);
   const [items, setItems] = useState<OnboardingItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -36,26 +36,29 @@ const API_BASE = process.env.API_BASE_URL || "";
             "$1"
           )
         : "";
-
     if (!token) return {};
     return { Authorization: `Bearer ${token}` };
   };
 
   async function fetchItems() {
+    if (!jobSeeker?.id) return;
+
     setLoading(true);
     try {
-      
-        const headers: HeadersInit = {
-          "Content-Type": "application/json",
-          ...authHeaders(),
-        };
-     const res = await fetch(`/api/onboarding/job-seekers/${jobSeeker.id}`, {
+      const headers: HeadersInit = {
+        "Content-Type": "application/json",
+        ...authHeaders(),
+      };
+
+      const res = await fetch(`/api/onboarding/job-seekers/${jobSeeker.id}`, {
         method: "GET",
         headers,
         cache: "no-store",
       });
+
       const json = await res.json();
       if (!res.ok) throw new Error(json?.message || "Failed to load onboarding");
+
       setItems(Array.isArray(json?.items) ? json.items : []);
     } catch (e) {
       console.error(e);
@@ -65,16 +68,16 @@ const API_BASE = process.env.API_BASE_URL || "";
   }
 
   useEffect(() => {
-    if (jobSeeker?.id) fetchItems();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    fetchItems();
   }, [jobSeeker?.id]);
 
-  const pending = useMemo(
-    () => items.filter((x) => x.status !== "APPROVED"),
+  const completed = useMemo(
+    () => items.filter((x) => x.status === "APPROVED" || x.status === "COMPLETED"),
     [items]
   );
-  const completed = useMemo(
-    () => items.filter((x) => x.status === "APPROVED"),
+
+  const pending = useMemo(
+    () => items.filter((x) => !(x.status === "APPROVED" || x.status === "COMPLETED")),
     [items]
   );
 
@@ -98,15 +101,11 @@ const API_BASE = process.env.API_BASE_URL || "";
           </button>
         </div>
 
-        {loading && (
-          <div className="text-sm text-gray-500 mb-3">Loading...</div>
-        )}
+        {loading && <div className="text-sm text-gray-500 mb-3">Loading...</div>}
 
         {/* Pending */}
         <div className="mb-4 border rounded">
-          <div className="px-3 py-2 bg-gray-50 text-sm font-semibold">
-            PENDING
-          </div>
+          <div className="px-3 py-2 bg-gray-50 text-sm font-semibold">PENDING</div>
 
           {pending.length === 0 ? (
             <div className="p-4 text-sm text-gray-500">
@@ -115,10 +114,7 @@ const API_BASE = process.env.API_BASE_URL || "";
           ) : (
             <div className="divide-y">
               {pending.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="flex items-center justify-between p-3"
-                >
+                <div key={doc.id} className="flex items-center justify-between p-3">
                   <div className="text-sm">{doc.document_name}</div>
                   <div className="text-xs font-semibold text-gray-600">
                     {statusLabel(doc.status)}
@@ -131,9 +127,7 @@ const API_BASE = process.env.API_BASE_URL || "";
 
         {/* Completed */}
         <div className="border rounded">
-          <div className="px-3 py-2 bg-gray-50 text-sm font-semibold">
-            COMPLETED
-          </div>
+          <div className="px-3 py-2 bg-gray-50 text-sm font-semibold">COMPLETED</div>
 
           {completed.length === 0 ? (
             <div className="p-4 text-sm text-gray-500">
@@ -142,13 +136,10 @@ const API_BASE = process.env.API_BASE_URL || "";
           ) : (
             <div className="divide-y">
               {completed.map((doc) => (
-                <div
-                  key={doc.id}
-                  className="flex items-center justify-between p-3"
-                >
+                <div key={doc.id} className="flex items-center justify-between p-3">
                   <div className="text-sm">{doc.document_name}</div>
                   <div className="text-xs font-semibold text-green-600">
-                    APPROVED
+                    {doc.status === "COMPLETED" ? "COMPLETED" : "APPROVED"}
                   </div>
                 </div>
               ))}
@@ -161,7 +152,8 @@ const API_BASE = process.env.API_BASE_URL || "";
         <SendOnboardingModal
           jobSeeker={jobSeeker}
           onClose={() => setShowModal(false)}
-          onSent={() => fetchItems()} // ✅ refresh from backend after sending
+          // ✅ IMPORTANT: modal expects (items)=>void, so accept param and just refresh
+          onSent={() => fetchItems()}
         />
       )}
     </div>
