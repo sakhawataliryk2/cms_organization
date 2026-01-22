@@ -1,10 +1,20 @@
 'use client'
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import LoadingScreen from '@/components/LoadingScreen';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  horizontalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { TbGripVertical } from "react-icons/tb";
+import { FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
 
 interface HiringManager {
     id: string;
@@ -18,11 +28,195 @@ interface HiringManager {
     status: string;
     created_at: string;
     created_by_name: string;
+    customFields?: Record<string, any>;
+    custom_fields?: Record<string, any>;
+}
+
+type ColumnSortState = "asc" | "desc" | null;
+type ColumnFilterState = string | null;
+
+// Sortable Column Header Component
+function SortableColumnHeader({
+  id,
+  columnKey,
+  label,
+  sortState,
+  filterValue,
+  onSort,
+  onFilterChange,
+  filterType,
+  filterOptions,
+  children,
+}: {
+  id: string;
+  columnKey: string;
+  label: string;
+  sortState: ColumnSortState;
+  filterValue: ColumnFilterState;
+  onSort: () => void;
+  onFilterChange: (value: string) => void;
+  filterType: "text" | "select" | "number";
+  filterOptions?: { label: string; value: string }[];
+  children?: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const [showFilter, setShowFilter] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  // Close filter on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        filterRef.current &&
+        !filterRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
+      ) {
+        setShowFilter(false);
+      }
+    };
+
+    if (showFilter) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showFilter, id]);
+
+  return (
+    <th
+      ref={setNodeRef}
+      style={style}
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
+    >
+      <div className="flex items-center gap-2">
+        {/* Drag Handle */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Drag to reorder column"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={16} />
+        </button>
+
+        {/* Column Label */}
+        <span className="flex-1">{label}</span>
+
+        {/* Sort Control */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSort();
+          }}
+          className="text-gray-400 hover:text-gray-600 transition-colors"
+          title={
+            sortState === "asc"
+              ? "Sort descending"
+              : sortState === "desc"
+              ? "Clear sort"
+              : "Sort ascending"
+          }
+        >
+          {sortState === "asc" ? (
+            <FiArrowUp size={14} />
+          ) : sortState === "desc" ? (
+            <FiArrowDown size={14} />
+          ) : (
+            <div className="w-3.5 h-3.5 border border-gray-300 rounded" />
+          )}
+        </button>
+
+        {/* Filter Toggle */}
+        <button
+          data-filter-toggle={id}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowFilter(!showFilter);
+          }}
+          className={`text-gray-400 hover:text-gray-600 transition-colors ${
+            filterValue ? "text-blue-600" : ""
+          }`}
+          title="Filter column"
+        >
+          <FiFilter size={14} />
+        </button>
+      </div>
+
+      {/* Filter Dropdown */}
+      {showFilter && (
+        <div
+          ref={filterRef}
+          className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-300 shadow-lg p-2 mt-1"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {filterType === "text" && (
+            <input
+              type="text"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "number" && (
+            <input
+              type="number"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "select" && filterOptions && (
+            <select
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            >
+              <option value="">All</option>
+              {filterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {filterValue && (
+            <button
+              onClick={() => {
+                onFilterChange("");
+                setShowFilter(false);
+              }}
+              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+            >
+              Clear Filter
+            </button>
+          )}
+        </div>
+      )}
+    </th>
+  );
 }
 
 export default function HiringManagerList() {
   const router = useRouter();
-  const [searchTerm, setSearchTerm] = useState("");
   const [selectedHiringManagers, setSelectedHiringManagers] = useState<
     string[]
   >([]);
@@ -32,20 +226,11 @@ export default function HiringManagerList() {
   const [error, setError] = useState<string | null>(null);
   const [openActionId, setOpenActionId] = useState<string | null>(null);
 
-  // Sorting state
-  const [sortField, setSortField] = useState<
-    | "id"
-    | "full_name"
-    | "title"
-    | "organization_name"
-    | "email"
-    | "phone"
-    | "status"
-    | "created_at"
-    | "created_by_name"
-    | null
-  >(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  // Per-column sorting state
+  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
+
+  // Per-column filtering state
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
   const DEFAULT_HM_COLUMNS: string[] = [
     "full_name",
     "status",
@@ -132,27 +317,26 @@ useEffect(() => {
 
   const hmColumnsCatalog = useMemo(() => {
     const standard = [
-      { key: "full_name", label: "Name", sortable: true },
-      { key: "status", label: "Status", sortable: true },
-      { key: "title", label: "Title", sortable: true },
-      { key: "organization_name", label: "Organization", sortable: true },
-      { key: "email", label: "Email", sortable: true },
-      { key: "phone", label: "Phone", sortable: true },
-      { key: "created_by_name", label: "Owner", sortable: true },
-      { key: "created_at", label: "Date Added", sortable: true },
+      { key: "full_name", label: "Name", sortable: true, filterType: "text" as const },
+      { key: "status", label: "Status", sortable: true, filterType: "select" as const },
+      { key: "title", label: "Title", sortable: true, filterType: "text" as const },
+      { key: "organization_name", label: "Organization", sortable: true, filterType: "text" as const },
+      { key: "email", label: "Email", sortable: true, filterType: "text" as const },
+      { key: "phone", label: "Phone", sortable: true, filterType: "text" as const },
+      { key: "created_by_name", label: "Owner", sortable: true, filterType: "text" as const },
+      { key: "created_at", label: "Date Added", sortable: true, filterType: "text" as const },
     ];
 
-const apiCustom = (availableFields || []).map((f: any) => {
-  const stableKey = f?.field_key || f?.field_name || f?.api_name || f?.id;
+    const apiCustom = (availableFields || []).map((f: any) => {
+      const stableKey = f?.field_key || f?.field_name || f?.api_name || f?.id;
 
-  return {
-    key: `custom:${String(stableKey)}`,
-    label: f?.field_label || f?.field_name || String(stableKey),
-    sortable: false,
-  };
-});
-
-
+      return {
+        key: `custom:${String(stableKey)}`,
+        label: f?.field_label || f?.field_name || String(stableKey),
+        sortable: false,
+        filterType: "text" as const,
+      };
+    });
 
     const customKeySet = new Set<string>();
     (hiringManagers || []).forEach((hm: any) => {
@@ -164,6 +348,7 @@ const apiCustom = (availableFields || []).map((f: any) => {
       key: `custom:${k}`,
       label: humanize(k),
       sortable: false,
+      filterType: "text" as const,
     }));
 
     const merged = [...standard, ...apiCustom, ...fromList];
@@ -176,7 +361,11 @@ const apiCustom = (availableFields || []).map((f: any) => {
   }, [availableFields, hiringManagers]);
   const getColumnLabel = (key: string) =>
     hmColumnsCatalog.find((c) => c.key === key)?.label ?? key;
-const getColumnValue = (hm: any, key: string) => {
+
+  const getColumnInfo = (key: string) =>
+    hmColumnsCatalog.find((c) => c.key === key);
+
+  const getColumnValue = (hm: any, key: string) => {
   // ✅ custom
   if (key.startsWith("custom:")) {
     const rawKey = key.replace("custom:", "");
@@ -225,6 +414,34 @@ const getColumnValue = (hm: any, key: string) => {
     defaultFields: DEFAULT_HM_COLUMNS,
   });
 
+  // Load column order from localStorage on mount
+  useEffect(() => {
+    const savedOrder = localStorage.getItem("hiringManagerColumnOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          // Only use saved order if it contains valid column keys
+          const validOrder = parsed.filter((key) =>
+            [...DEFAULT_HM_COLUMNS, ...columnFields].includes(key)
+          );
+          if (validOrder.length > 0) {
+            setColumnFields(validOrder);
+          }
+        }
+      } catch (e) {
+        console.error("Error loading column order:", e);
+      }
+    }
+  }, []);
+
+  // Save column order to localStorage whenever it changes
+  useEffect(() => {
+    if (columnFields.length > 0) {
+      localStorage.setItem("hiringManagerColumnOrder", JSON.stringify(columnFields));
+    }
+  }, [columnFields]);
+
   const fetchHiringManagers = async () => {
     setIsLoading(true);
     try {
@@ -256,84 +473,110 @@ const getColumnValue = (hm: any, key: string) => {
     }
   };
 
-  const filteredHiringManagers = hiringManagers.filter(
-    (hm) =>
-      hm.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      hm.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      hm.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      hm.organization_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      hm.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      hm.id?.toString().toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Handle column sort toggle
+  const handleColumnSort = (columnKey: string) => {
+    setColumnSorts((prev) => {
+      const current = prev[columnKey];
+      if (current === "asc") {
+        return { ...prev, [columnKey]: "desc" };
+      } else if (current === "desc") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      } else {
+        return { ...prev, [columnKey]: "asc" };
+      }
+    });
+  };
 
-  // Handle sorting
-  const handleSort = (
-    field:
-      | "id"
-      | "full_name"
-      | "title"
-      | "organization_name"
-      | "email"
-      | "phone"
-      | "status"
-      | "created_at"
-      | "created_by_name"
-  ) => {
-    if (sortField === field) {
-      // Toggle direction if same field
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    } else {
-      // Set new field with ascending direction
-      setSortField(field);
-      setSortDirection("asc");
+  // Handle column filter change
+  const handleColumnFilter = (columnKey: string, value: string) => {
+    setColumnFilters((prev) => {
+      if (!value || value.trim() === "") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      }
+      return { ...prev, [columnKey]: value };
+    });
+  };
+
+  // Handle drag end for column reordering
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = columnFields.indexOf(active.id as string);
+    const newIndex = columnFields.indexOf(over.id as string);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newOrder = arrayMove(columnFields, oldIndex, newIndex);
+      setColumnFields(newOrder);
     }
   };
 
-  // Sort the filtered hiring managers
-  const sortedHiringManagers = [...filteredHiringManagers].sort((a, b) => {
-    if (!sortField) return 0;
+  // Get unique status values for filter dropdown
+  const statusOptions = useMemo(() => {
+    const statuses = new Set<string>();
+    hiringManagers.forEach((hm) => {
+      if (hm.status) statuses.add(hm.status);
+    });
+    return Array.from(statuses).map((s) => ({ label: s, value: s }));
+  }, [hiringManagers]);
 
-    let aValue: string | number = "";
-    let bValue: string | number = "";
+  // Apply per-column filtering and sorting
+  const filteredAndSortedHiringManagers = useMemo(() => {
+    let result = [...hiringManagers];
 
-    if (sortField === "id") {
-      // Sort numerically by ID
-      aValue = parseInt(a.id) || 0;
-      bValue = parseInt(b.id) || 0;
-    } else if (sortField === "full_name") {
-      aValue =
-        (a.full_name || `${a.last_name}, ${a.first_name}`)?.toLowerCase() || "";
-      bValue =
-        (b.full_name || `${b.last_name}, ${b.first_name}`)?.toLowerCase() || "";
-    } else if (sortField === "title") {
-      aValue = a.title?.toLowerCase() || "";
-      bValue = b.title?.toLowerCase() || "";
-    } else if (sortField === "organization_name") {
-      aValue = a.organization_name?.toLowerCase() || "";
-      bValue = b.organization_name?.toLowerCase() || "";
-    } else if (sortField === "email") {
-      aValue = a.email?.toLowerCase() || "";
-      bValue = b.email?.toLowerCase() || "";
-    } else if (sortField === "phone") {
-      aValue = a.phone?.toLowerCase() || "";
-      bValue = b.phone?.toLowerCase() || "";
-    } else if (sortField === "status") {
-      aValue = a.status?.toLowerCase() || "";
-      bValue = b.status?.toLowerCase() || "";
-    } else if (sortField === "created_at") {
-      aValue = new Date(a.created_at).getTime() || 0;
-      bValue = new Date(b.created_at).getTime() || 0;
-    } else if (sortField === "created_by_name") {
-      aValue = a.created_by_name?.toLowerCase() || "";
-      bValue = b.created_by_name?.toLowerCase() || "";
+    // Apply filters
+    Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
+      if (!filterValue || filterValue.trim() === "") return;
+
+      result = result.filter((hm) => {
+        const value = getColumnValue(hm, columnKey);
+        const valueStr = String(value).toLowerCase();
+        const filterStr = String(filterValue).toLowerCase();
+
+        // For number columns, do exact match
+        const columnInfo = getColumnInfo(columnKey);
+        if (columnInfo && (columnInfo as any).filterType === "number") {
+          return String(value) === String(filterValue);
+        }
+
+        // For text columns, do contains match
+        return valueStr.includes(filterStr);
+      });
+    });
+
+    // Apply sorting (multiple columns supported, but we'll use the first active sort)
+    const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
+    if (activeSorts.length > 0) {
+      // Sort by the first active sort column
+      const [sortKey, sortDir] = activeSorts[0];
+      result.sort((a, b) => {
+        const aValue = getColumnValue(a, sortKey);
+        const bValue = getColumnValue(b, sortKey);
+
+        // Handle numeric values
+        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
+        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
+
+        let cmp = 0;
+        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+          cmp = aNum - bNum;
+        } else {
+          cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+        }
+
+        return sortDir === "asc" ? cmp : -cmp;
+      });
     }
 
-    if (sortDirection === "asc") {
-      return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-    } else {
-      return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
-    }
-  });
+    return result;
+  }, [hiringManagers, columnFilters, columnSorts]);
 
   const handleViewHiringManager = (id: string) => {
     router.push(`/dashboard/hiring-managers/view?id=${id}`);
@@ -347,7 +590,7 @@ const getColumnValue = (hm: any, key: string) => {
     if (selectAll) {
       setSelectedHiringManagers([]);
     } else {
-      setSelectedHiringManagers(filteredHiringManagers.map((hm) => hm.id));
+      setSelectedHiringManagers(filteredAndSortedHiringManagers.map((hm) => hm.id));
     }
     setSelectAll(!selectAll);
   };
@@ -364,7 +607,7 @@ const getColumnValue = (hm: any, key: string) => {
       setSelectedHiringManagers([...selectedHiringManagers, id]);
       // If all hiring managers are now selected, update selectAll state
       if (
-        [...selectedHiringManagers, id].length === filteredHiringManagers.length
+        [...selectedHiringManagers, id].length === filteredAndSortedHiringManagers.length
       ) {
         setSelectAll(true);
       }
@@ -513,78 +756,65 @@ const getColumnValue = (hm: any, key: string) => {
         </div>
       )}
 
-      {/* Search and Filter */}
-      <div className="p-4 border-b border-gray-200">
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="Search hiring managers..."
-            className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          <div className="absolute left-3 top-2.5 text-gray-400">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </div>
-        </div>
-      </div>
-
       {/* Hiring Managers Table */}
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              {/* Fixed checkbox header */}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                  checked={selectAll}
-                  onChange={handleSelectAll}
-                />
-              </th>
-
-              {/* Fixed Actions header */}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-
-              {/* Fixed ID header */}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <button
-                  onClick={() => handleSort("id")}
-                  className="hover:text-gray-700"
-                >
-                  ID
-                </button>
-              </th>
-
-              {/* Dynamic headers */}
-              {columnFields.map((key) => (
-                <th
-                  key={key}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  {getColumnLabel(key)}
+        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                {/* Fixed checkbox header */}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                    checked={selectAll}
+                    onChange={handleSelectAll}
+                  />
                 </th>
-              ))}
-            </tr>
-          </thead>
 
-          <tbody className="bg-white divide-y divide-gray-200">
-            {sortedHiringManagers.length > 0 ? (
-              sortedHiringManagers.map((hm) => (
+                {/* Fixed Actions header */}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+
+                {/* Fixed ID header */}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  ID
+                </th>
+
+                {/* Draggable Dynamic headers */}
+                <SortableContext
+                  items={columnFields}
+                  strategy={horizontalListSortingStrategy}
+                >
+                  {columnFields.map((key) => {
+                    const columnInfo = getColumnInfo(key);
+                    if (!columnInfo) return null;
+
+                    return (
+                      <SortableColumnHeader
+                        key={key}
+                        id={key}
+                        columnKey={key}
+                        label={getColumnLabel(key)}
+                        sortState={columnSorts[key] || null}
+                        filterValue={columnFilters[key] || null}
+                        onSort={() => handleColumnSort(key)}
+                        onFilterChange={(value) => handleColumnFilter(key, value)}
+                        filterType={(columnInfo as any).filterType || "text"}
+                        filterOptions={
+                          key === "status" ? statusOptions : undefined
+                        }
+                      />
+                    );
+                  })}
+                </SortableContext>
+              </tr>
+            </thead>
+
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredAndSortedHiringManagers.length > 0 ? (
+                filteredAndSortedHiringManagers.map((hm) => (
                 <tr
                   key={hm.id}
                   className="hover:bg-gray-50 cursor-pointer"
@@ -736,14 +966,15 @@ const getColumnValue = (hm: any, key: string) => {
                   colSpan={3 + columnFields.length}
                   className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                 >
-                  {searchTerm
-                    ? "No hiring managers found matching your search."
+                  {Object.keys(columnFilters).length > 0
+                    ? "No hiring managers found matching your filters."
                     : 'No hiring managers found. Click "Add Hiring Manager" to create one.'}
                 </td>
               </tr>
             )}
           </tbody>
         </table>
+        </DndContext>
       </div>
 
       {/* Pagination */}
@@ -760,13 +991,13 @@ const getColumnValue = (hm: any, key: string) => {
           <div>
             <p className="text-sm text-gray-700">
               Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">{sortedHiringManagers.length}</span>{" "}
+              <span className="font-medium">{filteredAndSortedHiringManagers.length}</span>{" "}
               of{" "}
-              <span className="font-medium">{sortedHiringManagers.length}</span>{" "}
+              <span className="font-medium">{filteredAndSortedHiringManagers.length}</span>{" "}
               results
             </p>
           </div>
-          {filteredHiringManagers.length > 0 && (
+          {filteredAndSortedHiringManagers.length > 0 && (
             <div>
               <nav
                 className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
