@@ -781,7 +781,7 @@ export default function OrganizationList() {
                     >
                       <button
                         type="button"
-                        className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
+                        className="px-3 py-1.5 border border-black text-black rounded text-sm hover:bg-gray-50"
                         onClick={(e) => {
                           e.stopPropagation();
                           setOpenActionId((prev) =>
@@ -799,7 +799,7 @@ export default function OrganizationList() {
                         >
                           <div className="flex flex-col">
                             <button
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                              className="w-full text-black text-left px-3 py-2 text-sm hover:bg-gray-50"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setOpenActionId(null);

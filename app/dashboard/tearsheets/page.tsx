@@ -504,7 +504,7 @@ const TearsheetsPage = () => {
                               },
                             ]}
                             buttonClassName="px-3 py-1 bg-gray-100 border border-gray-300 rounded flex items-center text-gray-600 hover:bg-gray-200 whitespace-nowrap"
-                            menuClassName="absolute right-0 mt-1 w-56 bg-white border border-gray-300 shadow-lg rounded z-10"
+                            menuClassName="absolute z-100 mt-1 w-56 bg-white border border-gray-300 shadow-lg text-black rounded z-10"
                           />
                         </div>
                       </td>

@@ -19,7 +19,7 @@ interface ActionDropdownProps {
 export default function ActionDropdown({
     label = 'Actions',
     options,
-    buttonClassName = 'px-3 py-1 bg-gray-100 border border-gray-300 rounded flex items-center text-gray-600',
+    buttonClassName = 'z-100 px-3 py-1 bg-gray-100 border border-gray-300 rounded flex items-center text-gray-600',
     menuClassName = 'absolute right-0 mt-1 w-40 bg-white border border-gray-300 shadow-lg rounded z-10',
     optionClassName = 'hover:bg-gray-100 px-3 py-2 cursor-pointer'
 }: ActionDropdownProps) {

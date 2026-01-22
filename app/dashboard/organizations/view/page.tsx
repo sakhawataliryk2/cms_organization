@@ -102,13 +102,13 @@ export default function OrganizationView() {
     about: organization ? `${formatRecordId(organization.id, "organization")} ${organization.name}` : "",
     aboutReferences: organization
       ? [
-          {
-            id: organization.id,
-            type: "Organization",
-            display: `${formatRecordId(organization.id, "organization")} ${organization.name}`,
-            value: formatRecordId(organization.id, "organization"),
-          },
-        ]
+        {
+          id: organization.id,
+          type: "Organization",
+          display: `${formatRecordId(organization.id, "organization")} ${organization.name}`,
+          value: formatRecordId(organization.id, "organization"),
+        },
+      ]
       : [],
     copyNote: "No",
     replaceGeneralContactComments: false,
@@ -141,7 +141,7 @@ export default function OrganizationView() {
   const [newDocumentType, setNewDocumentType] = useState("General");
   const [newDocumentContent, setNewDocumentContent] = useState("");
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
-  
+
   // Drag and drop state
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
@@ -164,9 +164,9 @@ export default function OrganizationView() {
   const [jobs, setJobs] = useState<Array<any>>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
   const [jobsError, setJobsError] = useState<string | null>(null);
-const filteredJobs = hmFilter
-  ? jobs.filter((j: any) => norm(j.hiring_manager) === norm(hmFilter))
-  : jobs;
+  const filteredJobs = hmFilter
+    ? jobs.filter((j: any) => norm(j.hiring_manager) === norm(hmFilter))
+    : jobs;
 
   // Tearsheet modal state
   const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
@@ -252,41 +252,41 @@ const filteredJobs = hmFilter
   } = useHeaderConfig({
     entityType: "ORGANIZATION",
     defaultFields: ORG_DEFAULT_HEADER_FIELDS,
-    configType: "header", 
+    configType: "header",
   });
 
   // Build field list: Standard + Custom(from Modify page)
-const buildHeaderFieldCatalog = () => {
-  const standard = [
-    { key: "phone", label: "Phone" },
-    { key: "website", label: "Website" },
-    { key: "name", label: "Name" },
-    { key: "nickname", label: "Nickname" },
-    { key: "address", label: "Address" },
-  ];
+  const buildHeaderFieldCatalog = () => {
+    const standard = [
+      { key: "phone", label: "Phone" },
+      { key: "website", label: "Website" },
+      { key: "name", label: "Name" },
+      { key: "nickname", label: "Nickname" },
+      { key: "address", label: "Address" },
+    ];
 
-  
-  const apiCustom = (availableFields || []).map((f: any) => {
-    const k = f.field_name || f.field_key || f.field_label || f.id;
-    return {
+
+    const apiCustom = (availableFields || []).map((f: any) => {
+      const k = f.field_name || f.field_key || f.field_label || f.id;
+      return {
+        key: `custom:${k}`,
+        label: f.field_label || f.field_name || String(k),
+      };
+    });
+
+    const orgCustom = Object.keys(organization?.customFields || {}).map((k) => ({
       key: `custom:${k}`,
-      label: f.field_label || f.field_name || String(k),
-    };
-  });
+      label: k,
+    }));
 
-  const orgCustom = Object.keys(organization?.customFields || {}).map((k) => ({
-    key: `custom:${k}`,
-    label: k,
-  }));
-
-  const merged = [...standard, ...apiCustom, ...orgCustom];
-  const seen = new Set<string>();
-  return merged.filter((x) => {
-    if (seen.has(x.key)) return false;
-    seen.add(x.key);
-    return true;
-  });
-};
+    const merged = [...standard, ...apiCustom, ...orgCustom];
+    const seen = new Set<string>();
+    return merged.filter((x) => {
+      if (seen.has(x.key)) return false;
+      seen.add(x.key);
+      return true;
+    });
+  };
 
 
   const headerFieldCatalog = buildHeaderFieldCatalog();
@@ -373,9 +373,8 @@ const buildHeaderFieldCatalog = () => {
         {
           id: organization.id,
           type: "Organization",
-          display: `${formatRecordId(organization.id, "organization")} ${
-            organization.name
-          }`,
+          display: `${formatRecordId(organization.id, "organization")} ${organization.name
+            }`,
           value: formatRecordId(organization.id, "organization"),
         },
       ];
@@ -468,11 +467,11 @@ const buildHeaderFieldCatalog = () => {
           let data: any = {};
           try {
             data = JSON.parse(raw);
-          } catch {}
+          } catch { }
 
           const fields =
             data.fields || data.data?.fields || data.organizationFields || [];
-          
+
           // Find Field_500 (note action field)
           const field500 = fields.find(
             (f: any) =>
@@ -487,7 +486,7 @@ const buildHeaderFieldCatalog = () => {
             if (typeof options === "string") {
               try {
                 options = JSON.parse(options);
-              } catch {}
+              } catch { }
             }
             if (Array.isArray(options)) {
               setActionFields(options.map((opt: any) => ({
@@ -622,9 +621,8 @@ const buildHeaderFieldCatalog = () => {
           suggestions.push({
             id: job.id,
             type: "Job",
-            display: `${formatRecordId(job.id, "job")} ${
-              job.job_title || "Untitled"
-            }`,
+            display: `${formatRecordId(job.id, "job")} ${job.job_title || "Untitled"
+              }`,
             value: formatRecordId(job.id, "job"),
           });
         });
@@ -642,9 +640,8 @@ const buildHeaderFieldCatalog = () => {
           suggestions.push({
             id: org.id,
             type: "Organization",
-            display: `${formatRecordId(org.id, "organization")} ${
-              org.name || "Unnamed"
-            }`,
+            display: `${formatRecordId(org.id, "organization")} ${org.name || "Unnamed"
+              }`,
             value: formatRecordId(org.id, "organization"),
           });
         });
@@ -689,9 +686,8 @@ const buildHeaderFieldCatalog = () => {
           suggestions.push({
             id: lead.id,
             type: "Lead",
-            display: `${formatRecordId(lead.id, "lead")} ${
-              lead.name || lead.company_name || "Unnamed"
-            }`,
+            display: `${formatRecordId(lead.id, "lead")} ${lead.name || lead.company_name || "Unnamed"
+              }`,
             value: formatRecordId(lead.id, "lead"),
           });
         });
@@ -728,9 +724,8 @@ const buildHeaderFieldCatalog = () => {
           suggestions.push({
             id: placement.id,
             type: "Placement",
-            display: `#${placement.id} ${
-              placement.jobSeekerName || "Unnamed"
-            } - ${placement.jobTitle || "Untitled"}`,
+            display: `#${placement.id} ${placement.jobSeekerName || "Unnamed"
+              } - ${placement.jobTitle || "Untitled"}`,
             value: `#${placement.id}`,
           });
         });
@@ -831,28 +826,28 @@ const buildHeaderFieldCatalog = () => {
   const fetchAvailableFields = async () => {
     setIsLoadingFields(true);
     try {
-const token = document.cookie.replace(
-  /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-  "$1"
-);
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
 
-const response = await fetch("/api/admin/field-management/organizations", {
-  headers: { Authorization: `Bearer ${token}` },
-});
+      const response = await fetch("/api/admin/field-management/organizations", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
 
-console.log("field-management status:", response.status);
+      console.log("field-management status:", response.status);
 
-const raw = await response.text();
-console.log("field-management raw:", raw);
+      const raw = await response.text();
+      console.log("field-management raw:", raw);
 
-let data: any = {};
-try {
-  data = JSON.parse(raw);
-} catch {}
+      let data: any = {};
+      try {
+        data = JSON.parse(raw);
+      } catch { }
 
-const fields =
-  data.fields || data.data?.fields || data.organizationFields || [];
-setAvailableFields(fields);
+      const fields =
+        data.fields || data.data?.fields || data.organizationFields || [];
+      setAvailableFields(fields);
       if (response.ok) {
         const data = await response.json();
         const fields = data.fields || [];
@@ -1216,7 +1211,7 @@ setAvailableFields(fields);
           )}`,
         },
       });
-      
+
       let hiringManagerIds: number[] = [];
       if (hiringManagersResponse.ok) {
         const hiringManagersData = await hiringManagersResponse.json();
@@ -1236,7 +1231,7 @@ setAvailableFields(fields);
           )}`,
         },
       });
-      
+
       let jobIds: number[] = [];
       if (jobsResponse.ok) {
         const jobsData = await jobsResponse.json();
@@ -1355,7 +1350,7 @@ setAvailableFields(fields);
         "image/gif",
       ];
       const isValidType = allowedTypes.includes(file.type) || file.name.match(/\.(pdf|doc|docx|txt|jpg|jpeg|png|gif)$/i);
-      
+
       // Validate file size (max 10MB)
       const isValidSize = file.size <= 10 * 1024 * 1024;
 
@@ -1617,75 +1612,132 @@ setAvailableFields(fields);
 
   // Print handler: print only Overview Summary content
   const handlePrint = () => {
-    const prevTab = activeTab;
-    if (prevTab !== "summary") {
-      setActiveTab("summary");
-      setTimeout(() => {
-        const printContent = document.getElementById("printable-summary");
-        if (printContent) {
-          const printWindow = window.open("", "_blank");
-          if (printWindow) {
-            printWindow.document.write(`
-              <html>
-                <head>
-                  <title>Organization Summary</title>
-                  <style>
-                    body { font-family: Arial, sans-serif; padding: 20px; }
-                    .panel { margin-bottom: 20px; border: 1px solid #ddd; padding: 15px; }
-                    .panel-title { font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
-                    table { width: 100%; border-collapse: collapse; }
-                    td { padding: 5px; border-bottom: 1px solid #eee; }
-                    .field-label { font-weight: bold; width: 120px; }
-                  </style>
-                </head>
-                <body>
-                  ${printContent.innerHTML}
-                </body>
-              </html>
-            `);
-            printWindow.document.close();
-            printWindow.focus();
-            setTimeout(() => {
-              printWindow.print();
-              printWindow.close();
-            }, 250);
-          }
+  const printContent = document.getElementById("printable-summary");
+  if (!printContent) return;
+
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) return;
+
+  const tabTitle = activeTab?.toUpperCase() || "SUMMARY";
+
+  // clone styles
+  const styles = Array.from(document.styleSheets)
+    .map(sheet => {
+      try {
+        if (sheet.href) {
+          return `<link rel="stylesheet" href="${sheet.href}" />`;
         }
-        setActiveTab(prevTab);
-      }, 300);
-    } else {
-      const printContent = document.getElementById("printable-summary");
-      if (printContent) {
-        const printWindow = window.open("", "_blank");
-        if (printWindow) {
-          printWindow.document.write(`
-            <html>
-              <head>
-                <title>Organization Summary</title>
-                <style>
-                  body { font-family: Arial, sans-serif; padding: 20px; }
-                  .panel { margin-bottom: 20px; border: 1px solid #ddd; padding: 15px; }
-                  .panel-title { font-weight: bold; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
-                  table { width: 100%; border-collapse: collapse; }
-                  td { padding: 5px; border-bottom: 1px solid #eee; }
-                  .field-label { font-weight: bold; width: 120px; }
-                </style>
-              </head>
-              <body>
-                ${printContent.innerHTML}
-              </body>
-            </html>
-          `);
-          printWindow.document.close();
-          printWindow.focus();
-          setTimeout(() => {
-            printWindow.print();
-            printWindow.close();
-          }, 250);
-        }
+        return `<style>${Array.from(sheet.cssRules)
+          .map(rule => rule.cssText)
+          .join("")}</style>`;
+      } catch {
+        return "";
       }
-    }
-  };
+    })
+    .join("");
+
+  printWindow.document.write(`
+    <html>
+      <head>
+        <title>${tabTitle}</title>
+        ${styles}
+        <style>
+          /* PAGE SETUP */
+          @page {
+            size: A4;
+            margin: 18mm 16mm;
+          }
+
+          body {
+            font-family: Inter, system-ui, Arial, sans-serif;
+            background: #fff;
+            color: #111827;
+          }
+
+          /* WRAPPER */
+          .print-wrapper {
+            max-width: 800px;
+            margin: auto;
+          }
+
+          /* HEADER */
+          .print-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+          }
+
+          .print-title {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+          }
+
+          .print-date {
+            font-size: 11px;
+            color: #6b7280;
+          }
+
+          /* FOOTER */
+          .print-footer {
+            position: fixed;
+            bottom: 10mm;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 10px;
+            color: #9ca3af;
+          }
+
+          /* CLEANUP */
+          .no-print {
+            display: none !important;
+          }
+
+          table {
+            page-break-inside: avoid;
+          }
+
+          .panel {
+            page-break-inside: avoid;
+          }
+        </style>
+      </head>
+
+      <body>
+        <div class="print-wrapper">
+
+          <div class="print-header">
+            <div class="print-title">${tabTitle}</div>
+            <div class="print-date">
+              ${new Date().toLocaleDateString()}
+            </div>
+          </div>
+
+          ${printContent.innerHTML}
+
+        </div>
+
+        <div class="print-footer">
+          Generated by System • Page <span class="pageNumber"></span>
+        </div>
+      </body>
+    </html>
+  `);
+
+  printWindow.document.close();
+  printWindow.focus();
+
+  setTimeout(() => {
+    printWindow.print();
+    printWindow.close();
+  }, 600);
+};
+
+
 
   const refreshPanel = (panelName: string) => {
     console.log(`Refreshing ${panelName} panel`);
@@ -2135,23 +2187,21 @@ setAvailableFields(fields);
       // Clear the form
       const defaultAboutRef = organization
         ? [
-            {
-              id: organization.id,
-              type: "Organization",
-              display: `${formatRecordId(organization.id, "organization")} ${
-                organization.name
+          {
+            id: organization.id,
+            type: "Organization",
+            display: `${formatRecordId(organization.id, "organization")} ${organization.name
               }`,
-              value: formatRecordId(organization.id, "organization"),
-            },
-          ]
+            value: formatRecordId(organization.id, "organization"),
+          },
+        ]
         : [];
       setNoteForm({
         text: "",
         action: "",
         about: organization
-          ? `${formatRecordId(organization.id, "organization")} ${
-              organization.name
-            }`
+          ? `${formatRecordId(organization.id, "organization")} ${organization.name
+          }`
           : "",
         aboutReferences: defaultAboutRef,
         copyNote: "No",
@@ -2185,23 +2235,21 @@ setAvailableFields(fields);
     setShowAddNote(false);
     const defaultAboutRef = organization
       ? [
-          {
-            id: organization.id,
-            type: "Organization",
-            display: `${formatRecordId(organization.id, "organization")} ${
-              organization.name
+        {
+          id: organization.id,
+          type: "Organization",
+          display: `${formatRecordId(organization.id, "organization")} ${organization.name
             }`,
-            value: formatRecordId(organization.id, "organization"),
-          },
-        ]
+          value: formatRecordId(organization.id, "organization"),
+        },
+      ]
       : [];
     setNoteForm({
       text: "",
       action: "",
       about: organization
-        ? `${formatRecordId(organization.id, "organization")} ${
-            organization.name
-          }`
+        ? `${formatRecordId(organization.id, "organization")} ${organization.name
+        }`
         : "",
       aboutReferences: defaultAboutRef,
       copyNote: "No",
@@ -2455,14 +2503,14 @@ setAvailableFields(fields);
       // Note: Since the backend doesn't directly support organization-tearsheet association,
       // we'll add the organization's related records (hiring managers, jobs) to the tearsheet
       // This is a workaround until backend supports direct organization association
-      
+
       // For now, we'll show a success message and close the modal
       // The actual association logic can be implemented when backend supports it
       alert(`Tearsheet "${selectedTearsheet.name}" has been selected for this organization.`);
-      
+
       setShowAddTearsheetModal(false);
       setTearsheetForm({ selectedTearsheetId: "" });
-      
+
       // TODO: Implement actual association when backend API supports it
       // This might involve:
       // 1. Adding organization's hiring managers to tearsheet_hiring_managers
@@ -2724,11 +2772,10 @@ setAvailableFields(fields);
                                 key={idx}
                                 onClick={() => navigateToReference(ref)}
                                 disabled={!isClickable}
-                                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-all ${
-                                  isClickable
+                                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-all ${isClickable
                                     ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer"
                                     : "bg-gray-100 text-gray-700 border-gray-200 cursor-default"
-                                }`}
+                                  }`}
                                 title={isClickable ? `View ${refType}` : "Reference not available"}
                               >
                                 <svg
@@ -2797,9 +2844,8 @@ setAvailableFields(fields);
               switch (item.action) {
                 case "CREATE":
                   actionDisplay = "Organization Created";
-                  detailsDisplay = `Created by ${
-                    item.performed_by_name || "Unknown"
-                  }`;
+                  detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
+                    }`;
                   break;
                 case "UPDATE":
                   actionDisplay = "Organization Updated";
@@ -2810,8 +2856,7 @@ setAvailableFields(fields);
                       if (details.before[key] !== details.after[key]) {
                         const fieldName = key.replace(/_/g, " ");
                         changes.push(
-                          `${fieldName}: "${details.before[key] || ""}" → "${
-                            details.after[key] || ""
+                          `${fieldName}: "${details.before[key] || ""}" → "${details.after[key] || ""
                           }"`
                         );
                       }
@@ -3055,11 +3100,10 @@ setAvailableFields(fields);
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            className={`px-4 py-2 ${
-              activeTab === tab.id
+            className={`px-4 py-2 ${activeTab === tab.id
                 ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
                 : "text-gray-700 hover:bg-gray-200"
-            }`}
+              }`}
             onClick={() => {
               if (tab.id === "modify") {
                 handleModifyClick();
@@ -3198,9 +3242,8 @@ setAvailableFields(fields);
             {/* Floating Panel (when pinned) */}
             {isPinned && (
               <div
-                className={`fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${
-                  isCollapsed ? "w-12" : "w-1/3"
-                } border-l border-gray-300`}
+                className={`fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"
+                  } border-l border-gray-300`}
               >
                 <div className="flex flex-col h-full">
                   <div className="flex items-center justify-between p-3 border-b border-gray-300 bg-gray-50">
@@ -3498,13 +3541,12 @@ setAvailableFields(fields);
                                                     </h4>
                                                     {task.priority && (
                                                       <span
-                                                        className={`px-2 py-0.5 rounded text-xs ${
-                                                          task.priority === "High"
+                                                        className={`px-2 py-0.5 rounded text-xs ${task.priority === "High"
                                                             ? "bg-red-100 text-red-800"
                                                             : task.priority === "Medium"
-                                                            ? "bg-yellow-100 text-yellow-800"
-                                                            : "bg-gray-100 text-gray-800"
-                                                        }`}
+                                                              ? "bg-yellow-100 text-yellow-800"
+                                                              : "bg-gray-100 text-gray-800"
+                                                          }`}
                                                       >
                                                         {task.priority}
                                                       </span>
@@ -3582,91 +3624,91 @@ setAvailableFields(fields);
                                     title="Organization Contact Info:"
                                     onEdit={() => handleEditPanel("contactInfo")}
                                   >
-                <div className="space-y-0 border border-gray-200 rounded">
-                  {visibleFields.contactInfo.includes("name") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Name:
-                      </div>
-                      <div className="flex-1 p-2 text-blue-600">
-                        {organization.contact.name}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.contactInfo.includes("nickname") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Nickname:
-                      </div>
-                      <div className="flex-1 p-2">
-                        {organization.contact.nickname || "-"}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.contactInfo.includes("phone") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Phone:
-                      </div>
-                      <div className="flex-1 p-2">
-                        {organization.contact.phone}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.contactInfo.includes("address") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Address:
-                      </div>
-                      <div className="flex-1 p-2">
-                        {organization.contact.address}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.contactInfo.includes("website") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Website:
-                      </div>
-                      <div className="flex-1 p-2 text-blue-600">
-                        <a
-                          href={organization.contact.website}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {organization.contact.website}
-                        </a>
-                      </div>
-                    </div>
-                  )}
-                  {/* Display custom fields */}
-                  {organization.customFields &&
-                    Object.keys(organization.customFields).map((fieldKey) => {
-                      if (visibleFields.contactInfo.includes(fieldKey)) {
-                        const field = availableFields.find(
-                          (f) =>
-                            (f.field_name || f.field_label || f.id) === fieldKey
-                        );
-                        const fieldLabel =
-                          field?.field_label || field?.field_name || fieldKey;
-                        const fieldValue = organization.customFields[fieldKey];
-                        return (
-                          <div
-                            key={fieldKey}
-                            className="flex border-b border-gray-200 last:border-b-0"
-                          >
-                            <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                              {fieldLabel}:
-                            </div>
-                            <div className="flex-1 p-2">
-                              {String(fieldValue || "-")}
-                            </div>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })}
-                </div>
+                                    <div className="space-y-0 border border-gray-200 rounded">
+                                      {visibleFields.contactInfo.includes("name") && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                            Name:
+                                          </div>
+                                          <div className="flex-1 p-2 text-blue-600">
+                                            {organization.contact.name}
+                                          </div>
+                                        </div>
+                                      )}
+                                      {visibleFields.contactInfo.includes("nickname") && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                            Nickname:
+                                          </div>
+                                          <div className="flex-1 p-2">
+                                            {organization.contact.nickname || "-"}
+                                          </div>
+                                        </div>
+                                      )}
+                                      {visibleFields.contactInfo.includes("phone") && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                            Phone:
+                                          </div>
+                                          <div className="flex-1 p-2">
+                                            {organization.contact.phone}
+                                          </div>
+                                        </div>
+                                      )}
+                                      {visibleFields.contactInfo.includes("address") && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                            Address:
+                                          </div>
+                                          <div className="flex-1 p-2">
+                                            {organization.contact.address}
+                                          </div>
+                                        </div>
+                                      )}
+                                      {visibleFields.contactInfo.includes("website") && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                            Website:
+                                          </div>
+                                          <div className="flex-1 p-2 text-blue-600">
+                                            <a
+                                              href={organization.contact.website}
+                                              target="_blank"
+                                              rel="noopener noreferrer"
+                                            >
+                                              {organization.contact.website}
+                                            </a>
+                                          </div>
+                                        </div>
+                                      )}
+                                      {/* Display custom fields */}
+                                      {organization.customFields &&
+                                        Object.keys(organization.customFields).map((fieldKey) => {
+                                          if (visibleFields.contactInfo.includes(fieldKey)) {
+                                            const field = availableFields.find(
+                                              (f) =>
+                                                (f.field_name || f.field_label || f.id) === fieldKey
+                                            );
+                                            const fieldLabel =
+                                              field?.field_label || field?.field_name || fieldKey;
+                                            const fieldValue = organization.customFields[fieldKey];
+                                            return (
+                                              <div
+                                                key={fieldKey}
+                                                className="flex border-b border-gray-200 last:border-b-0"
+                                              >
+                                                <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                                  {fieldLabel}:
+                                                </div>
+                                                <div className="flex-1 p-2">
+                                                  {String(fieldValue || "-")}
+                                                </div>
+                                              </div>
+                                            );
+                                          }
+                                          return null;
+                                        })}
+                                    </div>
                                   </PanelWithHeader>
                                 </SortablePanel>
                               );
@@ -3849,13 +3891,12 @@ setAvailableFields(fields);
                                                 </h4>
                                                 {task.priority && (
                                                   <span
-                                                    className={`px-2 py-0.5 rounded text-xs ${
-                                                      task.priority === "High"
+                                                    className={`px-2 py-0.5 rounded text-xs ${task.priority === "High"
                                                         ? "bg-red-100 text-red-800"
                                                         : task.priority === "Medium"
-                                                        ? "bg-yellow-100 text-yellow-800"
-                                                        : "bg-gray-100 text-gray-800"
-                                                    }`}
+                                                          ? "bg-yellow-100 text-yellow-800"
+                                                          : "bg-gray-100 text-gray-800"
+                                                      }`}
                                                   >
                                                     {task.priority}
                                                   </span>
@@ -4008,11 +4049,10 @@ setAvailableFields(fields);
                         </td>
                         <td className="p-3">
                           <span
-                            className={`px-2 py-1 rounded text-xs ${
-                              hm.status === "Active"
+                            className={`px-2 py-1 rounded text-xs ${hm.status === "Active"
                                 ? "bg-green-100 text-green-800"
                                 : "bg-gray-100 text-gray-800"
-                            }`}
+                              }`}
                           >
                             {hm.status || "Active"}
                           </span>
@@ -4087,11 +4127,10 @@ setAvailableFields(fields);
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 transition-colors ${
-                isDragging
+              className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 transition-colors ${isDragging
                   ? "border-blue-500 bg-blue-50"
                   : "border-gray-300 bg-gray-50 hover:border-gray-400"
-              }`}
+                }`}
             >
               <div className="flex flex-col items-center">
                 <svg
@@ -4257,11 +4296,10 @@ setAvailableFields(fields);
                         <td className="p-3">{doc.document_type}</td>
                         <td className="p-3">
                           <span
-                            className={`px-2 py-1 rounded text-xs ${
-                              doc.is_auto_generated
+                            className={`px-2 py-1 rounded text-xs ${doc.is_auto_generated
                                 ? "bg-green-100 text-green-800"
                                 : "bg-gray-100 text-gray-800"
-                            }`}
+                              }`}
                           >
                             {doc.is_auto_generated ? "Yes" : "No"}
                           </span>
@@ -4376,15 +4414,14 @@ setAvailableFields(fields);
                         <td className="p-3">{job.category || "-"}</td>
                         <td className="p-3">
                           <span
-                            className={`px-2 py-1 rounded text-xs ${
-                              job.status === "Open"
+                            className={`px-2 py-1 rounded text-xs ${job.status === "Open"
                                 ? "bg-green-100 text-green-800"
                                 : job.status === "On Hold"
-                                ? "bg-yellow-100 text-yellow-800"
-                                : job.status === "Filled"
-                                ? "bg-blue-100 text-blue-800"
-                                : "bg-gray-100 text-gray-800"
-                            }`}
+                                  ? "bg-yellow-100 text-yellow-800"
+                                  : job.status === "Filled"
+                                    ? "bg-blue-100 text-blue-800"
+                                    : "bg-gray-100 text-gray-800"
+                              }`}
                           >
                             {job.status || "Open"}
                           </span>
@@ -4624,11 +4661,10 @@ setAvailableFields(fields);
                             });
                           }
                         }}
-                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 ${
-                          validationErrors.action
+                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 ${validationErrors.action
                             ? "border-red-500 focus:ring-red-500"
                             : "border-gray-300 focus:ring-blue-500"
-                        }`}
+                          }`}
                       >
                         <option value="">Select Action</option>
                         {actionFields.map((field) => (
@@ -4698,11 +4734,10 @@ setAvailableFields(fields);
                             ? "Search and select records (e.g., Job, Lead, Placement)..."
                             : "Add another reference..."
                         }
-                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 pr-8 ${
-                          validationErrors.about
+                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 pr-8 ${validationErrors.about
                             ? "border-red-500 focus:ring-red-500"
                             : "border-gray-300 focus:ring-blue-500"
-                        }`}
+                          }`}
                       />
                       <span className="absolute right-2 top-2 text-gray-400 text-sm">
                         Q
@@ -5021,11 +5056,10 @@ setAvailableFields(fields);
                     }))
                   }
                   placeholder="Please provide a detailed reason for deleting this organization..."
-                  className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${
-                    !deleteForm.reason.trim()
+                  className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${!deleteForm.reason.trim()
                       ? "border-red-300 focus:ring-red-500"
                       : "border-gray-300 focus:ring-blue-500"
-                  }`}
+                    }`}
                   rows={5}
                   required
                 />
