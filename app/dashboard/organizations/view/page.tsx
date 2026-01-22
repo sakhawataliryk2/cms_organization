@@ -1612,31 +1612,31 @@ export default function OrganizationView() {
 
   // Print handler: print only Overview Summary content
   const handlePrint = () => {
-  const printContent = document.getElementById("printable-summary");
-  if (!printContent) return;
+    const printContent = document.getElementById("printable-summary");
+    if (!printContent) return;
 
-  const printWindow = window.open("", "_blank");
-  if (!printWindow) return;
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
 
-  const tabTitle = activeTab?.toUpperCase() || "SUMMARY";
+    const tabTitle = activeTab?.toUpperCase() || "SUMMARY";
 
-  // clone styles
-  const styles = Array.from(document.styleSheets)
-    .map(sheet => {
-      try {
-        if (sheet.href) {
-          return `<link rel="stylesheet" href="${sheet.href}" />`;
+    // clone styles
+    const styles = Array.from(document.styleSheets)
+      .map(sheet => {
+        try {
+          if (sheet.href) {
+            return `<link rel="stylesheet" href="${sheet.href}" />`;
+          }
+          return `<style>${Array.from(sheet.cssRules)
+            .map(rule => rule.cssText)
+            .join("")}</style>`;
+        } catch {
+          return "";
         }
-        return `<style>${Array.from(sheet.cssRules)
-          .map(rule => rule.cssText)
-          .join("")}</style>`;
-      } catch {
-        return "";
-      }
-    })
-    .join("");
+      })
+      .join("");
 
-  printWindow.document.write(`
+    printWindow.document.write(`
     <html>
       <head>
         <title>${tabTitle}</title>
@@ -1728,14 +1728,14 @@ export default function OrganizationView() {
     </html>
   `);
 
-  printWindow.document.close();
-  printWindow.focus();
+    printWindow.document.close();
+    printWindow.focus();
 
-  setTimeout(() => {
-    printWindow.print();
-    printWindow.close();
-  }, 600);
-};
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 600);
+  };
 
 
 
@@ -2196,6 +2196,7 @@ export default function OrganizationView() {
           },
         ]
         : [];
+      
       setNoteForm({
         text: "",
         action: "",
@@ -2210,6 +2211,7 @@ export default function OrganizationView() {
         scheduleNextAction: "None",
         emailNotification: "Internal User",
       });
+      // setShowAddNote(false);j
       setAboutSearchQuery("");
       setValidationErrors({});
       setShowAddNote(false);
@@ -2773,8 +2775,8 @@ export default function OrganizationView() {
                                 onClick={() => navigateToReference(ref)}
                                 disabled={!isClickable}
                                 className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-all ${isClickable
-                                    ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer"
-                                    : "bg-gray-100 text-gray-700 border-gray-200 cursor-default"
+                                  ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer"
+                                  : "bg-gray-100 text-gray-700 border-gray-200 cursor-default"
                                   }`}
                                 title={isClickable ? `View ${refType}` : "Reference not available"}
                               >
@@ -2941,7 +2943,7 @@ export default function OrganizationView() {
   }
 
   return (
-    <div className="bg-gray-200 min-h-screen p-2">
+    <div className="overflow-x-hidden bg-gray-200 min-h-screen p-2">
       {/* Header with company name and buttons */}
       <div className="bg-gray-400 p-2 flex items-center">
         <div className="flex items-center">
@@ -3101,8 +3103,8 @@ export default function OrganizationView() {
           <button
             key={tab.id}
             className={`px-4 py-2 ${activeTab === tab.id
-                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
-                : "text-gray-700 hover:bg-gray-200"
+              ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+              : "text-gray-700 hover:bg-gray-200"
               }`}
             onClick={() => {
               if (tab.id === "modify") {
@@ -3542,10 +3544,10 @@ export default function OrganizationView() {
                                                     {task.priority && (
                                                       <span
                                                         className={`px-2 py-0.5 rounded text-xs ${task.priority === "High"
-                                                            ? "bg-red-100 text-red-800"
-                                                            : task.priority === "Medium"
-                                                              ? "bg-yellow-100 text-yellow-800"
-                                                              : "bg-gray-100 text-gray-800"
+                                                          ? "bg-red-100 text-red-800"
+                                                          : task.priority === "Medium"
+                                                            ? "bg-yellow-100 text-yellow-800"
+                                                            : "bg-gray-100 text-gray-800"
                                                           }`}
                                                       >
                                                         {task.priority}
@@ -3892,10 +3894,10 @@ export default function OrganizationView() {
                                                 {task.priority && (
                                                   <span
                                                     className={`px-2 py-0.5 rounded text-xs ${task.priority === "High"
-                                                        ? "bg-red-100 text-red-800"
-                                                        : task.priority === "Medium"
-                                                          ? "bg-yellow-100 text-yellow-800"
-                                                          : "bg-gray-100 text-gray-800"
+                                                      ? "bg-red-100 text-red-800"
+                                                      : task.priority === "Medium"
+                                                        ? "bg-yellow-100 text-yellow-800"
+                                                        : "bg-gray-100 text-gray-800"
                                                       }`}
                                                   >
                                                     {task.priority}
@@ -4050,8 +4052,8 @@ export default function OrganizationView() {
                         <td className="p-3">
                           <span
                             className={`px-2 py-1 rounded text-xs ${hm.status === "Active"
-                                ? "bg-green-100 text-green-800"
-                                : "bg-gray-100 text-gray-800"
+                              ? "bg-green-100 text-green-800"
+                              : "bg-gray-100 text-gray-800"
                               }`}
                           >
                             {hm.status || "Active"}
@@ -4128,8 +4130,8 @@ export default function OrganizationView() {
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 transition-colors ${isDragging
-                  ? "border-blue-500 bg-blue-50"
-                  : "border-gray-300 bg-gray-50 hover:border-gray-400"
+                ? "border-blue-500 bg-blue-50"
+                : "border-gray-300 bg-gray-50 hover:border-gray-400"
                 }`}
             >
               <div className="flex flex-col items-center">
@@ -4297,8 +4299,8 @@ export default function OrganizationView() {
                         <td className="p-3">
                           <span
                             className={`px-2 py-1 rounded text-xs ${doc.is_auto_generated
-                                ? "bg-green-100 text-green-800"
-                                : "bg-gray-100 text-gray-800"
+                              ? "bg-green-100 text-green-800"
+                              : "bg-gray-100 text-gray-800"
                               }`}
                           >
                             {doc.is_auto_generated ? "Yes" : "No"}
@@ -4415,12 +4417,12 @@ export default function OrganizationView() {
                         <td className="p-3">
                           <span
                             className={`px-2 py-1 rounded text-xs ${job.status === "Open"
-                                ? "bg-green-100 text-green-800"
-                                : job.status === "On Hold"
-                                  ? "bg-yellow-100 text-yellow-800"
-                                  : job.status === "Filled"
-                                    ? "bg-blue-100 text-blue-800"
-                                    : "bg-gray-100 text-gray-800"
+                              ? "bg-green-100 text-green-800"
+                              : job.status === "On Hold"
+                                ? "bg-yellow-100 text-yellow-800"
+                                : job.status === "Filled"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : "bg-gray-100 text-gray-800"
                               }`}
                           >
                             {job.status || "Open"}
@@ -4640,7 +4642,12 @@ export default function OrganizationView() {
                 {/* Action Dropdown - Required */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Action <span className="text-red-500">*</span>
+                    Action{" "}
+                    {noteForm.action ? (
+                      <span className="text-green-500">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
                   </label>
                   {isLoadingActionFields ? (
                     <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
@@ -4662,8 +4669,8 @@ export default function OrganizationView() {
                           }
                         }}
                         className={`w-full p-2 border rounded focus:outline-none focus:ring-2 ${validationErrors.action
-                            ? "border-red-500 focus:ring-red-500"
-                            : "border-gray-300 focus:ring-blue-500"
+                          ? "border-red-500 focus:ring-red-500"
+                          : "border-gray-300 focus:ring-blue-500"
                           }`}
                       >
                         <option value="">Select Action</option>
@@ -4688,7 +4695,11 @@ export default function OrganizationView() {
                 {/* About Section - Required, Multiple References */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    About / Reference <span className="text-red-500">*</span>
+                    About / Reference {noteForm.aboutReferences ? (
+                      <span className="text-green-500">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
                   </label>
                   <div className="relative" ref={aboutInputRef}>
                     {/* Selected References Tags */}
@@ -4735,8 +4746,8 @@ export default function OrganizationView() {
                             : "Add another reference..."
                         }
                         className={`w-full p-2 border rounded focus:outline-none focus:ring-2 pr-8 ${validationErrors.about
-                            ? "border-red-500 focus:ring-red-500"
-                            : "border-gray-300 focus:ring-blue-500"
+                          ? "border-red-500 focus:ring-red-500"
+                          : "border-gray-300 focus:ring-blue-500"
                           }`}
                       />
                       <span className="absolute right-2 top-2 text-gray-400 text-sm">
@@ -4791,27 +4802,57 @@ export default function OrganizationView() {
                 </div>
 
                 {/* Additional References Section */}
-                <div>
+                <div className="relative">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Additional References
                   </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={noteForm.additionalReferences}
-                      onChange={(e) =>
-                        setNoteForm((prev) => ({
-                          ...prev,
-                          additionalReferences: e.target.value,
-                        }))
-                      }
-                      placeholder="Reference other records using #"
-                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
-                    />
-                    <span className="absolute right-2 top-2 text-gray-400 text-sm">
-                      Q
-                    </span>
-                  </div>
+                  <input
+                    type="text"
+                    value={noteForm.additionalReferences}
+                    onChange={(e) =>
+                      setNoteForm((prev) => ({
+                        ...prev,
+                        additionalReferences: e.target.value,
+                      }))
+                    }
+                    placeholder="Reference other records using #"
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  {noteForm.additionalReferences.trim().length > 1 && (
+                    <div
+                      data-about-dropdown
+                      className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
+                    >
+                      {isLoadingAboutSearch ? (
+                        <div className="p-3 text-center text-gray-500 text-sm">
+                          Searching...
+                        </div>
+                      ) : aboutSuggestions.length > 0 ? (
+                        aboutSuggestions.map((suggestion, idx) => (
+                          <button
+                            key={`${suggestion.type}-${suggestion.id}-${idx}`}
+                            type="button"
+                            onClick={() => handleAboutReferenceSelect(suggestion)}
+                            className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
+                          >
+                            <HiOutlineOfficeBuilding className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                            <div className="flex-1">
+                              <div className="text-sm font-medium text-gray-900">
+                                {suggestion.display}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                {suggestion.type}
+                              </div>
+                            </div>
+                          </button>
+                        ))
+                      ) : aboutSearchQuery.trim().length >= 2 ? (
+                        <div className="p-3 text-center text-gray-500 text-sm">
+                          No results found
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
                 </div>
 
                 {/* Email Notification Section - Internal Users Only */}
@@ -5057,8 +5098,8 @@ export default function OrganizationView() {
                   }
                   placeholder="Please provide a detailed reason for deleting this organization..."
                   className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${!deleteForm.reason.trim()
-                      ? "border-red-300 focus:ring-red-500"
-                      : "border-gray-300 focus:ring-blue-500"
+                    ? "border-red-300 focus:ring-red-500"
+                    : "border-gray-300 focus:ring-blue-500"
                     }`}
                   rows={5}
                   required
