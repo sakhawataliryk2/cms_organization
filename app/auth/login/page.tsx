@@ -174,7 +174,7 @@ export default function Login() {
               <input
                 type="email"
                 placeholder="Email address"
-                className="w-full py-3 pl-10 pr-3 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                className="dark:text-white w-full py-3 pl-10 pr-3 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -209,7 +209,7 @@ export default function Login() {
               <input
                 type={showPassword ? "text" : "password"}
                 placeholder="Password"
-                className="w-full py-3 pl-10 pr-10 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                className="dark:text-white w-full py-3 pl-10 pr-10 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required

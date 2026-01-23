@@ -2,7 +2,7 @@
 
 import React from "react";
 import LookupField from "./LookupField";
-import { FiCalendar } from "react-icons/fi";
+import { FiCalendar, FiLock } from "react-icons/fi";
 
 interface CustomFieldDefinition {
   id: string;
@@ -541,6 +541,37 @@ export default function CustomFieldRenderer({
     //     />
     //   );
     case "date": {
+      // Treat "Date Added" fields as read-only with a lock icon
+      const isDateAddedField =
+        field.field_label?.toLowerCase() === "date added" ||
+        field.field_name?.toLowerCase() === "dateadded";
+
+      // Common display value (mm/dd/yyyy)
+      const todayDefault = () => {
+        const today = new Date();
+        const m = String(today.getMonth() + 1).padStart(2, "0");
+        const d = String(today.getDate()).padStart(2, "0");
+        const y = today.getFullYear();
+        return `${m}/${d}/${y}`;
+      };
+      const displayReadOnlyValue = value ? formatDateToMMDDYYYY(String(value)) : todayDefault();
+
+      if (isDateAddedField) {
+        return (
+          <div className="relative flex items-center">
+            <input
+              id={field.field_name}
+              type="text"
+              value={displayReadOnlyValue}
+              readOnly
+              className={`${className} bg-gray-100 cursor-not-allowed`}
+            />
+            <FiLock className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500" />
+          </div>
+        );
+      }
+
+      // Calendar popup state
       // Calendar popup state
       const [showCalendar, setShowCalendar] = React.useState(false);
       const [currentMonth, setCurrentMonth] = React.useState(new Date());

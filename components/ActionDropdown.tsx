@@ -1,4 +1,4 @@
-'use client'
+'use client';
 
 import { useState, useRef, useEffect } from 'react';
 
@@ -19,30 +19,52 @@ interface ActionDropdownProps {
 export default function ActionDropdown({
     label = 'Actions',
     options,
-    buttonClassName = 'z-100 px-3 py-1 bg-gray-100 border border-gray-300 rounded flex items-center text-gray-600',
-    menuClassName = 'absolute right-0 mt-1 w-40 bg-white border border-gray-300 shadow-lg rounded z-10',
+    buttonClassName = 'z-50 px-3 py-1 bg-gray-100 border border-gray-300 rounded flex items-center text-gray-600',
+    menuClassName = 'absolute w-40 bg-white border border-gray-300 shadow-lg rounded z-50',
     optionClassName = 'hover:bg-gray-100 px-3 py-2 cursor-pointer'
 }: ActionDropdownProps) {
     const [isOpen, setIsOpen] = useState(false);
+    const [openUpward, setOpenUpward] = useState(false);
+
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
 
     const toggleDropdown = () => {
-        setIsOpen(!isOpen);
+        setIsOpen(prev => !prev);
     };
 
-    // Close dropdown when clicking outside
+    // Close when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+            if (
+                dropdownRef.current &&
+                !dropdownRef.current.contains(event.target as Node)
+            ) {
                 setIsOpen(false);
             }
         };
 
         document.addEventListener('mousedown', handleClickOutside);
-        return () => {
-            document.removeEventListener('mousedown', handleClickOutside);
-        };
+        return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    // Detect available space and flip dropdown
+    useEffect(() => {
+        if (!isOpen || !buttonRef.current || !menuRef.current) return;
+
+        const buttonRect = buttonRef.current.getBoundingClientRect();
+        const menuHeight = menuRef.current.offsetHeight;
+
+        const spaceBelow = window.innerHeight - buttonRect.bottom;
+        const spaceAbove = buttonRect.top;
+
+        if (spaceBelow < menuHeight && spaceAbove > menuHeight) {
+            setOpenUpward(true);
+        } else {
+            setOpenUpward(false);
+        }
+    }, [isOpen]);
 
     const handleOptionClick = (option: ActionOption) => {
         if (option.disabled) return;
@@ -51,8 +73,9 @@ export default function ActionDropdown({
     };
 
     return (
-        <div className="relative" ref={dropdownRef}>
+        <div className="relative inline-block" ref={dropdownRef}>
             <button
+                ref={buttonRef}
                 onClick={toggleDropdown}
                 className={buttonClassName}
             >
@@ -60,15 +83,20 @@ export default function ActionDropdown({
             </button>
 
             {isOpen && (
-                <div className={menuClassName}>
+                <div
+                    ref={menuRef}
+                    className={`${menuClassName} ${
+                        openUpward ? 'bottom-full mb-1' : 'top-full mt-1'
+                    }`}
+                >
                     <ul>
                         {options.map((option, index) => (
                             <li
                                 key={index}
                                 className={`${optionClassName} ${
                                     option.disabled
-                                        ? "opacity-50 cursor-not-allowed text-gray-400"
-                                        : ""
+                                        ? 'opacity-50 cursor-not-allowed text-gray-400'
+                                        : ''
                                 }`}
                                 onClick={() => handleOptionClick(option)}
                             >

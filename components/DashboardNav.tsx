@@ -55,8 +55,8 @@ export default function DashboardNav() {
   const [isAddMenuOpen, setIsAddMenuOpen] = useState<boolean>(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState<boolean>(false);
 
-  type ChromeTabId = "tbi" | "from-office";
-  type ChromeTab = { id: ChromeTabId; label: string };
+  type ChromeTabId = "tbi" | "from-office" | "org";
+  type ChromeTab = { id: ChromeTabId; label: string; orgId?: string };
   const [chromeTabsVisible, setChromeTabsVisible] = useState(false);
   const [chromeTabs, setChromeTabs] = useState<ChromeTab[]>([]);
   const [activeChromeTabId, setActiveChromeTabId] = useState<ChromeTabId>("tbi");
@@ -124,6 +124,42 @@ export default function DashboardNav() {
       document.documentElement.style.setProperty("--dashboard-top-offset", "48px");
     };
   }, [chromeTabsVisible]);
+
+  // Listen for pinned organization changes and update tab strip accordingly
+  useEffect(() => {
+    const syncPinnedOrg = () => {
+      try {
+        const raw = localStorage.getItem("pinnedOrg");
+        setChromeTabs((prev) => {
+          // Remove any existing org tabs first
+          let next = prev.filter((t) => t.id !== "org");
+          if (!raw) {
+            // No pin -> return remaining tabs
+            return next;
+          }
+          const pinned = JSON.parse(raw) as { id: string; name: string };
+          const newTab: ChromeTab = {
+            id: "org",
+            label: pinned.name.slice(0, 12),
+            orgId: pinned.id,
+          };
+          // Ensure tab strip is visible
+          setChromeTabsVisible(true);
+          // Append if not already there
+          next = [...next, newTab];
+          return next;
+        });
+      } catch {
+        // Ignore JSON errors
+      }
+    };
+
+    // Initial sync
+    syncPinnedOrg();
+    // Listen for custom event dispatched from org view
+    window.addEventListener("pinnedOrgChanged", syncPinnedOrg);
+    return () => window.removeEventListener("pinnedOrgChanged", syncPinnedOrg);
+  }, []);
 
   // Global search with debouncing
   useEffect(() => {
@@ -274,12 +310,17 @@ export default function DashboardNav() {
       setIsAddMenuOpen(false);
     }
   };
-  const tabToPath: Record<ChromeTabId, string> = {
-    tbi: "/dashboard/tbi",
-    "from-office": "/dashboard/from-office",
+  const getTabPath = (tab: ChromeTab): string => {
+    if (tab.id === "tbi") return "/dashboard/tbi";
+    if (tab.id === "from-office") return "/dashboard/from-office";
+    if (tab.id === "org" && tab.orgId) {
+      return `/dashboard/organizations/view?id=${tab.orgId}`;
+    }
+    return "/dashboard";
   };
 
  const goToTab = (tabId: ChromeTabId) => {
+    const tab = chromeTabs.find((t) => t.id === tabId) || chromeTabs[0];
    setChromeTabsVisible(true);
 
    setChromeTabs((prev) => {
@@ -294,7 +335,7 @@ export default function DashboardNav() {
    });
 
    setActiveChromeTabId(tabId);
-   router.push(tabToPath[tabId]); // ✅ IMPORTANT
+   router.push(getTabPath(tab)); // ✅ IMPORTANT
  };
 
 
@@ -432,6 +473,9 @@ export default function DashboardNav() {
   };
 
  const closeChromeTab = (tabId: ChromeTabId) => {
+   if (tabId === "org") {
+     localStorage.removeItem("pinnedOrg");
+   }
    setChromeTabs((prev) => {
      const next = prev.filter((t) => t.id !== tabId);
 
@@ -446,7 +490,8 @@ export default function DashboardNav() {
      if (activeChromeTabId === tabId) {
        const fallbackId = next[0].id;
        setActiveChromeTabId(fallbackId);
-       router.push(tabToPath[fallbackId]); // ✅ IMPORTANT
+       const fbTab = next.find(t=>t.id===fallbackId)!;
+       router.push(getTabPath(fbTab)); // ✅ IMPORTANT
      }
 
      return next;
@@ -515,7 +560,7 @@ export default function DashboardNav() {
   return (
     <>
       {/* Top Navigation Bar */}
-      <div className="fixed top-0 left-0 right-0 z-[9999] pl-60 pr-4">
+      <div className="fixed top-0 left-0 right-0 z-99 pl-60 pr-4">
         {/* Chrome-style tab strip (shown after clicking T.B.I) */}
         {chromeTabsVisible && (
           <div className="sd-tabs sd-tabs-bar">

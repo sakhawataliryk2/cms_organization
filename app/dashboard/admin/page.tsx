@@ -1103,7 +1103,8 @@ export default function AdminCenter() {
             {/* Header with Upload Button */}
             <div className="max-w-5xl mx-auto mb-8 flex justify-between items-center">
                 <h1 className="text-2xl font-bold text-gray-800">Admin Center</h1>
-                <button
+                {/* Removed */}
+                {/* <button
                     onClick={() => {
                         resetUpload();
                         setShowUploadModal(true);
@@ -1112,7 +1113,7 @@ export default function AdminCenter() {
                 >
                     <FiUpload size={20} />
                     <span>Upload CSV</span>
-                </button>
+                </button> */}
             </div>
 
             <div className="grid grid-cols-4 gap-8 max-w-5xl mx-auto">

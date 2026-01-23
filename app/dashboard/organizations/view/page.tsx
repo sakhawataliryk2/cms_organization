@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getCookie } from "cookies-next";
 import Image from "next/image";
@@ -90,6 +90,56 @@ export default function OrganizationView() {
     }>
   >([]);
   const [history, setHistory] = useState<Array<any>>([]);
+
+  // Note sorting & filtering state
+  const [noteActionFilter, setNoteActionFilter] = useState<string>("");
+  const [noteAuthorFilter, setNoteAuthorFilter] = useState<string>("");
+  const [noteSortKey, setNoteSortKey] = useState<"date" | "action" | "author">("date");
+  const [noteSortDir, setNoteSortDir] = useState<"asc" | "desc">("desc");
+
+  const sortedFilteredNotes = useMemo(() => {
+    let out = [...notes];
+
+    if (noteActionFilter) {
+      out = out.filter((n) => (n.action || "") === noteActionFilter);
+    }
+    if (noteAuthorFilter) {
+      out = out.filter(
+        (n) => (n.created_by_name || "Unknown User") === noteAuthorFilter
+      );
+    }
+
+    out.sort((a, b) => {
+      let av: any, bv: any;
+
+      switch (noteSortKey) {
+        case "action":
+          av = a.action || "";
+          bv = b.action || "";
+          break;
+        case "author":
+          av = a.created_by_name || "";
+          bv = b.created_by_name || "";
+          break;
+        default:
+          av = new Date(a.created_at).getTime();
+          bv = new Date(b.created_at).getTime();
+          break;
+      }
+
+      if (typeof av === "number" && typeof bv === "number") {
+        return noteSortDir === "asc" ? av - bv : bv - av;
+      }
+
+      const cmp = String(av).localeCompare(String(bv), undefined, {
+        sensitivity: "base",
+        numeric: true,
+      });
+      return noteSortDir === "asc" ? cmp : -cmp;
+    });
+
+    return out;
+  }, [notes, noteActionFilter, noteAuthorFilter, noteSortKey, noteSortDir]);
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -147,6 +197,11 @@ export default function OrganizationView() {
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+// Modal state for confirming file details before upload
+const [showFileDetailsModal, setShowFileDetailsModal] = useState(false);
+const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+const [fileDetailsName, setFileDetailsName] = useState("");
+const [fileDetailsType, setFileDetailsType] = useState("General");
 
   // Hiring Managers (Contacts) state
   const [hiringManagers, setHiringManagers] = useState<Array<any>>([]);
@@ -1315,14 +1370,14 @@ export default function OrganizationView() {
     e.stopPropagation();
   };
 
-  const handleDrop = async (e: React.DragEvent) => {
+  const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
 
     const files = Array.from(e.dataTransfer.files);
     if (files.length > 0) {
-      await handleFileUploads(files);
+      handleFileUploads(files);
     }
   };
 
@@ -1335,7 +1390,7 @@ export default function OrganizationView() {
   };
 
   // Handle multiple file uploads
-  const handleFileUploads = async (files: File[]) => {
+  const handleFileUploads = (files: File[]) => {
     if (!organizationId) return;
 
     const validFiles = files.filter((file) => {
@@ -1370,14 +1425,40 @@ export default function OrganizationView() {
       return isValidType && isValidSize;
     });
 
-    // Upload each valid file
-    for (const file of validFiles) {
-      await uploadFile(file);
+    if (validFiles.length === 0) return;
+
+    // Queue validated files and show modal for the first one
+    setPendingFiles(validFiles);
+    setFileDetailsName(validFiles[0].name);
+    setFileDetailsType("General");
+    setShowFileDetailsModal(true);
+  };
+
+  // Upload a single file with the user-confirmed metadata
+  // Confirm details and upload the first file in the queue
+  const handleConfirmFileDetails = async () => {
+    if (pendingFiles.length === 0) return;
+
+    const currentFile = pendingFiles[0];
+    await uploadFile(currentFile, fileDetailsName.trim(), fileDetailsType);
+
+    // Move to next file or close modal
+    const remaining = pendingFiles.slice(1);
+    if (remaining.length > 0) {
+      setPendingFiles(remaining);
+      setFileDetailsName(remaining[0].name);
+      setFileDetailsType("General");
+    } else {
+      setShowFileDetailsModal(false);
+      setPendingFiles([]);
     }
   };
 
-  // Upload a single file
-  const uploadFile = async (file: File) => {
+  const uploadFile = async (
+    file: File,
+    documentName: string,
+    documentType: string
+  ) => {
     if (!organizationId) return;
 
     const fileName = file.name;
@@ -1391,8 +1472,8 @@ export default function OrganizationView() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      formData.append("document_name", file.name);
-      formData.append("document_type", "General");
+      formData.append("document_name", documentName);
+      formData.append("document_type", documentType);
 
       const xhr = new XMLHttpRequest();
 
@@ -1544,6 +1625,30 @@ export default function OrganizationView() {
           ? err.message
           : "An error occurred while deleting the document"
       );
+    }
+  };
+
+  // Handle downloading a document (file or text)
+  const handleDownloadDocument = (doc: any) => {
+    // If the document has a stored file path, open it in a new tab
+    if (doc.file_path) {
+      // Prepend leading slash if missing
+      const url = doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`;
+      window.open(url, "_blank");
+      return;
+    }
+
+    // For text-based documents without a file, trigger a text download
+    if (doc.content) {
+      const blob = new Blob([doc.content], { type: "text/plain;charset=utf-8" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${doc.document_name || "document"}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      alert("This document has no file or content to download.");
     }
   };
 
@@ -2196,7 +2301,7 @@ export default function OrganizationView() {
           },
         ]
         : [];
-      
+
       setNoteForm({
         text: "",
         action: "",
@@ -2674,6 +2779,96 @@ export default function OrganizationView() {
           </button>
         </div>
 
+        {/* Filters & Sort Controls */}
+        <div className="flex flex-wrap gap-4 items-end mb-4">
+          {/* Action Filter */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Action
+            </label>
+            <select
+              value={noteActionFilter}
+              onChange={(e) => setNoteActionFilter(e.target.value)}
+              className="p-2 border border-gray-300 rounded text-sm"
+            >
+              <option value="">All Actions</option>
+              {actionFields.map((af) => (
+                <option
+                  key={af.id || af.field_name || af.field_label}
+                  value={af.field_name || af.field_label}
+                >
+                  {af.field_label || af.field_name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Author Filter */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Author
+            </label>
+            <select
+              value={noteAuthorFilter}
+              onChange={(e) => setNoteAuthorFilter(e.target.value)}
+              className="p-2 border border-gray-300 rounded text-sm"
+            >
+              <option value="">All Authors</option>
+              {Array.from(new Set(notes.map((n) => n.created_by_name || "Unknown User"))).map(
+                (author) => (
+                  <option key={author} value={author}>
+                    {author}
+                  </option>
+                )
+              )}
+            </select>
+          </div>
+
+          {/* Sort Key */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Sort By
+            </label>
+            <select
+              value={noteSortKey}
+              onChange={(e) =>
+                setNoteSortKey(e.target.value as "date" | "action" | "author")
+              }
+              className="p-2 border border-gray-300 rounded text-sm"
+            >
+              <option value="date">Date</option>
+              <option value="action">Action</option>
+              <option value="author">Author</option>
+            </select>
+          </div>
+
+          {/* Sort Direction Toggle */}
+          <div>
+            <button
+              onClick={() =>
+                setNoteSortDir((d) => (d === "asc" ? "desc" : "asc"))
+              }
+              className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs text-black"
+              title="Toggle Sort Direction"
+            >
+              {noteSortDir === "asc" ? "Asc ↑" : "Desc ↓"}
+            </button>
+          </div>
+
+          {/* Clear Filters */}
+          {(noteActionFilter || noteAuthorFilter) && (
+            <button
+              onClick={() => {
+                setNoteActionFilter("");
+                setNoteAuthorFilter("");
+              }}
+              className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs"
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
+
         {/* Notes List */}
         {isLoadingNotes ? (
           <div className="flex justify-center py-4">
@@ -2681,9 +2876,9 @@ export default function OrganizationView() {
           </div>
         ) : noteError ? (
           <div className="text-red-500 py-2">{noteError}</div>
-        ) : notes.length > 0 ? (
+        ) : sortedFilteredNotes.length > 0 ? (
           <div className="space-y-4">
-            {notes.map((note) => {
+            {sortedFilteredNotes.map((note) => {
               // Find action label from actionFields
               const actionLabel =
                 actionFields.find(
@@ -3124,101 +3319,115 @@ export default function OrganizationView() {
       </div>
 
       {/* Quick Action Buttons */}
-      <div className="flex bg-gray-300 p-2 space-x-2">
-        {quickActions.map((action) => {
-          // Client Visit with count
-          if (action.id === "client-visit") {
+      <div className="flex bg-gray-300 p-2 ">
+        <div className="flex-1 space-x-2">
+
+          {quickActions.map((action) => {
+            // Client Visit with count
+            if (action.id === "client-visit") {
+              return (
+                <button
+                  key={action.id}
+                  className="bg-white px-4 py-1 rounded-full shadow font-medium"
+                  onClick={() => setActiveTab("summary")}
+                >
+                  {isLoadingSummaryCounts
+                    ? "Loading..."
+                    : `${summaryCounts.clientVisits} Client Visit${summaryCounts.clientVisits !== 1 ? "s" : ""}`}
+                </button>
+              );
+            }
+            // Jobs with count
+            if (action.id === "jobs") {
+              return (
+                <button
+                  key={action.id}
+                  className="bg-white px-4 py-1 rounded-full shadow font-medium"
+                  onClick={() => setActiveTab("jobs")}
+                >
+                  {isLoadingJobs || isLoadingSummaryCounts
+                    ? "Loading..."
+                    : `${summaryCounts.jobs} ${summaryCounts.jobs === 1 ? "Job" : "Jobs"}`}
+                </button>
+              );
+            }
+            // Submissions with count
+            if (action.id === "submissions") {
+              return (
+                <button
+                  key={action.id}
+                  className="bg-white px-4 py-1 rounded-full shadow font-medium"
+                  onClick={() => setActiveTab("notes")}
+                >
+                  {isLoadingSummaryCounts
+                    ? "Loading..."
+                    : `${summaryCounts.submissions} Submission${summaryCounts.submissions !== 1 ? "s" : ""}`}
+                </button>
+              );
+            }
+            // Client Submissions with count
+            if (action.id === "client-submissions") {
+              return (
+                <button
+                  key={action.id}
+                  className="bg-white px-4 py-1 rounded-full shadow font-medium"
+                  onClick={() => setActiveTab("notes")}
+                >
+                  {isLoadingSummaryCounts
+                    ? "Loading..."
+                    : `${summaryCounts.clientSubmissions} Client Submission${summaryCounts.clientSubmissions !== 1 ? "s" : ""}`}
+                </button>
+              );
+            }
+            // Interviews with count
+            if (action.id === "interviews") {
+              return (
+                <button
+                  key={action.id}
+                  className="bg-white px-4 py-1 rounded-full shadow font-medium"
+                  onClick={() => setActiveTab("notes")}
+                >
+                  {isLoadingSummaryCounts
+                    ? "Loading..."
+                    : `${summaryCounts.interviews} Interview${summaryCounts.interviews !== 1 ? "s" : ""}`}
+                </button>
+              );
+            }
+            // Placements with count
+            if (action.id === "placements") {
+              return (
+                <button
+                  key={action.id}
+                  className="bg-white px-4 py-1 rounded-full shadow font-medium"
+                  onClick={() => setActiveTab("summary")}
+                >
+                  {isLoadingSummaryCounts
+                    ? "Loading..."
+                    : `${summaryCounts.placements} Placement${summaryCounts.placements !== 1 ? "s" : ""}`}
+                </button>
+              );
+            }
             return (
               <button
                 key={action.id}
-                className="bg-white px-4 py-1 rounded-full shadow font-medium"
-                onClick={() => setActiveTab("summary")}
+                className="bg-white px-4 py-1 rounded-full shadow"
               >
-                {isLoadingSummaryCounts
-                  ? "Loading..."
-                  : `${summaryCounts.clientVisits} Client Visit${summaryCounts.clientVisits !== 1 ? "s" : ""}`}
+                {action.label}
               </button>
             );
-          }
-          // Jobs with count
-          if (action.id === "jobs") {
-            return (
-              <button
-                key={action.id}
-                className="bg-green-500 text-white px-4 py-1 rounded-full shadow font-medium"
-                onClick={() => setActiveTab("jobs")}
-              >
-                {isLoadingJobs || isLoadingSummaryCounts
-                  ? "Loading..."
-                  : `${summaryCounts.jobs} ${summaryCounts.jobs === 1 ? "Job" : "Jobs"}`}
-              </button>
-            );
-          }
-          // Submissions with count
-          if (action.id === "submissions") {
-            return (
-              <button
-                key={action.id}
-                className="bg-white px-4 py-1 rounded-full shadow font-medium"
-                onClick={() => setActiveTab("notes")}
-              >
-                {isLoadingSummaryCounts
-                  ? "Loading..."
-                  : `${summaryCounts.submissions} Submission${summaryCounts.submissions !== 1 ? "s" : ""}`}
-              </button>
-            );
-          }
-          // Client Submissions with count
-          if (action.id === "client-submissions") {
-            return (
-              <button
-                key={action.id}
-                className="bg-white px-4 py-1 rounded-full shadow font-medium"
-                onClick={() => setActiveTab("notes")}
-              >
-                {isLoadingSummaryCounts
-                  ? "Loading..."
-                  : `${summaryCounts.clientSubmissions} Client Submission${summaryCounts.clientSubmissions !== 1 ? "s" : ""}`}
-              </button>
-            );
-          }
-          // Interviews with count
-          if (action.id === "interviews") {
-            return (
-              <button
-                key={action.id}
-                className="bg-white px-4 py-1 rounded-full shadow font-medium"
-                onClick={() => setActiveTab("notes")}
-              >
-                {isLoadingSummaryCounts
-                  ? "Loading..."
-                  : `${summaryCounts.interviews} Interview${summaryCounts.interviews !== 1 ? "s" : ""}`}
-              </button>
-            );
-          }
-          // Placements with count
-          if (action.id === "placements") {
-            return (
-              <button
-                key={action.id}
-                className="bg-white px-4 py-1 rounded-full shadow font-medium"
-                onClick={() => setActiveTab("summary")}
-              >
-                {isLoadingSummaryCounts
-                  ? "Loading..."
-                  : `${summaryCounts.placements} Placement${summaryCounts.placements !== 1 ? "s" : ""}`}
-              </button>
-            );
-          }
-          return (
-            <button
-              key={action.id}
-              className="bg-white px-4 py-1 rounded-full shadow"
-            >
-              {action.label}
-            </button>
-          );
-        })}
+          })}
+        </div>
+        <button
+          onClick={togglePin}
+          className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
+          title={isPinned ? "Unpin panel" : "Pin panel"}
+        >
+          {isPinned ? (
+            <FiLock className="w-5 h-5 text-blue-600" />
+          ) : (
+            <FiUnlock className="w-5 h-5 text-gray-600" />
+          )}
+        </button>
       </div>
 
       {/* Main Content Area */}
@@ -3228,7 +3437,7 @@ export default function OrganizationView() {
           <div className="relative">
             {/* Pin/Pop-out Toggle Button */}
             <div className="absolute top-0 right-0 z-10">
-              <button
+              {/* <button
                 onClick={togglePin}
                 className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
                 title={isPinned ? "Unpin panel" : "Pin panel"}
@@ -3238,366 +3447,369 @@ export default function OrganizationView() {
                 ) : (
                   <FiUnlock className="w-5 h-5 text-gray-600" />
                 )}
-              </button>
+              </button> */}
             </div>
 
             {/* Floating Panel (when pinned) */}
             {isPinned && (
               <div
-                className={`fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"
+                className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"
                   } border-l border-gray-300`}
               >
-                <div className="flex flex-col h-full">
-                  <div className="flex items-center justify-between p-3 border-b border-gray-300 bg-gray-50">
-                    <h3 className="font-semibold text-sm">Overview Summary</h3>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setIsCollapsed(!isCollapsed)}
-                        className="p-1 hover:bg-gray-200 rounded"
-                        title={isCollapsed ? "Expand" : "Collapse"}
-                      >
-                        {isCollapsed ? "▶" : "◀"}
-                      </button>
-                      <button
-                        onClick={togglePin}
-                        className="p-1 hover:bg-gray-200 rounded"
-                        title="Unpin"
-                      >
-                        <FiUnlock className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-                  {!isCollapsed && (
-                    <div className="flex-1 overflow-y-auto p-4">
-                      <div id="printable-summary">
-                        <DndContext
-                          collisionDetection={closestCenter}
-                          onDragEnd={handleDragEnd}
-                        >
-                          <SortableContext
-                            items={panelOrder}
-                            strategy={verticalListSortingStrategy}
-                          >
-                            <div className="space-y-4">
-                              {panelOrder.map((panelId) => {
-                                if (panelId === "contactInfo") {
-                                  return (
-                                    <SortablePanel key={panelId} id={panelId}>
-                                      <PanelWithHeader
-                                        title="Organization Contact Info:"
-                                        onEdit={() => handleEditPanel("contactInfo")}
-                                      >
-                                        <div className="space-y-0 border border-gray-200 rounded">
-                                          {visibleFields.contactInfo.includes("name") && (
-                                            <div className="flex border-b border-gray-200 last:border-b-0">
-                                              <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                                Name:
-                                              </div>
-                                              <div className="flex-1 p-2 text-blue-600">
-                                                {organization?.contact?.name || "-"}
-                                              </div>
-                                            </div>
-                                          )}
-                                          {visibleFields.contactInfo.includes("nickname") && (
-                                            <div className="flex border-b border-gray-200 last:border-b-0">
-                                              <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                                Nickname:
-                                              </div>
-                                              <div className="flex-1 p-2">
-                                                {organization?.contact?.nickname || "-"}
-                                              </div>
-                                            </div>
-                                          )}
-                                          {visibleFields.contactInfo.includes("phone") && (
-                                            <div className="flex border-b border-gray-200 last:border-b-0">
-                                              <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                                Phone:
-                                              </div>
-                                              <div className="flex-1 p-2">
-                                                {organization?.contact?.phone || "-"}
-                                              </div>
-                                            </div>
-                                          )}
-                                          {visibleFields.contactInfo.includes("address") && (
-                                            <div className="flex border-b border-gray-200 last:border-b-0">
-                                              <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                                Address:
-                                              </div>
-                                              <div className="flex-1 p-2">
-                                                {organization?.contact?.address || "-"}
-                                              </div>
-                                            </div>
-                                          )}
-                                          {visibleFields.contactInfo.includes("website") && (
-                                            <div className="flex border-b border-gray-200 last:border-b-0">
-                                              <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                                Website:
-                                              </div>
-                                              <div className="flex-1 p-2 text-blue-600">
-                                                <a
-                                                  href={organization?.contact?.website}
-                                                  target="_blank"
-                                                  rel="noopener noreferrer"
-                                                >
-                                                  {organization?.contact?.website || "-"}
-                                                </a>
-                                              </div>
-                                            </div>
-                                          )}
-                                          {organization?.customFields &&
-                                            Object.keys(organization.customFields).map((fieldKey) => {
-                                              if (visibleFields.contactInfo.includes(fieldKey)) {
-                                                const field = availableFields.find(
-                                                  (f) =>
-                                                    (f.field_name || f.field_label || f.id) === fieldKey
-                                                );
-                                                const fieldLabel =
-                                                  field?.field_label || field?.field_name || fieldKey;
-                                                const fieldValue = organization.customFields[fieldKey];
-                                                return (
-                                                  <div
-                                                    key={fieldKey}
-                                                    className="flex border-b border-gray-200 last:border-b-0"
-                                                  >
-                                                    <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                                      {fieldLabel}:
-                                                    </div>
-                                                    <div className="flex-1 p-2">
-                                                      {String(fieldValue || "-")}
-                                                    </div>
-                                                  </div>
-                                                );
-                                              }
-                                              return null;
-                                            })}
-                                        </div>
-                                      </PanelWithHeader>
-                                    </SortablePanel>
-                                  );
-                                }
-                                if (panelId === "about") {
-                                  return (
-                                    <SortablePanel key={panelId} id={panelId}>
-                                      <PanelWithHeader
-                                        title="About the Organization:"
-                                        onEdit={() => {
-                                          setIsEditingAbout(true);
-                                          setTempAboutText(aboutText);
-                                        }}
-                                      >
-                                        <div className="border border-gray-200 rounded">
-                                          {isEditingAbout ? (
-                                            <div className="p-2">
-                                              <textarea
-                                                value={tempAboutText}
-                                                onChange={(e) => setTempAboutText(e.target.value)}
-                                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                rows={6}
-                                              />
-                                              <div className="flex justify-end gap-2 mt-2">
-                                                <button
-                                                  onClick={() => {
-                                                    setIsEditingAbout(false);
-                                                    setTempAboutText("");
-                                                  }}
-                                                  className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
-                                                >
-                                                  Cancel
-                                                </button>
-                                                <button
-                                                  onClick={saveAboutText}
-                                                  className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
-                                                >
-                                                  Save
-                                                </button>
-                                              </div>
-                                            </div>
-                                          ) : (
-                                            <div className="p-2">
-                                              <p className="text-gray-700 whitespace-pre-wrap">
-                                                {aboutText || "No description provided"}
-                                              </p>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </PanelWithHeader>
-                                    </SortablePanel>
-                                  );
-                                }
-                                if (panelId === "recentNotes") {
-                                  return (
-                                    <SortablePanel key={panelId} id={panelId}>
-                                      <PanelWithHeader title="Recent Notes:">
-                                        <div className="border border-gray-200 rounded">
-                                          {notes.length > 0 ? (
-                                            <div className="p-2">
-                                              {notes.slice(0, 5).map((note: any) => {
-                                                // Find action label from actionFields
-                                                const actionLabel =
-                                                  actionFields.find(
-                                                    (af) =>
-                                                      af.field_name === note.action ||
-                                                      af.field_label === note.action
-                                                  )?.field_label || note.action || "General Note";
+                <div className="relative">
 
-                                                return (
-                                                  <div
-                                                    key={note.id}
-                                                    className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
-                                                  >
-                                                    <div className="flex justify-between text-sm mb-1">
-                                                      <span className="font-medium">
-                                                        {note.created_by_name || "Unknown User"}
-                                                      </span>
-                                                      <span className="text-gray-500">
-                                                        {new Date(note.created_at).toLocaleString()}
-                                                      </span>
-                                                    </div>
-                                                    {actionLabel && (
-                                                      <div className="mb-1">
-                                                        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded">
-                                                          {actionLabel}
-                                                        </span>
-                                                      </div>
-                                                    )}
-                                                    {note.additional_references && (
-                                                      <div className="mb-1 text-xs text-gray-600">
-                                                        References: {note.additional_references}
-                                                      </div>
-                                                    )}
-                                                    <p className="text-sm text-gray-700">
-                                                      {note.text.length > 100
-                                                        ? `${note.text.substring(0, 100)}...`
-                                                        : note.text}
-                                                    </p>
-                                                  </div>
-                                                );
-                                              })}
-                                              {notes.length > 5 && (
-                                                <button
-                                                  onClick={() => setActiveTab("notes")}
-                                                  className="text-blue-500 text-sm hover:underline mt-2"
-                                                >
-                                                  View all {notes.length} notes
-                                                </button>
-                                              )}
-                                            </div>
-                                          ) : (
-                                            <p className="text-gray-500 italic p-2">No recent notes</p>
-                                          )}
-                                        </div>
-                                      </PanelWithHeader>
-                                    </SortablePanel>
-                                  );
-                                }
-                                if (panelId === "websiteJobs") {
-                                  return (
-                                    <SortablePanel key={panelId} id={panelId}>
-                                      <PanelWithHeader title="Open Jobs from Website:">
-                                        <div className="border border-gray-200 rounded">
-                                          <div className="p-2">
-                                            <p className="text-gray-500 italic">No open jobs found</p>
-                                          </div>
-                                        </div>
-                                      </PanelWithHeader>
-                                    </SortablePanel>
-                                  );
-                                }
-                                if (panelId === "ourJobs") {
-                                  return (
-                                    <SortablePanel key={panelId} id={panelId}>
-                                      <PanelWithHeader title="Our Open Jobs:">
-                                        <div className="border border-gray-200 rounded">
-                                          <div className="p-2">
-                                            <p className="text-gray-500 italic">No open jobs</p>
-                                          </div>
-                                        </div>
-                                      </PanelWithHeader>
-                                    </SortablePanel>
-                                  );
-                                }
-                                if (panelId === "openTasks") {
-                                  return (
-                                    <SortablePanel key={panelId} id={panelId}>
-                                      <PanelWithHeader title="Open Tasks:">
-                                        <div className="border border-gray-200 rounded">
-                                          {isLoadingTasks ? (
-                                            <div className="flex justify-center py-4">
-                                              <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
-                                            </div>
-                                          ) : tasksError ? (
-                                            <div className="p-2 text-red-500 text-sm">{tasksError}</div>
-                                          ) : tasks.length > 0 ? (
-                                            <div className="divide-y divide-gray-200">
-                                              {tasks.map((task) => (
-                                                <div
-                                                  key={task.id}
-                                                  className="p-3 hover:bg-gray-50 cursor-pointer"
-                                                  onClick={() =>
-                                                    router.push(`/dashboard/tasks/view?id=${task.id}`)
-                                                  }
-                                                >
-                                                  <div className="flex justify-between items-start mb-1">
-                                                    <h4 className="font-medium text-blue-600 hover:underline">
-                                                      {task.title}
-                                                    </h4>
-                                                    {task.priority && (
-                                                      <span
-                                                        className={`px-2 py-0.5 rounded text-xs ${task.priority === "High"
-                                                          ? "bg-red-100 text-red-800"
-                                                          : task.priority === "Medium"
-                                                            ? "bg-yellow-100 text-yellow-800"
-                                                            : "bg-gray-100 text-gray-800"
-                                                          }`}
-                                                      >
-                                                        {task.priority}
-                                                      </span>
-                                                    )}
-                                                  </div>
-                                                  {task.description && (
-                                                    <p className="text-sm text-gray-600 mb-2 line-clamp-2">
-                                                      {task.description}
-                                                    </p>
-                                                  )}
-                                                  <div className="flex justify-between items-center text-xs text-gray-500">
-                                                    <div className="flex space-x-3">
-                                                      {task.due_date && (
-                                                        <span>
-                                                          Due:{" "}
-                                                          {new Date(task.due_date).toLocaleDateString()}
-                                                        </span>
-                                                      )}
-                                                      {task.assigned_to_name && (
-                                                        <span>
-                                                          Assigned to: {task.assigned_to_name}
-                                                        </span>
-                                                      )}
-                                                    </div>
-                                                    {task.status && (
-                                                      <span className="text-gray-600">{task.status}</span>
-                                                    )}
-                                                  </div>
-                                                </div>
-                                              ))}
-                                            </div>
-                                          ) : (
-                                            <div className="p-4 text-center text-gray-500 italic">
-                                              No open tasks
-                                            </div>
-                                          )}
-                                        </div>
-                                      </PanelWithHeader>
-                                    </SortablePanel>
-                                  );
-                                }
-                                return null;
-                              })}
-                            </div>
-                          </SortableContext>
-                        </DndContext>
+                  <div className="flex flex-col h-full">
+                    <div className="flex items-center justify-between p-3 border-b border-gray-300 bg-gray-50">
+                      <h3 className="font-semibold text-sm">Overview Summary</h3>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setIsCollapsed(!isCollapsed)}
+                          className="p-1 hover:bg-gray-200 rounded"
+                          title={isCollapsed ? "Expand" : "Collapse"}
+                        >
+                          {isCollapsed ? "▶" : "◀"}
+                        </button>
+                        <button
+                          onClick={togglePin}
+                          className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
+                          title="Unpin panel"
+                        >
+                          <FiUnlock className="w-5 h-5 text-blue-600 " />
+                        </button>
                       </div>
                     </div>
-                  )}
+                    {!isCollapsed && (
+                      <div className="flex-1 overflow-y-auto p-4">
+                        <div id="printable-summary">
+                          <DndContext
+                            collisionDetection={closestCenter}
+                            onDragEnd={handleDragEnd}
+                          >
+                            <SortableContext
+                              items={panelOrder}
+                              strategy={verticalListSortingStrategy}
+                            >
+                              <div className="space-y-4">
+                                {panelOrder.map((panelId) => {
+                                  if (panelId === "contactInfo") {
+                                    return (
+                                      <SortablePanel key={panelId} id={panelId}>
+                                        <PanelWithHeader
+                                          title="Organization Contact Info:"
+                                          onEdit={() => handleEditPanel("contactInfo")}
+                                        >
+                                          <div className="space-y-0 border border-gray-200 rounded">
+                                            {visibleFields.contactInfo.includes("name") && (
+                                              <div className="flex border-b border-gray-200 last:border-b-0">
+                                                <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                                  Name:
+                                                </div>
+                                                <div className="flex-1 p-2 text-blue-600">
+                                                  {organization?.contact?.name || "-"}
+                                                </div>
+                                              </div>
+                                            )}
+                                            {visibleFields.contactInfo.includes("nickname") && (
+                                              <div className="flex border-b border-gray-200 last:border-b-0">
+                                                <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                                  Nickname:
+                                                </div>
+                                                <div className="flex-1 p-2">
+                                                  {organization?.contact?.nickname || "-"}
+                                                </div>
+                                              </div>
+                                            )}
+                                            {visibleFields.contactInfo.includes("phone") && (
+                                              <div className="flex border-b border-gray-200 last:border-b-0">
+                                                <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                                  Phone:
+                                                </div>
+                                                <div className="flex-1 p-2">
+                                                  {organization?.contact?.phone || "-"}
+                                                </div>
+                                              </div>
+                                            )}
+                                            {visibleFields.contactInfo.includes("address") && (
+                                              <div className="flex border-b border-gray-200 last:border-b-0">
+                                                <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                                  Address:
+                                                </div>
+                                                <div className="flex-1 p-2">
+                                                  {organization?.contact?.address || "-"}
+                                                </div>
+                                              </div>
+                                            )}
+                                            {visibleFields.contactInfo.includes("website") && (
+                                              <div className="flex border-b border-gray-200 last:border-b-0">
+                                                <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                                  Website:
+                                                </div>
+                                                <div className="flex-1 p-2 text-blue-600">
+                                                  <a
+                                                    href={organization?.contact?.website}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                  >
+                                                    {organization?.contact?.website || "-"}
+                                                  </a>
+                                                </div>
+                                              </div>
+                                            )}
+                                            {organization?.customFields &&
+                                              Object.keys(organization.customFields).map((fieldKey) => {
+                                                if (visibleFields.contactInfo.includes(fieldKey)) {
+                                                  const field = availableFields.find(
+                                                    (f) =>
+                                                      (f.field_name || f.field_label || f.id) === fieldKey
+                                                  );
+                                                  const fieldLabel =
+                                                    field?.field_label || field?.field_name || fieldKey;
+                                                  const fieldValue = organization.customFields[fieldKey];
+                                                  return (
+                                                    <div
+                                                      key={fieldKey}
+                                                      className="flex border-b border-gray-200 last:border-b-0"
+                                                    >
+                                                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                                                        {fieldLabel}:
+                                                      </div>
+                                                      <div className="flex-1 p-2">
+                                                        {String(fieldValue || "-")}
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                }
+                                                return null;
+                                              })}
+                                          </div>
+                                        </PanelWithHeader>
+                                      </SortablePanel>
+                                    );
+                                  }
+                                  if (panelId === "about") {
+                                    return (
+                                      <SortablePanel key={panelId} id={panelId}>
+                                        <PanelWithHeader
+                                          title="About the Organization:"
+                                          onEdit={() => {
+                                            setIsEditingAbout(true);
+                                            setTempAboutText(aboutText);
+                                          }}
+                                        >
+                                          <div className="border border-gray-200 rounded">
+                                            {isEditingAbout ? (
+                                              <div className="p-2">
+                                                <textarea
+                                                  value={tempAboutText}
+                                                  onChange={(e) => setTempAboutText(e.target.value)}
+                                                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                  rows={6}
+                                                />
+                                                <div className="flex justify-end gap-2 mt-2">
+                                                  <button
+                                                    onClick={() => {
+                                                      setIsEditingAbout(false);
+                                                      setTempAboutText("");
+                                                    }}
+                                                    className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
+                                                  >
+                                                    Cancel
+                                                  </button>
+                                                  <button
+                                                    onClick={saveAboutText}
+                                                    className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+                                                  >
+                                                    Save
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <div className="p-2">
+                                                <p className="text-gray-700 whitespace-pre-wrap">
+                                                  {aboutText || "No description provided"}
+                                                </p>
+                                              </div>
+                                            )}
+                                          </div>
+                                        </PanelWithHeader>
+                                      </SortablePanel>
+                                    );
+                                  }
+                                  if (panelId === "recentNotes") {
+                                    return (
+                                      <SortablePanel key={panelId} id={panelId}>
+                                        <PanelWithHeader title="Recent Notes:">
+                                          <div className="border border-gray-200 rounded">
+                                            {notes.length > 0 ? (
+                                              <div className="p-2">
+                                                {notes.slice(0, 5).map((note: any) => {
+                                                  // Find action label from actionFields
+                                                  const actionLabel =
+                                                    actionFields.find(
+                                                      (af) =>
+                                                        af.field_name === note.action ||
+                                                        af.field_label === note.action
+                                                    )?.field_label || note.action || "General Note";
+
+                                                  return (
+                                                    <div
+                                                      key={note.id}
+                                                      className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
+                                                    >
+                                                      <div className="flex justify-between text-sm mb-1">
+                                                        <span className="font-medium">
+                                                          {note.created_by_name || "Unknown User"}
+                                                        </span>
+                                                        <span className="text-gray-500">
+                                                          {new Date(note.created_at).toLocaleString()}
+                                                        </span>
+                                                      </div>
+                                                      {actionLabel && (
+                                                        <div className="mb-1">
+                                                          <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded">
+                                                            {actionLabel}
+                                                          </span>
+                                                        </div>
+                                                      )}
+                                                      {note.additional_references && (
+                                                        <div className="mb-1 text-xs text-gray-600">
+                                                          References: {note.additional_references}
+                                                        </div>
+                                                      )}
+                                                      <p className="text-sm text-gray-700">
+                                                        {note.text.length > 100
+                                                          ? `${note.text.substring(0, 100)}...`
+                                                          : note.text}
+                                                      </p>
+                                                    </div>
+                                                  );
+                                                })}
+                                                {notes.length > 5 && (
+                                                  <button
+                                                    onClick={() => setActiveTab("notes")}
+                                                    className="text-blue-500 text-sm hover:underline mt-2"
+                                                  >
+                                                    View all {notes.length} notes
+                                                  </button>
+                                                )}
+                                              </div>
+                                            ) : (
+                                              <p className="text-gray-500 italic p-2">No recent notes</p>
+                                            )}
+                                          </div>
+                                        </PanelWithHeader>
+                                      </SortablePanel>
+                                    );
+                                  }
+                                  if (panelId === "websiteJobs") {
+                                    return (
+                                      <SortablePanel key={panelId} id={panelId}>
+                                        <PanelWithHeader title="Open Jobs from Website:">
+                                          <div className="border border-gray-200 rounded">
+                                            <div className="p-2">
+                                              <p className="text-gray-500 italic">No open jobs found</p>
+                                            </div>
+                                          </div>
+                                        </PanelWithHeader>
+                                      </SortablePanel>
+                                    );
+                                  }
+                                  if (panelId === "ourJobs") {
+                                    return (
+                                      <SortablePanel key={panelId} id={panelId}>
+                                        <PanelWithHeader title="Our Open Jobs:">
+                                          <div className="border border-gray-200 rounded">
+                                            <div className="p-2">
+                                              <p className="text-gray-500 italic">No open jobs</p>
+                                            </div>
+                                          </div>
+                                        </PanelWithHeader>
+                                      </SortablePanel>
+                                    );
+                                  }
+                                  if (panelId === "openTasks") {
+                                    return (
+                                      <SortablePanel key={panelId} id={panelId}>
+                                        <PanelWithHeader title="Open Tasks:">
+                                          <div className="border border-gray-200 rounded">
+                                            {isLoadingTasks ? (
+                                              <div className="flex justify-center py-4">
+                                                <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+                                              </div>
+                                            ) : tasksError ? (
+                                              <div className="p-2 text-red-500 text-sm">{tasksError}</div>
+                                            ) : tasks.length > 0 ? (
+                                              <div className="divide-y divide-gray-200">
+                                                {tasks.map((task) => (
+                                                  <div
+                                                    key={task.id}
+                                                    className="p-3 hover:bg-gray-50 cursor-pointer"
+                                                    onClick={() =>
+                                                      router.push(`/dashboard/tasks/view?id=${task.id}`)
+                                                    }
+                                                  >
+                                                    <div className="flex justify-between items-start mb-1">
+                                                      <h4 className="font-medium text-blue-600 hover:underline">
+                                                        {task.title}
+                                                      </h4>
+                                                      {task.priority && (
+                                                        <span
+                                                          className={`px-2 py-0.5 rounded text-xs ${task.priority === "High"
+                                                            ? "bg-red-100 text-red-800"
+                                                            : task.priority === "Medium"
+                                                              ? "bg-yellow-100 text-yellow-800"
+                                                              : "bg-gray-100 text-gray-800"
+                                                            }`}
+                                                        >
+                                                          {task.priority}
+                                                        </span>
+                                                      )}
+                                                    </div>
+                                                    {task.description && (
+                                                      <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                                                        {task.description}
+                                                      </p>
+                                                    )}
+                                                    <div className="flex justify-between items-center text-xs text-gray-500">
+                                                      <div className="flex space-x-3">
+                                                        {task.due_date && (
+                                                          <span>
+                                                            Due:{" "}
+                                                            {new Date(task.due_date).toLocaleDateString()}
+                                                          </span>
+                                                        )}
+                                                        {task.assigned_to_name && (
+                                                          <span>
+                                                            Assigned to: {task.assigned_to_name}
+                                                          </span>
+                                                        )}
+                                                      </div>
+                                                      {task.status && (
+                                                        <span className="text-gray-600">{task.status}</span>
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            ) : (
+                                              <div className="p-4 text-center text-gray-500 italic">
+                                                No open tasks
+                                              </div>
+                                            )}
+                                          </div>
+                                        </PanelWithHeader>
+                                      </SortablePanel>
+                                    );
+                                  }
+                                  return null;
+                                })}
+                              </div>
+                            </SortableContext>
+                          </DndContext>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -4036,7 +4248,7 @@ export default function OrganizationView() {
                         <td className="p-3">{hm.phone || "-"}</td>
                         <td className="p-3">
                           <button
-                            className="px-2 py-1 rounded text-xs bg-green-100 text-green-800 hover:bg-green-200"
+                            className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800 hover:bg-green-200"
                             onClick={() => {
                               // Jobs tab pe jump + filter param
                               const name = encodeURIComponent(hmName(hm));
@@ -4184,6 +4396,58 @@ export default function OrganizationView() {
             )}
 
             {/* Upload Errors */}
+            {/* File Details Modal */}
+            {showFileDetailsModal && pendingFiles.length > 0 && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 bg-opacity-50">
+                <div className="bg-white rounded shadow-lg p-6 w-full max-w-md">
+                  <h3 className="text-lg font-semibold mb-4">Confirm File Details</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">File Name *</label>
+                      <input
+                        type="text"
+                        value={fileDetailsName}
+                        onChange={(e) => setFileDetailsName(e.target.value)}
+                        className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">File Type *</label>
+                      <select
+                        value={fileDetailsType}
+                        onChange={(e) => setFileDetailsType(e.target.value)}
+                        className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="Contract">Contract</option>
+                        <option value="Invoice">Invoice</option>
+                        <option value="Report">Report</option>
+                        <option value="ID">ID</option>
+                        <option value="General">General</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex justify-end space-x-2 mt-5">
+                    <button
+                      onClick={() => {
+                        setShowFileDetailsModal(false);
+                        setPendingFiles([]);
+                      }}
+                      className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleConfirmFileDetails}
+                      className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm disabled:opacity-50"
+                      disabled={!fileDetailsName.trim()}
+                    >
+                      Save & Upload
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {Object.keys(uploadErrors).length > 0 && (
               <div className="mb-4 space-y-2">
                 {Object.entries(uploadErrors).map(([fileName, error]) => (
@@ -4272,6 +4536,7 @@ export default function OrganizationView() {
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-gray-100 border-b">
+                      <th className="text-left p-3 font-medium">Actions</th>
                       <th className="text-left p-3 font-medium">
                         Document Name
                       </th>
@@ -4281,12 +4546,30 @@ export default function OrganizationView() {
                       </th>
                       <th className="text-left p-3 font-medium">Created By</th>
                       <th className="text-left p-3 font-medium">Created At</th>
-                      <th className="text-left p-3 font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {documents.map((doc) => (
                       <tr key={doc.id} className="border-b hover:bg-gray-50">
+                        <td className="p-3">
+                          <ActionDropdown
+                            label="Actions"
+                            options={[
+                              {
+                                label: "View",
+                                action: () => setSelectedDocument(doc),
+                              },
+                              {
+                                label: "Download",
+                                action: () => handleDownloadDocument(doc),
+                              },
+                              {
+                                label: "Delete",
+                                action: () => handleDeleteDocument(doc.id),
+                              },
+                            ]}
+                          />
+                        </td>
                         <td className="p-3">
                           <button
                             onClick={() => setSelectedDocument(doc)}
@@ -4312,14 +4595,7 @@ export default function OrganizationView() {
                         <td className="p-3">
                           {new Date(doc.created_at).toLocaleString()}
                         </td>
-                        <td className="p-3">
-                          <button
-                            onClick={() => handleDeleteDocument(doc.id)}
-                            className="text-red-500 hover:text-red-700 text-sm"
-                          >
-                            Delete
-                          </button>
-                        </td>
+
                       </tr>
                     ))}
                   </tbody>
@@ -4331,7 +4607,7 @@ export default function OrganizationView() {
 
             {/* Document Viewer Modal */}
             {selectedDocument && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+              <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
                 <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
                   <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
                     <div>
@@ -4471,7 +4747,7 @@ export default function OrganizationView() {
 
       {/* Edit Fields Modal */}
       {editingPanel && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">
@@ -4607,7 +4883,7 @@ export default function OrganizationView() {
 
       {/* Add Note Modal */}
       {showAddNote && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-100">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <div className="flex items-center space-x-2">
@@ -4626,13 +4902,19 @@ export default function OrganizationView() {
                 {/* Note Text Area */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Note Text
+                    Note Text {" "}
+                    {noteForm.text.length > 0 ? (
+                      <span className="text-green-500">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
                   </label>
                   <textarea
                     value={noteForm.text}
                     onChange={(e) =>
                       setNoteForm((prev) => ({ ...prev, text: e.target.value }))
                     }
+                    autoFocus
                     placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
                     className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={6}
@@ -4727,6 +5009,15 @@ export default function OrganizationView() {
 
                     {/* Search Input */}
                     <div className="relative">
+                      {
+                        noteForm.aboutReferences.length !== 0 &&
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Additional References
+                        </label>
+                      }
+                      {/* <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Additional References
+                      </label> */}
                       <input
                         type="text"
                         value={aboutSearchQuery}
@@ -4802,7 +5093,7 @@ export default function OrganizationView() {
                 </div>
 
                 {/* Additional References Section */}
-                <div className="relative">
+                {/* <div className="relative">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Additional References
                   </label>
@@ -4853,7 +5144,7 @@ export default function OrganizationView() {
                       ) : null}
                     </div>
                   )}
-                </div>
+                </div> */}
 
                 {/* Email Notification Section - Internal Users Only */}
                 <div>
@@ -4914,7 +5205,7 @@ export default function OrganizationView() {
 
       {/* Transfer Modal */}
       {showTransferModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
             {/* Header */}
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
@@ -5034,7 +5325,7 @@ export default function OrganizationView() {
 
       {/* Delete Request Modal */}
       {showDeleteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
             {/* Header */}
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
@@ -5160,7 +5451,7 @@ export default function OrganizationView() {
 
       {/* Add Tearsheet Modal - Selection Only */}
       {showAddTearsheetModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
             {/* Header */}
             <div className="flex justify-between items-center p-4 border-b border-gray-200">

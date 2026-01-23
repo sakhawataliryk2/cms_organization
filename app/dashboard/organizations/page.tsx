@@ -125,8 +125,8 @@ function SortableColumnHeader({
             sortState === "asc"
               ? "Sort descending"
               : sortState === "desc"
-              ? "Clear sort"
-              : "Sort ascending"
+                ? "Clear sort"
+                : "Sort ascending"
           }
         >
           {sortState === "asc" ? (
@@ -145,9 +145,8 @@ function SortableColumnHeader({
             e.stopPropagation();
             setShowFilter(!showFilter);
           }}
-          className={`text-gray-400 hover:text-gray-600 transition-colors ${
-            filterValue ? "text-blue-600" : ""
-          }`}
+          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
+            }`}
           title="Filter column"
         >
           <FiFilter size={14} />
@@ -372,6 +371,7 @@ export default function OrganizationList() {
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   useEffect(() => {
@@ -467,6 +467,7 @@ export default function OrganizationList() {
       const response = await fetch("/api/organizations");
 
       if (!response.ok) {
+        // console.log('response', response)
         const errorData = await response.json();
         throw new Error(errorData.message || "Failed to fetch organizations");
       }
@@ -497,6 +498,18 @@ export default function OrganizationList() {
   // Apply per-column filtering and sorting
   const filteredAndSortedOrganizations = useMemo(() => {
     let result = [...organizations];
+
+    // Apply global search
+    if (searchTerm.trim() !== "") {
+      const term = searchTerm.toLowerCase();
+      result = result.filter((org) =>
+        (org.name || "").toLowerCase().includes(term) ||
+        String(org.id || "").toLowerCase().includes(term) ||
+        (org.status || "").toLowerCase().includes(term) ||
+        (org.contact_phone || "").toLowerCase().includes(term) ||
+        (org.address || "").toLowerCase().includes(term)
+      );
+    }
 
     // Apply filters
     Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
@@ -546,7 +559,7 @@ export default function OrganizationList() {
     }
 
     return result;
-  }, [organizations, columnFilters, columnSorts]);
+  }, [organizations, columnFilters, columnSorts, searchTerm]);
 
   const handleViewOrganization = (id: string) => {
     router.push(`/dashboard/organizations/view?id=${id}`);
@@ -631,6 +644,8 @@ export default function OrganizationList() {
     return <LoadingScreen message="Deleting organizations..." />;
   }
 
+  // console.log('filteredAndSortedOrganizations', filteredAndSortedOrganizations)
+
   return (
     <div className="bg-white rounded-lg shadow">
       {/* Header */}
@@ -699,6 +714,33 @@ export default function OrganizationList() {
         </div>
       )}
 
+      {/* Search */}
+      <div className="p-4 border-b border-gray-200">
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Search organizations..."
+            className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          <div className="absolute left-3 top-2.5 text-gray-400">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fillRule="evenodd"
+                d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </div>
+        </div>
+      </div>
+
       <div className="overflow-x-auto">
         <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <table className="min-w-full divide-y divide-gray-200">
@@ -712,6 +754,10 @@ export default function OrganizationList() {
                     checked={selectAll}
                     onChange={handleSelectAll}
                   />
+                </th>
+
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Id
                 </th>
 
                 {/* Fixed Actions header */}
@@ -750,7 +796,13 @@ export default function OrganizationList() {
             </thead>
 
             <tbody className="bg-white divide-y divide-gray-200">
+              {/* {filteredAndSortedOrganizations.map((org) => (
+                <tr key={org?.id}>
+                  <td className="px-6 py-4 whitespace-nowrap">{org?.id}</td>
+                </tr>
+              ))}  */}
               {filteredAndSortedOrganizations.map((org) => (
+
                 <tr
                   key={org.id}
                   className="hover:bg-gray-50 cursor-pointer"
@@ -765,11 +817,12 @@ export default function OrganizationList() {
                       type="checkbox"
                       className="h-4 w-4 text-blue-600 border-gray-300 rounded"
                       checked={selectedOrganizations.includes(org.id)}
-                      onChange={() => {}}
+                      onChange={() => { }}
                       onClick={(e) => handleSelectOrganization(org.id, e)}
                     />
                   </td>
 
+                  <td className="px-6 py-4 text-black whitespace-nowrap">O {org?.id}</td>
                   {/* Fixed Actions */}
                   <td
                     className="px-6 py-4 whitespace-nowrap text-sm"
