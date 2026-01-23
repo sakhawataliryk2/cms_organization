@@ -2079,7 +2079,7 @@ const fetchAvailableFields = async () => {
             <FiUserCheck size={20} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
-            {hiringManager.id} {hiringManager.fullName}
+            HM {hiringManager.id} {hiringManager.fullName}
           </h1>
         </div>
       </div>
@@ -2287,9 +2287,9 @@ const fetchAvailableFields = async () => {
                       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
                         Mobile Phone:
                       </div>
-                      <div className="flex-1 p-2">
+                    <a href='tel+123' className="flex-1 p-2">
                         {hiringManager.mobilePhone}
-                      </div>
+                      </a>
                     </div>
                   )}
                   {visibleFields.details.includes("directLine") && (
