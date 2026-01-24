@@ -11,6 +11,7 @@ import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import { restrictToWindowEdges } from "@dnd-kit/modifiers";
 import {
   SortableContext,
   useSortable,
@@ -3138,7 +3139,7 @@ const [fileDetailsType, setFileDetailsType] = useState("General");
   }
 
   return (
-    <div className="overflow-x-hidden bg-gray-200 min-h-screen p-2">
+    <div className="bg-gray-200 min-h-screen p-2">
       {/* Header with company name and buttons */}
       <div className="bg-gray-400 p-2 flex items-center">
         <div className="flex items-center">
@@ -3481,7 +3482,7 @@ const [fileDetailsType, setFileDetailsType] = useState("General");
                     {!isCollapsed && (
                       <div className="flex-1 overflow-y-auto p-4">
                         <div id="printable-summary">
-                          <DndContext
+                          <DndContext modifiers={[restrictToWindowEdges]}
                             collisionDetection={closestCenter}
                             onDragEnd={handleDragEnd}
                           >
@@ -3817,7 +3818,7 @@ const [fileDetailsType, setFileDetailsType] = useState("General");
             {/* Regular Summary View (when not pinned) */}
             {!isPinned && (
               <div id="printable-summary">
-                <DndContext
+                <DndContext modifiers={[restrictToWindowEdges]}
                   collisionDetection={closestCenter}
                   onDragEnd={handleDragEnd}
                 >

@@ -224,6 +224,7 @@ export default function HiringManagerList() {
   const [hiringManagers, setHiringManagers] = useState<HiringManager[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
   const [openActionId, setOpenActionId] = useState<string | null>(null);
 
   // Per-column sorting state
@@ -548,6 +549,20 @@ useEffect(() => {
       });
     });
 
+    // Apply global search
+    if (searchTerm.trim() !== "") {
+      const term = searchTerm.toLowerCase();
+      result = result.filter((hm) =>
+        (hm.full_name || `${hm.last_name || ""} ${hm.first_name || ""}` || "")
+          .toLowerCase()
+          .includes(term) ||
+        String(hm.id || "").toLowerCase().includes(term) ||
+        (hm.email || "").toLowerCase().includes(term) ||
+        (hm.title || "").toLowerCase().includes(term) ||
+        (hm.organization_name || "").toLowerCase().includes(term)
+      );
+    }
+
     // Apply sorting (multiple columns supported, but we'll use the first active sort)
     const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
     if (activeSorts.length > 0) {
@@ -576,7 +591,7 @@ useEffect(() => {
     }
 
     return result;
-  }, [hiringManagers, columnFilters, columnSorts]);
+  }, [hiringManagers, columnFilters, columnSorts, searchTerm]);
 
   const handleViewHiringManager = (id: string) => {
     router.push(`/dashboard/hiring-managers/view?id=${id}`);
@@ -755,6 +770,33 @@ useEffect(() => {
           <p>{error}</p>
         </div>
       )}
+
+      {/* Search */}
+      <div className="p-4 border-b border-gray-200">
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Search hiring managers..."
+            className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          <div className="absolute left-3 top-2.5 text-gray-400">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fillRule="evenodd"
+                d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </div>
+        </div>
+      </div>
 
       {/* Hiring Managers Table */}
       <div className="overflow-x-auto">

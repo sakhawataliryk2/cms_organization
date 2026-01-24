@@ -10,9 +10,39 @@ import { FiUserCheck } from 'react-icons/fi';
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { sendCalendarInvite, type CalendarEvent } from "@/lib/office365";
+// Drag and drop imports
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import { restrictToWindowEdges } from "@dnd-kit/modifiers";
+import { SortableContext, useSortable, verticalListSortingStrategy, rectSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { TbGripVertical } from "react-icons/tb";
+import { FiLock, FiUnlock } from "react-icons/fi";
 
 // Default header fields for Hiring Managers module - defined outside component to ensure stable reference
 const HIRING_MANAGER_DEFAULT_HEADER_FIELDS = ["phone", "email"];
+
+// SortablePanel helper
+function SortablePanel({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className="relative group">
+      <button
+        {...attributes}
+        {...listeners}
+        className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Drag to reorder"
+      >
+        <TbGripVertical className="w-5 h-5 text-gray-600" />
+      </button>
+      {children}
+    </div>
+  );
+}
 
 export default function HiringManagerView() {
   const router = useRouter();
@@ -38,13 +68,13 @@ export default function HiringManagerView() {
     about: hiringManager ? `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName}` : "",
     aboutReferences: hiringManager
       ? [
-          {
-            id: hiringManager.id,
-            type: "Hiring Manager",
-            display: `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName}`,
-            value: formatRecordId(hiringManager.id, "hiringManager"),
-          },
-        ]
+        {
+          id: hiringManager.id,
+          type: "Hiring Manager",
+          display: `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName}`,
+          value: formatRecordId(hiringManager.id, "hiringManager"),
+        },
+      ]
       : [],
     copyNote: "No",
     replaceGeneralContactComments: false,
@@ -59,6 +89,93 @@ export default function HiringManagerView() {
   // Action fields state (Field_500 for hiring managers)
   const [actionFields, setActionFields] = useState<any[]>([]);
   const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
+
+  useEffect(() => {
+    const fetchActionFields = async () => {
+      setIsLoadingActionFields(true);
+      try {
+        const token = document.cookie
+          .split('; ')
+          .find((r) => r.startsWith('token='))?.split('=')[1];
+
+        const response = await fetch('/api/admin/field-management/hiring-managers', {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+
+        if (response.ok) {
+          const raw = await response.text();
+          let data: any = {};
+          try {
+            data = JSON.parse(raw);
+          } catch { }
+
+          const fields =
+            data.fields ||
+            data.data?.fields ||
+            data.hiringManagerFields ||
+            data.data?.data?.fields ||
+            [];
+
+          const field500 = (fields as any[]).find(
+            (f: any) =>
+              f.field_name === 'Field_500' ||
+              f.field_key === 'Field_500' ||
+              (f.field_label && String(f.field_label).toLowerCase().includes('action'))
+          );
+
+          if (field500 && field500.options) {
+            let options = field500.options;
+            if (typeof options === 'string') {
+              try {
+                options = JSON.parse(options);
+              } catch { }
+            }
+            if (Array.isArray(options)) {
+              setActionFields(
+                options.map((opt: any) => ({
+                  id: opt.value || opt,
+                  field_label: opt.label || opt.value || opt,
+                  field_name: opt.value || opt,
+                }))
+              );
+            } else if (typeof options === 'object') {
+              setActionFields(
+                Object.entries(options).map(([key, value]) => ({
+                  id: key,
+                  field_label: String(value),
+                  field_name: key,
+                }))
+              );
+            }
+          } else {
+            // Fallback default actions
+            setActionFields([
+              { id: 'Outbound Call', field_label: 'Outbound Call', field_name: 'Outbound Call' },
+              { id: 'Inbound Call', field_label: 'Inbound Call', field_name: 'Inbound Call' },
+              { id: 'Left Message', field_label: 'Left Message', field_name: 'Left Message' },
+              { id: 'Email', field_label: 'Email', field_name: 'Email' },
+              { id: 'Appointment', field_label: 'Appointment', field_name: 'Appointment' },
+              { id: 'Client Visit', field_label: 'Client Visit', field_name: 'Client Visit' },
+            ]);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching action fields:', err);
+        setActionFields([
+          { id: 'Outbound Call', field_label: 'Outbound Call', field_name: 'Outbound Call' },
+          { id: 'Inbound Call', field_label: 'Inbound Call', field_name: 'Inbound Call' },
+          { id: 'Left Message', field_label: 'Left Message', field_name: 'Left Message' },
+          { id: 'Email', field_label: 'Email', field_name: 'Email' },
+          { id: 'Appointment', field_label: 'Appointment', field_name: 'Appointment' },
+          { id: 'Client Visit', field_label: 'Client Visit', field_name: 'Client Visit' },
+        ]);
+      } finally {
+        setIsLoadingActionFields(false);
+      }
+    };
+
+    fetchActionFields();
+  }, []);
 
   // Validation state
   const [noteFormErrors, setNoteFormErrors] = useState<{
@@ -94,13 +211,319 @@ export default function HiringManagerView() {
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
     details: [
-      "status","organization","department","email","email2","mobilePhone",
-      "directLine","reportsTo","linkedinUrl","dateAdded","owner",
-      "secondaryOwners","address",
+      "status", "organization", "department", "email", "email2", "mobilePhone",
+      "directLine", "reportsTo", "linkedinUrl", "dateAdded", "owner",
+      "secondaryOwners", "address",
     ],
-    organizationDetails: ["status","organizationName","organizationPhone","url","dateAdded"],
+    organizationDetails: ["status", "organizationName", "organizationPhone", "url", "dateAdded"],
     recentNotes: ["notes"],
   });
+
+  // ===== Summary layout state =====
+  // ===== Summary layout state =====
+  const [columns, setColumns] = useState<{
+    left: string[];
+    right: string[];
+  }>({
+    left: ["details"],
+    right: ["organizationDetails", "recentNotes"],
+  });
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [isPinned, setIsPinned] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const findContainer = (id: string) => {
+    if (id in columns) {
+      return id as keyof typeof columns;
+    }
+    return Object.keys(columns).find((key) =>
+      columns[key as keyof typeof columns].includes(id)
+    ) as keyof typeof columns | undefined;
+  };
+
+  const handleDragStart = (event: any) => {
+    setActiveId(event.active.id);
+  }
+
+  const handleDragOver = (event: any) => {
+    const { active, over } = event;
+    const overId = over?.id;
+
+    if (!overId || active.id === overId) {
+      return;
+    }
+
+    const activeContainer = findContainer(active.id);
+    const overContainer = findContainer(overId);
+
+    if (
+      !activeContainer ||
+      !overContainer ||
+      activeContainer === overContainer
+    ) {
+      return;
+    }
+
+    setColumns((prev) => {
+      const activeItems = prev[activeContainer];
+      const overItems = prev[overContainer];
+      const activeIndex = activeItems.indexOf(active.id);
+      const overIndex = overItems.indexOf(overId);
+
+      let newIndex;
+
+      if (overId in prev) {
+        newIndex = overItems.length + 1;
+      } else {
+        const isBelowOverItem =
+          over &&
+          active.rect.current.translated &&
+          active.rect.current.translated.top >
+          over.rect.top + over.rect.height;
+
+        const modifier = isBelowOverItem ? 1 : 0;
+
+        newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1;
+      }
+
+      return {
+        ...prev,
+        [activeContainer]: [
+          ...prev[activeContainer].filter((item) => item !== active.id),
+        ],
+        [overContainer]: [
+          ...prev[overContainer].slice(0, newIndex),
+          active.id,
+          ...prev[overContainer].slice(newIndex, prev[overContainer].length),
+        ],
+      };
+    });
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    const activeContainer = findContainer(active.id as string);
+    const overContainer = findContainer(over?.id as string);
+
+    if (
+      !activeContainer ||
+      !overContainer ||
+      activeContainer !== overContainer
+    ) {
+      setActiveId(null);
+      return;
+    }
+
+    const activeIndex = columns[activeContainer].indexOf(active.id as string);
+    const overIndex = columns[overContainer].indexOf(over?.id as string);
+
+    if (activeIndex !== overIndex) {
+      setColumns((prev) => ({
+        ...prev,
+        [activeContainer]: arrayMove(
+          prev[activeContainer],
+          activeIndex,
+          overIndex
+        ),
+      }));
+    }
+
+    setActiveId(null);
+  };
+
+  const togglePin = () => {
+    setIsPinned((p) => !p);
+    if (isPinned === false) setIsCollapsed(false);
+  };
+
+  // Basic renderPanel (placeholder content for now)
+  // Render individual panels
+  const renderDetailsPanel = () => {
+    return (
+      <PanelWithHeader title="Details" onEdit={() => handleEditPanel("details")}>
+        <div className="space-y-0 border border-gray-200 rounded">
+          {visibleFields.details.includes("status") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
+              <div className="flex-1 p-2">{hiringManager.status}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("organization") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Organization:</div>
+              <div className="flex-1 p-2 text-blue-600">{hiringManager.organization.name}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("department") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Department:</div>
+              <div className="flex-1 p-2">{hiringManager.department}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("email") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Email:</div>
+              <div className="flex-1 p-2 text-blue-600">{hiringManager.email}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("email2") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Secondary Email:</div>
+              <div className="flex-1 p-2 text-blue-600">{hiringManager.email2}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("mobilePhone") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Mobile:</div>
+              <div className="flex-1 p-2">{hiringManager.mobilePhone}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("directLine") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Direct Line:</div>
+              <div className="flex-1 p-2">{hiringManager.directLine}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("reportsTo") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Reports To:</div>
+              <div className="flex-1 p-2">{hiringManager.reportsTo}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("linkedinUrl") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">LinkedIn:</div>
+              <div className="flex-1 p-2 text-blue-600">{hiringManager.linkedinUrl}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("dateAdded") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
+              <div className="flex-1 p-2">{hiringManager.dateAdded}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("owner") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Job Owner:</div>
+              <div className="flex-1 p-2">{hiringManager.owner}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("secondaryOwners") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Secondary Owners:</div>
+              <div className="flex-1 p-2">{hiringManager.secondaryOwners}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("address") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Address:</div>
+              <div className="flex-1 p-2">{hiringManager.address}</div>
+            </div>
+          )}
+          {/* Custom fields handling would go here */}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderOrganizationPanel = () => {
+    return (
+      <PanelWithHeader title="Organization Details" onEdit={() => handleEditPanel("organizationDetails")}>
+        <div className="space-y-0 border border-gray-200 rounded">
+          {visibleFields.organizationDetails.includes("status") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
+              <div className="flex-1 p-2">{hiringManager.organization.status}</div>
+            </div>
+          )}
+          {visibleFields.organizationDetails.includes("organizationName") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Organization Name:</div>
+              <div className="flex-1 p-2 text-blue-600">{hiringManager.organization.name}</div>
+            </div>
+          )}
+          {visibleFields.organizationDetails.includes("organizationPhone") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Phone:</div>
+              <div className="flex-1 p-2">{hiringManager.organization.phone}</div>
+            </div>
+          )}
+          {visibleFields.organizationDetails.includes("url") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Website:</div>
+              <div className="flex-1 p-2 text-blue-600">{hiringManager.organization.url}</div>
+            </div>
+          )}
+          {visibleFields.organizationDetails.includes("dateAdded") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
+              <div className="flex-1 p-2">{hiringManager.dateAdded}</div> // Using HM date for simplicity or fetch org date
+            </div>
+          )}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderRecentNotesPanel = () => {
+    return (
+      <PanelWithHeader title="Recent Notes" onEdit={() => handleEditPanel("recentNotes")}>
+        <div className="border border-gray-200 rounded">
+          {notes.length > 0 ? (
+            <div className="p-2">
+              <div className="flex justify-end mb-2">
+                <button onClick={() => setShowAddNote(true)} className="text-sm text-blue-600 hover:underline">Add Note</button>
+              </div>
+              {notes.slice(0, 5).map((note) => (
+                <div key={note.id} className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0">
+                  <div className="flex justify-between text-sm mb-1">
+                    <span className="font-medium">{note.created_by_name || "Unknown User"}</span>
+                    <span className="text-gray-500">{new Date(note.created_at).toLocaleString()}</span>
+                  </div>
+                  <p className="text-sm text-gray-700">{note.text.length > 100 ? `${note.text.substring(0, 100)}...` : note.text}</p>
+                </div>
+              ))}
+              {notes.length > 5 && (
+                <button onClick={() => setActiveTab("notes")} className="text-blue-500 text-sm hover:underline mt-1">View all {notes.length} notes</button>
+              )}
+            </div>
+          ) : (
+            <div className="p-2">
+              <div className="flex justify-end mb-2">
+                <button onClick={() => setShowAddNote(true)} className="text-sm text-blue-600 hover:underline">Add Note</button>
+              </div>
+              <p className="text-gray-500 italic text-center">No recent notes</p>
+            </div>
+          )}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderPanel = (panelId: string) => {
+    if (panelId === "details") {
+      return (
+        <SortablePanel key={panelId} id={panelId}>
+          {renderDetailsPanel()}
+        </SortablePanel>
+      );
+    }
+    if (panelId === "organizationDetails") {
+      return (
+        <SortablePanel key={panelId} id={panelId}>
+          {renderOrganizationPanel()}
+        </SortablePanel>
+      );
+    }
+    if (panelId === "recentNotes") {
+      return (
+        <SortablePanel key={panelId} id={panelId}>
+          {renderRecentNotesPanel()}
+        </SortablePanel>
+      );
+    }
+    return null;
+  };
 
   // =====================
   // HEADER FIELDS (Top Row)
@@ -258,7 +681,7 @@ export default function HiringManagerView() {
   const [appointmentUsers, setAppointmentUsers] = useState<any[]>([]);
   const [isLoadingAppointmentUsers, setIsLoadingAppointmentUsers] = useState(false);
 
- 
+
 
   // Fetch hiring manager when component mounts
   useEffect(() => {
@@ -274,9 +697,8 @@ export default function HiringManagerView() {
       // Update note form about field when hiring manager is loaded
       setNoteForm((prev) => ({
         ...prev,
-        about: `${formatRecordId(hiringManager.id, "hiringManager")} ${
-          hiringManager.fullName
-        }`,
+        about: `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName
+          }`,
       }));
     }
   }, [hiringManager, hiringManagerId]);
@@ -295,65 +717,65 @@ export default function HiringManagerView() {
     }
   }, [showAppointmentModal]);
 
-const fetchAvailableFields = async () => {
-  setIsLoadingFields(true);
-  try {
-    const token = document.cookie.replace(
-      /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-      "$1"
-    );
-
-    const response = await fetch(
-      "/api/admin/field-management/hiring-managers",
-      {
-        headers: { Authorization: `Bearer ${token}` },
-      }
-    );
-
-    console.log("HM field-management status:", response.status);
-
-    const raw = await response.text();
-    console.log("HM field-management raw:", raw);
-
-    let data: any = {};
+  const fetchAvailableFields = async () => {
+    setIsLoadingFields(true);
     try {
-      data = JSON.parse(raw);
-    } catch {}
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
 
-    // ✅ IMPORTANT: your API is returning customFields (as per your screenshot)
-    const fields =
-      data.customFields ||
-      data.fields ||
-      data.data?.fields ||
-      data.hiringManagerFields ||
-      [];
+      const response = await fetch(
+        "/api/admin/field-management/hiring-managers",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
-    console.log("HM fields count:", fields.length);
+      console.log("HM field-management status:", response.status);
 
-    // ✅ save fields for modal/catalog (including hidden fields for reference, but we'll filter in UI)
-    setAvailableFields(fields);
+      const raw = await response.text();
+      console.log("HM field-management raw:", raw);
 
-    // ✅ Only add NON-HIDDEN custom fields to Details panel
-    // Filter out hidden fields before adding to visible fields
-    const visibleCustomFields = fields.filter((f: any) => {
-      const isHidden = f.is_hidden === true || f.hidden === true || f.isHidden === true;
-      return !isHidden;
-    });
+      let data: any = {};
+      try {
+        data = JSON.parse(raw);
+      } catch { }
 
-    const allCustomKeys = visibleCustomFields.map(
-      (f: any) => f.field_name || f.field_key || f.id
-    );
+      // ✅ IMPORTANT: your API is returning customFields (as per your screenshot)
+      const fields =
+        data.customFields ||
+        data.fields ||
+        data.data?.fields ||
+        data.hiringManagerFields ||
+        [];
 
-    setVisibleFields((prev) => ({
-      ...prev,
-      details: Array.from(new Set([...prev.details, ...allCustomKeys])),
-    }));
-  } catch (err) {
-    console.error("Error fetching HM available fields:", err);
-  } finally {
-    setIsLoadingFields(false);
-  }
-};
+      console.log("HM fields count:", fields.length);
+
+      // ✅ save fields for modal/catalog (including hidden fields for reference, but we'll filter in UI)
+      setAvailableFields(fields);
+
+      // ✅ Only add NON-HIDDEN custom fields to Details panel
+      // Filter out hidden fields before adding to visible fields
+      const visibleCustomFields = fields.filter((f: any) => {
+        const isHidden = f.is_hidden === true || f.hidden === true || f.isHidden === true;
+        return !isHidden;
+      });
+
+      const allCustomKeys = visibleCustomFields.map(
+        (f: any) => f.field_name || f.field_key || f.id
+      );
+
+      setVisibleFields((prev) => ({
+        ...prev,
+        details: Array.from(new Set([...prev.details, ...allCustomKeys])),
+      }));
+    } catch (err) {
+      console.error("Error fetching HM available fields:", err);
+    } finally {
+      setIsLoadingFields(false);
+    }
+  };
 
 
 
@@ -459,8 +881,8 @@ const fetchAvailableFields = async () => {
         dateAdded: hm.date_added
           ? new Date(hm.date_added).toLocaleDateString()
           : hm.created_at
-          ? new Date(hm.created_at).toLocaleDateString()
-          : "Unknown",
+            ? new Date(hm.created_at).toLocaleDateString()
+            : "Unknown",
         address: hm.address || "No address provided",
       };
 
@@ -1109,13 +1531,13 @@ const fetchAvailableFields = async () => {
       // Clear the form
       const defaultAboutRef = hiringManager
         ? [
-            {
-              id: hiringManager.id,
-              type: "Hiring Manager",
-              display: `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName}`,
-              value: formatRecordId(hiringManager.id, "hiringManager"),
-            },
-          ]
+          {
+            id: hiringManager.id,
+            type: "Hiring Manager",
+            display: `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName}`,
+            value: formatRecordId(hiringManager.id, "hiringManager"),
+          },
+        ]
         : [];
       setNoteForm({
         text: "",
@@ -1152,13 +1574,13 @@ const fetchAvailableFields = async () => {
   const handleCloseAddNoteModal = () => {
     const defaultAboutRef = hiringManager
       ? [
-          {
-            id: hiringManager.id,
-            type: "Hiring Manager",
-            display: `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName}`,
-            value: formatRecordId(hiringManager.id, "hiringManager"),
-          },
-        ]
+        {
+          id: hiringManager.id,
+          type: "Hiring Manager",
+          display: `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName}`,
+          value: formatRecordId(hiringManager.id, "hiringManager"),
+        },
+      ]
       : [];
     setNoteForm({
       text: "",
@@ -1378,7 +1800,7 @@ const fetchAvailableFields = async () => {
       if (userCookie) {
         try {
           currentUser = JSON.parse(decodeURIComponent(userCookie));
-        } catch {}
+        } catch { }
       }
 
       // Add note to source hiring manager
@@ -1503,7 +1925,7 @@ const fetchAvailableFields = async () => {
       if (userCookie) {
         try {
           currentUser = JSON.parse(decodeURIComponent(userCookie));
-        } catch {}
+        } catch { }
       }
 
       // Create delete request
@@ -1712,8 +2134,8 @@ const fetchAvailableFields = async () => {
     } else if (action === "password-reset") {
       // Pre-fill email if available
       setPasswordResetForm({
-        email: hiringManager?.email && hiringManager.email !== "(Not provided)" && hiringManager.email !== "No email provided" 
-          ? hiringManager.email 
+        email: hiringManager?.email && hiringManager.email !== "(Not provided)" && hiringManager.email !== "No email provided"
+          ? hiringManager.email
           : "",
         sendEmail: true,
       });
@@ -1786,7 +2208,7 @@ const fetchAvailableFields = async () => {
           const [hours, minutes] = appointmentForm.time.split(':');
           const appointmentDate = new Date(appointmentForm.date);
           appointmentDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-          
+
           const endDate = new Date(appointmentDate);
           endDate.setMinutes(endDate.getMinutes() + appointmentForm.duration);
 
@@ -1951,9 +2373,8 @@ const fetchAvailableFields = async () => {
               switch (item.action) {
                 case "CREATE":
                   actionDisplay = "Hiring Manager Created";
-                  detailsDisplay = `Created by ${
-                    item.performed_by_name || "Unknown"
-                  }`;
+                  detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
+                    }`;
                   break;
                 case "UPDATE":
                   actionDisplay = "Hiring Manager Updated";
@@ -1963,8 +2384,7 @@ const fetchAvailableFields = async () => {
                       if (details.before[key] !== details.after[key]) {
                         const fieldName = key.replace(/_/g, " ");
                         changes.push(
-                          `${fieldName}: "${details.before[key] || ""}" → "${
-                            details.after[key] || ""
+                          `${fieldName}: "${details.before[key] || ""}" → "${details.after[key] || ""
                           }"`
                         );
                       }
@@ -2172,11 +2592,10 @@ const fetchAvailableFields = async () => {
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            className={`px-4 py-2 ${
-              activeTab === tab.id
-                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
-                : "text-gray-700 hover:bg-gray-200"
-            }`}
+            className={`px-4 py-2 ${activeTab === tab.id
+              ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+              : "text-gray-700 hover:bg-gray-200"
+              }`}
             onClick={() => {
               if (tab.id === "modify") {
                 handleEdit();
@@ -2192,40 +2611,140 @@ const fetchAvailableFields = async () => {
 
       {/* Quick Action Buttons */}
       <div className="flex bg-gray-300 p-2 space-x-2">
-        {quickActions.map((action) => {
-          let count = 0;
-          let countLabel = action.label;
+        <div className="flex-1 space-x-2">
+          {quickActions.map((action) => {
+            let count = 0;
+            let countLabel = action.label;
 
-          if (action.id === "jobs") {
-            count = summaryCounts.jobs || 0;
-            countLabel = isLoadingSummaryCounts ? "Loading..." : `${count} ${count === 1 ? "Job" : "Jobs"}`;
-          } else if (action.id === "apps-under-review") {
-            count = summaryCounts.appsUnderReview || 0;
-            countLabel = isLoadingSummaryCounts ? "Loading..." : `${count} Apps Under Review`;
-          } else if (action.id === "interviews") {
-            count = summaryCounts.interviews || 0;
-            countLabel = isLoadingSummaryCounts ? "Loading..." : `${count} ${count === 1 ? "Interview" : "Interviews"}`;
-          } else if (action.id === "placements") {
-            count = summaryCounts.placements || 0;
-            countLabel = isLoadingSummaryCounts ? "Loading..." : `${count} ${count === 1 ? "Placement" : "Placements"}`;
-          }
+            if (action.id === "jobs") {
+              count = summaryCounts.jobs || 0;
+              countLabel = isLoadingSummaryCounts ? "Loading..." : `${count} ${count === 1 ? "Job" : "Jobs"}`;
+            } else if (action.id === "apps-under-review") {
+              count = summaryCounts.appsUnderReview || 0;
+              countLabel = isLoadingSummaryCounts ? "Loading..." : `${count} Apps Under Review`;
+            } else if (action.id === "interviews") {
+              count = summaryCounts.interviews || 0;
+              countLabel = isLoadingSummaryCounts ? "Loading..." : `${count} ${count === 1 ? "Interview" : "Interviews"}`;
+            } else if (action.id === "placements") {
+              count = summaryCounts.placements || 0;
+              countLabel = isLoadingSummaryCounts ? "Loading..." : `${count} ${count === 1 ? "Placement" : "Placements"}`;
+            }
+            return (
+              <button
+                key={action.id}
+                className="bg-white px-4 py-1 rounded-full shadow text-gray-700 hover:bg-gray-100"
+              >
+                {countLabel}
+              </button>
+            );
+          })}
+        </div>
 
-          return (
-            <button
-              key={action.id}
-              className="bg-white px-4 py-1 rounded-full shadow text-gray-700 hover:bg-gray-100"
-            >
-              {countLabel}
-            </button>
-          );
-        })}
+
+        {
+          activeTab === "summary" &&
+          <button
+            onClick={togglePin}
+            className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
+            title={isPinned ? "Unpin panel" : "Pin panel"}
+          >
+            {isPinned ? (
+              <FiLock className="w-5 h-5 text-blue-600" />
+            ) : (
+              <FiUnlock className="w-5 h-5 text-gray-600" />
+            )}
+          </button>
+        }
       </div>
 
       {/* Main Content Area */}
+
+      {/* NEW Summary with drag-drop + pin */}
+      {activeTab === "summary" && (
+        <div className="relative w-full">
+          {/* Pinned side drawer */}
+          {isPinned && (
+            <div className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"} border-l border-gray-300`}>
+              <div className="flex flex-col h-full">
+                <div className="flex items-center justify-between p-2 border-b bg-gray-50">
+                  <h3 className="font-semibold">Hiring Manager Summary</h3>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setIsCollapsed(!isCollapsed)}
+                      className="p-1 hover:bg-gray-200 rounded"
+                    >
+                      {isCollapsed ? "▶" : "◀"}
+                    </button>
+                    <button
+                      onClick={togglePin}
+                      className="p-1 hover:bg-gray-200 rounded"
+                    >
+                      <FiUnlock className="w-4 h-4 text-blue-600" />
+                    </button>
+                  </div>
+                </div>
+                {!isCollapsed && (
+                  <div className="flex-1 overflow-y-auto p-3">
+                    <DndContext
+                      collisionDetection={closestCenter}
+                      modifiers={[restrictToWindowEdges]}
+                      onDragStart={handleDragStart}
+                      onDragOver={handleDragOver}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <div className="flex flex-col gap-4">
+                        <SortableContext id="left" items={columns.left} strategy={verticalListSortingStrategy}>
+                          <div className="flex flex-col gap-4">
+                            {columns.left.map(renderPanel)}
+                          </div>
+                        </SortableContext>
+                        <SortableContext id="right" items={columns.right} strategy={verticalListSortingStrategy}>
+                          <div className="flex flex-col gap-4">
+                            {columns.right.map(renderPanel)}
+                          </div>
+                        </SortableContext>
+                      </div>
+                    </DndContext>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Regular summary (not pinned) */}
+          {!isPinned && (
+            <DndContext
+              collisionDetection={closestCenter}
+              modifiers={[restrictToWindowEdges]}
+              onDragStart={handleDragStart}
+              onDragOver={handleDragOver}
+              onDragEnd={handleDragEnd}
+            >
+              <div className="flex flex-col lg:flex-row gap-4 w-full items-start">
+                {/* Left Column */}
+                <SortableContext id="left" items={columns.left} strategy={verticalListSortingStrategy}>
+                  <div className="flex flex-col gap-4 w-full lg:w-1/2 min-h-[100px]">
+                    {columns.left.map(renderPanel)}
+                  </div>
+                </SortableContext>
+
+                {/* Right Column */}
+                <SortableContext id="right" items={columns.right} strategy={verticalListSortingStrategy}>
+                  <div className="flex flex-col gap-4 w-full lg:w-1/2 min-h-[100px]">
+                    {columns.right.map(renderPanel)}
+                  </div>
+                </SortableContext>
+              </div>
+            </DndContext>
+          )}
+        </div>
+      )}
+
+      {/* Disable big static summary */}
       <div className="p-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Display content based on active tab */}
-          {activeTab === "summary" && (
+          {false && false /* removed old static summary */ && (
             <>
               {/* Left Column - Details */}
               <PanelWithHeader
@@ -2287,7 +2806,7 @@ const fetchAvailableFields = async () => {
                       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
                         Mobile Phone:
                       </div>
-                    <a href='tel+123' className="flex-1 p-2">
+                      <a href='tel+123' className="flex-1 p-2">
                         {hiringManager.mobilePhone}
                       </a>
                     </div>
@@ -2431,27 +2950,27 @@ const fetchAvailableFields = async () => {
                     {visibleFields.organizationDetails.includes(
                       "organizationName"
                     ) && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Organization Name:
+                        <div className="flex border-b border-gray-200 last:border-b-0">
+                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                            Organization Name:
+                          </div>
+                          <div className="flex-1 p-2 text-blue-600">
+                            {hiringManager.organization.name}
+                          </div>
                         </div>
-                        <div className="flex-1 p-2 text-blue-600">
-                          {hiringManager.organization.name}
-                        </div>
-                      </div>
-                    )}
+                      )}
                     {visibleFields.organizationDetails.includes(
                       "organizationPhone"
                     ) && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Organization Phone:
+                        <div className="flex border-b border-gray-200 last:border-b-0">
+                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                            Organization Phone:
+                          </div>
+                          <div className="flex-1 p-2">
+                            {hiringManager.organization.phone}
+                          </div>
                         </div>
-                        <div className="flex-1 p-2">
-                          {hiringManager.organization.phone}
-                        </div>
-                      </div>
-                    )}
+                      )}
                     {visibleFields.organizationDetails.includes("url") && (
                       <div className="flex border-b border-gray-200 last:border-b-0">
                         <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
@@ -2471,15 +2990,15 @@ const fetchAvailableFields = async () => {
                     {visibleFields.organizationDetails.includes(
                       "dateAdded"
                     ) && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Date Added:
+                        <div className="flex border-b border-gray-200 last:border-b-0">
+                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                            Date Added:
+                          </div>
+                          <div className="flex-1 p-2">
+                            {hiringManager.dateAdded}
+                          </div>
                         </div>
-                        <div className="flex-1 p-2">
-                          {hiringManager.dateAdded}
-                        </div>
-                      </div>
-                    )}
+                      )}
                   </div>
                 </PanelWithHeader>
 
@@ -3074,11 +3593,10 @@ const fetchAvailableFields = async () => {
                         selectedTearsheetId: "",
                       }))
                     }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === "New"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
-                    }`}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "New"
+                      ? "bg-blue-500 text-white"
+                      : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
+                      }`}
                   >
                     New Tearsheet
                   </button>
@@ -3091,11 +3609,10 @@ const fetchAvailableFields = async () => {
                         name: "",
                       }))
                     }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === "Existing"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 hover:bg-gray-50"
-                    }`}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "Existing"
+                      ? "bg-blue-500 text-white"
+                      : "bg-white text-gray-700 hover:bg-gray-50"
+                      }`}
                   >
                     Existing Tearsheet
                   </button>
@@ -3359,11 +3876,10 @@ const fetchAvailableFields = async () => {
                     }))
                   }
                   placeholder="Please provide a detailed reason for deleting this hiring manager..."
-                  className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${
-                    !deleteForm.reason.trim()
-                      ? "border-red-300 focus:ring-red-500"
-                      : "border-gray-300 focus:ring-blue-500"
-                  }`}
+                  className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${!deleteForm.reason.trim()
+                    ? "border-red-300 focus:ring-red-500"
+                    : "border-gray-300 focus:ring-blue-500"
+                    }`}
                   rows={5}
                   required
                 />
@@ -3538,7 +4054,7 @@ const fetchAvailableFields = async () => {
 
       {/* Add Note Modal */}
       {showAddNote && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-101">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <div className="flex items-center space-x-2">
@@ -3554,44 +4070,14 @@ const fetchAvailableFields = async () => {
             </div>
             <div className="p-6">
               <div className="space-y-4">
-                {/* Action Field - Required */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Action <span className="text-red-500">*</span>
-                  </label>
-                  {isLoadingActionFields ? (
-                    <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
-                      Loading actions...
-                    </div>
-                  ) : (
-                    <select
-                      value={noteForm.action}
-                      onChange={(e) =>
-                        setNoteForm((prev) => ({ ...prev, action: e.target.value }))
-                      }
-                      className={`w-full p-2 border rounded focus:outline-none focus:ring-2 ${
-                        noteFormErrors.action
-                          ? "border-red-500 focus:ring-red-500"
-                          : "border-gray-300 focus:ring-blue-500"
-                      }`}
-                    >
-                      <option value="">Select an action...</option>
-                      {actionFields.map((action) => (
-                        <option key={action.id} value={action.field_name || action.id}>
-                          {action.field_label || action.field_name || action.id}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  {noteFormErrors.action && (
-                    <p className="mt-1 text-sm text-red-500">{noteFormErrors.action}</p>
-                  )}
-                </div>
-
                 {/* Note Text Area - Required */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Note Text <span className="text-red-500">*</span>
+                    Note Text {" "} {noteForm.text.length > 0 ? (
+                      <span className="text-green-500">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
                   </label>
                   <textarea
                     value={noteForm.text}
@@ -3603,15 +4089,50 @@ const fetchAvailableFields = async () => {
                       }
                     }}
                     placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
-                    className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${
-                      noteFormErrors.text
-                        ? "border-red-500 focus:ring-red-500"
-                        : "border-gray-300 focus:ring-blue-500"
-                    }`}
+                    className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${noteFormErrors.text
+                      ? "border-red-500 focus:ring-red-500"
+                      : "border-gray-300 focus:ring-blue-500"
+                      }`}
                     rows={6}
                   />
                   {noteFormErrors.text && (
                     <p className="mt-1 text-sm text-red-500">{noteFormErrors.text}</p>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Action {noteForm.action ? (
+                      <span className="text-green-500">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
+                  </label>
+                  {isLoadingActionFields ? (
+                    <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                      Loading actions...
+                    </div>
+                  ) : (
+                    <select
+                      value={noteForm.action}
+                      onChange={(e) =>
+                        setNoteForm((prev) => ({ ...prev, action: e.target.value }))
+                      }
+                      className={`w-full p-2 border rounded focus:outline-none focus:ring-2 ${noteFormErrors.action
+                        ? "border-red-500 focus:ring-red-500"
+                        : "border-gray-300 focus:ring-blue-500"
+                        }`}
+                    >
+                      <option value="">Select an action...</option>
+                      {actionFields.map((action) => (
+                        <option key={action.id} value={action.field_name || action.id}>
+                          {action.field_label || action.field_name || action.id}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {noteFormErrors.action && (
+                    <p className="mt-1 text-sm text-red-500">{noteFormErrors.action}</p>
                   )}
                 </div>
 
@@ -3646,6 +4167,11 @@ const fetchAvailableFields = async () => {
 
                     {/* Search Input */}
                     <div className="relative">
+                      {noteForm.aboutReferences.length !== 0 &&
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Additional References
+                        </label>
+                      }
                       <input
                         type="text"
                         value={aboutSearchQuery}
@@ -3664,11 +4190,10 @@ const fetchAvailableFields = async () => {
                             ? "Search and select records (e.g., Job, Lead, Placement, Organization, Hiring Manager)..."
                             : "Add another reference..."
                         }
-                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 pr-8 ${
-                          noteFormErrors.about
-                            ? "border-red-500 focus:ring-red-500"
-                            : "border-gray-300 focus:ring-blue-500"
-                        }`}
+                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 pr-8 ${noteFormErrors.about
+                          ? "border-red-500 focus:ring-red-500"
+                          : "border-gray-300 focus:ring-blue-500"
+                          }`}
                       />
                       <span className="absolute right-2 top-2 text-gray-400 text-sm">
                         Q
@@ -3722,95 +4247,7 @@ const fetchAvailableFields = async () => {
                 </div>
 
                 {/* Additional References Section - Global Search */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Additional References
-                  </label>
-                  <div className="relative" ref={additionalRefInputRef}>
-                    {/* Selected References Tags */}
-                    {noteForm.additionalReferences.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
-                        {noteForm.additionalReferences.map((ref, index) => (
-                          <span
-                            key={`${ref.type}-${ref.id}-${index}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-green-100 text-green-800 rounded text-sm"
-                          >
-                            <FiUserCheck className="w-4 h-4" />
-                            {ref.display}
-                            <button
-                              type="button"
-                              onClick={() => removeAdditionalReference(index)}
-                              className="ml-1 text-green-600 hover:text-green-800 font-bold"
-                              title="Remove"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
 
-                    {/* Search Input */}
-                    <div className="relative">
-                      <input
-                        type="text"
-                        value={additionalRefSearchQuery}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setAdditionalRefSearchQuery(value);
-                          searchAdditionalReferences(value);
-                        }}
-                        onFocus={() => {
-                          if (additionalRefSearchQuery.trim().length >= 2) {
-                            setShowAdditionalRefDropdown(true);
-                          }
-                        }}
-                        placeholder="Search and select additional records (e.g., Job, Lead, Placement, Organization, Hiring Manager)..."
-                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
-                      />
-                      <span className="absolute right-2 top-2 text-gray-400 text-sm">
-                        Q
-                      </span>
-                    </div>
-
-                    {/* Suggestions Dropdown */}
-                    {showAdditionalRefDropdown && (
-                      <div
-                        data-additional-ref-dropdown
-                        className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
-                      >
-                        {isLoadingAdditionalRefSearch ? (
-                          <div className="p-3 text-center text-gray-500 text-sm">
-                            Searching...
-                          </div>
-                        ) : additionalRefSuggestions.length > 0 ? (
-                          additionalRefSuggestions.map((suggestion, idx) => (
-                            <button
-                              key={`${suggestion.type}-${suggestion.id}-${idx}`}
-                              type="button"
-                              onClick={() => handleAdditionalRefSelect(suggestion)}
-                              className="w-full text-left px-3 py-2 hover:bg-green-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
-                            >
-                              <FiUserCheck className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                              <div className="flex-1">
-                                <div className="text-sm font-medium text-gray-900">
-                                  {suggestion.display}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {suggestion.type}
-                                </div>
-                              </div>
-                            </button>
-                          ))
-                        ) : additionalRefSearchQuery.trim().length >= 2 ? (
-                          <div className="p-3 text-center text-gray-500 text-sm">
-                            No results found
-                          </div>
-                        ) : null}
-                      </div>
-                    )}
-                  </div>
-                </div>
 
                 {/* Email Notification Section - Internal Users Only */}
                 <div>

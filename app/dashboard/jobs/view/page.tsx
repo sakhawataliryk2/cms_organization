@@ -9,6 +9,36 @@ import PanelWithHeader from '@/components/PanelWithHeader';
 import { FiBriefcase } from "react-icons/fi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+// Drag and drop imports
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import { restrictToWindowEdges } from "@dnd-kit/modifiers";
+import { SortableContext, useSortable, verticalListSortingStrategy, rectSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { TbGripVertical } from "react-icons/tb";
+import { FiLock, FiUnlock } from "react-icons/fi";
+
+// SortablePanel helper
+function SortablePanel({ id, children }: { id: string; children: React.ReactNode }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className="relative group">
+      <button
+        {...attributes}
+        {...listeners}
+        className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Drag to reorder"
+      >
+        <TbGripVertical className="w-5 h-5 text-gray-600" />
+      </button>
+      {children}
+    </div>
+  );
+}
 
 // Move DEFAULT_HEADER_FIELDS outside component to ensure stable reference
 const DEFAULT_HEADER_FIELDS = ["phone", "website"];
@@ -45,7 +75,7 @@ export default function JobView() {
   });
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
-  
+
   // Action fields state (custom fields from Jobs field management)
   const [actionFields, setActionFields] = useState<any[]>([]);
   const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
@@ -80,18 +110,469 @@ export default function JobView() {
     hiringManager: ["name", "phone", "email"],
     recentNotes: ["notes"],
   });
-  
-const {
-  headerFields,
-  setHeaderFields,
-  showHeaderFieldModal,
-  setShowHeaderFieldModal,
-  saveHeaderConfig,
-} = useHeaderConfig({
-  entityType: "JOB",
-  configType: "header", 
-  defaultFields: DEFAULT_HEADER_FIELDS,
-});
+
+  // ===== Summary layout state =====
+  // Independent columns for full sort control
+  const [columns, setColumns] = useState<{
+    left: string[];
+    right: string[];
+  }>({
+    left: ["jobDetails"],
+    right: ["details", "hiringManager", "recentNotes"],
+  });
+
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [isPinned, setIsPinned] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const findContainer = (id: string) => {
+    if (id in columns) {
+      return id as keyof typeof columns;
+    }
+    return Object.keys(columns).find((key) =>
+      columns[key as keyof typeof columns].includes(id)
+    ) as keyof typeof columns | undefined;
+  };
+
+  const handleDragStart = (event: any) => {
+    setActiveId(event.active.id);
+  }
+
+  const handleDragOver = (event: any) => {
+    const { active, over } = event;
+    const overId = over?.id;
+
+    if (!overId || active.id === overId) {
+      return;
+    }
+
+    const activeContainer = findContainer(active.id);
+    const overContainer = findContainer(overId);
+
+    if (
+      !activeContainer ||
+      !overContainer ||
+      activeContainer === overContainer
+    ) {
+      return;
+    }
+
+    setColumns((prev) => {
+      const activeItems = prev[activeContainer];
+      const overItems = prev[overContainer];
+      const activeIndex = activeItems.indexOf(active.id);
+      const overIndex = overItems.indexOf(overId);
+
+      let newIndex;
+
+      if (overId in prev) {
+        newIndex = overItems.length + 1;
+      } else {
+        const isBelowOverItem =
+          over &&
+          active.rect.current.translated &&
+          active.rect.current.translated.top >
+          over.rect.top + over.rect.height;
+
+        const modifier = isBelowOverItem ? 1 : 0;
+
+        newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1;
+      }
+
+      return {
+        ...prev,
+        [activeContainer]: [
+          ...prev[activeContainer].filter((item) => item !== active.id),
+        ],
+        [overContainer]: [
+          ...prev[overContainer].slice(0, newIndex),
+          active.id,
+          ...prev[overContainer].slice(newIndex, prev[overContainer].length),
+        ],
+      };
+    });
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    const activeContainer = findContainer(active.id as string);
+    const overContainer = findContainer(over?.id as string);
+
+    if (
+      !activeContainer ||
+      !overContainer ||
+      activeContainer !== overContainer
+    ) {
+      setActiveId(null);
+      return;
+    }
+
+    const activeIndex = columns[activeContainer].indexOf(active.id as string);
+    const overIndex = columns[overContainer].indexOf(over?.id as string);
+
+    if (activeIndex !== overIndex) {
+      setColumns((prev) => ({
+        ...prev,
+        [activeContainer]: arrayMove(
+          prev[activeContainer],
+          activeIndex,
+          overIndex
+        ),
+      }));
+    }
+
+    setActiveId(null);
+  };
+
+  const togglePin = () => {
+    setIsPinned((p) => !p);
+    if (isPinned === false) setIsCollapsed(false);
+  };
+
+  const renderJobDetailsPanel = () => {
+    if (!job) return null;
+    return (
+      <PanelWithHeader
+        title={`${job.title} - ${job.organization.name} • ${job.location}`}
+        onEdit={() => handleEditPanel("jobDetails")}
+      >
+        <div className="space-y-0 border border-gray-200 rounded">
+          {visibleFields.jobDetails.includes("title") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                Title:
+              </div>
+              <div className="flex-1 p-2 flex items-center justify-between">
+                <span className="text-blue-600 font-semibold">
+                  {job.title}
+                </span>
+                <div className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
+                  {job.employmentType}
+                </div>
+              </div>
+            </div>
+          )}
+          {visibleFields.jobDetails.includes("description") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                Description:
+              </div>
+              <div className="flex-1 p-2 whitespace-pre-line text-gray-700">
+                {job.description}
+              </div>
+            </div>
+          )}
+          {visibleFields.jobDetails.includes("benefits") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                Benefits:
+              </div>
+              <div className="flex-1 p-2">
+                {job.benefits.length > 0 ? (
+                  <ul className="list-disc pl-5">
+                    {job.benefits.map(
+                      (benefit: string, index: number) => (
+                        <li
+                          key={index}
+                          className="text-gray-700 mb-1"
+                        >
+                          {benefit}
+                        </li>
+                      )
+                    )}
+                  </ul>
+                ) : (
+                  <p className="text-gray-500 italic">
+                    No benefits listed
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+          {visibleFields.jobDetails.includes("requiredSkills") &&
+            job.requiredSkills && (
+              <div className="flex border-b border-gray-200 last:border-b-0">
+                <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                  Required Skills:
+                </div>
+                <div className="flex-1 p-2 text-gray-700">
+                  {job.requiredSkills}
+                </div>
+              </div>
+            )}
+          {visibleFields.jobDetails.includes("salaryRange") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                Salary Range:
+              </div>
+              <div className="flex-1 p-2 text-gray-700">
+                {job.salaryRange}
+              </div>
+            </div>
+          )}
+          {/* Display custom fields */}
+          {job.customFields &&
+            Object.keys(job.customFields).map((fieldKey) => {
+              if (visibleFields.jobDetails.includes(fieldKey)) {
+                const field = availableFields.find(
+                  (f) =>
+                    (f.field_name || f.field_label || f.id) ===
+                    fieldKey
+                );
+                const fieldLabel =
+                  field?.field_label || field?.field_name || fieldKey;
+                const fieldValue = job.customFields[fieldKey];
+                return (
+                  <div
+                    key={fieldKey}
+                    className="flex border-b border-gray-200 last:border-b-0"
+                  >
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      {fieldLabel}:
+                    </div>
+                    <div className="flex-1 p-2">
+                      {String(fieldValue || "-")}
+                    </div>
+                  </div>
+                );
+              }
+              return null;
+            })}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderDetailsPanel = () => {
+    if (!job) return null;
+    return (
+      <PanelWithHeader
+        title="Details"
+        onEdit={() => handleEditPanel("details")}
+      >
+        <div className="space-y-0 border border-gray-200 rounded">
+          {visibleFields.details.includes("status") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                Status:
+              </div>
+              <div className="flex-1 p-2">
+                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
+                  {job.status}
+                </span>
+              </div>
+            </div>
+          )}
+          {visibleFields.details.includes("priority") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                Priority:
+              </div>
+              <div className="flex-1 p-2">{job.priority}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("employmentType") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                Employment Type:
+              </div>
+              <div className="flex-1 p-2">{job.employmentType}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("startDate") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                Start Date:
+              </div>
+              <div className="flex-1 p-2">{job.startDate}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("worksite") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                Worksite Location:
+              </div>
+              <div className="flex-1 p-2">{job.worksite}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("dateAdded") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                Date Added:
+              </div>
+              <div className="flex-1 p-2">{job.dateAdded}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("jobBoardStatus") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                Job Board Status:
+              </div>
+              <div className="flex-1 p-2">{job.jobBoardStatus}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("owner") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                User Owner:
+              </div>
+              <div className="flex-1 p-2">{job.owner}</div>
+            </div>
+          )}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderHiringManagerPanel = () => {
+    if (!job) return null;
+    return (
+      <PanelWithHeader
+        title="Hiring Manager"
+        onEdit={() => handleEditPanel("hiringManager")}
+      >
+        <div className="space-y-0 border border-gray-200 rounded">
+          {visibleFields.hiringManager.includes("name") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                Name:
+              </div>
+              <div className="flex-1 p-2 text-blue-600">
+                {job.hiringManager.name}
+              </div>
+            </div>
+          )}
+          {visibleFields.hiringManager.includes("phone") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                Phone:
+              </div>
+              <div className="flex-1 p-2">
+                {job.hiringManager.phone}
+              </div>
+            </div>
+          )}
+          {visibleFields.hiringManager.includes("email") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                Email:
+              </div>
+              <div className="flex-1 p-2 text-blue-600">
+                {job.hiringManager.email}
+              </div>
+            </div>
+          )}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderRecentNotesPanel = () => {
+    if (!job) return null;
+    return (
+      <PanelWithHeader
+        title="Recent Notes"
+        onEdit={() => handleEditPanel("recentNotes")}
+      >
+        <div className="border border-gray-200 rounded">
+          {visibleFields.recentNotes.includes("notes") && (
+            <div className="p-2">
+              <div className="flex justify-end mb-3">
+                <button
+                  onClick={() => setShowAddNote(true)}
+                  className="text-sm text-blue-600 hover:underline"
+                >
+                  Add Note
+                </button>
+              </div>
+
+              {/* Notes preview */}
+              {notes.length > 0 ? (
+                <div>
+                  {notes.slice(0, 2).map((note) => (
+                    <div
+                      key={note.id}
+                      className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
+                    >
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="font-medium">
+                          {note.created_by_name || "Unknown User"}
+                        </span>
+                        <span className="text-gray-500">
+                          {new Date(note.created_at).toLocaleString()}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700">
+                        {note.text.length > 100
+                          ? `${note.text.substring(0, 100)}...`
+                          : note.text}
+                      </p>
+                    </div>
+                  ))}
+                  {notes.length > 2 && (
+                    <button
+                      onClick={() => setActiveTab("notes")}
+                      className="text-blue-500 text-sm hover:underline"
+                    >
+                      View all {notes.length} notes
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="text-center text-gray-500 p-4">
+                  No notes have been added yet.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderPanel = (panelId: string) => {
+    if (panelId === "jobDetails") {
+      return (
+        <SortablePanel key={panelId} id={panelId}>
+          {renderJobDetailsPanel()}
+        </SortablePanel>
+      );
+    }
+    if (panelId === "details") {
+      return (
+        <SortablePanel key={panelId} id={panelId}>
+          {renderDetailsPanel()}
+        </SortablePanel>
+      );
+    }
+    if (panelId === "hiringManager") {
+      return (
+        <SortablePanel key={panelId} id={panelId}>
+          {renderHiringManagerPanel()}
+        </SortablePanel>
+      );
+    }
+    if (panelId === "recentNotes") {
+      return (
+        <SortablePanel key={panelId} id={panelId}>
+          {renderRecentNotesPanel()}
+        </SortablePanel>
+      );
+    }
+    return null;
+  };
+
+  const {
+    headerFields,
+    setHeaderFields,
+    showHeaderFieldModal,
+    setShowHeaderFieldModal,
+    saveHeaderConfig,
+  } = useHeaderConfig({
+    entityType: "JOB",
+    configType: "header",
+    defaultFields: DEFAULT_HEADER_FIELDS,
+  });
 
 
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
@@ -165,7 +646,7 @@ const {
       fetchActionFields();
     }
   }, [showAddNote]);
-  
+
   // Fetch action fields (custom fields from Jobs field management)
   const fetchActionFields = async () => {
     setIsLoadingActionFields(true);
@@ -184,7 +665,7 @@ const {
         // Get custom fields from the response - handle both response structures
         const fields = data.customFields || data.fields || [];
         // Sort by sort_order if available
-        const sortedFields = fields.sort((a: any, b: any) => 
+        const sortedFields = fields.sort((a: any, b: any) =>
           (a.sort_order || 0) - (b.sort_order || 0)
         );
         setActionFields(sortedFields);
@@ -290,9 +771,8 @@ const {
           suggestions.push({
             id: job.id,
             type: "Job",
-            display: `${formatRecordId(job.id, "job")} ${
-              job.job_title || "Untitled"
-            }`,
+            display: `${formatRecordId(job.id, "job")} ${job.job_title || "Untitled"
+              }`,
             value: formatRecordId(job.id, "job"),
           });
         });
@@ -363,9 +843,8 @@ const {
           suggestions.push({
             id: lead.id,
             type: "Lead",
-            display: `#${lead.id} ${
-              lead.name || lead.company_name || "Unnamed"
-            }`,
+            display: `#${lead.id} ${lead.name || lead.company_name || "Unnamed"
+              }`,
             value: `#${lead.id}`,
           });
         });
@@ -406,9 +885,8 @@ const {
           suggestions.push({
             id: placement.id,
             type: "Placement",
-            display: `#${placement.id} ${
-              placement.jobSeekerName || "Unnamed"
-            } - ${placement.jobTitle || "Untitled"}`,
+            display: `#${placement.id} ${placement.jobSeekerName || "Unnamed"
+              } - ${placement.jobTitle || "Untitled"}`,
             value: `#${placement.id}`,
           });
         });
@@ -661,10 +1139,10 @@ const {
         salaryRange:
           data.job.min_salary && data.job.max_salary
             ? `$${parseFloat(
-                data.job.min_salary
-              ).toLocaleString()} - $${parseFloat(
-                data.job.max_salary
-              ).toLocaleString()}`
+              data.job.min_salary
+            ).toLocaleString()} - $${parseFloat(
+              data.job.max_salary
+            ).toLocaleString()}`
             : "Not specified",
         requiredSkills: data.job.required_skills || "",
         location: data.job.remote_option || "On-site",
@@ -913,9 +1391,8 @@ const {
               name:
                 app.job_seeker?.full_name ||
                 app.job_seeker?.name ||
-                `${app.job_seeker?.first_name || ""} ${
-                  app.job_seeker?.last_name || ""
-                }`.trim(),
+                `${app.job_seeker?.first_name || ""} ${app.job_seeker?.last_name || ""
+                  }`.trim(),
               email: app.job_seeker?.email,
               ...app.job_seeker,
             }))
@@ -1374,9 +1851,8 @@ const {
               switch (item.action) {
                 case "CREATE":
                   actionDisplay = "Job Created";
-                  detailsDisplay = `Created by ${
-                    item.performed_by_name || "Unknown"
-                  }`;
+                  detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
+                    }`;
                   break;
                 case "UPDATE":
                   actionDisplay = "Job Updated";
@@ -1387,8 +1863,7 @@ const {
                       if (details.before[key] !== details.after[key]) {
                         const fieldName = key.replace(/_/g, " ");
                         changes.push(
-                          `${fieldName}: "${details.before[key] || ""}" → "${
-                            details.after[key] || ""
+                          `${fieldName}: "${details.before[key] || ""}" → "${details.after[key] || ""
                           }"`
                         );
                       }
@@ -1513,12 +1988,19 @@ const {
         <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
           {/* LEFT: dynamic fields */}
           <div className="flex flex-wrap gap-x-10 gap-y-2 flex-1 min-w-0">
-            {headerFields.length === 0 ? (
-              <span className="text-sm text-gray-500">
-                No header fields selected
-              </span>
-            ) : (
+            {/* Always show Job Type */}
+            <div className="min-w-[140px]">
+              <div className="text-xs text-gray-500">Job Type</div>
+              <div className="text-sm font-medium text-gray-900">
+                {job?.employmentType || "Not specified"}
+              </div>
+            </div>
+
+            {headerFields.length > 0 &&
               headerFields.map((key) => {
+                // Skip if the key is "employmentType" since we are showing it explicitly
+                if (key === "employmentType") return null;
+
                 const field = getHeaderFieldOptions().find(
                   (f) => f.key === key
                 );
@@ -1558,8 +2040,7 @@ const {
                     </div>
                   </div>
                 );
-              })
-            )}
+              })}
           </div>
 
           {/* RIGHT: actions */}
@@ -1619,11 +2100,10 @@ const {
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            className={`px-4 py-2 ${
-              activeTab === tab.id
-                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
-                : "text-gray-700 hover:bg-gray-200"
-            }`}
+            className={`px-4 py-2 ${activeTab === tab.id
+              ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+              : "text-gray-700 hover:bg-gray-200"
+              }`}
             onClick={() => {
               if (tab.id === "modify") {
                 handleEdit();
@@ -1639,19 +2119,34 @@ const {
 
       {/* Quick Action Buttons */}
       <div className="flex bg-gray-300 p-2 space-x-2">
-        {quickTabs.map((action) => (
-          <button
-            key={action.id}
-            className={`${
-              activeQuickTab === action.id
+        <div className="flex-1 space-x-2">
+          {quickTabs.map((action) => (
+            <button
+              key={action.id}
+              className={`${activeQuickTab === action.id
                 ? "bg-white text-blue-600 font-medium"
                 : "bg-white text-gray-700 hover:bg-gray-100"
-            } px-4 py-1 rounded-full shadow`}
-            onClick={() => setActiveQuickTab(action.id)}
+                } px-4 py-1 rounded-full shadow`}
+              onClick={() => setActiveQuickTab(action.id)}
+            >
+              {action.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "summary" && (
+          <button
+            onClick={togglePin}
+            className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
+            title={isPinned ? "Unpin panel" : "Pin panel"}
           >
-            {action.label}
+            {isPinned ? (
+              <FiLock className="w-5 h-5 text-blue-600" />
+            ) : (
+              <FiUnlock className="w-5 h-5 text-gray-600" />
+            )}
           </button>
-        ))}
+        )}
       </div>
 
       {/* Main Content Area */}
@@ -1659,297 +2154,81 @@ const {
         <div className="grid grid-cols-7 gap-4">
           {/* Display content based on active tab */}
           {activeTab === "summary" && (
-            <>
-              {/* Left Column - Job Details (4/7 width) */}
-              <div className="col-span-4">
-                <PanelWithHeader
-                  title={`${job.title} - ${job.organization.name} • ${job.location}`}
-                  onEdit={() => handleEditPanel("jobDetails")}
-                >
-                  <div className="space-y-0 border border-gray-200 rounded">
-                    {visibleFields.jobDetails.includes("title") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Title:
-                        </div>
-                        <div className="flex-1 p-2 flex items-center justify-between">
-                          <span className="text-blue-600 font-semibold">
-                            {job.title}
-                          </span>
-                          <div className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
-                            {job.employmentType}
-                          </div>
-                        </div>
+            <div className="col-span-7 relative w-full">
+              {/* Pinned side drawer */}
+              {isPinned && (
+                <div className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"} border-l border-gray-300`}>
+                  <div className="flex flex-col h-full">
+                    <div className="flex items-center justify-between p-2 border-b bg-gray-50">
+                      <h3 className="font-semibold">Job Summary</h3>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setIsCollapsed(!isCollapsed)}
+                          className="p-1 hover:bg-gray-200 rounded"
+                        >
+                          {isCollapsed ? "▶" : "◀"}
+                        </button>
+                        <button
+                          onClick={togglePin}
+                          className="p-1 hover:bg-gray-200 rounded"
+                        >
+                          <FiUnlock className="w-4 h-4 text-blue-600" />
+                        </button>
                       </div>
-                    )}
-                    {visibleFields.jobDetails.includes("description") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Description:
-                        </div>
-                        <div className="flex-1 p-2 whitespace-pre-line text-gray-700">
-                          {job.description}
-                        </div>
-                      </div>
-                    )}
-                    {visibleFields.jobDetails.includes("benefits") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Benefits:
-                        </div>
-                        <div className="flex-1 p-2">
-                          {job.benefits.length > 0 ? (
-                            <ul className="list-disc pl-5">
-                              {job.benefits.map(
-                                (benefit: string, index: number) => (
-                                  <li
-                                    key={index}
-                                    className="text-gray-700 mb-1"
-                                  >
-                                    {benefit}
-                                  </li>
-                                )
-                              )}
-                            </ul>
-                          ) : (
-                            <p className="text-gray-500 italic">
-                              No benefits listed
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-                    {visibleFields.jobDetails.includes("requiredSkills") &&
-                      job.requiredSkills && (
-                        <div className="flex border-b border-gray-200 last:border-b-0">
-                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                            Required Skills:
-                          </div>
-                          <div className="flex-1 p-2 text-gray-700">
-                            {job.requiredSkills}
-                          </div>
-                        </div>
-                      )}
-                    {visibleFields.jobDetails.includes("salaryRange") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Salary Range:
-                        </div>
-                        <div className="flex-1 p-2 text-gray-700">
-                          {job.salaryRange}
-                        </div>
-                      </div>
-                    )}
-                    {/* Display custom fields */}
-                    {job.customFields &&
-                      Object.keys(job.customFields).map((fieldKey) => {
-                        if (visibleFields.jobDetails.includes(fieldKey)) {
-                          const field = availableFields.find(
-                            (f) =>
-                              (f.field_name || f.field_label || f.id) ===
-                              fieldKey
-                          );
-                          const fieldLabel =
-                            field?.field_label || field?.field_name || fieldKey;
-                          const fieldValue = job.customFields[fieldKey];
-                          return (
-                            <div
-                              key={fieldKey}
-                              className="flex border-b border-gray-200 last:border-b-0"
-                            >
-                              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                {fieldLabel}:
+                    </div>
+                    {!isCollapsed && (
+                      <div className="flex-1 overflow-y-auto p-3">
+                        <DndContext
+                          collisionDetection={closestCenter}
+                          modifiers={[restrictToWindowEdges]}
+                          onDragStart={handleDragStart}
+                          onDragOver={handleDragOver}
+                          onDragEnd={handleDragEnd}
+                        >
+                          <div className="flex flex-col gap-4">
+                            <SortableContext id="left" items={columns.left} strategy={verticalListSortingStrategy}>
+                              <div className="flex flex-col gap-4">
+                                {columns.left.map(renderPanel)}
                               </div>
-                              <div className="flex-1 p-2">
-                                {String(fieldValue || "-")}
+                            </SortableContext>
+                            <SortableContext id="right" items={columns.right} strategy={verticalListSortingStrategy}>
+                              <div className="flex flex-col gap-4">
+                                {columns.right.map(renderPanel)}
                               </div>
-                            </div>
-                          );
-                        }
-                        return null;
-                      })}
-                  </div>
-                </PanelWithHeader>
-              </div>
-
-              {/* Right Column - Job Details (3/7 width) */}
-              <div className="col-span-3 space-y-4">
-                {/* Details Panel */}
-                <PanelWithHeader
-                  title="Details"
-                  onEdit={() => handleEditPanel("details")}
-                >
-                  <div className="space-y-0 border border-gray-200 rounded">
-                    {visibleFields.details.includes("status") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Status:
-                        </div>
-                        <div className="flex-1 p-2">
-                          <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                            {job.status}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-                    {visibleFields.details.includes("priority") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Priority:
-                        </div>
-                        <div className="flex-1 p-2">{job.priority}</div>
-                      </div>
-                    )}
-                    {visibleFields.details.includes("employmentType") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Employment Type:
-                        </div>
-                        <div className="flex-1 p-2">{job.employmentType}</div>
-                      </div>
-                    )}
-                    {visibleFields.details.includes("startDate") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Start Date:
-                        </div>
-                        <div className="flex-1 p-2">{job.startDate}</div>
-                      </div>
-                    )}
-                    {visibleFields.details.includes("worksite") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Worksite Location:
-                        </div>
-                        <div className="flex-1 p-2">{job.worksite}</div>
-                      </div>
-                    )}
-                    {visibleFields.details.includes("dateAdded") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Date Added:
-                        </div>
-                        <div className="flex-1 p-2">{job.dateAdded}</div>
-                      </div>
-                    )}
-                    {visibleFields.details.includes("jobBoardStatus") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Job Board Status:
-                        </div>
-                        <div className="flex-1 p-2">{job.jobBoardStatus}</div>
-                      </div>
-                    )}
-                    {visibleFields.details.includes("owner") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          User Owner:
-                        </div>
-                        <div className="flex-1 p-2">{job.owner}</div>
-                      </div>
-                    )}
-                  </div>
-                </PanelWithHeader>
-
-                {/* Hiring Manager Contact */}
-                <PanelWithHeader
-                  title="Hiring Manager"
-                  onEdit={() => handleEditPanel("hiringManager")}
-                >
-                  <div className="space-y-0 border border-gray-200 rounded">
-                    {visibleFields.hiringManager.includes("name") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Name:
-                        </div>
-                        <div className="flex-1 p-2 text-blue-600">
-                          {job.hiringManager.name}
-                        </div>
-                      </div>
-                    )}
-                    {visibleFields.hiringManager.includes("phone") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Phone:
-                        </div>
-                        <div className="flex-1 p-2">
-                          {job.hiringManager.phone}
-                        </div>
-                      </div>
-                    )}
-                    {visibleFields.hiringManager.includes("email") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Email:
-                        </div>
-                        <div className="flex-1 p-2 text-blue-600">
-                          {job.hiringManager.email}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </PanelWithHeader>
-
-                {/* Recent Notes Section */}
-                <PanelWithHeader
-                  title="Recent Notes"
-                  onEdit={() => handleEditPanel("recentNotes")}
-                >
-                  <div className="border border-gray-200 rounded">
-                    {visibleFields.recentNotes.includes("notes") && (
-                      <div className="p-2">
-                        <div className="flex justify-end mb-3">
-                          <button
-                            onClick={() => setShowAddNote(true)}
-                            className="text-sm text-blue-600 hover:underline"
-                          >
-                            Add Note
-                          </button>
-                        </div>
-
-                        {/* Notes preview */}
-                        {notes.length > 0 ? (
-                          <div>
-                            {notes.slice(0, 2).map((note) => (
-                              <div
-                                key={note.id}
-                                className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
-                              >
-                                <div className="flex justify-between text-sm mb-1">
-                                  <span className="font-medium">
-                                    {note.created_by_name || "Unknown User"}
-                                  </span>
-                                  <span className="text-gray-500">
-                                    {new Date(note.created_at).toLocaleString()}
-                                  </span>
-                                </div>
-                                <p className="text-sm text-gray-700">
-                                  {note.text.length > 100
-                                    ? `${note.text.substring(0, 100)}...`
-                                    : note.text}
-                                </p>
-                              </div>
-                            ))}
-                            {notes.length > 2 && (
-                              <button
-                                onClick={() => setActiveTab("notes")}
-                                className="text-blue-500 text-sm hover:underline"
-                              >
-                                View all {notes.length} notes
-                              </button>
-                            )}
+                            </SortableContext>
                           </div>
-                        ) : (
-                          <div className="text-center text-gray-500 p-4">
-                            No notes have been added yet.
-                          </div>
-                        )}
+                        </DndContext>
                       </div>
                     )}
                   </div>
-                </PanelWithHeader>
-              </div>
-            </>
+                </div>
+              )}
+
+              {/* Regular summary (not pinned) */}
+              <DndContext
+                collisionDetection={closestCenter}
+                modifiers={[restrictToWindowEdges]}
+                onDragStart={handleDragStart}
+                onDragOver={handleDragOver}
+                onDragEnd={handleDragEnd}
+              >
+                <div className="flex flex-col lg:flex-row gap-4 w-full items-start">
+                  {/* Left Column */}
+                  <SortableContext id="left" items={columns.left} strategy={verticalListSortingStrategy}>
+                    <div className="flex flex-col gap-4 w-full lg:w-1/2 min-h-[100px]">
+                      {columns.left.map(renderPanel)}
+                    </div>
+                  </SortableContext>
+
+                  {/* Right Column */}
+                  <SortableContext id="right" items={columns.right} strategy={verticalListSortingStrategy}>
+                    <div className="flex flex-col gap-4 w-full lg:w-1/2 min-h-[100px]">
+                      {columns.right.map(renderPanel)}
+                    </div>
+                  </SortableContext>
+                </div>
+              </DndContext>
+            </div>
           )}
 
           {/* Notes Tab */}
@@ -2302,12 +2581,11 @@ const {
                                     );
                                     setShowCandidateDropdown(false);
                                   }}
-                                  className={`w-full text-left px-4 py-2 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none border-b border-gray-100 last:border-b-0 ${
-                                    placementForm.candidate ===
+                                  className={`w-full text-left px-4 py-2 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none border-b border-gray-100 last:border-b-0 ${placementForm.candidate ===
                                     candidate.id.toString()
-                                      ? "bg-blue-50"
-                                      : ""
-                                  }`}
+                                    ? "bg-blue-50"
+                                    : ""
+                                    }`}
                                 >
                                   <div className="flex items-center justify-between">
                                     <div>
@@ -2701,11 +2979,10 @@ const {
                         visibility: "New",
                       }))
                     }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === "New"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
-                    }`}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "New"
+                      ? "bg-blue-500 text-white"
+                      : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
+                      }`}
                   >
                     New
                   </button>
@@ -2717,11 +2994,10 @@ const {
                         visibility: "Existing",
                       }))
                     }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === "Existing"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 hover:bg-gray-50"
-                    }`}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "Existing"
+                      ? "bg-blue-500 text-white"
+                      : "bg-white text-gray-700 hover:bg-gray-50"
+                      }`}
                   >
                     Existing
                   </button>

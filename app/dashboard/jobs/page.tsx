@@ -1,14 +1,20 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
-import { useListControls } from "@/hooks/useListSortFilter";
-import SortFilterBar from "@/components/list/SortFilterBar";
-import FiltersModal from "@/components/list/FiltersModal";
-
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  horizontalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { TbGripVertical } from "react-icons/tb";
+import { FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
 
 interface Job {
   id: string;
@@ -20,6 +26,190 @@ interface Job {
   created_at: string;
   employment_type: string;
   created_by_name: string;
+  customFields?: Record<string, any>;
+  custom_fields?: Record<string, any>;
+}
+
+type ColumnSortState = "asc" | "desc" | null;
+type ColumnFilterState = string | null;
+
+// Sortable Column Header Component
+function SortableColumnHeader({
+  id,
+  columnKey,
+  label,
+  sortState,
+  filterValue,
+  onSort,
+  onFilterChange,
+  filterType,
+  filterOptions,
+  children,
+}: {
+  id: string;
+  columnKey: string;
+  label: string;
+  sortState: ColumnSortState;
+  filterValue: ColumnFilterState;
+  onSort: () => void;
+  onFilterChange: (value: string) => void;
+  filterType: "text" | "select" | "number";
+  filterOptions?: { label: string; value: string }[];
+  children?: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const [showFilter, setShowFilter] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  // Close filter on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        filterRef.current &&
+        !filterRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
+      ) {
+        setShowFilter(false);
+      }
+    };
+
+    if (showFilter) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showFilter, id]);
+
+  return (
+    <th
+      ref={setNodeRef}
+      style={style}
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
+    >
+      <div className="flex items-center gap-2">
+        {/* Drag Handle */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Drag to reorder column"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={16} />
+        </button>
+
+        {/* Column Label */}
+        <span className="flex-1">{label}</span>
+
+        {/* Sort Control */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSort();
+          }}
+          className="text-gray-400 hover:text-gray-600 transition-colors"
+          title={
+            sortState === "asc"
+              ? "Sort descending"
+              : sortState === "desc"
+                ? "Clear sort"
+                : "Sort ascending"
+          }
+        >
+          {sortState === "asc" ? (
+            <FiArrowUp size={14} />
+          ) : sortState === "desc" ? (
+            <FiArrowDown size={14} />
+          ) : (
+            <div className="w-3.5 h-3.5 border border-gray-300 rounded" />
+          )}
+        </button>
+
+        {/* Filter Toggle */}
+        <button
+          data-filter-toggle={id}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowFilter(!showFilter);
+          }}
+          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
+            }`}
+          title="Filter column"
+        >
+          <FiFilter size={14} />
+        </button>
+      </div>
+
+      {/* Filter Dropdown */}
+      {showFilter && (
+        <div
+          ref={filterRef}
+          className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-300 shadow-lg p-2 mt-1 min-w-[150px]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {filterType === "text" && (
+            <input
+              type="text"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "number" && (
+            <input
+              type="number"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "select" && filterOptions && (
+            <select
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            >
+              <option value="">All</option>
+              {filterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {filterValue && (
+            <button
+              onClick={() => {
+                onFilterChange("");
+                setShowFilter(false);
+              }}
+              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+            >
+              Clear Filter
+            </button>
+          )}
+        </div>
+      )}
+    </th>
+  );
 }
 
 const JOB_DEFAULT_COLUMNS = [
@@ -33,33 +223,22 @@ const JOB_DEFAULT_COLUMNS = [
   "created_by_name",
 ] as const;
 
-type JobColumnKey = (typeof JOB_DEFAULT_COLUMNS)[number];
-
 export default function JobList() {
   const router = useRouter();
   const [openActionId, setOpenActionId] = useState<string | null>(null);
 
-  const list = useListControls({
-    defaultSortKey: "id",
-    defaultSortDir: "desc",
-    sortOptions: [
-      { key: "id", label: "ID" },
-      { key: "job_title", label: "Job Title" },
-      { key: "category", label: "Category" },
-      { key: "organization_name", label: "Organization" },
-      { key: "worksite_location", label: "Location" },
-      { key: "status", label: "Status" },
-      { key: "created_at", label: "Created At" },
-      { key: "created_by_name", label: "Created By" },
-    ],
-  });
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
+  const [selectAll, setSelectAll] = useState(false);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const [showFilters, setShowFilters] = useState(false);
-  const [draftFilters, setDraftFilters] = useState<Record<string, any>>({});
+  // Per-column sorting state
+  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
 
-  useEffect(() => {
-    if (showFilters) setDraftFilters(list.filters);
-  }, [showFilters, list.filters]);
+  // Per-column filtering state
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
 
   const {
     columnFields,
@@ -74,37 +253,32 @@ export default function JobList() {
     configType: "columns",
   });
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
-  const [selectAll, setSelectAll] = useState(false);
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const columnsCatalog = useMemo(() => {
-    if (!jobs || jobs.length === 0) return [];
+  // Load column order from localStorage on mount
+  useEffect(() => {
+    const savedOrder = localStorage.getItem("jobsColumnOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validOrder = parsed.filter((key) =>
+            [...JOB_DEFAULT_COLUMNS, ...columnFields].includes(key)
+          );
+          if (validOrder.length > 0) {
+            setColumnFields(validOrder);
+          }
+        }
+      } catch (e) {
+        console.error("Error loading column order:", e);
+      }
+    }
+  }, []);
 
-    const sample = jobs[0] as any;
-
-    const ignore = new Set(["updated_at", "deleted_at"]);
-
-    return Object.keys(sample)
-      .filter((key) => !ignore.has(key))
-      .map((key) => ({
-        key,
-        label: key.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-        sortable: true,
-      }));
-  }, [jobs]);
-
-  const getColumnLabel = (key: string) =>
-    columnsCatalog.find((c) => c.key === key)?.label || key;
-
-  const getColumnValue = (job: any, key: string) => {
-    const v = job?.[key];
-    if (v === null || v === undefined || v === "") return "-";
-    return String(v);
-  };
-
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Save column order to localStorage whenever it changes
+  useEffect(() => {
+    if (columnFields.length > 0) {
+      localStorage.setItem("jobsColumnOrder", JSON.stringify(columnFields));
+    }
+  }, [columnFields]);
 
   // Fetch jobs data when component mounts
   useEffect(() => {
@@ -112,8 +286,6 @@ export default function JobList() {
   }, []);
 
   const fetchJobs = async () => {
-    // Continued from the previous code - updating app/dashboard/jobs/page.tsx
-
     setIsLoading(true);
     try {
       const response = await fetch("/api/jobs", {
@@ -144,45 +316,179 @@ export default function JobList() {
     }
   };
 
-  const filteredJobs = jobs.filter(
-    (job) =>
-      job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.organization_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.id?.toString().toLowerCase().includes(searchTerm.toLowerCase()) ||
-      job.category?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const columnsCatalog = useMemo(() => {
+    const standard = [
+      { key: "id", label: "ID", sortable: true, filterType: "text" as const },
+      { key: "job_title", label: "Job Title", sortable: true, filterType: "text" as const },
+      { key: "category", label: "Category", sortable: true, filterType: "text" as const },
+      { key: "organization_name", label: "Organization", sortable: true, filterType: "text" as const },
+      { key: "worksite_location", label: "Location", sortable: true, filterType: "text" as const },
+      { key: "status", label: "Status", sortable: true, filterType: "select" as const },
+      { key: "created_at", label: "Created At", sortable: true, filterType: "text" as const },
+      { key: "created_by_name", label: "Created By", sortable: true, filterType: "text" as const },
+    ];
 
-  const viewJobs = useMemo(() => {
-    const data = filteredJobs;
-
-    return list.applySortFilter<Job>(data, {
-      getValue: (row, key) => {
-        if (key.startsWith("custom:")) {
-          const rawKey = key.replace("custom:", "");
-          const cf =
-            (row as any)?.customFields || (row as any)?.custom_fields || {};
-          return cf?.[rawKey];
-        }
-        // Handle date fields
-        if (key === "created_at") {
-          return new Date((row as any)[key]).getTime();
-        }
-        return (row as any)[key];
-      },
-      filterFns: {
-        status: (row, value) => {
-          if (!value || value === "") return true;
-          return (row as any).status?.toLowerCase() === value.toLowerCase();
-        },
-        category: (row, value) => {
-          if (!value || value === "") return true;
-          return (row as any).category
-            ?.toLowerCase()
-            .includes(value.toLowerCase());
-        },
-      },
+    const customKeySet = new Set<string>();
+    jobs.forEach((job) => {
+      const cf = job?.customFields || job?.custom_fields || {};
+      Object.keys(cf).forEach((k) => customKeySet.add(k));
     });
-  }, [filteredJobs, list]);
+
+    const custom = Array.from(customKeySet).map((k) => ({
+      key: `custom:${k}`,
+      label: k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+      sortable: false,
+      filterType: "text" as const,
+    }));
+
+    return [...standard, ...custom];
+  }, [jobs]);
+
+  const getColumnLabel = (key: string) =>
+    columnsCatalog.find((c) => c.key === key)?.label || key;
+
+  const getColumnInfo = (key: string) =>
+    columnsCatalog.find((c) => c.key === key);
+
+  const getColumnValue = (job: any, key: string) => {
+    if (key.startsWith("custom:")) {
+      const rawKey = key.replace("custom:", "");
+      const cf = job?.customFields || job?.custom_fields || {};
+      return cf?.[rawKey] || "-";
+    }
+    const v = job?.[key];
+    if (v === null || v === undefined || v === "") return "-";
+    if (key === 'id') return `J ${v}`;
+    return String(v);
+  };
+
+  // Get unique status values for filter dropdown
+  const statusOptions = useMemo(() => {
+    const statuses = new Set<string>();
+    jobs.forEach((job) => {
+      if (job.status) statuses.add(job.status);
+    });
+    return Array.from(statuses).map((s) => ({ label: s, value: s }));
+  }, [jobs]);
+
+  const filteredAndSortedJobs = useMemo(() => {
+    let result = [...jobs];
+
+    // Apply global search
+    if (searchTerm.trim() !== "") {
+      const term = searchTerm.toLowerCase();
+      result = result.filter(
+        (job) =>
+          job.job_title?.toLowerCase().includes(term) ||
+          job.organization_name?.toLowerCase().includes(term) ||
+          job.id?.toString().toLowerCase().includes(term) ||
+          job.category?.toLowerCase().includes(term) ||
+          (job.status || "").toLowerCase().includes(term)
+      );
+    }
+
+    // Apply filters
+    Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
+      if (!filterValue || filterValue.trim() === "") return;
+
+      result = result.filter((job) => {
+        let value = getColumnValue(job, columnKey);
+        // Clean up display values for comparison
+        if (columnKey === 'id') value = job.id; // Compare raw ID for filtering usually, or display? Let's use display since filter is text input usually
+
+        const valueStr = String(value).toLowerCase();
+        const filterStr = String(filterValue).toLowerCase();
+
+        // For number columns, do exact match
+        const columnInfo = getColumnInfo(columnKey);
+        if ((columnInfo?.filterType as string) === "number") {
+          return String(value) === String(filterValue);
+        }
+
+        // For text columns, do contains match
+        return valueStr.includes(filterStr);
+      });
+    });
+
+    // Apply sorting
+    const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
+    if (activeSorts.length > 0) {
+      const [sortKey, sortDir] = activeSorts[0];
+      result.sort((a, b) => {
+        let aValue: any = getColumnValue(a, sortKey);
+        let bValue: any = getColumnValue(b, sortKey);
+
+        // Handle dates properly
+        if (sortKey === 'created_at') {
+          aValue = new Date(a.created_at).getTime();
+          bValue = new Date(b.created_at).getTime();
+        } else if (sortKey === 'id') {
+          // extract number from "J 123" or just use raw id which is numeric string usually
+          aValue = parseInt(a.id) || a.id;
+          bValue = parseInt(b.id) || b.id;
+        }
+
+        // Handle numeric values
+        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
+        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
+
+        let cmp = 0;
+        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+          cmp = aNum - bNum;
+        } else {
+          cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+        }
+
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [jobs, columnFilters, columnSorts, searchTerm]);
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = columnFields.indexOf(active.id as string);
+    const newIndex = columnFields.indexOf(over.id as string);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newOrder = arrayMove(columnFields, oldIndex, newIndex);
+      setColumnFields(newOrder);
+    }
+  };
+
+  // Handle column sort toggle
+  const handleColumnSort = (columnKey: string) => {
+    setColumnSorts((prev) => {
+      const current = prev[columnKey];
+      if (current === "asc") {
+        return { ...prev, [columnKey]: "desc" };
+      } else if (current === "desc") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      } else {
+        return { ...prev, [columnKey]: "asc" };
+      }
+    });
+  };
+
+  // Handle column filter change
+  const handleColumnFilter = (columnKey: string, value: string) => {
+    setColumnFilters((prev) => {
+      if (!value || value.trim() === "") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      }
+      return { ...prev, [columnKey]: value };
+    });
+  };
 
   const handleViewJob = (id: string) => {
     router.push(`/dashboard/jobs/view?id=${id}`);
@@ -196,21 +502,20 @@ export default function JobList() {
     if (selectAll) {
       setSelectedJobs([]);
     } else {
-      setSelectedJobs(viewJobs.map((job) => job.id));
+      setSelectedJobs(filteredAndSortedJobs.map((job) => job.id));
     }
     setSelectAll(!selectAll);
   };
 
   const handleSelectJob = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent row click event
+    e.stopPropagation();
 
     if (selectedJobs.includes(id)) {
       setSelectedJobs(selectedJobs.filter((jobId) => jobId !== id));
       if (selectAll) setSelectAll(false);
     } else {
       setSelectedJobs([...selectedJobs, id]);
-      // If all jobs are now selected, update selectAll state
-      if ([...selectedJobs, id].length === viewJobs.length) {
+      if ([...selectedJobs, id].length === filteredAndSortedJobs.length) {
         setSelectAll(true);
       }
     }
@@ -229,7 +534,6 @@ export default function JobList() {
     setIsLoading(true);
 
     try {
-      // Create promises for all delete operations
       const deletePromises = selectedJobs.map((id) =>
         fetch(`/api/jobs/${id}`, {
           method: "DELETE",
@@ -242,20 +546,14 @@ export default function JobList() {
         })
       );
 
-      // Execute all delete operations
       const results = await Promise.allSettled(deletePromises);
-
-      // Check for failures
       const failures = results.filter((result) => result.status === "rejected");
 
       if (failures.length > 0) {
         throw new Error(`Failed to delete ${failures.length} jobs`);
       }
 
-      // Refresh jobs after successful deletion
       await fetchJobs();
-
-      // Clear selection after deletion
       setSelectedJobs([]);
       setSelectAll(false);
     } catch (err) {
@@ -274,10 +572,7 @@ export default function JobList() {
     if (selectedJobs.length === 0) return;
 
     try {
-      // Create comma-separated list of job IDs
       const jobIds = selectedJobs.join(',');
-
-      // Call the export API
       const response = await fetch(`/api/jobs/export/xml?ids=${jobIds}`, {
         method: 'GET',
         headers: {
@@ -292,22 +587,15 @@ export default function JobList() {
         throw new Error('Failed to export jobs');
       }
 
-      // Get the XML content
       const xmlBlob = await response.blob();
-
-      // Create a download link
       const url = window.URL.createObjectURL(xmlBlob);
       const link = document.createElement('a');
       link.href = url;
       link.download = `jobs_export_${Date.now()}.xml`;
       document.body.appendChild(link);
       link.click();
-
-      // Cleanup
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-
-      console.log(`Successfully exported ${selectedJobs.length} jobs to XML`);
     } catch (error) {
       console.error('Error exporting jobs:', error);
       setError(
@@ -320,7 +608,6 @@ export default function JobList() {
 
   const exportSingleJobToXML = async (jobId: string) => {
     try {
-      // Call the export API with single job ID
       const response = await fetch(`/api/jobs/export/xml?ids=${jobId}`, {
         method: 'GET',
         headers: {
@@ -335,22 +622,15 @@ export default function JobList() {
         throw new Error('Failed to export job');
       }
 
-      // Get the XML content
       const xmlBlob = await response.blob();
-
-      // Create a download link
       const url = window.URL.createObjectURL(xmlBlob);
       const link = document.createElement('a');
       link.href = url;
       link.download = `job_${jobId}_export_${Date.now()}.xml`;
       document.body.appendChild(link);
       link.click();
-
-      // Cleanup
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-
-      console.log(`Successfully exported job ${jobId} to XML`);
     } catch (error) {
       console.error('Error exporting job:', error);
       setError(
@@ -371,8 +651,8 @@ export default function JobList() {
     }).format(date);
   };
 
-
   const getStatusColor = (status: string) => {
+    if (!status) return "bg-gray-100 text-gray-800";
     switch (status.toLowerCase()) {
       case "open":
         return "bg-green-100 text-green-800";
@@ -437,50 +717,6 @@ export default function JobList() {
               </button>
             </>
           )}
-          <SortFilterBar
-            sortKey={list.sortKey}
-            sortDir={list.sortDir}
-            onChangeSortKey={list.onChangeSortKey}
-            onToggleDir={list.onToggleDir}
-            sortOptions={list.sortOptions}
-            onOpenFilters={() => setShowFilters(true)}
-            onClearFilters={list.clearFilters}
-            hasFilters={list.hasFilters}
-          />
-
-          {showFilters && (
-            <FiltersModal
-              open={showFilters}
-              onClose={() => setShowFilters(false)}
-              fields={[
-                {
-                  key: "status",
-                  label: "Status",
-                  type: "select",
-                  options: [
-                    { label: "Open", value: "Open" },
-                    { label: "On Hold", value: "On Hold" },
-                    { label: "Filled", value: "Filled" },
-                    { label: "Closed", value: "Closed" },
-                  ],
-                },
-                {
-                  key: "category",
-                  label: "Category",
-                  type: "text",
-                },
-              ]}
-              values={draftFilters}
-              onChange={(key: string, value: any) =>
-                setDraftFilters((prev) => ({ ...prev, [key]: value }))
-              }
-              onApply={() => {
-                list.setFilters(draftFilters);
-                setShowFilters(false);
-              }}
-              onReset={() => setDraftFilters({})}
-            />
-          )}
 
           <button
             onClick={() => setShowColumnModal(true)}
@@ -517,7 +753,7 @@ export default function JobList() {
         </div>
       )}
 
-      {/* Search and Filter */}
+      {/* Search */}
       <div className="p-4 border-b border-gray-200">
         <div className="relative">
           <input
@@ -546,334 +782,217 @@ export default function JobList() {
 
       {/* Jobs Table */}
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                  checked={selectAll}
-                  onChange={handleSelectAll}
-                />
-              </th>
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-              {/* Fixed ID header */}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <button
-                  onClick={() => list.toggleSort("id")}
-                  className="hover:text-gray-700"
-                >
-                  ID
-                </button>
-              </th>
-              {/* Dynamic headers */}
-              {columnFields.map((key) => (
-                <th
-                  key={key}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  {getColumnLabel(key)}
+        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                    checked={selectAll}
+                    onChange={handleSelectAll}
+                  />
                 </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {viewJobs.length > 0 ? (
-              viewJobs.map((job) => (
-                <tr
-                  key={job.id}
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => handleViewJob(job.id)}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+
+                <SortableContext
+                  items={columnFields}
+                  strategy={horizontalListSortingStrategy}
                 >
-                  {/* ✅ Checkbox fixed FIRST */}
-                  <td
-                    className="px-6 py-4 whitespace-nowrap"
-                    onClick={(e) => e.stopPropagation()}
+                  {columnFields.map((key) => {
+                    const columnInfo = getColumnInfo(key);
+                    return (
+                      <SortableColumnHeader
+                        key={key}
+                        id={key}
+                        columnKey={key}
+                        label={getColumnLabel(key)}
+                        sortState={columnSorts[key] || null}
+                        filterValue={columnFilters[key] || null}
+                        onSort={() => handleColumnSort(key)}
+                        onFilterChange={(value) => handleColumnFilter(key, value)}
+                        filterType={columnInfo?.filterType || 'text'}
+                        filterOptions={
+                          key === "status" ? statusOptions : undefined
+                        }
+                      />
+                    );
+                  })}
+                </SortableContext>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredAndSortedJobs.length > 0 ? (
+                filteredAndSortedJobs.map((job) => (
+                  <tr
+                    key={job.id}
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() => handleViewJob(job.id)}
                   >
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                      checked={selectedJobs.includes(job.id)}
-                      onChange={() => { }}
-                      onClick={(e) => handleSelectJob(job.id, e)}
-                    />
-                  </td>
+                    <td
+                      className="px-6 py-4 whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                        checked={selectedJobs.includes(job.id)}
+                        onChange={() => { }}
+                        onClick={(e) => handleSelectJob(job.id, e)}
+                      />
+                    </td>
 
-                  {/* ✅ Actions fixed SECOND (locked) */}
-                  <td
-                    className="px-6 py-4 whitespace-nowrap text-sm"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="relative inline-block text-left">
-                      <button
-                        type="button"
-                        className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setOpenActionId((prev) =>
-                            prev === job.id ? null : job.id
-                          );
-                        }}
-                      >
-                        Actions ▾
-                      </button>
-
-                      {openActionId === job.id && (
-                        <div
-                          className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
-                          onClick={(e) => e.stopPropagation()}
+                    <td
+                      className="px-6 py-4 whitespace-nowrap text-sm"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="relative inline-block text-left">
+                        <button
+                          type="button"
+                          className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenActionId((prev) =>
+                              prev === job.id ? null : job.id
+                            );
+                          }}
                         >
-                          <div className="flex flex-col">
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setOpenActionId(null);
-                                handleViewJob(job.id);
-                              }}
-                            >
-                              View
-                            </button>
+                          Actions ▾
+                        </button>
 
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm text-green-600 hover:bg-gray-50"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                setOpenActionId(null);
-                                // Export single job directly
-                                await exportSingleJobToXML(job.id);
-                              }}
-                            >
-                              Export to XML
-                            </button>
-
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-50"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                setOpenActionId(null);
-
-                                if (
-                                  !window.confirm(
-                                    "Are you sure you want to delete this job?"
-                                  )
-                                )
-                                  return;
-
-                                setIsLoading(true);
-                                try {
-                                  await fetch(`/api/jobs/${job.id}`, {
-                                    method: "DELETE",
-                                    headers: {
-                                      Authorization: `Bearer ${document.cookie.replace(
-                                        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-                                        "$1"
-                                      )}`,
-                                    },
-                                  });
-                                  await fetchJobs();
-                                } finally {
-                                  setIsLoading(false);
-                                }
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-
-                  {/* Fixed ID */}
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      J {job.id}
-                    </div>
-                  </td>
-
-                  {/* Dynamic cells */}
-                  {columnFields.map((colKey) => {
-                    switch (colKey) {
-                      case "job_title":
-                        return (
-                          <td
-                            key={colKey}
-                            className="px-6 py-4 whitespace-nowrap"
+                        {openActionId === job.id && (
+                          <div
+                            className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
                           >
+                            <div className="flex flex-col">
+                              <button
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenActionId(null);
+                                  handleViewJob(job.id);
+                                }}
+                              >
+                                View
+                              </button>
+
+                              <button
+                                className="w-full text-left px-3 py-2 text-sm text-green-600 hover:bg-gray-50"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  setOpenActionId(null);
+                                  await exportSingleJobToXML(job.id);
+                                }}
+                              >
+                                Export to XML
+                              </button>
+
+                              <button
+                                className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-50"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  setOpenActionId(null);
+
+                                  if (
+                                    !window.confirm(
+                                      "Are you sure you want to delete this job?"
+                                    )
+                                  )
+                                    return;
+
+                                  setIsLoading(true);
+                                  try {
+                                    await fetch(`/api/jobs/${job.id}`, {
+                                      method: "DELETE",
+                                      headers: {
+                                        Authorization: `Bearer ${document.cookie.replace(
+                                          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                                          "$1"
+                                        )}`,
+                                      },
+                                    });
+                                    await fetchJobs();
+                                  } finally {
+                                    setIsLoading(false);
+                                  }
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+
+                    {columnFields.map((colKey) => (
+                      <td key={colKey} className="px-6 py-4 whitespace-nowrap">
+                        {colKey === 'status' ? (
+                          <span
+                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
+                              job.status
+                            )}`}
+                          >
+                            {job.status}
+                          </span>
+                        ) : colKey === 'job_title' ? (
+                          <>
                             <div className="text-sm font-medium text-gray-900">
                               {job.job_title}
                             </div>
                             <div className="text-sm text-gray-500">
                               {job.employment_type}
                             </div>
-                          </td>
-                        );
-
-                      case "category":
-                        return (
-                          <td
-                            key={colKey}
-                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                          >
-                            {job.category}
-                          </td>
-                        );
-
-                      case "organization_name":
-                        return (
-                          <td
-                            key={colKey}
-                            className="px-6 py-4 whitespace-nowrap"
-                          >
-                            <div className="text-sm text-blue-600">
-                              {job.organization_name || "Not specified"}
-                            </div>
-                          </td>
-                        );
-
-                      case "worksite_location":
-                        return (
-                          <td
-                            key={colKey}
-                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                          >
-                            {job.worksite_location || "Not specified"}
-                          </td>
-                        );
-
-                      case "status":
-                        return (
-                          <td
-                            key={colKey}
-                            className="px-6 py-4 whitespace-nowrap"
-                          >
-                            <span
-                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
-                                job.status
-                              )}`}
-                            >
-                              {job.status}
-                            </span>
-                          </td>
-                        );
-
-                      case "created_at":
-                        return (
-                          <td
-                            key={colKey}
-                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                          >
+                          </>
+                        ) : colKey === 'organization_name' ? (
+                          <div className="text-sm text-blue-600">
+                            {getColumnValue(job, colKey)}
+                          </div>
+                        ) : colKey === 'created_at' ? (
+                          <div className="text-sm text-gray-500">
                             {formatDate(job.created_at)}
-                          </td>
-                        );
-
-                      case "created_by_name":
-                        return (
-                          <td
-                            key={colKey}
-                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                          >
-                            {job.created_by_name || "Unknown"}
-                          </td>
-                        );
-
-                      default:
-                        return (
-                          <td
-                            key={colKey}
-                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                          >
-                            -
-                          </td>
-                        );
-                    }
-                  })}
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-500">
+                            {getColumnValue(job, colKey)}
+                          </div>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={columnFields.length + 2}
+                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
+                  >
+                    {searchTerm
+                      ? "No jobs found matching your search."
+                      : 'No jobs found. Click "Add Job" to create one.'}
+                  </td>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td
-                  colSpan={columnFields.length + 3}
-                  className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
-                >
-                  {searchTerm
-                    ? "No jobs found matching your search."
-                    : 'No jobs found. Click "Add Job" to create one.'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </DndContext>
       </div>
 
-      {/* Pagination */}
+      {/* Pagination (Simplified, could be enhanced) */}
       <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-        <div className="flex-1 flex justify-between sm:hidden">
-          <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Previous
-          </button>
-          <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Next
-          </button>
-        </div>
-        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm text-gray-700">
-              Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">{viewJobs.length}</span> of{" "}
-              <span className="font-medium">{viewJobs.length}</span> results
-            </p>
-          </div>
-          {filteredJobs.length > 0 && (
-            <div>
-              <nav
-                className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
-                aria-label="Pagination"
-              >
-                <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Previous</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-                <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
-                  1
-                </button>
-                <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Next</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-              </nav>
-            </div>
-          )}
+        <div>
+          <p className="text-sm text-gray-700">
+            Showing <span className="font-medium">1</span> to{" "}
+            <span className="font-medium">{filteredAndSortedJobs.length}</span> of{" "}
+            <span className="font-medium">{filteredAndSortedJobs.length}</span> results
+          </p>
         </div>
       </div>
+
       {showColumnModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">

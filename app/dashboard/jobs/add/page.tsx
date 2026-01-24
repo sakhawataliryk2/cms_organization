@@ -1095,7 +1095,7 @@ useEffect(() => {
                     className="w-5 h-5 text-blue-600 border-gray-300 focus:ring-blue-500"
                   />
                   <span className="ml-3 text-lg font-semibold text-gray-800">
-                    DIRECT HIRE
+                    Direct Hire
                   </span>
                 </div>
               </label>
@@ -1118,7 +1118,7 @@ useEffect(() => {
                     className="w-5 h-5 text-blue-600 border-gray-300 focus:ring-blue-500"
                   />
                   <span className="ml-3 text-lg font-semibold text-gray-800">
-                    CONTRACT
+                    Contract
                   </span>
                 </div>
               </label>
@@ -1141,7 +1141,7 @@ useEffect(() => {
                     className="w-5 h-5 text-blue-600 border-gray-300 focus:ring-blue-500"
                   />
                   <span className="ml-3 text-lg font-semibold text-gray-800">
-                    EXECUTIVE SEARCH
+                    Executive Search
                   </span>
                 </div>
               </label>
