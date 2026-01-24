@@ -404,12 +404,17 @@ export default function OrganizationList() {
       Object.keys(cf).forEach((k) => customKeySet.add(k));
     });
 
-    const custom = Array.from(customKeySet).map((k) => ({
-      key: `custom:${k}`,
-      label: humanize(k),
-      sortable: false,
-      filterType: "text" as const,
-    }));
+    const custom = Array.from(customKeySet).map((k) => {
+      const fieldDef = availableFields.find(
+        (f) => f.field_name === k || f.field_label === k
+      );
+      return {
+        key: `custom:${k}`,
+        label: fieldDef ? fieldDef.field_label : humanize(k),
+        sortable: false,
+        filterType: "text" as const,
+      };
+    });
 
     const merged = [...standard, ...custom];
     const seen = new Set<string>();
@@ -418,7 +423,7 @@ export default function OrganizationList() {
       seen.add(x.key);
       return true;
     });
-  }, [organizations]);
+  }, [organizations, availableFields]);
 
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
