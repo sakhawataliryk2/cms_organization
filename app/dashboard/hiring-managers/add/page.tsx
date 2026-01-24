@@ -46,6 +46,8 @@ export default function AddHiringManager() {
   const hasFetchedRef = useRef(false); // Track if we've already fetched hiring manager data
   const hasPrefilledOrgRef = useRef(false); // Track if we've prefilled organization
 
+  console.log("organizationIdFromUrl", organizationIdFromUrl);
+
   // Use the useCustomFields hook
   const {
     customFields,
@@ -87,27 +89,30 @@ export default function AddHiringManager() {
 
   // Fetch organization data (name, phone, address) if organizationId is provided
   const fetchOrganizationData = useCallback(async (orgId: string) => {
+    console.log("fetching")
     try {
       const response = await fetch(`/api/organizations/${orgId}`);
       if (response.ok) {
         const data = await response.json();
         const org = data.organization || {};
-        
+
+        console.log(org)
+
         // Extract organization data with fallbacks
         const orgName = org.name || "";
         const orgPhone = org.contact_phone || org.phone || "";
         const orgAddress = org.address || "";
-        
+
         // Validate required fields
         if (!orgName) {
           console.warn(`Organization ${orgId} is missing a name`);
         }
-        
+
         // Set state for organization data
         setOrganizationName(orgName);
         setOrganizationPhone(orgPhone);
         setOrganizationAddress(orgAddress);
-        
+
         // Prefill organizationId in form
         setFormData(prev => ({
           ...prev,
@@ -116,7 +121,7 @@ export default function AddHiringManager() {
           phone: prev.phone || orgPhone || "",
           address: prev.address || orgAddress || "",
         }));
-        
+
         // Auto-populate custom fields once they're loaded
         // This will be handled in a useEffect that watches customFields
       } else {
@@ -381,7 +386,7 @@ export default function AddHiringManager() {
     if (!ownerField) return;
 
     const currentValue = customFieldValues[ownerField.field_name];
-    
+
     // Auto-populate with current user's name if field is empty
     if (!currentValue || currentValue.trim() === "") {
       handleCustomFieldChange(ownerField.field_name, currentUser.name);
@@ -389,6 +394,40 @@ export default function AddHiringManager() {
   }, [customFields, currentUser, hiringManagerId, customFieldValues, handleCustomFieldChange]);
 
   // Auto-populate organization fields when organization data is fetched and custom fields are loaded
+  useEffect(() => {
+    // If not creating new HM or if we already have prefilled data logic handling this
+    // We strictly want to react to 'Organization' custom field changes
+    if (customFields.length === 0) return;
+
+    // Find the organization field definition
+    const orgField = customFields.find((f) => {
+      const label = f.field_label.toLowerCase();
+      return (label === "organization" || label === "organization name" || label === "company") &&
+        !label.includes("phone") && !label.includes("address");
+    });
+
+    if (!orgField) return;
+
+    // Get the current value from custom fields
+    const orgValue = customFieldValues[orgField.field_name];
+
+    // Check if this value is an ID (numeric/string ID) and different from what we currently have loaded
+    // We also need to avoid loops if organizationName (the loaded name) matches orgValue (if orgValue is just the name)
+    // Assuming the custom field stores the Organization ID if it's a lookup
+
+    if (orgValue && orgValue !== organizationName && orgValue !== formData.organizationId) {
+      // Debounce fetching
+      const timeoutId = setTimeout(() => {
+        // Attempt to fetch if it looks like an ID or if we just want to try resolving it
+        console.log("Organization selection changed:", orgValue);
+        fetchOrganizationData(orgValue);
+      }, 500);
+      return () => clearTimeout(timeoutId);
+    }
+
+  }, [customFields, customFieldValues, organizationName, formData.organizationId, fetchOrganizationData]);
+
+  // Handle prefilling from URL (existing logic preserved but ensuring it plays nice)
   useEffect(() => {
     if (customFields.length === 0 || !organizationIdFromUrl || hasPrefilledOrgRef.current === false) return;
     if (hiringManagerId) return; // Don't auto-populate in edit mode
@@ -399,37 +438,35 @@ export default function AddHiringManager() {
     customFields.forEach((field) => {
       const fieldLabel = field.field_label.toLowerCase();
       const currentValue = customFieldValues[field.field_name];
-      
-      // Organization Name fields - show readable name only (no ID)
-      // Only update if field is empty or matches old organization data
+
+      // Organization Name fields
       if (
         (fieldLabel.includes("organization") || fieldLabel.includes("company")) &&
         !fieldLabel.includes("phone") &&
         !fieldLabel.includes("address") &&
         organizationName
       ) {
-        // Only update if empty or if it matches the organization ID (old value)
         if (!currentValue || currentValue === organizationIdFromUrl || currentValue === String(organizationIdFromUrl)) {
           updates[field.field_name] = organizationName;
         }
       }
-      
-      // Company Phone fields - only update if empty
+
+      // Company Phone fields
       if (
-        (fieldLabel.includes("company phone") || 
-         fieldLabel.includes("company phone number") ||
-         (fieldLabel.includes("phone") && fieldLabel.includes("company"))) &&
+        (fieldLabel.includes("company phone") ||
+          fieldLabel.includes("company phone number") ||
+          (fieldLabel.includes("phone") && fieldLabel.includes("company"))) &&
         organizationPhone &&
         !currentValue
       ) {
         updates[field.field_name] = organizationPhone;
       }
-      
-      // Organization Address fields - only update if empty
+
+      // Organization Address fields
       if (
         (fieldLabel.includes("organization address") ||
-         fieldLabel.includes("company address") ||
-         (fieldLabel.includes("address") && (fieldLabel.includes("organization") || fieldLabel.includes("company")))) &&
+          fieldLabel.includes("company address") ||
+          (fieldLabel.includes("address") && (fieldLabel.includes("organization") || fieldLabel.includes("company")))) &&
         organizationAddress &&
         !currentValue
       ) {
@@ -437,7 +474,6 @@ export default function AddHiringManager() {
       }
     });
 
-    // Apply updates if any
     if (Object.keys(updates).length > 0) {
       Object.entries(updates).forEach(([fieldName, value]) => {
         if (customFieldValues[fieldName] !== value) {
@@ -500,7 +536,7 @@ export default function AddHiringManager() {
   }, [formData, customFields, customFieldValues, handleCustomFieldChange]);
 
   // const validateForm = () => {
-    
+
   //   if (!formData.firstName.trim()) {
   //     setError("First name is required");
   //     return false;
@@ -518,20 +554,20 @@ export default function AddHiringManager() {
   //     return false;
   //   }
 
-    
+
   //   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   //   if (!emailRegex.test(formData.email)) {
   //     setError("Invalid email format");
   //     return false;
   //   }
 
-    
+
   //   if (formData.email2 && !emailRegex.test(formData.email2)) {
   //     setError("Invalid format for second email");
   //     return false;
   //   }
 
-    
+
   //   for (const field of customFields) {
   //     if (field.required && !field.value.trim()) {
   //       setError(`${field.label} is required`);
@@ -561,7 +597,7 @@ export default function AddHiringManager() {
       // Use organizationId from URL if available, otherwise use form data
       const finalOrganizationId = organizationIdFromUrl || formData.organizationId;
       const finalOrganizationName = organizationName || formData.organizationId;
-      
+
       const apiData: any = {
         firstName: formData.firstName,
         lastName: formData.lastName,
@@ -674,13 +710,13 @@ export default function AddHiringManager() {
       if (!response.ok) {
         throw new Error(
           data.message ||
-            `Failed to ${isEditMode ? "update" : "create"} hiring manager`
+          `Failed to ${isEditMode ? "update" : "create"} hiring manager`
         );
       }
 
       // Navigate based on where we came from
       const id = isEditMode ? hiringManagerId : data.hiringManager.id;
-      
+
       // If we came from organization page, navigate back there
       if (organizationIdFromUrl && !isEditMode) {
         router.push(`/dashboard/organizations/view?id=${organizationIdFromUrl}`);
@@ -1111,10 +1147,10 @@ export default function AddHiringManager() {
                   const allAddressFieldsValid = () => {
                     const requiredFields = addressFields.filter((f) => f.is_required);
                     if (requiredFields.length === 0) return true; // No required fields, consider valid
-                    
+
                     return requiredFields.every((f) => {
                       const val = customFieldValues[f.field_name];
-                      
+
                       // For select fields, check if a valid option is selected
                       if (f.field_type === "select") {
                         if (!val || String(val).trim() === "" || String(val).trim().toLowerCase() === "select an option") {
@@ -1122,9 +1158,9 @@ export default function AddHiringManager() {
                         }
                         return true;
                       }
-                      
+
                       if (!val || String(val).trim() === "") return false;
-                      
+
                       // Special validation for ZIP code (must be exactly 5 digits)
                       const isZipCodeField =
                         f.field_label?.toLowerCase().includes("zip") ||
@@ -1135,14 +1171,14 @@ export default function AddHiringManager() {
                       if (isZipCodeField) {
                         return /^\d{5}$/.test(String(val).trim());
                       }
-                      
+
                       return true;
                     });
                   };
-                  
+
                   const hasRequiredAddressFields = addressFields.some((f) => f.is_required);
                   const allValid = allAddressFieldsValid();
-                  
+
                   return (
                     <div
                       key="address-group"
@@ -1177,26 +1213,26 @@ export default function AddHiringManager() {
 
                 // Don't render hidden fields at all (neither label nor input)
                 if (field.is_hidden) return null;
-                
+
                 // Determine if field should be read-only
                 const fieldLabel = field.field_label.toLowerCase();
-                const isOrganizationNameField = 
+                const isOrganizationNameField =
                   (fieldLabel.includes("organization") || fieldLabel.includes("company")) &&
                   !fieldLabel.includes("phone") &&
                   !fieldLabel.includes("address");
-                const shouldBeReadOnly = 
-                  isOrganizationNameField && 
-                  organizationIdFromUrl && 
+                const shouldBeReadOnly =
+                  isOrganizationNameField &&
+                  organizationIdFromUrl &&
                   !hiringManagerId; // Read-only when auto-populated from URL in create mode
-                
+
                 const fieldValue = customFieldValues[field.field_name] || "";
-                
+
                 // Special handling for Field_9 (Owner) - render as dropdown with active users
                 const isOwnerField =
                   field.field_name === "Field_9" ||
                   field.field_name === "field_9" ||
                   (field.field_label?.toLowerCase() === "owner" && field.field_name?.toLowerCase().includes("9"));
-                
+
                 // Helper function to check if field has a valid value
                 const hasValidValue = () => {
                   // Handle null, undefined, or empty values
@@ -1204,7 +1240,7 @@ export default function AddHiringManager() {
                   const trimmed = String(fieldValue).trim();
                   // Empty string means no value selected (especially for select fields)
                   if (trimmed === "") return false;
-                  
+
                   // Special validation for select fields
                   if (field.field_type === "select") {
                     // Must not be empty or "Select an option"
@@ -1213,36 +1249,36 @@ export default function AddHiringManager() {
                     }
                     return true;
                   }
-                  
+
                   // Special validation for date fields
                   if (field.field_type === "date") {
                     // Accept both YYYY-MM-DD (storage format) and mm/dd/yyyy (display format)
                     let dateToValidate = trimmed;
-                    
+
                     // If it's in mm/dd/yyyy format, convert to YYYY-MM-DD
                     if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
                       const [month, day, year] = trimmed.split("/");
                       dateToValidate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
                     }
-                    
+
                     // Check if it's a valid date format (YYYY-MM-DD)
                     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
                     if (!dateRegex.test(dateToValidate)) return false;
-                    
+
                     const date = new Date(dateToValidate);
                     if (isNaN(date.getTime())) return false;
-                    
+
                     // Additional validation: check if the date components match
                     const [year, month, day] = dateToValidate.split("-");
                     if (date.getFullYear() !== parseInt(year) ||
-                        date.getMonth() + 1 !== parseInt(month) ||
-                        date.getDate() !== parseInt(day)) {
+                      date.getMonth() + 1 !== parseInt(month) ||
+                      date.getDate() !== parseInt(day)) {
                       return false; // Invalid date (e.g., 02/30/2024)
                     }
-                    
+
                     return true;
                   }
-                  
+
                   // Special validation for ZIP code (must be exactly 5 digits)
                   const isZipCodeField =
                     field.field_label?.toLowerCase().includes("zip") ||
@@ -1253,7 +1289,7 @@ export default function AddHiringManager() {
                   if (isZipCodeField) {
                     return /^\d{5}$/.test(trimmed);
                   }
-                  
+
                   // Special validation for numeric fields that allow values >= 0
                   const isNonNegativeField =
                     field.field_label?.toLowerCase().includes("employees") ||
@@ -1273,7 +1309,7 @@ export default function AddHiringManager() {
                     // Allow values >= 0 (0, 1, 2, etc.)
                     return !isNaN(numValue) && numValue >= 0;
                   }
-                  
+
                   // Special validation for phone fields
                   const isPhoneField =
                     field.field_type === "phone" ||
@@ -1290,7 +1326,7 @@ export default function AddHiringManager() {
                     const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
                     return phoneRegex.test(trimmed);
                   }
-                  
+
                   // Special validation for email fields
                   const isEmailField =
                     field.field_type === "email" ||
@@ -1300,7 +1336,7 @@ export default function AddHiringManager() {
                     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
                     return emailRegex.test(trimmed);
                   }
-                  
+
                   // Special validation for URL fields (LinkedIn URL, etc.)
                   const isUrlField =
                     field.field_type === "url" ||
@@ -1315,7 +1351,7 @@ export default function AddHiringManager() {
                     if (!urlPattern.test(trimmed)) {
                       return false;
                     }
-                    
+
                     // Stricter validation: Check for complete domain structure
                     let urlToValidate = trimmed;
                     if (trimmed.toLowerCase().startsWith('www.')) {
@@ -1339,7 +1375,7 @@ export default function AddHiringManager() {
                       }
                       urlToValidate = trimmed;
                     }
-                    
+
                     // Final validation: try to create a URL object
                     try {
                       const urlObj = new URL(urlToValidate);
@@ -1355,10 +1391,10 @@ export default function AddHiringManager() {
                       return false;
                     }
                   }
-                  
+
                   return true;
                 };
-                
+
                 return (
                   <div key={field.id} className="flex items-center mt-4">
                     <label className="w-48 font-medium flex items-center">

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import ActionDropdown from '@/components/ActionDropdown';
@@ -46,8 +46,64 @@ const DEFAULT_HEADER_FIELDS = ["phone", "website"];
 export default function JobView() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const jobId = searchParams.get("id");
   const [activeTab, setActiveTab] = useState("summary");
   const [activeQuickTab, setActiveQuickTab] = useState("applied");
+
+  // Helper functions for notes and references
+  const parseAboutReferences = (refs: any) => {
+    if (!refs) return [];
+    if (Array.isArray(refs)) return refs;
+    if (typeof refs === "string") {
+      try {
+        const parsed = JSON.parse(refs);
+        return Array.isArray(parsed) ? parsed : [];
+      } catch {
+        return [];
+      }
+    }
+    return [];
+  };
+
+  const navigateToReference = (ref: any) => {
+    if (!ref.id || !ref.type) return;
+
+    let path = "";
+    switch (ref.type.toLowerCase()) {
+      case "job":
+        path = `/dashboard/jobs/view?id=${ref.id}`;
+        break;
+      case "organization":
+        path = `/dashboard/organizations/view?id=${ref.id}`;
+        break;
+      case "job seeker":
+      case "jobseeker":
+      case "candidate":
+        path = `/dashboard/job-seekers/view?id=${ref.id}`;
+        break;
+      case "lead":
+        path = `/dashboard/leads/view?id=${ref.id}`;
+        break;
+      case "task":
+        path = `/dashboard/tasks/view?id=${ref.id}`;
+        break;
+      case "placement":
+        path = `/dashboard/placements/view?id=${ref.id}`;
+        break;
+      case "hiring manager":
+      case "hiringmanager":
+      case "contact":
+        path = `/dashboard/hiring-managers/view?id=${ref.id}`;
+        break;
+      default:
+        console.warn("Unknown reference type:", ref.type);
+        return;
+    }
+
+    if (path) {
+      router.push(path);
+    }
+  };
 
   // Add states for job data
   const [job, setJob] = useState<any>(null);
@@ -62,19 +118,93 @@ export default function JobView() {
   const [showAddNote, setShowAddNote] = useState(false);
   const [noteTypeFilter, setNoteTypeFilter] = useState<string>("");
 
+  // Note sorting & filtering state
+  const [noteActionFilter, setNoteActionFilter] = useState<string>("");
+  const [noteAuthorFilter, setNoteAuthorFilter] = useState<string>("");
+  const [noteSortKey, setNoteSortKey] = useState<"date" | "action" | "author">("date");
+  const [noteSortDir, setNoteSortDir] = useState<"asc" | "desc">("desc");
+
+  const sortedFilteredNotes = useMemo(() => {
+    let out = [...notes];
+
+    if (noteActionFilter) {
+      out = out.filter((n) => (n.action || "") === noteActionFilter);
+    }
+    if (noteAuthorFilter) {
+      out = out.filter(
+        (n) => (n.created_by_name || "Unknown User") === noteAuthorFilter
+      );
+    }
+
+    out.sort((a, b) => {
+      let av: any, bv: any;
+
+      switch (noteSortKey) {
+        case "action":
+          av = a.action || "";
+          bv = b.action || "";
+          break;
+        case "author":
+          av = a.created_by_name || "";
+          bv = b.created_by_name || "";
+          break;
+        default:
+          av = new Date(a.created_at).getTime();
+          bv = new Date(b.created_at).getTime();
+          break;
+      }
+
+      if (typeof av === "number" && typeof bv === "number") {
+        return noteSortDir === "asc" ? av - bv : bv - av;
+      }
+
+      const cmp = String(av).localeCompare(String(bv), undefined, {
+        sensitivity: "base",
+        numeric: true,
+      });
+      return noteSortDir === "asc" ? cmp : -cmp;
+    });
+
+    return out;
+  }, [notes, noteActionFilter, noteAuthorFilter, noteSortKey, noteSortDir]);
+
+  const authors = useMemo(() => {
+    const set = new Set<string>();
+    notes.forEach((n) => {
+      if (n.created_by_name) set.add(n.created_by_name);
+    });
+    return Array.from(set).sort();
+  }, [notes]);
+
   // Add Note form state
   const [noteForm, setNoteForm] = useState({
     text: "",
     action: "",
     about: job ? `${formatRecordId(job.id, "job")} ${job.title}` : "",
+    aboutReferences: job
+      ? [
+        {
+          id: job.id,
+          type: "Job",
+          display: `${formatRecordId(job.id, "job")} ${job.title}`,
+          value: formatRecordId(job.id, "job"),
+        },
+      ]
+      : [],
     copyNote: "No",
     replaceGeneralContactComments: false,
     additionalReferences: "",
     scheduleNextAction: "None",
-    emailNotification: "Internal User",
+    emailNotification: [] as string[], // Changed to array for multi-select
   });
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+
+  // Validation state
+  const [validationErrors, setValidationErrors] = useState<{
+    action?: string;
+    about?: string;
+  }>({});
 
   // Action fields state (custom fields from Jobs field management)
   const [actionFields, setActionFields] = useState<any[]>([]);
@@ -489,26 +619,42 @@ export default function JobView() {
               {/* Notes preview */}
               {notes.length > 0 ? (
                 <div>
-                  {notes.slice(0, 2).map((note) => (
-                    <div
-                      key={note.id}
-                      className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
-                    >
-                      <div className="flex justify-between text-sm mb-1">
-                        <span className="font-medium">
-                          {note.created_by_name || "Unknown User"}
-                        </span>
-                        <span className="text-gray-500">
-                          {new Date(note.created_at).toLocaleString()}
-                        </span>
+                  {notes.slice(0, 2).map((note) => {
+                    const aboutRefs = parseAboutReferences(note.about || note.about_references);
+                    return (
+                      <div
+                        key={note.id}
+                        className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
+                      >
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="font-medium">
+                            {note.created_by_name || "Unknown User"}
+                          </span>
+                          <span className="text-gray-500 text-xs">
+                            {new Date(note.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        {aboutRefs.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mb-2">
+                            {aboutRefs.map((ref: any, idx: number) => (
+                              <span
+                                key={`${ref.type}-${ref.id}-${idx}`}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded text-[10px]"
+                              >
+                                <FiBriefcase className="w-2.5 h-2.5" />
+                                {ref.display || ref.value}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-sm text-gray-700">
+                          {note.text.length > 100
+                            ? `${note.text.substring(0, 100)}...`
+                            : note.text}
+                        </p>
                       </div>
-                      <p className="text-sm text-gray-700">
-                        {note.text.length > 100
-                          ? `${note.text.substring(0, 100)}...`
-                          : note.text}
-                      </p>
-                    </div>
-                  ))}
+                    );
+                  })}
                   {notes.length > 2 && (
                     <button
                       onClick={() => setActiveTab("notes")}
@@ -621,8 +767,6 @@ export default function JobView() {
   });
   const [isSavingTearsheet, setIsSavingTearsheet] = useState(false);
 
-  const jobId = searchParams.get("id");
-
   // Fetch job when component mounts
   useEffect(() => {
     if (jobId) {
@@ -696,7 +840,7 @@ export default function JobView() {
     }
   }, [showReferenceDropdown]);
 
-  // Fetch users for email notification dropdown
+  // Fetch users for email notification dropdown - Internal Users Only
   const fetchUsers = async () => {
     setIsLoadingUsers(true);
     try {
@@ -710,7 +854,16 @@ export default function JobView() {
       });
       if (response.ok) {
         const data = await response.json();
-        setUsers(data.users || []);
+        // Filter to only internal system users
+        const internalUsers = (data.users || []).filter((user: any) => {
+          return (
+            user.user_type === "internal" ||
+            user.role === "admin" ||
+            user.role === "user" ||
+            (!user.user_type && user.email)
+          );
+        });
+        setUsers(internalUsers);
       }
     } catch (err) {
       console.error("Error fetching users:", err);
@@ -913,16 +1066,24 @@ export default function JobView() {
 
   // Handle reference selection
   const handleReferenceSelect = (reference: any) => {
-    const currentValue = noteForm.additionalReferences.trim();
-    const newValue = currentValue
-      ? `${currentValue} ${reference.value}`
-      : reference.value;
-    setNoteForm((prev) => ({ ...prev, additionalReferences: newValue }));
+    setNoteForm((prev) => ({
+      ...prev,
+      aboutReferences: [...prev.aboutReferences, reference],
+    }));
     setShowReferenceDropdown(false);
     setReferenceSuggestions([]);
     if (referenceInputRef.current) {
       referenceInputRef.current.focus();
     }
+  };
+
+  // Remove reference
+  const removeReference = (index: number) => {
+    setNoteForm((prev) => {
+      const newRefs = [...prev.aboutReferences];
+      newRefs.splice(index, 1);
+      return { ...prev, aboutReferences: newRefs };
+    });
   };
 
   // Fetch available fields from modify page (custom fields)
@@ -1243,11 +1404,39 @@ export default function JobView() {
     }
   };
 
-  // Handle adding a new note
+  // Handle adding a new note with validation
   const handleAddNote = async () => {
-    if (!noteForm.text.trim() || !jobId) return;
+    if (!jobId) return;
+
+    // Clear previous validation errors
+    setValidationErrors({});
+
+    // Validate required fields
+    const errors: { action?: string; about?: string } = {};
+    if (!noteForm.action || noteForm.action.trim() === "") {
+      errors.action = "Action is required";
+    }
+    if (!noteForm.aboutReferences || noteForm.aboutReferences.length === 0) {
+      errors.about = "At least one About/Reference is required";
+    }
+
+    // If validation errors exist, set them and prevent save
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
+      return;
+    }
+
+    if (!noteForm.text.trim()) return;
 
     try {
+      // Format about references as structured data
+      const aboutData = noteForm.aboutReferences.map((ref) => ({
+        id: ref.id,
+        type: ref.type,
+        display: ref.display,
+        value: ref.value,
+      }));
+
       const response = await fetch(`/api/jobs/${jobId}/notes`, {
         method: "POST",
         headers: {
@@ -1260,17 +1449,27 @@ export default function JobView() {
         body: JSON.stringify({
           text: noteForm.text,
           action: noteForm.action,
+          about: JSON.stringify(aboutData),
+          about_references: aboutData,
           copy_note: noteForm.copyNote === "Yes",
           replace_general_contact_comments:
             noteForm.replaceGeneralContactComments,
           additional_references: noteForm.additionalReferences,
           schedule_next_action: noteForm.scheduleNextAction,
-          email_notification: noteForm.emailNotification,
+          email_notification: noteForm.emailNotification.join(","),
         }),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to add note");
+        const errorData = await response.json();
+        if (errorData.errors) {
+          const backendErrors: { action?: string; about?: string } = {};
+          if (errorData.errors.action) backendErrors.action = errorData.errors.action;
+          if (errorData.errors.about) backendErrors.about = errorData.errors.about;
+          setValidationErrors(backendErrors);
+          return;
+        }
+        throw new Error(errorData.message || "Failed to add note");
       }
 
       const data = await response.json();
@@ -1279,39 +1478,65 @@ export default function JobView() {
       setNotes([data.note, ...notes]);
 
       // Clear the form
+      const defaultAboutRef = job
+        ? [
+          {
+            id: job.id,
+            type: "Job",
+            display: `${formatRecordId(job.id, "job")} ${job.title}`,
+            value: formatRecordId(job.id, "job"),
+          },
+        ]
+        : [];
+
       setNoteForm({
         text: "",
         action: "",
         about: job ? `${formatRecordId(job.id, "job")} ${job.title}` : "",
+        aboutReferences: defaultAboutRef,
         copyNote: "No",
         replaceGeneralContactComments: false,
         additionalReferences: "",
         scheduleNextAction: "None",
-        emailNotification: "Internal User",
+        emailNotification: [],
       });
+      setValidationErrors({});
       setShowAddNote(false);
 
       // Refresh history
       fetchHistory(jobId);
+      alert("Note added successfully");
     } catch (err) {
       console.error("Error adding note:", err);
-      alert("Failed to add note. Please try again.");
+      alert(err instanceof Error ? err.message : "Failed to add note. Please try again.");
     }
   };
 
   // Close add note modal
   const handleCloseAddNoteModal = () => {
     setShowAddNote(false);
+    const defaultAboutRef = job
+      ? [
+        {
+          id: job.id,
+          type: "Job",
+          display: `${formatRecordId(job.id, "job")} ${job.title}`,
+          value: formatRecordId(job.id, "job"),
+        },
+      ]
+      : [];
     setNoteForm({
       text: "",
       action: "",
       about: job ? `${formatRecordId(job.id, "job")} ${job.title}` : "",
+      aboutReferences: defaultAboutRef,
       copyNote: "No",
       replaceGeneralContactComments: false,
       additionalReferences: "",
       scheduleNextAction: "None",
-      emailNotification: "Internal User",
+      emailNotification: [],
     });
+    setValidationErrors({});
   };
 
   const handleGoBack = () => {
@@ -1778,51 +2003,154 @@ export default function JobView() {
         </button>
       </div>
 
+      {/* Filter and Sort Controls */}
+      <div className="flex flex-wrap gap-4 mb-6 p-3 bg-gray-50 rounded border border-gray-200">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold text-gray-600 uppercase">
+            Action:
+          </label>
+          <select
+            value={noteActionFilter}
+            onChange={(e) => setNoteActionFilter(e.target.value)}
+            className="p-2 bg-white border border-gray-300 rounded text-sm min-w-[150px]"
+          >
+            <option value="">All Actions</option>
+            {actionFields.map((f) => (
+              <option key={f.id || f.field_name} value={f.field_label || f.field_name}>
+                {f.field_label || f.field_name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold text-gray-600 uppercase">
+            User:
+          </label>
+          <select
+            value={noteAuthorFilter}
+            onChange={(e) => setNoteAuthorFilter(e.target.value)}
+            className="p-2 bg-white border border-gray-300 rounded text-sm min-w-[150px]"
+          >
+            <option value="">All Users</option>
+            {authors.map((a) => (
+              <option key={a} value={a}>
+                {a}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs font-semibold text-gray-600 uppercase">
+            Sort By:
+          </label>
+          <select
+            value={noteSortKey}
+            onChange={(e) => setNoteSortKey(e.target.value as any)}
+            className="p-2 bg-white border border-gray-300 rounded text-sm min-w-[120px]"
+          >
+            <option value="date">Date</option>
+            <option value="action">Action</option>
+            <option value="author">User</option>
+          </select>
+        </div>
+
+        <div className="flex items-end gap-2">
+          <button
+            onClick={() =>
+              setNoteSortDir((d) => (d === "asc" ? "desc" : "asc"))
+            }
+            className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs text-black"
+            title="Toggle Sort Direction"
+          >
+            {noteSortDir === "asc" ? "Asc ↑" : "Desc ↓"}
+          </button>
+
+          {(noteActionFilter || noteAuthorFilter) && (
+            <button
+              onClick={() => {
+                setNoteActionFilter("");
+                setNoteAuthorFilter("");
+              }}
+              className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs hover:bg-gray-200"
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Notes List */}
       {isLoadingNotes ? (
         <div className="flex justify-center py-4">
           <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
         </div>
-      ) : notes.length > 0 ? (
+      ) : sortedFilteredNotes.length > 0 ? (
         <div className="space-y-4">
-          {notes.map((note) => (
-            <div key={note.id} className="p-3 border rounded hover:bg-gray-50">
-              <div className="flex justify-between items-start mb-2">
-                <span className="font-medium text-blue-600">
-                  {note.created_by_name || "Unknown User"}
-                </span>
-                <span className="text-sm text-gray-500">
-                  {new Date(note.created_at).toLocaleString()}
-                </span>
+          {sortedFilteredNotes.map((note) => {
+            const actionLabel = actionFields.find(
+              (af) => af.field_name === note.action || af.field_label === note.action
+            )?.field_label || note.action || "";
+
+            const aboutRefs = parseAboutReferences(note.about || note.about_references);
+
+            return (
+              <div key={note.id} className="p-4 border rounded hover:bg-gray-50 bg-white">
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-blue-600">
+                        {note.created_by_name || "Unknown User"}
+                      </span>
+                      {actionLabel && (
+                        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-semibold uppercase tracking-wider">
+                          {actionLabel}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-500">
+                      {new Date(note.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {aboutRefs.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mb-3 pb-3 border-b border-gray-100">
+                    <span className="text-xs text-gray-500 self-center">About:</span>
+                    {aboutRefs.map((ref: any, idx: number) => (
+                      <button
+                        key={`${ref.type}-${ref.id}-${idx}`}
+                        onClick={() => navigateToReference(ref)}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-xs transition-colors"
+                      >
+                        <FiBriefcase className="w-3 h-3 text-gray-500" />
+                        <span>{ref.display || ref.value}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {note.additional_references && !note.about && (
+                  <div className="mb-2 text-xs text-gray-600 italic">
+                    References: {note.additional_references}
+                  </div>
+                )}
+
+                <p className="text-gray-700 whitespace-pre-wrap text-sm">{note.text}</p>
               </div>
-              <p className="text-gray-700">{note.text}</p>
-            </div>
-          ))}
-          <p className="text-sm text-gray-600 mt-2">note action</p>
+            );
+          })}
         </div>
       ) : (
-        <p className="text-gray-500 italic">No notes have been added yet.</p>
+        <div className="text-center py-10 bg-gray-50 rounded border-2 border-dashed border-gray-200">
+          <p className="text-gray-500 italic">
+            {(noteActionFilter || noteAuthorFilter)
+              ? "No notes match your filter criteria."
+              : "No notes have been added yet."}
+          </p>
+        </div>
       )}
-
-      {/* Note Type Dropdown */}
-      <div className="mt-6">
-        <label className="block text-sm font-medium text-gray-700 mb-2">
-          Note Type
-        </label>
-        <select
-          value={noteTypeFilter}
-          onChange={(e) => setNoteTypeFilter(e.target.value)}
-          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="">Select note type</option>
-          <option value="General Note">General Note</option>
-          <option value="Client Note">Client Note</option>
-          <option value="Candidate Note">Candidate Note</option>
-          <option value="Job Note">Job Note</option>
-          <option value="Internal Note">Internal Note</option>
-          <option value="Follow-up Note">Follow-up Note</option>
-        </select>
-      </div>
     </div>
   );
 
@@ -3063,13 +3391,19 @@ export default function JobView() {
                 {/* Note Text Area */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Note Text
+                    Note Text{" "}
+                    {noteForm.text.length > 0 ? (
+                      <span className="text-green-500">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
                   </label>
                   <textarea
                     value={noteForm.text}
                     onChange={(e) =>
                       setNoteForm((prev) => ({ ...prev, text: e.target.value }))
                     }
+                    autoFocus
                     placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
                     className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={6}
@@ -3079,125 +3413,120 @@ export default function JobView() {
                 {/* Action Dropdown */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Action
+                    Action{" "}
+                    {noteForm.action ? (
+                      <span className="text-green-500">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
                   </label>
                   {isLoadingActionFields ? (
                     <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
                       Loading actions...
                     </div>
                   ) : (
-                    <select
-                      value={noteForm.action}
-                      onChange={(e) =>
-                        setNoteForm((prev) => ({ ...prev, action: e.target.value }))
-                      }
-                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">Select Action</option>
-                      {actionFields.map((field) => (
-                        <option key={field.id || field.field_name} value={field.field_label || field.field_name}>
-                          {field.field_label || field.field_name}
-                        </option>
-                      ))}
-                    </select>
+                    <>
+                      <select
+                        value={noteForm.action}
+                        onChange={(e) => {
+                          setNoteForm((prev) => ({ ...prev, action: e.target.value }));
+                        }}
+                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 ${validationErrors.action
+                          ? "border-red-500 focus:ring-red-500"
+                          : "border-gray-300 focus:ring-blue-500"
+                          }`}
+                      >
+                        <option value="">Select Action</option>
+                        {actionFields.map((field) => (
+                          <option key={field.id || field.field_name} value={field.field_label || field.field_name}>
+                            {field.field_label || field.field_name}
+                          </option>
+                        ))}
+                      </select>
+                      {validationErrors.action && (
+                        <p className="mt-1 text-sm text-red-500">
+                          {validationErrors.action}
+                        </p>
+                      )}
+                    </>
                   )}
                 </div>
 
-                {/* About Section */}
+                {/* About Section - Required, Multiple References */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    About
-                  </label>
-                  <div className="relative">
-                    <div className="flex items-center border border-gray-300 rounded p-2 bg-white">
-                      <div className="w-6 h-6 rounded-full bg-orange-400 mr-2 flex-shrink-0"></div>
-                      <span className="flex-1 text-sm">{noteForm.about}</span>
-                      <button
-                        onClick={() =>
-                          setNoteForm((prev) => ({ ...prev, about: "" }))
-                        }
-                        className="ml-2 text-gray-500 hover:text-gray-700 text-xs"
-                      >
-                        CLEAR ALL X
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Action Section */}
-                {/* <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Action
-                                    </label>
-                                    <div className="border border-gray-300 rounded p-3 bg-gray-50">
-                                        <div className="font-medium mb-3">Copy Note</div>
-                                        <div className="flex space-x-2 mb-3">
-                                            <button
-                                                type="button"
-                                                onClick={() => setNoteForm(prev => ({ ...prev, copyNote: 'No' }))}
-                                                className={`px-4 py-2 rounded text-sm ${
-                                                    noteForm.copyNote === 'No'
-                                                        ? 'bg-blue-500 text-white'
-                                                        : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
-                                                }`}
-                                            >
-                                                No
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => setNoteForm(prev => ({ ...prev, copyNote: 'Yes' }))}
-                                                className={`px-4 py-2 rounded text-sm ${
-                                                    noteForm.copyNote === 'Yes'
-                                                        ? 'bg-blue-500 text-white'
-                                                        : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
-                                                }`}
-                                            >
-                                                Yes
-                                            </button>
-                                        </div>
-                                        {noteForm.copyNote === 'Yes' && (
-                                            <div className="mt-2">
-                                                <label className="flex items-center space-x-2 cursor-pointer">
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={noteForm.replaceGeneralContactComments}
-                                                        onChange={(e) => setNoteForm(prev => ({ ...prev, replaceGeneralContactComments: e.target.checked }))}
-                                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                                    />
-                                                    <span className="text-sm text-gray-700">
-                                                        Replace the General Contact Comments with this note?
-                                                    </span>
-                                                </label>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div> */}
-
-                {/* Additional References Section */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Additional References
+                    About / Reference{" "}
+                    {(noteForm.aboutReferences && noteForm.aboutReferences.length > 0) ? (
+                      <span className="text-green-500">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
                   </label>
                   <div className="relative" ref={referenceInputRef}>
-                    <input
-                      type="text"
-                      value={noteForm.additionalReferences}
-                      onChange={handleReferenceInputChange}
-                      onFocus={() => {
-                        if (noteForm.additionalReferences.trim().length >= 2) {
-                          searchReferences(noteForm.additionalReferences);
-                        }
-                      }}
-                      placeholder="Reference other records using #"
-                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
-                    />
-                    <span className="absolute right-2 top-2 text-gray-400 text-sm">
-                      Q
-                    </span>
+                    {/* Selected References Tags */}
+                    {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
+                        {noteForm.aboutReferences.map((ref, index) => (
+                          <span
+                            key={`${ref.type}-${ref.id}-${index}`}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
+                          >
+                            <FiBriefcase className="w-4 h-4" />
+                            {ref.display}
+                            <button
+                              type="button"
+                              onClick={() => removeReference(index)}
+                              className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
+                              title="Remove"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
-                    {/* Autocomplete Dropdown */}
+                    {/* Search Input for References */}
+                    <div className="relative">
+                      {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
+                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                          Add Additional References
+                        </label>
+                      )}
+                      <input
+                        type="text"
+                        value={noteForm.additionalReferences}
+                        onChange={handleReferenceInputChange}
+                        onFocus={() => {
+                          if (noteForm.additionalReferences.trim().length >= 2) {
+                            searchReferences(noteForm.additionalReferences);
+                          }
+                        }}
+                        placeholder={
+                          noteForm.aboutReferences && noteForm.aboutReferences.length === 0
+                            ? "Search and select records (e.g., Job, Org, Candidate)..."
+                            : "Type to search more references..."
+                        }
+                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 pr-8 ${validationErrors.about
+                          ? "border-red-500 focus:ring-red-500"
+                          : "border-gray-300 focus:ring-blue-500"
+                          }`}
+                      />
+                      <span className="absolute right-2 top-2 text-gray-400 text-sm">
+                        Q
+                      </span>
+                    </div>
+
+                    {/* Validation Error */}
+                    {validationErrors.about && (
+                      <p className="mt-1 text-sm text-red-500">
+                        {validationErrors.about}
+                      </p>
+                    )}
+
+                    {/* Suggestions Dropdown */}
                     {showReferenceDropdown && (
-                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
                         {isLoadingReferences ? (
                           <div className="p-3 text-sm text-gray-500 text-center">
                             Searching...
@@ -3237,49 +3566,7 @@ export default function JobView() {
                   </div>
                 </div>
 
-                {/* Schedule Next Action Section */}
-                {/* <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                                        Schedule Next Action
-                                    </label>
-                                    <div className="flex space-x-2">
-                                        <button
-                                            type="button"
-                                            onClick={() => setNoteForm(prev => ({ ...prev, scheduleNextAction: 'None' }))}
-                                            className={`px-4 py-2 rounded text-sm ${
-                                                noteForm.scheduleNextAction === 'None'
-                                                    ? 'bg-blue-500 text-white'
-                                                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
-                                            }`}
-                                        >
-                                            None
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setNoteForm(prev => ({ ...prev, scheduleNextAction: 'Appointment' }))}
-                                            className={`px-4 py-2 rounded text-sm ${
-                                                noteForm.scheduleNextAction === 'Appointment'
-                                                    ? 'bg-blue-500 text-white'
-                                                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
-                                            }`}
-                                        >
-                                            Appointment
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={() => setNoteForm(prev => ({ ...prev, scheduleNextAction: 'Task' }))}
-                                            className={`px-4 py-2 rounded text-sm ${
-                                                noteForm.scheduleNextAction === 'Task'
-                                                    ? 'bg-blue-500 text-white'
-                                                    : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
-                                            }`}
-                                        >
-                                            Task
-                                        </button>
-                                    </div>
-                                </div> */}
-
-                {/* Email Notification Section */}
+                {/* Email Notification Section - Multi-select */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
                     <span className="mr-2">📧</span>
@@ -3291,23 +3578,72 @@ export default function JobView() {
                         Loading users...
                       </div>
                     ) : (
-                      <select
-                        value={noteForm.emailNotification}
-                        onChange={(e) =>
-                          setNoteForm((prev) => ({
-                            ...prev,
-                            emailNotification: e.target.value,
-                          }))
-                        }
-                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="Internal User">Internal User</option>
-                        {users.map((user) => (
-                          <option key={user.id} value={user.name || user.email}>
-                            {user.name || user.email}
-                          </option>
+                      <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 max-h-48 overflow-y-auto p-2 bg-white">
+                        {users.length === 0 ? (
+                          <div className="text-gray-500 text-sm p-2 text-center">
+                            No internal users found
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            {users.map((user) => (
+                              <label
+                                key={user.id}
+                                className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={noteForm.emailNotification.includes(user.email || user.name)}
+                                  onChange={() => {
+                                    const value = user.email || user.name;
+                                    setNoteForm((prev) => {
+                                      const current = prev.emailNotification;
+                                      if (current.includes(value)) {
+                                        return {
+                                          ...prev,
+                                          emailNotification: current.filter((v) => v !== value),
+                                        };
+                                      } else {
+                                        return {
+                                          ...prev,
+                                          emailNotification: [...current, value],
+                                        };
+                                      }
+                                    });
+                                  }}
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                                />
+                                <span className="text-sm text-gray-700">
+                                  {user.name || user.email} {user.email && `(${user.email})`}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {noteForm.emailNotification.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {noteForm.emailNotification.map((val) => (
+                          <span
+                            key={val}
+                            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                          >
+                            {val}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNoteForm((prev) => ({
+                                  ...prev,
+                                  emailNotification: prev.emailNotification.filter((v) => v !== val),
+                                }));
+                              }}
+                              className="ml-1 text-blue-600 hover:text-blue-800"
+                            >
+                              ×
+                            </button>
+                          </span>
                         ))}
-                      </select>
+                      </div>
                     )}
                   </div>
                 </div>

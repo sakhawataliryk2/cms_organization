@@ -55,18 +55,17 @@ function SearchIcon() {
   return (
     <svg
       className="w-4 h-4 text-gray-400"
-      fill="none"
-      stroke="currentColor"
-      viewBox="0 0 24 24"
+      viewBox="0 0 20 20"
+      fill="currentColor"
       aria-hidden="true"
     >
       <path
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+        fillRule="evenodd"
+        d="M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z"
+        clipRule="evenodd"
       />
     </svg>
+
   );
 }
 
@@ -84,7 +83,7 @@ function UnderlineField({
   withSearchIcon?: boolean;
 }) {
   const value = values?.[field.field_name] ?? "";
-  
+
   // Check if field has a valid value
   const isValid = () => {
     // For select fields, check if a valid option is selected
@@ -94,10 +93,10 @@ function UnderlineField({
       }
       return true;
     }
-    
+
     const hasValue = value && String(value).trim() !== "";
     if (!hasValue) return false;
-    
+
     // Special validation for ZIP code (must be exactly 5 digits)
     // Check by both label and field_name (Field_24)
     const isZipCodeField =
@@ -106,14 +105,14 @@ function UnderlineField({
       field.field_name?.toLowerCase().includes("zip") ||
       field.field_name === "Field_24" || // ZIP Code
       field.field_name === "field_24";
-    
+
     if (isZipCodeField) {
       return /^\d{5}$/.test(String(value).trim());
     }
-    
+
     return true;
   };
-  
+
   const fieldIsValid = isValid();
 
   const safeField: CustomFieldDefinition = {
@@ -185,7 +184,7 @@ export default function AddressGroupRenderer({
   const checkFieldComplete = (field: CustomFieldDefinition | undefined): boolean => {
     if (!field) return true; // Field doesn't exist, consider it complete for validation purposes
     const value = values?.[field.field_name] ?? "";
-    
+
     // For select fields, empty string means "Select an option" (not selected)
     if (field.field_type === "select") {
       if (!value || String(value).trim() === "" || String(value).trim().toLowerCase() === "select an option") {
@@ -193,9 +192,9 @@ export default function AddressGroupRenderer({
       }
       return true;
     }
-    
+
     if (!value || String(value).trim() === "") return false;
-    
+
     // Special validation for ZIP code (must be exactly 5 digits)
     // Check by both label and field_name (Field_24)
     const isZipCodeField =
@@ -207,7 +206,7 @@ export default function AddressGroupRenderer({
     if (isZipCodeField) {
       return /^\d{5}$/.test(String(value).trim());
     }
-    
+
     return true;
   };
 
@@ -273,7 +272,7 @@ export default function AddressGroupRenderer({
           )}
         </div>
       )}
-      
+
       {/* Success message when all fields are complete */}
       {allFieldsComplete && (
         <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md transition-all duration-300 ease-in-out transform opacity-100">
