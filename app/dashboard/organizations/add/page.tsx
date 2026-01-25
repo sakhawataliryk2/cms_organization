@@ -144,30 +144,43 @@ export default function AddOrganization() {
         // with matching labels like "Organization Name", "Nicknames", etc.
         if (customFields.length > 0) {
           const standardFieldMapping: Record<string, string> = {
+            // Organization name variations
             "Organization Name": org.name || "",
-            Name: org.name || "",
-            Nicknames: org.nicknames || "",
+            "Organization": org.name || "",
+            "Company": org.name || "",
+            "Name": org.name || "",
+            // Nicknames variations
+            "Nicknames": org.nicknames || "",
+            "Nickname": org.nicknames || "",
+            // Parent org
             "Parent Organization": org.parent_organization || "",
-            Website: org.website || "",
+            // Website variations
+            "Website": org.website || "",
             "Organization Website": org.website || "",
+            "URL": org.website || "",
+            // Phone
             "Contact Phone": org.contact_phone || "",
-            Address: org.address || "",
-            Status: org.status || "Active",
+            "Main Phone": org.contact_phone || "",
+            // Address
+            "Address": org.address || "",
+            // Status
+            "Status": org.status || "Active",
+            // Contract fields
             "Contract Signed on File": org.contract_on_file || "No",
             "Contract Signed By": org.contract_signed_by || "",
             "Date Contract Signed": org.date_contract_signed
               ? org.date_contract_signed.split("T")[0]
               : "",
+            // Year founded
             "Year Founded": org.year_founded || "",
-            Overview: org.overview || "",
+            // Overview
+            "Overview": org.overview || "",
             "Organization Overview": org.overview || "",
-            About: org.overview || "",
-            "Standard Perm Fee (%)": org.perm_fee
-              ? org.perm_fee.toString()
-              : "",
-            "# of Employees": org.num_employees
-              ? org.num_employees.toString()
-              : "",
+            "About": org.overview || "",
+            // Perm fee
+            "Standard Perm Fee (%)": org.perm_fee ? org.perm_fee.toString() : "",
+            // Employees/offices
+            "# of Employees": org.num_employees ? org.num_employees.toString() : "",
             "# of Offices": org.num_offices ? org.num_offices.toString() : "",
           };
 

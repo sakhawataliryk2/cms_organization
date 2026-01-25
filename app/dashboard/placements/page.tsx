@@ -1,10 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  horizontalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { TbGripVertical } from "react-icons/tb";
+import { FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
 
 interface Placement {
   id: string;
@@ -21,7 +31,209 @@ interface Placement {
   owner_name?: string;
   created_at: string;
   created_by_name?: string;
+  customFields?: Record<string, any>;
+  custom_fields?: Record<string, any>;
 }
+
+type ColumnSortState = "asc" | "desc" | null;
+type ColumnFilterState = string | null;
+
+// Sortable Column Header Component
+function SortableColumnHeader({
+  id,
+  columnKey,
+  label,
+  sortState,
+  filterValue,
+  onSort,
+  onFilterChange,
+  filterType,
+  filterOptions,
+  children,
+}: {
+  id: string;
+  columnKey: string;
+  label: string;
+  sortState: ColumnSortState;
+  filterValue: ColumnFilterState;
+  onSort: () => void;
+  onFilterChange: (value: string) => void;
+  filterType: "text" | "select" | "number";
+  filterOptions?: { label: string; value: string }[];
+  children?: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const [showFilter, setShowFilter] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  // Close filter on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        filterRef.current &&
+        !filterRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
+      ) {
+        setShowFilter(false);
+      }
+    };
+
+    if (showFilter) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showFilter, id]);
+
+  return (
+    <th
+      ref={setNodeRef}
+      style={style}
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
+    >
+      <div className="flex items-center gap-2">
+        {/* Drag Handle */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Drag to reorder column"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={16} />
+        </button>
+
+        {/* Column Label */}
+        <span className="flex-1">{label}</span>
+
+        {/* Sort Control */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSort();
+          }}
+          className="text-gray-400 hover:text-gray-600 transition-colors"
+          title={
+            sortState === "asc"
+              ? "Sort descending"
+              : sortState === "desc"
+                ? "Clear sort"
+                : "Sort ascending"
+          }
+        >
+          {sortState === "asc" ? (
+            <FiArrowUp size={14} />
+          ) : sortState === "desc" ? (
+            <FiArrowDown size={14} />
+          ) : (
+            <div className="w-3.5 h-3.5 border border-gray-300 rounded" />
+          )}
+        </button>
+
+        {/* Filter Toggle */}
+        <button
+          data-filter-toggle={id}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowFilter(!showFilter);
+          }}
+          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
+            }`}
+          title="Filter column"
+        >
+          <FiFilter size={14} />
+        </button>
+      </div>
+
+      {/* Filter Dropdown */}
+      {showFilter && (
+        <div
+          ref={filterRef}
+          className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-300 shadow-lg p-2 mt-1 min-w-[150px]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {filterType === "text" && (
+            <input
+              type="text"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "number" && (
+            <input
+              type="number"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "select" && filterOptions && (
+            <select
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            >
+              <option value="">All</option>
+              {filterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {filterValue && (
+            <button
+              onClick={() => {
+                onFilterChange("");
+                setShowFilter(false);
+              }}
+              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+            >
+              Clear Filter
+            </button>
+          )}
+        </div>
+      )}
+    </th>
+  );
+}
+
+const getStatusColor = (status?: string) => {
+  const s = (status || "").toLowerCase();
+  if (s === "active") return "bg-green-100 text-green-800";
+  if (s === "completed") return "bg-blue-100 text-blue-800";
+  if (s === "terminated") return "bg-red-100 text-red-800";
+  return "bg-blue-100 text-blue-800";
+};
+
+const formatDate = (dateString: string) => {
+  if (!dateString) return "";
+  const date = new Date(dateString);
+  return new Intl.DateTimeFormat("en-US", {
+    month: "2-digit",
+    day: "2-digit",
+    year: "numeric",
+  }).format(date);
+};
 
 export default function PlacementList() {
   const router = useRouter();
@@ -37,60 +249,48 @@ export default function PlacementList() {
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
 
+  // Per-column sorting state
+  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
 
-  // Sorting state
-  const [sortField, setSortField] = useState<
-    | "id"
-    | "job_seeker_name"
-    | "job_title"
-    | "status"
-    | "start_date"
-    | "owner"
-    | null
-  >(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-   const DEFAULT_PLACEMENT_COLUMNS: string[] = [
-     "candidate",
-     "job",
-     "status",
-     "start_date",
-     "owner",
-   ];
+  // Per-column filtering state
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
 
- const placementColumnsCatalog = [
-   // ---------- STANDARD ----------
-   { key: "candidate", label: "Candidate" },
-   { key: "job", label: "Job" },
-   { key: "status", label: "Status" },
-   { key: "start_date", label: "Start Date" },
-   { key: "end_date", label: "End Date" },
-   { key: "salary", label: "Salary" },
-   { key: "owner", label: "Owner" },
-   { key: "created_at", label: "Date Added" },
-   { key: "created_by", label: "Created By" },
+  const DEFAULT_PLACEMENT_COLUMNS: string[] = [
+    "candidate",
+    "job",
+    "status",
+    "start_date",
+    "owner",
+  ];
 
-   // ---------- CUSTOM (FROM MODIFY PAGE) ----------
-   ...availableFields.map((f: any) => {
-     const key = f.field_key || f.field_name || f.api_name || f.id;
+  const placementColumnsCatalog = useMemo(() => [
+    // ---------- STANDARD ----------
+    { key: "candidate", label: "Candidate", sortable: true, filterType: "text" as const },
+    { key: "job", label: "Job", sortable: true, filterType: "text" as const },
+    { key: "status", label: "Status", sortable: true, filterType: "select" as const },
+    { key: "start_date", label: "Start Date", sortable: true, filterType: "text" as const },
+    { key: "end_date", label: "End Date", sortable: true, filterType: "text" as const },
+    { key: "salary", label: "Salary", sortable: true, filterType: "text" as const },
+    { key: "owner", label: "Owner", sortable: true, filterType: "text" as const },
+    { key: "created_at", label: "Date Added", sortable: true, filterType: "text" as const },
+    { key: "created_by", label: "Created By", sortable: true, filterType: "text" as const },
 
-     return {
-       key: `custom:${String(key)}`,
-       label: f.field_label || f.field_name || String(key),
-     };
-   }),
- ];
+    // ---------- CUSTOM (FROM MODIFY PAGE) ----------
+    ...availableFields.map((f: any) => {
+      const key = f.field_key || f.field_name || f.api_name || f.id;
 
+      return {
+        key: `custom:${String(key)}`,
+        label: f.field_label || f.field_name || String(key),
+        sortable: false,
+        filterType: "text" as const,
+      };
+    }),
+  ], [availableFields]);
 
-   const getColumnLabel = (key: string) =>
-     placementColumnsCatalog.find((c) => c.key === key)?.label ?? key;
+  const getColumnLabel = (key: string) =>
+    placementColumnsCatalog.find((c) => c.key === key)?.label ?? key;
 
-   const getStatusColor = (status?: string) => {
-     const s = (status || "").toLowerCase();
-     if (s === "active") return "bg-green-100 text-green-800";
-     if (s === "completed") return "bg-blue-100 text-blue-800";
-     if (s === "terminated") return "bg-red-100 text-red-800";
-     return "bg-blue-100 text-blue-800";
-   };
 
   const getColumnValue = (p: any, key: string) => {
     if (key.startsWith("custom:")) {
@@ -125,53 +325,132 @@ export default function PlacementList() {
     }
   };
 
- const {
-   columnFields,
-   setColumnFields,
-   showHeaderFieldModal: showColumnModal,
-   setShowHeaderFieldModal: setShowColumnModal,
-   saveHeaderConfig: saveColumnConfig,
-   isSaving: isSavingColumns,
- } = useHeaderConfig({
-   entityType: "PLACEMENT",
-   configType: "columns",
-   defaultFields: DEFAULT_PLACEMENT_COLUMNS,
- });
- useEffect(() => {
-   const fetchAvailableFields = async () => {
-     setIsLoadingFields(true);
-     try {
-       const res = await fetch("/api/admin/field-management/placements");
-       const data = await res.json();
+  const {
+    columnFields,
+    setColumnFields,
+    showHeaderFieldModal: showColumnModal,
+    setShowHeaderFieldModal: setShowColumnModal,
+    saveHeaderConfig: saveColumnConfig,
+    isSaving: isSavingColumns,
+  } = useHeaderConfig({
+    entityType: "PLACEMENT",
+    configType: "columns",
+    defaultFields: DEFAULT_PLACEMENT_COLUMNS,
+  });
 
-       const fields =
-         data?.customFields || data?.fields || data?.data?.fields || [];
+  const getColumnInfo = (key: string) =>
+    placementColumnsCatalog.find((c) => c.key === key);
 
-       setAvailableFields(fields);
-     } catch (e) {
-       console.error("Failed to load placement fields", e);
-       setAvailableFields([]);
-     } finally {
-       setIsLoadingFields(false);
-     }
-   };
+  // Handle column sort toggle
+  const handleColumnSort = (columnKey: string) => {
+    setColumnSorts((prev) => {
+      const current = prev[columnKey];
+      if (current === "asc") {
+        return { ...prev, [columnKey]: "desc" };
+      } else if (current === "desc") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      } else {
+        return { ...prev, [columnKey]: "asc" };
+      }
+    });
+  };
 
-   fetchAvailableFields();
- }, []);
+  // Handle column filter change
+  const handleColumnFilter = (columnKey: string, value: string) => {
+    setColumnFilters((prev) => {
+      if (!value || value.trim() === "") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      }
+      return { ...prev, [columnKey]: value };
+    });
+  };
+
+  // Handle drag end for column reordering
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = columnFields.indexOf(active.id as string);
+    const newIndex = columnFields.indexOf(over.id as string);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newOrder = arrayMove(columnFields, oldIndex, newIndex);
+      setColumnFields(newOrder);
+    }
+  };
+
+  // Load column order from localStorage on mount
+  useEffect(() => {
+    const savedOrder = localStorage.getItem("placementsColumnOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validOrder = parsed.filter((key) =>
+            [...DEFAULT_PLACEMENT_COLUMNS, ...columnFields].includes(key)
+          );
+          if (validOrder.length > 0) {
+            setColumnFields(validOrder);
+          }
+        }
+      } catch (e) {
+        console.error("Error loading column order:", e);
+      }
+    }
+  }, []);
+
+  // Save column order to localStorage whenever it changes
+  useEffect(() => {
+    if (columnFields.length > 0) {
+      localStorage.setItem("placementsColumnOrder", JSON.stringify(columnFields));
+    }
+  }, [columnFields]);
+
+  // Unique options for select filters
+  const statusOptions = useMemo(() => {
+    const statuses = new Set<string>();
+    placements.forEach((p) => { if (p.status) statuses.add(p.status); });
+    return Array.from(statuses).map((s) => ({ label: s, value: s }));
+  }, [placements]);
+  useEffect(() => {
+    const fetchAvailableFields = async () => {
+      setIsLoadingFields(true);
+      try {
+        const res = await fetch("/api/admin/field-management/placements");
+        const data = await res.json();
+
+        const fields =
+          data?.customFields || data?.fields || data?.data?.fields || [];
+
+        setAvailableFields(fields);
+      } catch (e) {
+        console.error("Failed to load placement fields", e);
+        setAvailableFields([]);
+      } finally {
+        setIsLoadingFields(false);
+      }
+    };
+
+    fetchAvailableFields();
+  }, []);
 
   // Fetch placements on component mount
   useEffect(() => {
     fetchPlacements();
   }, []);
- useEffect(() => {
-   const close = () => setOpenActionId(null);
-   window.addEventListener("click", close);
-   return () => window.removeEventListener("click", close);
- }, []);
-const toggleActionDropdown = (id: string, e: React.MouseEvent) => {
-  e.stopPropagation();
-  setOpenActionId((prev) => (prev === id ? null : id));
-};
+  useEffect(() => {
+    const close = () => setOpenActionId(null);
+    window.addEventListener("click", close);
+    return () => window.removeEventListener("click", close);
+  }, []);
+  const toggleActionDropdown = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setOpenActionId((prev) => (prev === id ? null : id));
+  };
 
   const fetchPlacements = async () => {
     setIsLoading(true);
@@ -199,68 +478,91 @@ const toggleActionDropdown = (id: string, e: React.MouseEvent) => {
     }
   };
 
-  const filteredPlacements = placements.filter(
-    (placement) =>
-      (placement.job_seeker_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (placement.job_title || placement.job_name || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (placement.status && placement.status.toLowerCase().includes(searchTerm.toLowerCase())) ||
-      (placement.owner || placement.owner_name || "").toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredAndSortedPlacements = useMemo(() => {
+    let result = [...placements];
 
-  // Handle sorting
-  const handleSort = (
-    field:
-      | "id"
-      | "job_seeker_name"
-      | "job_title"
-      | "status"
-      | "start_date"
-      | "owner"
-  ) => {
-    if (sortField === field) {
-      // Toggle direction if same field
-      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
-    } else {
-      // Set new field with ascending direction
-      setSortField(field);
-      setSortDirection("asc");
-    }
-  };
+    // Apply global search
+    if (searchTerm.trim() !== "") {
+      const term = searchTerm.toLowerCase();
+      result = result.filter((placement) => {
+        // ID search
+        const idMatch =
+          String(placement.id).toLowerCase().includes(term) ||
+          `p${placement.id}`.toLowerCase().includes(term);
 
-  // Sort the filtered placements
-  const sortedPlacements = [...filteredPlacements].sort((a, b) => {
-    if (!sortField) return 0;
+        // Core fields
+        const coreMatch =
+          (placement.job_seeker_name || "").toLowerCase().includes(term) ||
+          (placement.job_title || placement.job_name || "").toLowerCase().includes(term) ||
+          (placement.status || "").toLowerCase().includes(term) ||
+          (placement.owner || placement.owner_name || "").toLowerCase().includes(term) ||
+          (placement.salary || "").toLowerCase().includes(term);
 
-    let aValue: string | number = "";
-    let bValue: string | number = "";
+        // Dates
+        const dateMatch =
+          (placement.start_date || "").toLowerCase().includes(term) ||
+          (placement.end_date || "").toLowerCase().includes(term) ||
+          (placement.created_at || "").toLowerCase().includes(term);
 
-    if (sortField === "id") {
-      // Sort numerically by ID
-      aValue = parseInt(a.id) || 0;
-      bValue = parseInt(b.id) || 0;
-    } else if (sortField === "job_seeker_name") {
-      aValue = (a.job_seeker_name || "").toLowerCase();
-      bValue = (b.job_seeker_name || "").toLowerCase();
-    } else if (sortField === "job_title") {
-      aValue = (a.job_title || a.job_name || "").toLowerCase();
-      bValue = (b.job_title || b.job_name || "").toLowerCase();
-    } else if (sortField === "status") {
-      aValue = a.status?.toLowerCase() || "";
-      bValue = b.status?.toLowerCase() || "";
-    } else if (sortField === "start_date") {
-      aValue = a.start_date || "";
-      bValue = b.start_date || "";
-    } else if (sortField === "owner") {
-      aValue = (a.owner || a.owner_name || "").toLowerCase();
-      bValue = (b.owner || b.owner_name || "").toLowerCase();
+        // Custom fields
+        const cf = placement.customFields || placement.custom_fields || {};
+        const customMatch = Object.values(cf).some((val) =>
+          String(val || "").toLowerCase().includes(term)
+        );
+
+        return idMatch || coreMatch || dateMatch || customMatch;
+      });
     }
 
-    if (sortDirection === "asc") {
-      return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
-    } else {
-      return aValue > bValue ? -1 : aValue < bValue ? 1 : 0;
+    // Apply column filters
+    Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
+      if (!filterValue || filterValue.trim() === "") return;
+
+      result = result.filter((p) => {
+        const value = getColumnValue(p, columnKey);
+        const valueStr = String(value).toLowerCase();
+        const filterStr = String(filterValue).toLowerCase();
+
+        const columnInfo = getColumnInfo(columnKey);
+        if ((columnInfo?.filterType as string) === "number") {
+          return String(value) === String(filterValue);
+        }
+        if (columnInfo?.filterType === "select") {
+          return valueStr === filterStr;
+        }
+
+        return valueStr.includes(filterStr);
+      });
+    });
+
+    // Apply sorting
+    const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
+    if (activeSorts.length > 0) {
+      const [sortKey, sortDir] = activeSorts[0];
+      result.sort((a, b) => {
+        let aValue = getColumnValue(a, sortKey);
+        let bValue = getColumnValue(b, sortKey);
+
+        // Handle numeric values
+        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
+        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
+
+        let cmp = 0;
+        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+          cmp = aNum - bNum;
+        } else {
+          cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+        }
+
+        return sortDir === "asc" ? cmp : -cmp;
+      });
     }
-  });
+
+    return result;
+  }, [placements, searchTerm, columnFilters, columnSorts]);
 
   const handleViewPlacement = (id: string) => {
     router.push(`/dashboard/placements/view?id=${id}`);
@@ -274,7 +576,7 @@ const toggleActionDropdown = (id: string, e: React.MouseEvent) => {
     if (selectAll) {
       setSelectedPlacements([]);
     } else {
-      setSelectedPlacements(filteredPlacements.map((placement) => placement.id));
+      setSelectedPlacements(filteredAndSortedPlacements.map((placement) => placement.id));
     }
     setSelectAll(!selectAll);
   };
@@ -291,7 +593,7 @@ const toggleActionDropdown = (id: string, e: React.MouseEvent) => {
       setSelectedPlacements([...selectedPlacements, id]);
       // If all placements are now selected, update selectAll state
       if (
-        [...selectedPlacements, id].length === filteredPlacements.length
+        [...selectedPlacements, id].length === filteredAndSortedPlacements.length
       ) {
         setSelectAll(true);
       }
@@ -349,15 +651,6 @@ const toggleActionDropdown = (id: string, e: React.MouseEvent) => {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    if (!dateString) return "";
-    const date = new Date(dateString);
-    return new Intl.DateTimeFormat("en-US", {
-      month: "2-digit",
-      day: "2-digit",
-      year: "numeric",
-    }).format(date);
-  };
 
   if (isLoading) {
     return <LoadingScreen message="Loading placements..." />;
@@ -443,153 +736,166 @@ const toggleActionDropdown = (id: string, e: React.MouseEvent) => {
 
       {/* Placements Table */}
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              {/* Fixed checkbox */}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                  checked={selectAll}
-                  onChange={handleSelectAll}
-                />
-              </th>
-
-              {/* Fixed Actions */}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-
-              {/* Fixed ID */}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <button
-                  onClick={() => handleSort("id")}
-                  className="hover:text-gray-700"
-                >
-                  ID
-                </button>
-              </th>
-
-              {/* Dynamic */}
-              {columnFields.map((key) => (
-                <th
-                  key={key}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  {getColumnLabel(key)}
-                </th>
-              ))}
-            </tr>
-          </thead>
-
-          <tbody className="bg-white divide-y divide-gray-200">
-            {sortedPlacements.length > 0 ? (
-              sortedPlacements.map((placement) => (
-                <tr
-                  key={placement.id}
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => handleViewPlacement(placement.id)}
-                >
-                  {/* Fixed checkbox */}
-                  <td
-                    className="px-6 py-4 whitespace-nowrap"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                      checked={selectedPlacements.includes(placement.id)}
-                      onChange={() => {}}
-                      onClick={(e) => handleSelectPlacement(placement.id, e)}
-                    />
-                  </td>
-
-                  {/* Fixed Actions dropdown (View only) */}
-                  <td
-                    className="px-6 py-4 whitespace-nowrap text-sm"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="relative inline-block text-left">
-                      <button
-                        type="button"
-                        className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setOpenActionId((prev) =>
-                            prev === placement.id ? null : placement.id
-                          );
-                        }}
-                      >
-                        Actions ▾
-                      </button>
-
-                      {openActionId === placement.id && (
-                        <div
-                          className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="flex flex-col">
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setOpenActionId(null);
-                                handleViewPlacement(placement.id);
-                              }}
-                            >
-                              View
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-
-                  {/* Fixed ID */}
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      P {placement.id}
-                    </div>
-                  </td>
-
-                  {/* Dynamic cells */}
-                  {columnFields.map((key) => (
-                    <td
-                      key={key}
-                      className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                    >
-                      {key === "status" ? (
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                          {getColumnValue(placement, key)}
-                        </span>
-                      ) : (
-                        getColumnValue(placement, key)
-                      )}
-                    </td>
-                  ))}
-                </tr>
-              ))
-            ) : (
+        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
               <tr>
-                <td
-                  colSpan={3 + columnFields.length}
-                  className="px-6 py-4 text-center text-gray-500"
+                {/* Fixed checkbox */}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                    checked={selectAll}
+                    onChange={handleSelectAll}
+                  />
+                </th>
+
+                {/* Fixed ID */}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Id
+                </th>
+
+                {/* Fixed Actions */}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+
+                {/* Draggable Dynamic headers */}
+                <SortableContext
+                  items={columnFields}
+                  strategy={horizontalListSortingStrategy}
                 >
-                  {searchTerm
-                    ? "No placements found matching your search."
-                    : "No placements found."}
-                </td>
+                  {columnFields.map((key) => {
+                    const columnInfo = getColumnInfo(key);
+                    if (!columnInfo) return null;
+
+                    return (
+                      <SortableColumnHeader
+                        key={key}
+                        id={key}
+                        columnKey={key}
+                        label={getColumnLabel(key)}
+                        sortState={columnSorts[key] || null}
+                        filterValue={columnFilters[key] || null}
+                        onSort={() => handleColumnSort(key)}
+                        onFilterChange={(value) => handleColumnFilter(key, value)}
+                        filterType={columnInfo.filterType}
+                        filterOptions={key === "status" ? statusOptions : undefined}
+                      />
+                    );
+                  })}
+                </SortableContext>
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredAndSortedPlacements.length > 0 ? (
+                filteredAndSortedPlacements.map((placement) => (
+                  <tr
+                    key={placement.id}
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() => handleViewPlacement(placement.id)}
+                  >
+                    {/* Fixed checkbox */}
+                    <td
+                      className="px-6 py-4 whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                        checked={selectedPlacements.includes(placement.id)}
+                        onChange={() => { }}
+                        onClick={(e) => handleSelectPlacement(placement.id, e)}
+                      />
+                    </td>
+
+                    {/* Fixed ID */}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">
+                        P {placement.id}
+                      </div>
+                    </td>
+
+                    {/* Fixed Actions dropdown (View only) */}
+                    <td
+                      className="px-6 py-4 whitespace-nowrap text-sm"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="relative inline-block text-left">
+                        <button
+                          type="button"
+                          className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenActionId((prev) =>
+                              prev === placement.id ? null : placement.id
+                            );
+                          }}
+                        >
+                          Actions ▾
+                        </button>
+
+                        {openActionId === placement.id && (
+                          <div
+                            className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex flex-col">
+                              <button
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenActionId(null);
+                                  handleViewPlacement(placement.id);
+                                }}
+                              >
+                                View
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Dynamic cells */}
+                    {columnFields.map((key) => (
+                      <td
+                        key={key}
+                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                      >
+                        {key === "status" ? (
+                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
+                            {getColumnValue(placement, key)}
+                          </span>
+                        ) : (
+                          getColumnValue(placement, key)
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={3 + columnFields.length}
+                    className="px-6 py-4 text-center text-gray-500"
+                  >
+                    {searchTerm
+                      ? "No placements found matching your search."
+                      : "No placements found."}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </DndContext>
       </div>
 
       {/* Pagination or summary */}
       <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
         <div className="text-sm text-gray-700">
-          Showing <span className="font-medium">{sortedPlacements.length}</span>{" "}
+          Showing <span className="font-medium">{filteredAndSortedPlacements.length}</span>{" "}
           of <span className="font-medium">{placements.length}</span> placements
         </div>
       </div>

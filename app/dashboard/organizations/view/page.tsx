@@ -10,7 +10,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
-import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import { DndContext, closestCenter, type DragEndEvent, type DragOverEvent, useDroppable } from "@dnd-kit/core";
 import { restrictToWindowEdges } from "@dnd-kit/modifiers";
 import {
   SortableContext,
@@ -60,6 +60,18 @@ function SortablePanel({
       </button>
       {children}
     </div>
+  );
+}
+
+// Droppable Column Container
+function DroppableContainer({ id, children, items }: { id: string, children: React.ReactNode, items: string[] }) {
+  const { setNodeRef } = useDroppable({ id });
+  return (
+    <SortableContext id={id} items={items} strategy={verticalListSortingStrategy}>
+      <div ref={setNodeRef} className="flex flex-col gap-4 w-full min-h-[100px]">
+        {children}
+      </div>
+    </SortableContext>
   );
 }
 
@@ -198,11 +210,11 @@ export default function OrganizationView() {
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
-// Modal state for confirming file details before upload
-const [showFileDetailsModal, setShowFileDetailsModal] = useState(false);
-const [pendingFiles, setPendingFiles] = useState<File[]>([]);
-const [fileDetailsName, setFileDetailsName] = useState("");
-const [fileDetailsType, setFileDetailsType] = useState("General");
+  // Modal state for confirming file details before upload
+  const [showFileDetailsModal, setShowFileDetailsModal] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [fileDetailsName, setFileDetailsName] = useState("");
+  const [fileDetailsType, setFileDetailsType] = useState("General");
 
   // Hiring Managers (Contacts) state
   const [hiringManagers, setHiringManagers] = useState<Array<any>>([]);
@@ -272,8 +284,15 @@ const [fileDetailsType, setFileDetailsType] = useState("General");
   const [isPinned, setIsPinned] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  // Panel order state for draggable sections
-  const [panelOrder, setPanelOrder] = useState<string[]>([]);
+  // Panel order state for drag-and-drop
+  const [columns, setColumns] = useState<{
+    left: string[];
+    right: string[];
+  }>({
+    left: ["contactInfo", "about"],
+    right: ["recentNotes", "websiteJobs", "ourJobs", "openTasks"],
+  });
+  const [activeId, setActiveId] = useState<string | null>(null);
 
   // Editable "About" text state
   const [aboutText, setAboutText] = useState("");
@@ -449,53 +468,39 @@ const [fileDetailsType, setFileDetailsType] = useState("General");
     }
   }, [showAddNote]);
 
-  // Initialize panel order from localStorage or default
+  // Initialize columns from localStorage or default
   useEffect(() => {
-    const savedOrder = localStorage.getItem("organizationSummaryPanelOrder");
-    if (savedOrder) {
+    const savedColumns = localStorage.getItem("organizationSummaryColumns");
+    if (savedColumns) {
       try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setPanelOrder(parsed);
+        const parsed = JSON.parse(savedColumns);
+        if (parsed.left && parsed.right) {
+          setColumns(parsed);
         } else {
-          setPanelOrder([
-            "contactInfo",
-            "about",
-            "recentNotes",
-            "websiteJobs",
-            "ourJobs",
-            "openTasks",
-          ]);
+          setColumns({
+            left: ["contactInfo", "about"],
+            right: ["recentNotes", "websiteJobs", "ourJobs", "openTasks"],
+          });
         }
       } catch (e) {
         console.error("Error loading panel order:", e);
-        setPanelOrder([
-          "contactInfo",
-          "about",
-          "recentNotes",
-          "websiteJobs",
-          "ourJobs",
-          "openTasks",
-        ]);
+        setColumns({
+          left: ["contactInfo", "about"],
+          right: ["recentNotes", "websiteJobs", "ourJobs", "openTasks"],
+        });
       }
     } else {
-      setPanelOrder([
-        "contactInfo",
-        "about",
-        "recentNotes",
-        "websiteJobs",
-        "ourJobs",
-        "openTasks",
-      ]);
+      setColumns({
+        left: ["contactInfo", "about"],
+        right: ["recentNotes", "websiteJobs", "ourJobs", "openTasks"],
+      });
     }
   }, []);
 
-  // Save panel order to localStorage
+  // Save columns to localStorage
   useEffect(() => {
-    if (panelOrder.length > 0) {
-      localStorage.setItem("organizationSummaryPanelOrder", JSON.stringify(panelOrder));
-    }
-  }, [panelOrder]);
+    localStorage.setItem("organizationSummaryColumns", JSON.stringify(columns));
+  }, [columns]);
 
   // Initialize about text from organization
   useEffect(() => {
@@ -1657,18 +1662,416 @@ const [fileDetailsType, setFileDetailsType] = useState("General");
     router.push("/dashboard/organizations");
   };
 
-  // Handle drag end for panel reordering
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (!over || active.id === over.id) return;
-
-    const oldIndex = panelOrder.indexOf(active.id as string);
-    const newIndex = panelOrder.indexOf(over.id as string);
-
-    if (oldIndex !== -1 && newIndex !== -1) {
-      const newOrder = arrayMove(panelOrder, oldIndex, newIndex);
-      setPanelOrder(newOrder);
+  const findContainer = (id: string) => {
+    if (id in columns) {
+      return id as keyof typeof columns;
     }
+    return Object.keys(columns).find((key) =>
+      columns[key as keyof typeof columns].includes(id)
+    ) as keyof typeof columns | undefined;
+  };
+
+  const handlePanelDragStart = (event: any) => {
+    setActiveId(event.active.id);
+  }
+
+  const handlePanelDragOver = (event: DragOverEvent) => {
+    const { active, over } = event;
+    const overId = over?.id;
+
+    if (!overId || active.id === overId) {
+      return;
+    }
+
+    const activeContainer = findContainer(active.id as string);
+    const overContainer = findContainer(overId as string);
+
+    if (
+      !activeContainer ||
+      !overContainer ||
+      activeContainer === overContainer
+    ) {
+      return;
+    }
+
+    setColumns((prev) => {
+      const activeItems = prev[activeContainer];
+      const overItems = prev[overContainer];
+      const activeIndex = activeItems.indexOf(active.id as string);
+      const overIndex = overItems.indexOf(overId as string);
+
+      let newIndex;
+
+      if (overId in prev) {
+        newIndex = overItems.length + 1;
+      } else {
+        const isBelowOverItem =
+          over &&
+          active.rect.current.translated &&
+          active.rect.current.translated.top >
+          over.rect.top + over.rect.height;
+
+        const modifier = isBelowOverItem ? 1 : 0;
+
+        newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1;
+      }
+
+      return {
+        ...prev,
+        [activeContainer]: [
+          ...prev[activeContainer].filter((item) => item !== active.id),
+        ],
+        [overContainer]: [
+          ...prev[overContainer].slice(0, newIndex),
+          active.id as string,
+          ...prev[overContainer].slice(newIndex, prev[overContainer].length),
+        ],
+      };
+    });
+  };
+
+  const handlePanelDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    const activeContainer = findContainer(active.id as string);
+    const overContainer = findContainer(over?.id as string);
+
+    if (
+      !activeContainer ||
+      !overContainer ||
+      activeContainer !== overContainer
+    ) {
+      setActiveId(null);
+      return;
+    }
+
+    const activeIndex = columns[activeContainer].indexOf(active.id as string);
+    const overIndex = columns[overContainer].indexOf(over?.id as string);
+
+    if (activeIndex !== overIndex) {
+      setColumns((prev) => ({
+        ...prev,
+        [activeContainer]: arrayMove(
+          prev[activeContainer],
+          activeIndex,
+          overIndex
+        ),
+      }));
+    }
+
+    setActiveId(null);
+  };
+
+  const renderPanel = (panelId: string) => {
+    if (panelId === "contactInfo") {
+      return (
+        <SortablePanel key={panelId} id={panelId}>
+          <PanelWithHeader
+            title="Organization Contact Info:"
+            onEdit={() => handleEditPanel("contactInfo")}
+          >
+            <div className="space-y-0 border border-gray-200 rounded">
+              {visibleFields.contactInfo.includes("name") && (
+                <div className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                    Name:
+                  </div>
+                  <div className="flex-1 p-2 text-blue-600">
+                    {organization?.contact?.name || organization?.name || "-"}
+                  </div>
+                </div>
+              )}
+              {visibleFields.contactInfo.includes("nickname") && (
+                <div className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                    Nickname:
+                  </div>
+                  <div className="flex-1 p-2">
+                    {organization?.contact?.nickname || organization?.nicknames || "-"}
+                  </div>
+                </div>
+              )}
+              {visibleFields.contactInfo.includes("phone") && (
+                <div className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                    Phone:
+                  </div>
+                  <div className="flex-1 p-2">
+                    {organization?.contact?.phone || organization?.phone || "-"}
+                  </div>
+                </div>
+              )}
+              {visibleFields.contactInfo.includes("address") && (
+                <div className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                    Address:
+                  </div>
+                  <div className="flex-1 p-2">
+                    {organization?.contact?.address || organization?.address || "-"}
+                  </div>
+                </div>
+              )}
+              {visibleFields.contactInfo.includes("website") && (
+                <div className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                    Website:
+                  </div>
+                  <div className="flex-1 p-2 text-blue-600">
+                    <a
+                      href={organization?.contact?.website || organization?.website}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {organization?.contact?.website || organization?.website || "-"}
+                    </a>
+                  </div>
+                </div>
+              )}
+              {organization?.customFields &&
+                Object.keys(organization.customFields).map((fieldKey) => {
+                  if (visibleFields.contactInfo.includes(fieldKey)) {
+                    const field = availableFields.find(
+                      (f) =>
+                        (f.field_name || f.field_label || f.id) === fieldKey
+                    );
+                    const fieldLabel =
+                      field?.field_label || field?.field_name || fieldKey;
+                    const fieldValue = organization.customFields[fieldKey];
+                    return (
+                      <div
+                        key={fieldKey}
+                        className="flex border-b border-gray-200 last:border-b-0"
+                      >
+                        <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                          {fieldLabel}:
+                        </div>
+                        <div className="flex-1 p-2">
+                          {String(fieldValue || "-")}
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })}
+            </div>
+          </PanelWithHeader>
+        </SortablePanel>
+      );
+    }
+    if (panelId === "about") {
+      return (
+        <SortablePanel key={panelId} id={panelId}>
+          <PanelWithHeader
+            title="About the Organization:"
+            onEdit={() => {
+              setIsEditingAbout(true);
+              setTempAboutText(aboutText);
+            }}
+          >
+            <div className="border border-gray-200 rounded">
+              {isEditingAbout ? (
+                <div className="p-2">
+                  <textarea
+                    value={tempAboutText}
+                    onChange={(e) => setTempAboutText(e.target.value)}
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={6}
+                  />
+                  <div className="flex justify-end gap-2 mt-2">
+                    <button
+                      onClick={() => {
+                        setIsEditingAbout(false);
+                        setTempAboutText("");
+                      }}
+                      className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={saveAboutText}
+                      className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="p-2">
+                  <p className="text-gray-700 whitespace-pre-wrap">
+                    {aboutText || "No description provided"}
+                  </p>
+                </div>
+              )}
+            </div>
+          </PanelWithHeader>
+        </SortablePanel>
+      );
+    }
+    if (panelId === "recentNotes") {
+      return (
+        <SortablePanel key={panelId} id={panelId}>
+          <PanelWithHeader title="Recent Notes:">
+            <div className="border border-gray-200 rounded">
+              {notes.length > 0 ? (
+                <div className="p-2">
+                  {notes.slice(0, 5).map((note: any) => {
+                    const actionLabel =
+                      actionFields.find(
+                        (af) =>
+                          af.field_name === note.action ||
+                          af.field_label === note.action
+                      )?.field_label || note.action || "General Note";
+
+                    return (
+                      <div
+                        key={note.id}
+                        className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
+                      >
+                        <div className="flex justify-between text-sm mb-1">
+                          <span className="font-medium">
+                            {note.created_by_name || "Unknown User"}
+                          </span>
+                          <span className="text-gray-500">
+                            {new Date(note.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        {actionLabel && (
+                          <div className="mb-1">
+                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded">
+                              {actionLabel}
+                            </span>
+                          </div>
+                        )}
+                        {note.additional_references && (
+                          <div className="mb-1 text-xs text-gray-600">
+                            References: {note.additional_references}
+                          </div>
+                        )}
+                        <p className="text-sm text-gray-700">
+                          {note.text.length > 100
+                            ? `${note.text.substring(0, 100)}...`
+                            : note.text}
+                        </p>
+                      </div>
+                    );
+                  })}
+                  {notes.length > 5 && (
+                    <button
+                      onClick={() => setActiveTab("notes")}
+                      className="text-blue-500 text-sm hover:underline mt-2"
+                    >
+                      View all {notes.length} notes
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <p className="text-gray-500 italic p-2">No recent notes</p>
+              )}
+            </div>
+          </PanelWithHeader>
+        </SortablePanel>
+      );
+    }
+    if (panelId === "websiteJobs") {
+      return (
+        <SortablePanel key={panelId} id={panelId}>
+          <PanelWithHeader title="Open Jobs from Website:">
+            <div className="border border-gray-200 rounded">
+              <div className="p-2">
+                <p className="text-gray-500 italic">No open jobs found</p>
+              </div>
+            </div>
+          </PanelWithHeader>
+        </SortablePanel>
+      );
+    }
+    if (panelId === "ourJobs") {
+      return (
+        <SortablePanel key={panelId} id={panelId}>
+          <PanelWithHeader title="Our Open Jobs:">
+            <div className="border border-gray-200 rounded">
+              <div className="p-2">
+                <p className="text-gray-500 italic">No open jobs</p>
+              </div>
+            </div>
+          </PanelWithHeader>
+        </SortablePanel>
+      );
+    }
+    if (panelId === "openTasks") {
+      return (
+        <SortablePanel key={panelId} id={panelId}>
+          <PanelWithHeader title="Open Tasks:">
+            <div className="border border-gray-200 rounded">
+              {isLoadingTasks ? (
+                <div className="flex justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+                </div>
+              ) : tasksError ? (
+                <div className="p-2 text-red-500 text-sm">{tasksError}</div>
+              ) : tasks.length > 0 ? (
+                <div className="divide-y divide-gray-200">
+                  {tasks.map((task) => (
+                    <div
+                      key={task.id}
+                      className="p-3 hover:bg-gray-50 cursor-pointer"
+                      onClick={() =>
+                        router.push(`/dashboard/tasks/view?id=${task.id}`)
+                      }
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <h4 className="font-medium text-blue-600 hover:underline">
+                          {task.title}
+                        </h4>
+                        {task.priority && (
+                          <span
+                            className={`px-2 py-0.5 rounded text-xs ${task.priority === "High"
+                              ? "bg-red-100 text-red-800"
+                              : task.priority === "Medium"
+                                ? "bg-yellow-100 text-yellow-800"
+                                : "bg-gray-100 text-gray-800"
+                              }`}
+                          >
+                            {task.priority}
+                          </span>
+                        )}
+                      </div>
+                      {task.description && (
+                        <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                          {task.description}
+                        </p>
+                      )}
+                      <div className="flex justify-between items-center text-xs text-gray-500">
+                        <div className="flex space-x-3">
+                          {task.due_date && (
+                            <span>
+                              Due:{" "}
+                              {new Date(task.due_date).toLocaleDateString()}
+                            </span>
+                          )}
+                          {task.assigned_to_name && (
+                            <span>
+                              Assigned to: {task.assigned_to_name}
+                            </span>
+                          )}
+                        </div>
+                        {task.status && (
+                          <span className="text-gray-600">{task.status}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 text-center text-gray-500 italic">
+                  No open tasks
+                </div>
+              )}
+            </div>
+          </PanelWithHeader>
+        </SortablePanel>
+      );
+    }
+    return null;
   };
 
   // Toggle pin/pop-out panel
@@ -3484,328 +3887,18 @@ const [fileDetailsType, setFileDetailsType] = useState("General");
                         <div id="printable-summary">
                           <DndContext modifiers={[restrictToWindowEdges]}
                             collisionDetection={closestCenter}
-                            onDragEnd={handleDragEnd}
+                            onDragStart={handlePanelDragStart}
+                            onDragOver={handlePanelDragOver}
+                            onDragEnd={handlePanelDragEnd}
                           >
-                            <SortableContext
-                              items={panelOrder}
-                              strategy={verticalListSortingStrategy}
-                            >
-                              <div className="space-y-4">
-                                {panelOrder.map((panelId) => {
-                                  if (panelId === "contactInfo") {
-                                    return (
-                                      <SortablePanel key={panelId} id={panelId}>
-                                        <PanelWithHeader
-                                          title="Organization Contact Info:"
-                                          onEdit={() => handleEditPanel("contactInfo")}
-                                        >
-                                          <div className="space-y-0 border border-gray-200 rounded">
-                                            {visibleFields.contactInfo.includes("name") && (
-                                              <div className="flex border-b border-gray-200 last:border-b-0">
-                                                <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                                  Name:
-                                                </div>
-                                                <div className="flex-1 p-2 text-blue-600">
-                                                  {organization?.contact?.name || "-"}
-                                                </div>
-                                              </div>
-                                            )}
-                                            {visibleFields.contactInfo.includes("nickname") && (
-                                              <div className="flex border-b border-gray-200 last:border-b-0">
-                                                <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                                  Nickname:
-                                                </div>
-                                                <div className="flex-1 p-2">
-                                                  {organization?.contact?.nickname || "-"}
-                                                </div>
-                                              </div>
-                                            )}
-                                            {visibleFields.contactInfo.includes("phone") && (
-                                              <div className="flex border-b border-gray-200 last:border-b-0">
-                                                <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                                  Phone:
-                                                </div>
-                                                <div className="flex-1 p-2">
-                                                  {organization?.contact?.phone || "-"}
-                                                </div>
-                                              </div>
-                                            )}
-                                            {visibleFields.contactInfo.includes("address") && (
-                                              <div className="flex border-b border-gray-200 last:border-b-0">
-                                                <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                                  Address:
-                                                </div>
-                                                <div className="flex-1 p-2">
-                                                  {organization?.contact?.address || "-"}
-                                                </div>
-                                              </div>
-                                            )}
-                                            {visibleFields.contactInfo.includes("website") && (
-                                              <div className="flex border-b border-gray-200 last:border-b-0">
-                                                <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                                  Website:
-                                                </div>
-                                                <div className="flex-1 p-2 text-blue-600">
-                                                  <a
-                                                    href={organization?.contact?.website}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                  >
-                                                    {organization?.contact?.website || "-"}
-                                                  </a>
-                                                </div>
-                                              </div>
-                                            )}
-                                            {organization?.customFields &&
-                                              Object.keys(organization.customFields).map((fieldKey) => {
-                                                if (visibleFields.contactInfo.includes(fieldKey)) {
-                                                  const field = availableFields.find(
-                                                    (f) =>
-                                                      (f.field_name || f.field_label || f.id) === fieldKey
-                                                  );
-                                                  const fieldLabel =
-                                                    field?.field_label || field?.field_name || fieldKey;
-                                                  const fieldValue = organization.customFields[fieldKey];
-                                                  return (
-                                                    <div
-                                                      key={fieldKey}
-                                                      className="flex border-b border-gray-200 last:border-b-0"
-                                                    >
-                                                      <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                                        {fieldLabel}:
-                                                      </div>
-                                                      <div className="flex-1 p-2">
-                                                        {String(fieldValue || "-")}
-                                                      </div>
-                                                    </div>
-                                                  );
-                                                }
-                                                return null;
-                                              })}
-                                          </div>
-                                        </PanelWithHeader>
-                                      </SortablePanel>
-                                    );
-                                  }
-                                  if (panelId === "about") {
-                                    return (
-                                      <SortablePanel key={panelId} id={panelId}>
-                                        <PanelWithHeader
-                                          title="About the Organization:"
-                                          onEdit={() => {
-                                            setIsEditingAbout(true);
-                                            setTempAboutText(aboutText);
-                                          }}
-                                        >
-                                          <div className="border border-gray-200 rounded">
-                                            {isEditingAbout ? (
-                                              <div className="p-2">
-                                                <textarea
-                                                  value={tempAboutText}
-                                                  onChange={(e) => setTempAboutText(e.target.value)}
-                                                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                  rows={6}
-                                                />
-                                                <div className="flex justify-end gap-2 mt-2">
-                                                  <button
-                                                    onClick={() => {
-                                                      setIsEditingAbout(false);
-                                                      setTempAboutText("");
-                                                    }}
-                                                    className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
-                                                  >
-                                                    Cancel
-                                                  </button>
-                                                  <button
-                                                    onClick={saveAboutText}
-                                                    className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
-                                                  >
-                                                    Save
-                                                  </button>
-                                                </div>
-                                              </div>
-                                            ) : (
-                                              <div className="p-2">
-                                                <p className="text-gray-700 whitespace-pre-wrap">
-                                                  {aboutText || "No description provided"}
-                                                </p>
-                                              </div>
-                                            )}
-                                          </div>
-                                        </PanelWithHeader>
-                                      </SortablePanel>
-                                    );
-                                  }
-                                  if (panelId === "recentNotes") {
-                                    return (
-                                      <SortablePanel key={panelId} id={panelId}>
-                                        <PanelWithHeader title="Recent Notes:">
-                                          <div className="border border-gray-200 rounded">
-                                            {notes.length > 0 ? (
-                                              <div className="p-2">
-                                                {notes.slice(0, 5).map((note: any) => {
-                                                  // Find action label from actionFields
-                                                  const actionLabel =
-                                                    actionFields.find(
-                                                      (af) =>
-                                                        af.field_name === note.action ||
-                                                        af.field_label === note.action
-                                                    )?.field_label || note.action || "General Note";
-
-                                                  return (
-                                                    <div
-                                                      key={note.id}
-                                                      className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
-                                                    >
-                                                      <div className="flex justify-between text-sm mb-1">
-                                                        <span className="font-medium">
-                                                          {note.created_by_name || "Unknown User"}
-                                                        </span>
-                                                        <span className="text-gray-500">
-                                                          {new Date(note.created_at).toLocaleString()}
-                                                        </span>
-                                                      </div>
-                                                      {actionLabel && (
-                                                        <div className="mb-1">
-                                                          <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded">
-                                                            {actionLabel}
-                                                          </span>
-                                                        </div>
-                                                      )}
-                                                      {note.additional_references && (
-                                                        <div className="mb-1 text-xs text-gray-600">
-                                                          References: {note.additional_references}
-                                                        </div>
-                                                      )}
-                                                      <p className="text-sm text-gray-700">
-                                                        {note.text.length > 100
-                                                          ? `${note.text.substring(0, 100)}...`
-                                                          : note.text}
-                                                      </p>
-                                                    </div>
-                                                  );
-                                                })}
-                                                {notes.length > 5 && (
-                                                  <button
-                                                    onClick={() => setActiveTab("notes")}
-                                                    className="text-blue-500 text-sm hover:underline mt-2"
-                                                  >
-                                                    View all {notes.length} notes
-                                                  </button>
-                                                )}
-                                              </div>
-                                            ) : (
-                                              <p className="text-gray-500 italic p-2">No recent notes</p>
-                                            )}
-                                          </div>
-                                        </PanelWithHeader>
-                                      </SortablePanel>
-                                    );
-                                  }
-                                  if (panelId === "websiteJobs") {
-                                    return (
-                                      <SortablePanel key={panelId} id={panelId}>
-                                        <PanelWithHeader title="Open Jobs from Website:">
-                                          <div className="border border-gray-200 rounded">
-                                            <div className="p-2">
-                                              <p className="text-gray-500 italic">No open jobs found</p>
-                                            </div>
-                                          </div>
-                                        </PanelWithHeader>
-                                      </SortablePanel>
-                                    );
-                                  }
-                                  if (panelId === "ourJobs") {
-                                    return (
-                                      <SortablePanel key={panelId} id={panelId}>
-                                        <PanelWithHeader title="Our Open Jobs:">
-                                          <div className="border border-gray-200 rounded">
-                                            <div className="p-2">
-                                              <p className="text-gray-500 italic">No open jobs</p>
-                                            </div>
-                                          </div>
-                                        </PanelWithHeader>
-                                      </SortablePanel>
-                                    );
-                                  }
-                                  if (panelId === "openTasks") {
-                                    return (
-                                      <SortablePanel key={panelId} id={panelId}>
-                                        <PanelWithHeader title="Open Tasks:">
-                                          <div className="border border-gray-200 rounded">
-                                            {isLoadingTasks ? (
-                                              <div className="flex justify-center py-4">
-                                                <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
-                                              </div>
-                                            ) : tasksError ? (
-                                              <div className="p-2 text-red-500 text-sm">{tasksError}</div>
-                                            ) : tasks.length > 0 ? (
-                                              <div className="divide-y divide-gray-200">
-                                                {tasks.map((task) => (
-                                                  <div
-                                                    key={task.id}
-                                                    className="p-3 hover:bg-gray-50 cursor-pointer"
-                                                    onClick={() =>
-                                                      router.push(`/dashboard/tasks/view?id=${task.id}`)
-                                                    }
-                                                  >
-                                                    <div className="flex justify-between items-start mb-1">
-                                                      <h4 className="font-medium text-blue-600 hover:underline">
-                                                        {task.title}
-                                                      </h4>
-                                                      {task.priority && (
-                                                        <span
-                                                          className={`px-2 py-0.5 rounded text-xs ${task.priority === "High"
-                                                            ? "bg-red-100 text-red-800"
-                                                            : task.priority === "Medium"
-                                                              ? "bg-yellow-100 text-yellow-800"
-                                                              : "bg-gray-100 text-gray-800"
-                                                            }`}
-                                                        >
-                                                          {task.priority}
-                                                        </span>
-                                                      )}
-                                                    </div>
-                                                    {task.description && (
-                                                      <p className="text-sm text-gray-600 mb-2 line-clamp-2">
-                                                        {task.description}
-                                                      </p>
-                                                    )}
-                                                    <div className="flex justify-between items-center text-xs text-gray-500">
-                                                      <div className="flex space-x-3">
-                                                        {task.due_date && (
-                                                          <span>
-                                                            Due:{" "}
-                                                            {new Date(task.due_date).toLocaleDateString()}
-                                                          </span>
-                                                        )}
-                                                        {task.assigned_to_name && (
-                                                          <span>
-                                                            Assigned to: {task.assigned_to_name}
-                                                          </span>
-                                                        )}
-                                                      </div>
-                                                      {task.status && (
-                                                        <span className="text-gray-600">{task.status}</span>
-                                                      )}
-                                                    </div>
-                                                  </div>
-                                                ))}
-                                              </div>
-                                            ) : (
-                                              <div className="p-4 text-center text-gray-500 italic">
-                                                No open tasks
-                                              </div>
-                                            )}
-                                          </div>
-                                        </PanelWithHeader>
-                                      </SortablePanel>
-                                    );
-                                  }
-                                  return null;
-                                })}
-                              </div>
-                            </SortableContext>
+                            <div className="flex flex-col gap-4">
+                              <DroppableContainer id="left" items={columns.left}>
+                                {columns.left.map(renderPanel)}
+                              </DroppableContainer>
+                              <DroppableContainer id="right" items={columns.right}>
+                                {columns.right.map(renderPanel)}
+                              </DroppableContainer>
+                            </div>
                           </DndContext>
                         </div>
                       </div>
@@ -3820,344 +3913,25 @@ const [fileDetailsType, setFileDetailsType] = useState("General");
               <div id="printable-summary">
                 <DndContext modifiers={[restrictToWindowEdges]}
                   collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
+                  onDragStart={handlePanelDragStart}
+                  onDragOver={handlePanelDragOver}
+                  onDragEnd={handlePanelDragEnd}
                 >
-                  <SortableContext
-                    items={panelOrder}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <div className="grid grid-cols-7 gap-4">
-                      {/* Left Column - 4/7 width */}
-                      <div className="col-span-4 space-y-4">
-                        {panelOrder
-                          .filter((id) => ["contactInfo", "about"].includes(id))
-                          .map((panelId) => {
-                            if (panelId === "contactInfo") {
-                              return (
-                                <SortablePanel key={panelId} id={panelId}>
-                                  <PanelWithHeader
-                                    title="Organization Contact Info:"
-                                    onEdit={() => handleEditPanel("contactInfo")}
-                                  >
-                                    <div className="space-y-0 border border-gray-200 rounded">
-                                      {visibleFields.contactInfo.includes("name") && (
-                                        <div className="flex border-b border-gray-200 last:border-b-0">
-                                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                            Name:
-                                          </div>
-                                          <div className="flex-1 p-2 text-blue-600">
-                                            {organization.contact.name}
-                                          </div>
-                                        </div>
-                                      )}
-                                      {visibleFields.contactInfo.includes("nickname") && (
-                                        <div className="flex border-b border-gray-200 last:border-b-0">
-                                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                            Nickname:
-                                          </div>
-                                          <div className="flex-1 p-2">
-                                            {organization.contact.nickname || "-"}
-                                          </div>
-                                        </div>
-                                      )}
-                                      {visibleFields.contactInfo.includes("phone") && (
-                                        <div className="flex border-b border-gray-200 last:border-b-0">
-                                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                            Phone:
-                                          </div>
-                                          <div className="flex-1 p-2">
-                                            {organization.contact.phone}
-                                          </div>
-                                        </div>
-                                      )}
-                                      {visibleFields.contactInfo.includes("address") && (
-                                        <div className="flex border-b border-gray-200 last:border-b-0">
-                                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                            Address:
-                                          </div>
-                                          <div className="flex-1 p-2">
-                                            {organization.contact.address}
-                                          </div>
-                                        </div>
-                                      )}
-                                      {visibleFields.contactInfo.includes("website") && (
-                                        <div className="flex border-b border-gray-200 last:border-b-0">
-                                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                            Website:
-                                          </div>
-                                          <div className="flex-1 p-2 text-blue-600">
-                                            <a
-                                              href={organization.contact.website}
-                                              target="_blank"
-                                              rel="noopener noreferrer"
-                                            >
-                                              {organization.contact.website}
-                                            </a>
-                                          </div>
-                                        </div>
-                                      )}
-                                      {/* Display custom fields */}
-                                      {organization.customFields &&
-                                        Object.keys(organization.customFields).map((fieldKey) => {
-                                          if (visibleFields.contactInfo.includes(fieldKey)) {
-                                            const field = availableFields.find(
-                                              (f) =>
-                                                (f.field_name || f.field_label || f.id) === fieldKey
-                                            );
-                                            const fieldLabel =
-                                              field?.field_label || field?.field_name || fieldKey;
-                                            const fieldValue = organization.customFields[fieldKey];
-                                            return (
-                                              <div
-                                                key={fieldKey}
-                                                className="flex border-b border-gray-200 last:border-b-0"
-                                              >
-                                                <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                                  {fieldLabel}:
-                                                </div>
-                                                <div className="flex-1 p-2">
-                                                  {String(fieldValue || "-")}
-                                                </div>
-                                              </div>
-                                            );
-                                          }
-                                          return null;
-                                        })}
-                                    </div>
-                                  </PanelWithHeader>
-                                </SortablePanel>
-                              );
-                            }
-                            if (panelId === "about") {
-                              return (
-                                <SortablePanel key={panelId} id={panelId}>
-                                  <PanelWithHeader
-                                    title="About the Organization:"
-                                    onEdit={() => {
-                                      setIsEditingAbout(true);
-                                      setTempAboutText(aboutText);
-                                    }}
-                                  >
-                                    <div className="border border-gray-200 rounded">
-                                      {isEditingAbout ? (
-                                        <div className="p-2">
-                                          <textarea
-                                            value={tempAboutText}
-                                            onChange={(e) => setTempAboutText(e.target.value)}
-                                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            rows={6}
-                                          />
-                                          <div className="flex justify-end gap-2 mt-2">
-                                            <button
-                                              onClick={() => {
-                                                setIsEditingAbout(false);
-                                                setTempAboutText("");
-                                              }}
-                                              className="px-3 py-1 border rounded text-sm hover:bg-gray-50"
-                                            >
-                                              Cancel
-                                            </button>
-                                            <button
-                                              onClick={saveAboutText}
-                                              className="px-3 py-1 bg-blue-500 text-white rounded text-sm hover:bg-blue-600"
-                                            >
-                                              Save
-                                            </button>
-                                          </div>
-                                        </div>
-                                      ) : (
-                                        <div className="p-2">
-                                          <p className="text-gray-700 whitespace-pre-wrap">
-                                            {aboutText || "No description provided"}
-                                          </p>
-                                        </div>
-                                      )}
-                                    </div>
-                                  </PanelWithHeader>
-                                </SortablePanel>
-                              );
-                            }
-                            return null;
-                          })}
-                      </div>
-
-                      {/* Right Column - 3/7 width */}
-                      <div className="col-span-3 space-y-4">
-                        {panelOrder
-                          .filter((id) =>
-                            ["recentNotes", "websiteJobs", "ourJobs", "openTasks"].includes(id)
-                          )
-                          .map((panelId) => {
-                            if (panelId === "recentNotes") {
-                              return (
-                                <SortablePanel key={panelId} id={panelId}>
-                                  <PanelWithHeader title="Recent Notes:">
-                                    <div className="border border-gray-200 rounded">
-                                      {notes.length > 0 ? (
-                                        <div className="p-2">
-                                          {notes.slice(0, 5).map((note: any) => {
-                                            const actionLabel =
-                                              actionFields.find(
-                                                (af) =>
-                                                  af.field_name === note.action ||
-                                                  af.field_label === note.action
-                                              )?.field_label || note.action || "General Note";
-
-                                            return (
-                                              <div
-                                                key={note.id}
-                                                className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
-                                              >
-                                                <div className="flex justify-between text-sm mb-1">
-                                                  <span className="font-medium">
-                                                    {note.created_by_name || "Unknown User"}
-                                                  </span>
-                                                  <span className="text-gray-500">
-                                                    {new Date(note.created_at).toLocaleString()}
-                                                  </span>
-                                                </div>
-                                                {actionLabel && (
-                                                  <div className="mb-1">
-                                                    <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded">
-                                                      {actionLabel}
-                                                    </span>
-                                                  </div>
-                                                )}
-                                                {note.additional_references && (
-                                                  <div className="mb-1 text-xs text-gray-600">
-                                                    References: {note.additional_references}
-                                                  </div>
-                                                )}
-                                                <p className="text-sm text-gray-700">
-                                                  {note.text.length > 100
-                                                    ? `${note.text.substring(0, 100)}...`
-                                                    : note.text}
-                                                </p>
-                                              </div>
-                                            );
-                                          })}
-                                          {notes.length > 5 && (
-                                            <button
-                                              onClick={() => setActiveTab("notes")}
-                                              className="text-blue-500 text-sm hover:underline mt-2"
-                                            >
-                                              View all {notes.length} notes
-                                            </button>
-                                          )}
-                                        </div>
-                                      ) : (
-                                        <p className="text-gray-500 italic p-2">No recent notes</p>
-                                      )}
-                                    </div>
-                                  </PanelWithHeader>
-                                </SortablePanel>
-                              );
-                            }
-                            if (panelId === "websiteJobs") {
-                              return (
-                                <SortablePanel key={panelId} id={panelId}>
-                                  <PanelWithHeader title="Open Jobs from Website:">
-                                    <div className="border border-gray-200 rounded">
-                                      <div className="p-2">
-                                        <p className="text-gray-500 italic">No open jobs found</p>
-                                      </div>
-                                    </div>
-                                  </PanelWithHeader>
-                                </SortablePanel>
-                              );
-                            }
-                            if (panelId === "ourJobs") {
-                              return (
-                                <SortablePanel key={panelId} id={panelId}>
-                                  <PanelWithHeader title="Our Open Jobs:">
-                                    <div className="border border-gray-200 rounded">
-                                      <div className="p-2">
-                                        <p className="text-gray-500 italic">No open jobs</p>
-                                      </div>
-                                    </div>
-                                  </PanelWithHeader>
-                                </SortablePanel>
-                              );
-                            }
-                            if (panelId === "openTasks") {
-                              return (
-                                <SortablePanel key={panelId} id={panelId}>
-                                  <PanelWithHeader title="Open Tasks:">
-                                    <div className="border border-gray-200 rounded">
-                                      {isLoadingTasks ? (
-                                        <div className="flex justify-center py-4">
-                                          <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
-                                        </div>
-                                      ) : tasksError ? (
-                                        <div className="p-2 text-red-500 text-sm">{tasksError}</div>
-                                      ) : tasks.length > 0 ? (
-                                        <div className="divide-y divide-gray-200">
-                                          {tasks.map((task) => (
-                                            <div
-                                              key={task.id}
-                                              className="p-3 hover:bg-gray-50 cursor-pointer"
-                                              onClick={() =>
-                                                router.push(`/dashboard/tasks/view?id=${task.id}`)
-                                              }
-                                            >
-                                              <div className="flex justify-between items-start mb-1">
-                                                <h4 className="font-medium text-blue-600 hover:underline">
-                                                  {task.title}
-                                                </h4>
-                                                {task.priority && (
-                                                  <span
-                                                    className={`px-2 py-0.5 rounded text-xs ${task.priority === "High"
-                                                      ? "bg-red-100 text-red-800"
-                                                      : task.priority === "Medium"
-                                                        ? "bg-yellow-100 text-yellow-800"
-                                                        : "bg-gray-100 text-gray-800"
-                                                      }`}
-                                                  >
-                                                    {task.priority}
-                                                  </span>
-                                                )}
-                                              </div>
-                                              {task.description && (
-                                                <p className="text-sm text-gray-600 mb-2 line-clamp-2">
-                                                  {task.description}
-                                                </p>
-                                              )}
-                                              <div className="flex justify-between items-center text-xs text-gray-500">
-                                                <div className="flex space-x-3">
-                                                  {task.due_date && (
-                                                    <span>
-                                                      Due:{" "}
-                                                      {new Date(task.due_date).toLocaleDateString()}
-                                                    </span>
-                                                  )}
-                                                  {task.assigned_to_name && (
-                                                    <span>
-                                                      Assigned to: {task.assigned_to_name}
-                                                    </span>
-                                                  )}
-                                                </div>
-                                                {task.status && (
-                                                  <span className="text-gray-600">{task.status}</span>
-                                                )}
-                                              </div>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      ) : (
-                                        <div className="p-4 text-center text-gray-500 italic">
-                                          No open tasks
-                                        </div>
-                                      )}
-                                    </div>
-                                  </PanelWithHeader>
-                                </SortablePanel>
-                              );
-                            }
-                            return null;
-                          })}
-                      </div>
+                  <div className="grid grid-cols-7 gap-4">
+                    {/* Left Column - 4/7 width */}
+                    <div className="col-span-4">
+                      <DroppableContainer id="left" items={columns.left}>
+                        {columns.left.map(renderPanel)}
+                      </DroppableContainer>
                     </div>
-                  </SortableContext>
+
+                    {/* Right Column - 3/7 width */}
+                    <div className="col-span-3">
+                      <DroppableContainer id="right" items={columns.right}>
+                        {columns.right.map(renderPanel)}
+                      </DroppableContainer>
+                    </div>
+                  </div>
                 </DndContext>
               </div>
             )}

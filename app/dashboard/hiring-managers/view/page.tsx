@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import ActionDropdown from '@/components/ActionDropdown';
@@ -11,9 +11,28 @@ import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { sendCalendarInvite, type CalendarEvent } from "@/lib/office365";
 // Drag and drop imports
-import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import {
+  DndContext,
+  closestCorners,
+  type DragEndEvent,
+  type DragOverEvent,
+  useDroppable,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  defaultDropAnimationSideEffects,
+  MeasuringStrategy,
+} from "@dnd-kit/core";
 import { restrictToWindowEdges } from "@dnd-kit/modifiers";
-import { SortableContext, useSortable, verticalListSortingStrategy, rectSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  arrayMove,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiLock, FiUnlock } from "react-icons/fi";
@@ -21,25 +40,51 @@ import { FiLock, FiUnlock } from "react-icons/fi";
 // Default header fields for Hiring Managers module - defined outside component to ensure stable reference
 const HIRING_MANAGER_DEFAULT_HEADER_FIELDS = ["phone", "email"];
 
-// SortablePanel helper
-function SortablePanel({ id, children }: { id: string; children: React.ReactNode }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-  };
+// Droppable Column Container
+function DroppableContainer({ id, children, items }: { id: string, children: React.ReactNode, items: string[] }) {
+  const { setNodeRef } = useDroppable({ id });
   return (
-    <div ref={setNodeRef} style={style} className="relative group">
-      <button
-        {...attributes}
-        {...listeners}
-        className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
-        title="Drag to reorder"
-      >
-        <TbGripVertical className="w-5 h-5 text-gray-600" />
-      </button>
-      {children}
+    <SortableContext id={id} items={items} strategy={verticalListSortingStrategy}>
+      <div ref={setNodeRef} className="flex flex-col gap-4 w-full min-h-[100px]">
+        {children}
+      </div>
+    </SortableContext>
+  );
+}
+
+// SortablePanel helper
+function SortablePanel({ id, children, isOverlay = false }: { id: string; children: React.ReactNode; isOverlay?: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging && !isOverlay ? 0.3 : 1,
+    zIndex: isOverlay ? 1000 : undefined,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className={`relative group ${isOverlay ? 'cursor-grabbing' : ''}`}>
+      {!isOverlay && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Drag to reorder"
+        >
+          <TbGripVertical className="w-5 h-5 text-gray-600" />
+        </button>
+      )}
+      <div className={`${isDragging && !isOverlay ? 'invisible' : ''} pt-0`}>
+        {children}
+      </div>
+      {isDragging && !isOverlay && (
+        <div className="absolute inset-0 border-2 border-dashed border-gray-300 rounded bg-gray-50 flex items-center justify-center p-4">
+          <div className="text-gray-400 text-xs font-semibold uppercase tracking-wider italic">
+            Moving Panel...
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -61,6 +106,24 @@ export default function HiringManagerView() {
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
+
+  // Documents state
+  const [documents, setDocuments] = useState<Array<any>>([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [documentError, setDocumentError] = useState<string | null>(null);
+  const [selectedDocument, setSelectedDocument] = useState<any>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
+  const [showAddDocument, setShowAddDocument] = useState(false);
+  const [newDocumentName, setNewDocumentName] = useState("");
+  const [newDocumentType, setNewDocumentType] = useState("General");
+  const [newDocumentContent, setNewDocumentContent] = useState("");
+  const [showFileDetailsModal, setShowFileDetailsModal] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [fileDetailsName, setFileDetailsName] = useState("");
+  const [fileDetailsType, setFileDetailsType] = useState("General");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [noteForm, setNoteForm] = useState({
     text: "",
@@ -221,6 +284,7 @@ export default function HiringManagerView() {
 
   // ===== Summary layout state =====
   // ===== Summary layout state =====
+  // ===== Summary layout state =====
   const [columns, setColumns] = useState<{
     left: string[];
     right: string[];
@@ -228,24 +292,81 @@ export default function HiringManagerView() {
     left: ["details"],
     right: ["organizationDetails", "recentNotes"],
   });
+
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isPinned, setIsPinned] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  const findContainer = (id: string) => {
+  // High-performance sensors configuration
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const measuringConfig = useMemo(() => ({
+    droppable: {
+      strategy: MeasuringStrategy.Always,
+    },
+  }), []);
+
+  const dropAnimationConfig = useMemo(() => ({
+    sideEffects: defaultDropAnimationSideEffects({
+      styles: {
+        active: {
+          opacity: "0.5",
+        },
+      },
+    }),
+  }), []);
+
+  // Initialize columns from localStorage or default
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("hiringManagerSummaryColumns");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.left && Array.isArray(parsed.left) && parsed.right && Array.isArray(parsed.right)) {
+            setColumns(parsed);
+          }
+        } catch (e) {
+          console.error("Error loading panel order:", e);
+        }
+      }
+    }
+  }, []);
+
+  const prevColumnsRef = useRef<string>("");
+
+  // Save columns to localStorage
+  useEffect(() => {
+    const colsString = JSON.stringify(columns);
+    if (prevColumnsRef.current !== colsString) {
+      localStorage.setItem("hiringManagerSummaryColumns", colsString);
+      prevColumnsRef.current = colsString;
+    }
+  }, [columns]);
+
+  const findContainer = useCallback((id: string) => {
     if (id in columns) {
       return id as keyof typeof columns;
     }
     return Object.keys(columns).find((key) =>
       columns[key as keyof typeof columns].includes(id)
     ) as keyof typeof columns | undefined;
-  };
+  }, [columns]);
 
-  const handleDragStart = (event: any) => {
+  const handlePanelDragStart = useCallback((event: any) => {
     setActiveId(event.active.id);
-  }
+  }, []);
 
-  const handleDragOver = (event: any) => {
+  const handlePanelDragOver = useCallback((event: DragOverEvent) => {
     const { active, over } = event;
     const overId = over?.id;
 
@@ -253,8 +374,8 @@ export default function HiringManagerView() {
       return;
     }
 
-    const activeContainer = findContainer(active.id);
-    const overContainer = findContainer(overId);
+    const activeContainer = findContainer(active.id as string);
+    const overContainer = findContainer(overId as string);
 
     if (
       !activeContainer ||
@@ -267,8 +388,8 @@ export default function HiringManagerView() {
     setColumns((prev) => {
       const activeItems = prev[activeContainer];
       const overItems = prev[overContainer];
-      const activeIndex = activeItems.indexOf(active.id);
-      const overIndex = overItems.indexOf(overId);
+      const activeIndex = activeItems.indexOf(active.id as string);
+      const overIndex = overItems.indexOf(overId as string);
 
       let newIndex;
 
@@ -286,24 +407,28 @@ export default function HiringManagerView() {
         newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1;
       }
 
+      const activeFiltered = prev[activeContainer].filter((item) => item !== active.id);
+      const overUpdated = [
+        ...prev[overContainer].slice(0, newIndex),
+        active.id as string,
+        ...prev[overContainer].slice(newIndex, prev[overContainer].length),
+      ];
+
       return {
         ...prev,
-        [activeContainer]: [
-          ...prev[activeContainer].filter((item) => item !== active.id),
-        ],
-        [overContainer]: [
-          ...prev[overContainer].slice(0, newIndex),
-          active.id,
-          ...prev[overContainer].slice(newIndex, prev[overContainer].length),
-        ],
+        [activeContainer]: activeFiltered,
+        [overContainer]: overUpdated,
       };
     });
-  };
+  }, [findContainer]);
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handlePanelDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
-    const activeContainer = findContainer(active.id as string);
-    const overContainer = findContainer(over?.id as string);
+    const activeId = active.id as string;
+    const overId = over?.id as string;
+
+    const activeContainer = findContainer(activeId);
+    const overContainer = findContainer(overId);
 
     if (
       !activeContainer ||
@@ -314,8 +439,8 @@ export default function HiringManagerView() {
       return;
     }
 
-    const activeIndex = columns[activeContainer].indexOf(active.id as string);
-    const overIndex = columns[overContainer].indexOf(over?.id as string);
+    const activeIndex = columns[activeContainer].indexOf(activeId);
+    const overIndex = columns[overContainer].indexOf(overId);
 
     if (activeIndex !== overIndex) {
       setColumns((prev) => ({
@@ -329,7 +454,7 @@ export default function HiringManagerView() {
     }
 
     setActiveId(null);
-  };
+  }, [columns, findContainer]);
 
   const togglePin = () => {
     setIsPinned((p) => !p);
@@ -339,127 +464,89 @@ export default function HiringManagerView() {
   // Basic renderPanel (placeholder content for now)
   // Render individual panels
   const renderDetailsPanel = () => {
+    if (!hiringManager) return null;
     return (
       <PanelWithHeader title="Details" onEdit={() => handleEditPanel("details")}>
         <div className="space-y-0 border border-gray-200 rounded">
-          {visibleFields.details.includes("status") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
-              <div className="flex-1 p-2">{hiringManager.status}</div>
+          {visibleFields.details.map((key) => (
+            <div key={key} className="capitalize flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{getHeaderFieldLabel(key)}:</div>
+              <div className="flex-1 p-2 text-sm">
+                {key === "email" || key === "email2" ? (
+                  <a href={`mailto:${getHeaderFieldValue(key)}`} className="text-blue-600 hover:underline">{getHeaderFieldValue(key)}</a>
+                ) : key === "linkedinUrl" && getHeaderFieldValue(key) !== "-" ? (
+                  <a href={getHeaderFieldValue(key).startsWith('http') ? getHeaderFieldValue(key) : `https://${getHeaderFieldValue(key)}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{getHeaderFieldValue(key)}</a>
+                ) : (
+                  getHeaderFieldValue(key)
+                )}
+              </div>
             </div>
-          )}
-          {visibleFields.details.includes("organization") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Organization:</div>
-              <div className="flex-1 p-2 text-blue-600">{hiringManager.organization.name}</div>
-            </div>
-          )}
-          {visibleFields.details.includes("department") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Department:</div>
-              <div className="flex-1 p-2">{hiringManager.department}</div>
-            </div>
-          )}
-          {visibleFields.details.includes("email") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Email:</div>
-              <div className="flex-1 p-2 text-blue-600">{hiringManager.email}</div>
-            </div>
-          )}
-          {visibleFields.details.includes("email2") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Secondary Email:</div>
-              <div className="flex-1 p-2 text-blue-600">{hiringManager.email2}</div>
-            </div>
-          )}
-          {visibleFields.details.includes("mobilePhone") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Mobile:</div>
-              <div className="flex-1 p-2">{hiringManager.mobilePhone}</div>
-            </div>
-          )}
-          {visibleFields.details.includes("directLine") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Direct Line:</div>
-              <div className="flex-1 p-2">{hiringManager.directLine}</div>
-            </div>
-          )}
-          {visibleFields.details.includes("reportsTo") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Reports To:</div>
-              <div className="flex-1 p-2">{hiringManager.reportsTo}</div>
-            </div>
-          )}
-          {visibleFields.details.includes("linkedinUrl") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">LinkedIn:</div>
-              <div className="flex-1 p-2 text-blue-600">{hiringManager.linkedinUrl}</div>
-            </div>
-          )}
-          {visibleFields.details.includes("dateAdded") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
-              <div className="flex-1 p-2">{hiringManager.dateAdded}</div>
-            </div>
-          )}
-          {visibleFields.details.includes("owner") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Job Owner:</div>
-              <div className="flex-1 p-2">{hiringManager.owner}</div>
-            </div>
-          )}
-          {visibleFields.details.includes("secondaryOwners") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Secondary Owners:</div>
-              <div className="flex-1 p-2">{hiringManager.secondaryOwners}</div>
-            </div>
-          )}
-          {visibleFields.details.includes("address") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Address:</div>
-              <div className="flex-1 p-2">{hiringManager.address}</div>
-            </div>
-          )}
-          {/* Custom fields handling would go here */}
+          ))}
+
+          {/* Custom Fields that are not explicitly in visibleFields but exist on hiringManager */}
+          {/* {hiringManager.customFields && Object.keys(hiringManager.customFields).map(key => {
+            if (visibleFields.details.includes(key) || visibleFields.details.includes(`custom:${key}`)) return null;
+            return (
+              <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{getHeaderFieldLabel(key)}:</div>
+                <div className="flex-1 p-2 text-sm">{getHeaderFieldValue(key)}</div>
+              </div>
+            );
+          })} */}
         </div>
       </PanelWithHeader>
     );
   };
 
   const renderOrganizationPanel = () => {
+    if (!hiringManager?.organization) return null;
     return (
       <PanelWithHeader title="Organization Details" onEdit={() => handleEditPanel("organizationDetails")}>
         <div className="space-y-0 border border-gray-200 rounded">
-          {visibleFields.organizationDetails.includes("status") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
-              <div className="flex-1 p-2">{hiringManager.organization.status}</div>
-            </div>
-          )}
-          {visibleFields.organizationDetails.includes("organizationName") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Organization Name:</div>
-              <div className="flex-1 p-2 text-blue-600">{hiringManager.organization.name}</div>
-            </div>
-          )}
-          {visibleFields.organizationDetails.includes("organizationPhone") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Phone:</div>
-              <div className="flex-1 p-2">{hiringManager.organization.phone}</div>
-            </div>
-          )}
-          {visibleFields.organizationDetails.includes("url") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Website:</div>
-              <div className="flex-1 p-2 text-blue-600">{hiringManager.organization.url}</div>
-            </div>
-          )}
-          {visibleFields.organizationDetails.includes("dateAdded") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
-              <div className="flex-1 p-2">{hiringManager.dateAdded}</div> // Using HM date for simplicity or fetch org date
-            </div>
-          )}
+          {visibleFields.organizationDetails.map((key) => {
+            let label = "";
+            let value = "";
+            let isLink = false;
+
+            switch (key) {
+              case "status":
+                label = "Status";
+                value = hiringManager.organization.status;
+                break;
+              case "organizationName":
+                label = "Organization Name";
+                value = hiringManager.organization.name;
+                break;
+              case "organizationPhone":
+                label = "Phone";
+                value = hiringManager.organization.phone;
+                break;
+              case "url":
+                label = "Website";
+                value = hiringManager.organization.url;
+                isLink = true;
+                break;
+              case "dateAdded":
+                label = "Date Added";
+                value = hiringManager.organization.dateAdded;
+                break;
+              default:
+                return null;
+            }
+
+            return (
+              <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+                <div className="flex-1 p-2 text-sm">
+                  {isLink && value !== "-" ? (
+                    <a href={value.startsWith('http') ? value : `https://${value}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{value}</a>
+                  ) : (
+                    value || "-"
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </PanelWithHeader>
     );
@@ -500,30 +587,30 @@ export default function HiringManagerView() {
     );
   };
 
-  const renderPanel = (panelId: string) => {
+  const renderPanel = useCallback((panelId: string, isOverlay = false) => {
     if (panelId === "details") {
       return (
-        <SortablePanel key={panelId} id={panelId}>
+        <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
           {renderDetailsPanel()}
         </SortablePanel>
       );
     }
     if (panelId === "organizationDetails") {
       return (
-        <SortablePanel key={panelId} id={panelId}>
+        <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
           {renderOrganizationPanel()}
         </SortablePanel>
       );
     }
     if (panelId === "recentNotes") {
       return (
-        <SortablePanel key={panelId} id={panelId}>
+        <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
           {renderRecentNotesPanel()}
         </SortablePanel>
       );
     }
     return null;
-  };
+  }, [hiringManager, visibleFields, notes, availableFields]);
 
   // =====================
   // HEADER FIELDS (Top Row)
@@ -555,18 +642,28 @@ export default function HiringManagerView() {
       { key: "address", label: "Address" },
     ];
 
-    const apiCustom = (availableFields || []).map((f: any) => {
-      const stableKey = f.field_key || f.field_name || f.api_name || f.id;
+    const apiCustom = (availableFields.filter(f => f.is_hidden === false) || []).map((f: any) => {
+      const stableKey = f.field_key || f.api_name || f.field_name || f.id;
       return {
         key: `custom:${stableKey}`,
         label: f.field_label || f.field_name || String(stableKey),
       };
     });
 
-    const hmCustom = Object.keys(hiringManager?.customFields || {}).map((k) => ({
-      key: `custom:${k}`,
-      label: k,
-    }));
+    console.log("API Custom", apiCustom);
+
+    const hmCustom = Object.keys(hiringManager?.customFields || {}).map((k) => {
+      const found = (availableFields.filter(f => f.is_hidden === false) || []).find((f: any) => {
+        const fk = f.field_key || f.api_name || f.field_name || f.id;
+        return String(fk) === k;
+      });
+      return {
+        key: `custom:${k}`,
+        label: found?.field_label || found?.field_name || k,
+      };
+    });
+
+    console.log("HM Custom", hmCustom)
 
     const merged = [...standard, ...apiCustom, ...hmCustom];
     const seen = new Set<string>();
@@ -580,29 +677,75 @@ export default function HiringManagerView() {
   const headerFieldCatalog = buildHeaderFieldCatalog();
 
   const getHeaderFieldLabel = (key: string) => {
-    const found = headerFieldCatalog.find((f) => f.key === key);
+    const found = headerFieldCatalog.find((f) => f.key === key || f.key === `custom:${key}`);
+    console.log("Found", found);
     return found?.label || key;
   };
 
   const getHeaderFieldValue = (key: string) => {
     if (!hiringManager) return "-";
+
+    // Handle custom fields with prefix
+    const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+
+    console.log("Raw Key", rawKey);
+
+    // Helper to get value from custom fields by key or label
+    const getCustomValue = (k: string) => {
+      // 1. Try direct key lookup
+      if (hiringManager.customFields?.[k] !== undefined && hiringManager.customFields?.[k] !== null && String(hiringManager.customFields?.[k]).trim() !== "") {
+        return String(hiringManager.customFields?.[k]);
+      }
+
+      // 2. Try lookup by label/field_name from availableFields
+      const fieldDef = (availableFields || []).find((f: any) =>
+        (f.field_key || f.api_name || f.field_name || f.id) === k
+      );
+
+      if (fieldDef) {
+        // Try field_label
+        if (fieldDef.field_label) {
+          const val = hiringManager.customFields?.[fieldDef.field_label];
+          if (val !== undefined && val !== null && String(val).trim() !== "") {
+            return String(val);
+          }
+        }
+        // Try field_name
+        if (fieldDef.field_name) {
+          const val = hiringManager.customFields?.[fieldDef.field_name];
+          if (val !== undefined && val !== null && String(val).trim() !== "") {
+            return String(val);
+          }
+        }
+      }
+
+      return null;
+    };
+
+    // Check customFields first if it's explicitly a custom key
     if (key.startsWith("custom:")) {
-      const rawKey = key.replace("custom:", "");
-      const val = hiringManager.customFields?.[rawKey];
-      return val === undefined || val === null || val === "" ? "-" : String(val);
+      const val = getCustomValue(rawKey);
+      return val === null ? "-" : val;
     }
-    switch (key) {
-      case "phone": return hiringManager.phone || "(Not provided)";
-      case "email": return hiringManager.email || "(Not provided)";
-      case "mobilePhone": return hiringManager.mobilePhone || "(Not provided)";
-      case "directLine": return hiringManager.directLine || "(Not provided)";
-      case "department": return hiringManager.department || "-";
-      case "organizationName": return hiringManager.organization?.name || "-";
-      case "title": return hiringManager.title || "-";
-      case "linkedinUrl": return hiringManager.linkedinUrl || "-";
-      case "address": return hiringManager.address || "-";
-      default: return "-";
+
+    // Special case for organization object
+    if (rawKey === "organization" || rawKey === "organizationName") {
+      return hiringManager.organization?.name || "-";
     }
+
+    // Try standard field on the object itself
+    const std = (hiringManager as any)[rawKey];
+    if (std !== undefined && std !== null && String(std).trim() !== "") {
+      return String(std);
+    }
+
+    // Fallback to customFields without prefix (for fields in details panel without custom: prefix)
+    const custom = getCustomValue(rawKey);
+    if (custom !== null) {
+      return custom;
+    }
+
+    return "-";
   };
 
 
@@ -638,6 +781,28 @@ export default function HiringManagerView() {
   const [existingTearsheets, setExistingTearsheets] = useState<any[]>([]);
   const [isLoadingTearsheets, setIsLoadingTearsheets] = useState(false);
   const [isSavingTearsheet, setIsSavingTearsheet] = useState(false);
+  const [tearsheetSearchQuery, setTearsheetSearchQuery] = useState("");
+  const [showTearsheetDropdown, setShowTearsheetDropdown] = useState(false);
+  const tearsheetSearchRef = useRef<HTMLDivElement>(null);
+
+  // Click outside to close tearsheet search dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (tearsheetSearchRef.current && !tearsheetSearchRef.current.contains(event.target as Node)) {
+        setShowTearsheetDropdown(false);
+      }
+    };
+
+    if (showTearsheetDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    } else {
+      document.removeEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showTearsheetDropdown]);
 
   // Transfer modal state
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -681,12 +846,11 @@ export default function HiringManagerView() {
   const [appointmentUsers, setAppointmentUsers] = useState<any[]>([]);
   const [isLoadingAppointmentUsers, setIsLoadingAppointmentUsers] = useState(false);
 
-
-
   // Fetch hiring manager when component mounts
   useEffect(() => {
     if (hiringManagerId) {
       fetchHiringManager(hiringManagerId);
+      fetchDocuments(hiringManagerId);
     }
   }, [hiringManagerId]);
 
@@ -716,6 +880,13 @@ export default function HiringManagerView() {
       fetchAppointmentUsers();
     }
   }, [showAppointmentModal]);
+
+  // Fetch tearsheets when modal is shown
+  useEffect(() => {
+    if (showAddTearsheetModal) {
+      fetchExistingTearsheets();
+    }
+  }, [showAddTearsheetModal]);
 
   const fetchAvailableFields = async () => {
     setIsLoadingFields(true);
@@ -766,6 +937,8 @@ export default function HiringManagerView() {
         (f: any) => f.field_name || f.field_key || f.id
       );
 
+      console.log("All Custom Keys", allCustomKeys)
+
       setVisibleFields((prev) => ({
         ...prev,
         details: Array.from(new Set([...prev.details, ...allCustomKeys])),
@@ -776,7 +949,6 @@ export default function HiringManagerView() {
       setIsLoadingFields(false);
     }
   };
-
 
 
   // Toggle field visibility
@@ -851,6 +1023,7 @@ export default function HiringManagerView() {
 
       // Format the hiring manager data for display
       const hm = data.hiringManager;
+      console.log("Hiring manager data:", hm);
       const formattedHiringManager = {
         id: hm.id || "Unknown ID",
         firstName: hm.first_name || "",
@@ -884,6 +1057,7 @@ export default function HiringManagerView() {
             ? new Date(hm.created_at).toLocaleDateString()
             : "Unknown",
         address: hm.address || "No address provided",
+        customFields: hm.custom_fields || {},
       };
 
       console.log("Formatted hiring manager data:", formattedHiringManager);
@@ -1560,14 +1734,269 @@ export default function HiringManagerView() {
 
       // Redirect to Summary page
       setActiveTab("summary");
+      setShowAddNote(false);
+      setNoteFormErrors({});
+      alert("Note added successfully");
     } catch (err) {
       console.error("Error adding note:", err);
-      alert(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while adding a note"
-      );
+      alert(err instanceof Error ? err.message : "An error occurred while adding a note");
     }
+  };
+
+  // Documents functions
+
+  // Fetch documents for the hiring manager
+  const fetchDocuments = async (id: string) => {
+    setIsLoadingDocuments(true);
+    setDocumentError(null);
+    try {
+      const response = await fetch(`/api/hiring-managers/${id}/documents`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setDocuments(data.documents || []);
+      } else {
+        setDocumentError("Failed to fetch documents");
+      }
+    } catch (err) {
+      console.error("Error fetching documents:", err);
+      setDocumentError("An error occurred while fetching documents");
+    } finally {
+      setIsLoadingDocuments(false);
+    }
+  };
+
+  // Handle manual file selection
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      const fileArray = Array.from(files);
+      setPendingFiles(fileArray);
+      // If single file, pre-fill modal with its name
+      if (fileArray.length === 1) {
+        setFileDetailsName(fileArray[0].name.split(".")[0]);
+        setFileDetailsType("General");
+      }
+      setShowFileDetailsModal(true);
+    }
+  };
+
+  // Drag and drop handlers
+  const handleDocDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDocDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDocDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDocDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const fileArray = Array.from(files);
+      setPendingFiles(fileArray);
+      // Pre-fill modal
+      if (fileArray.length === 1) {
+        setFileDetailsName(fileArray[0].name.split(".")[0]);
+        setFileDetailsType("General");
+      }
+      setShowFileDetailsModal(true);
+    }
+  };
+
+  // Confirm file details and start upload
+  const handleConfirmFileDetails = async () => {
+    if (pendingFiles.length === 0 || !hiringManagerId) return;
+
+    setShowFileDetailsModal(false);
+    const filesToUpload = [...pendingFiles];
+    setPendingFiles([]);
+
+    setUploadErrors({});
+    const newUploadProgress = { ...uploadProgress };
+
+    for (const file of filesToUpload) {
+      // Validate file size (10MB)
+      if (file.size > 10 * 1024 * 1024) {
+        setUploadErrors(prev => ({
+          ...prev,
+          [file.name]: "File size exceeds 10MB limit"
+        }));
+        continue;
+      }
+
+      // Start upload
+      newUploadProgress[file.name] = 0;
+      setUploadProgress({ ...newUploadProgress });
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("document_name", filesToUpload.length === 1 ? fileDetailsName : file.name.split(".")[0]);
+        formData.append("document_type", filesToUpload.length === 1 ? fileDetailsType : "General");
+
+        // Simulate progress for UI feedback since fetch doesn't support it natively without XHR
+        const progressInterval = setInterval(() => {
+          setUploadProgress(prev => {
+            const current = prev[file.name] || 0;
+            if (current >= 90) {
+              clearInterval(progressInterval);
+              return prev;
+            }
+            return { ...prev, [file.name]: current + 10 };
+          });
+        }, 200);
+
+        const response = await fetch(`/api/hiring-managers/${hiringManagerId}/documents/upload`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+          body: formData,
+        });
+
+        clearInterval(progressInterval);
+
+        if (response.ok) {
+          setUploadProgress(prev => {
+            const next = { ...prev };
+            delete next[file.name];
+            return next;
+          });
+          // Refresh document list
+          fetchDocuments(hiringManagerId);
+        } else {
+          const data = await response.json();
+          setUploadErrors(prev => ({
+            ...prev,
+            [file.name]: data.message || "Upload failed"
+          }));
+          setUploadProgress(prev => {
+            const next = { ...prev };
+            delete next[file.name];
+            return next;
+          });
+        }
+      } catch (err) {
+        console.error(`Error uploading ${file.name}:`, err);
+        setUploadErrors(prev => ({
+          ...prev,
+          [file.name]: "An error occurred during upload"
+        }));
+        setUploadProgress(prev => {
+          const next = { ...prev };
+          delete next[file.name];
+          return next;
+        });
+      }
+    }
+  };
+
+  // Add a text-based document
+  const handleAddDocument = async () => {
+    if (!hiringManagerId || !newDocumentName.trim()) return;
+
+    try {
+      const response = await fetch(`/api/hiring-managers/${hiringManagerId}/documents`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+        body: JSON.stringify({
+          document_name: newDocumentName,
+          document_type: newDocumentType,
+          content: newDocumentContent,
+        }),
+      });
+
+      if (response.ok) {
+        setShowAddDocument(false);
+        setNewDocumentName("");
+        setNewDocumentType("General");
+        setNewDocumentContent("");
+        fetchDocuments(hiringManagerId);
+      } else {
+        const data = await response.json();
+        alert(data.message || "Failed to add document");
+      }
+    } catch (err) {
+      console.error("Error adding document:", err);
+      alert("An error occurred while adding the document");
+    }
+  };
+
+  // Delete a document
+  const handleDeleteDocument = async (documentId: string) => {
+    if (!confirm("Are you sure you want to delete this document?")) return;
+
+    try {
+      const response = await fetch(`/api/hiring-managers/${hiringManagerId}/documents/${documentId}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      if (response.ok) {
+        fetchDocuments(hiringManagerId!);
+      } else {
+        const data = await response.json();
+        alert(data.message || "Failed to delete document");
+      }
+    } catch (err) {
+      console.error("Error deleting document:", err);
+      alert("An error occurred while deleting the document");
+    }
+  };
+
+  // Download a document
+  const handleDownloadDocument = async (doc: any) => {
+    if (!doc.file_path) {
+      // For text documents, we could generate a file to download
+      const element = document.createElement("a");
+      const file = new Blob([doc.content || ""], { type: "text/plain" });
+      element.href = URL.createObjectURL(file);
+      element.download = `${doc.document_name}.txt`;
+      document.body.appendChild(element);
+      element.click();
+      document.body.removeChild(element);
+      return;
+    }
+
+    // For uploaded files, use the file_path
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+    window.open(`${apiUrl}/${doc.file_path}`, "_blank");
   };
 
   // Close add note modal
@@ -1620,11 +2049,8 @@ export default function HiringManagerView() {
 
       if (response.ok) {
         const data = await response.json();
-        // Filter to only active/existing tearsheets
-        const activeTearsheets = (data.tearsheets || []).filter(
-          (ts: any) => ts.visibility === "Existing" || !ts.visibility
-        );
-        setExistingTearsheets(activeTearsheets);
+        // Show all tearsheets from the backend
+        setExistingTearsheets(data.tearsheets || []);
       } else {
         console.error("Failed to fetch tearsheets:", response.statusText);
         setExistingTearsheets([]);
@@ -1635,6 +2061,22 @@ export default function HiringManagerView() {
     } finally {
       setIsLoadingTearsheets(false);
     }
+  };
+
+  // Filtered tearsheets for search - show all if no query but dropdown is open
+  const filteredTearsheets = tearsheetSearchQuery.trim() === ""
+    ? existingTearsheets
+    : existingTearsheets.filter((ts) =>
+      ts.name.toLowerCase().includes(tearsheetSearchQuery.toLowerCase())
+    );
+
+  const handleTearsheetSelect = (tearsheet: any) => {
+    setTearsheetForm((prev) => ({
+      ...prev,
+      selectedTearsheetId: tearsheet.id.toString(),
+    }));
+    setTearsheetSearchQuery(tearsheet.name);
+    setShowTearsheetDropdown(false);
   };
 
   // Handle tearsheet submission
@@ -1679,6 +2121,7 @@ export default function HiringManagerView() {
         alert("Tearsheet created successfully!");
         setShowAddTearsheetModal(false);
         setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
+        setTearsheetSearchQuery("");
       } catch (err) {
         console.error("Error creating tearsheet:", err);
         alert(
@@ -1708,7 +2151,6 @@ export default function HiringManagerView() {
         }
 
         // Associate hiring manager with tearsheet
-        // Note: This assumes the backend supports hiring_manager_id in tearsheet association
         const response = await fetch(`/api/tearsheets/${tearsheetForm.selectedTearsheetId}/associate`, {
           method: "POST",
           headers: {
@@ -1724,21 +2166,23 @@ export default function HiringManagerView() {
         });
 
         if (!response.ok) {
-          // If associate endpoint doesn't exist, try alternative approach
-          // For now, show success message as the association might be handled differently
-          alert(`Hiring Manager has been associated with tearsheet "${selectedTearsheet.name}".`);
-        } else {
-          alert(`Hiring Manager has been associated with tearsheet "${selectedTearsheet.name}".`);
+          const errorData = await response
+            .json()
+            .catch(() => ({ message: "Failed to associate tearsheet" }));
+          throw new Error(errorData.error || errorData.message || "Failed to associate tearsheet");
         }
 
+        alert(`Hiring Manager has been associated with tearsheet "${selectedTearsheet.name}".`);
         setShowAddTearsheetModal(false);
         setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
+        setTearsheetSearchQuery("");
       } catch (err) {
         console.error("Error associating tearsheet:", err);
-        // Even if API fails, show success as association might be handled on backend
-        alert(`Hiring Manager association with tearsheet has been processed.`);
-        setShowAddTearsheetModal(false);
-        setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
+        alert(
+          err instanceof Error
+            ? err.message
+            : "Failed to associate tearsheet. Please try again."
+        );
       } finally {
         setIsSavingTearsheet(false);
       }
@@ -2283,9 +2727,9 @@ export default function HiringManagerView() {
     },
     { label: "Transfer", action: () => handleActionSelected("transfer") },
     { label: "Delete", action: () => handleActionSelected("delete") },
-    // { label: 'Edit', action: () => handleActionSelected('edit') },
-    // { label: 'Clone', action: () => handleActionSelected('clone') },
-    // { label: 'Export', action: () => handleActionSelected('export') },
+    // {label: 'Edit', action: () => handleActionSelected('edit') },
+    // {label: 'Clone', action: () => handleActionSelected('clone') },
+    // {label: 'Export', action: () => handleActionSelected('export') },
   ];
 
   // Tabs from the interface
@@ -2308,6 +2752,281 @@ export default function HiringManagerView() {
     { id: "interviews", label: "Interviews" },
     { id: "placements", label: "Placements" },
   ];
+
+  // Render documents tab content
+  const renderDocsTab = () => {
+    return (
+      <div className="bg-white p-4 rounded shadow-sm">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Hiring Manager Documents</h2>
+          <div className="flex gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
+            >
+              Upload Files
+            </button>
+            <button
+              onClick={() => setShowAddDocument(true)}
+              className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+            >
+              Add Text Document
+            </button>
+          </div>
+        </div>
+
+        {/* Hidden file input */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          onChange={handleFileSelect}
+          className="hidden"
+          accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
+        />
+
+        {/* Drag and Drop Zone */}
+        <div
+          onDragEnter={handleDocDragEnter}
+          onDragOver={handleDocDragOver}
+          onDragLeave={handleDocDragLeave}
+          onDrop={handleDocDrop}
+          className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 transition-colors ${isDragging
+            ? "border-blue-500 bg-blue-50"
+            : "border-gray-300 bg-gray-50 hover:border-gray-400"
+            }`}
+        >
+          <div className="flex flex-col items-center">
+            <svg
+              className="w-12 h-12 text-gray-400 mb-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+              />
+            </svg>
+            <p className="text-gray-600 mb-2">
+              Drag and drop files here, or{" "}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="text-blue-500 hover:underline"
+              >
+                browse
+              </button>
+            </p>
+            <p className="text-sm text-gray-500">
+              Supported formats: PDF, DOC, DOCX, TXT, JPG, PNG, GIF (Max 10MB per file)
+            </p>
+          </div>
+        </div>
+
+        {/* Upload Progress */}
+        {Object.keys(uploadProgress).length > 0 && (
+          <div className="mb-4 space-y-2">
+            {Object.entries(uploadProgress).map(([fileName, progress]) => (
+              <div key={fileName} className="bg-gray-100 rounded p-2">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-sm font-medium">{fileName}</span>
+                  <span className="text-sm text-gray-600">{Math.round(progress)}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-blue-500 h-2 rounded-full transition-all"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Upload Errors */}
+        {Object.keys(uploadErrors).length > 0 && (
+          <div className="mb-4 space-y-2">
+            {Object.entries(uploadErrors).map(([fileName, error]) => (
+              <div key={fileName} className="bg-red-50 border border-red-200 rounded p-2">
+                <p className="text-sm text-red-800">
+                  <strong>{fileName}:</strong> {error}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add Document Form */}
+        {showAddDocument && (
+          <div className="mb-6 p-4 bg-gray-50 rounded border">
+            <h3 className="font-medium mb-2">Add New Document</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Document Name *
+                </label>
+                <input
+                  type="text"
+                  value={newDocumentName}
+                  onChange={(e) => setNewDocumentName(e.target.value)}
+                  placeholder="Enter document name"
+                  className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Document Type
+                </label>
+                <select
+                  value={newDocumentType}
+                  onChange={(e) => setNewDocumentType(e.target.value)}
+                  className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="General">General</option>
+                  <option value="Contract">Contract</option>
+                  <option value="Agreement">Agreement</option>
+                  <option value="Policy">Policy</option>
+                  <option value="Welcome">Welcome</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Content
+                </label>
+                <textarea
+                  value={newDocumentContent}
+                  onChange={(e) => setNewDocumentContent(e.target.value)}
+                  placeholder="Enter document content..."
+                  className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows={6}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end space-x-2 mt-3">
+              <button
+                onClick={() => setShowAddDocument(false)}
+                className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddDocument}
+                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                disabled={!newDocumentName.trim()}
+              >
+                Save Document
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Documents List */}
+        {isLoadingDocuments ? (
+          <div className="flex justify-center py-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        ) : documentError ? (
+          <div className="text-red-500 py-2">{documentError}</div>
+        ) : documents.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-100 border-b">
+                  <th className="text-left p-3 font-medium">Actions</th>
+                  <th className="text-left p-3 font-medium">
+                    Document Name
+                  </th>
+                  <th className="text-left p-3 font-medium">Type</th>
+                  <th className="text-left p-3 font-medium">Created By</th>
+                  <th className="text-left p-3 font-medium">Created At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {documents.map((doc) => (
+                  <tr key={doc.id} className="border-b hover:bg-gray-50">
+                    <td className="p-3">
+                      <ActionDropdown
+                        label="Actions"
+                        options={[
+                          {
+                            label: "View",
+                            action: () => setSelectedDocument(doc),
+                          },
+                          {
+                            label: "Download",
+                            action: () => handleDownloadDocument(doc),
+                          },
+                          {
+                            label: "Delete",
+                            action: () => handleDeleteDocument(doc.id),
+                          },
+                        ]}
+                      />
+                    </td>
+                    <td className="p-3">
+                      <button
+                        onClick={() => setSelectedDocument(doc)}
+                        className="text-blue-600 hover:underline font-medium"
+                      >
+                        {doc.document_name}
+                      </button>
+                    </td>
+                    <td className="p-3">{doc.document_type}</td>
+                    <td className="p-3">
+                      {doc.created_by_name || "System"}
+                    </td>
+                    <td className="p-3">
+                      {new Date(doc.created_at).toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-gray-500 italic">No documents available</p>
+        )}
+
+        {/* Document Viewer Modal */}
+        {selectedDocument && (
+          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+              <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                <div>
+                  <h2 className="text-lg font-semibold">
+                    {selectedDocument.document_name}
+                  </h2>
+                  <p className="text-sm text-gray-600">
+                    Type: {selectedDocument.document_type}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedDocument(null)}
+                  className="p-1 rounded hover:bg-gray-200"
+                >
+                  <span className="text-2xl font-bold">×</span>
+                </button>
+              </div>
+              <div className="p-6">
+                <div className="mb-4">
+                  <p className="text-sm text-gray-600">
+                    Created by{" "}
+                    {selectedDocument.created_by_name || "System"} on{" "}
+                    {new Date(selectedDocument.created_at).toLocaleString()}
+                  </p>
+                </div>
+                <div className="bg-gray-50 p-4 rounded border whitespace-pre-wrap">
+                  {selectedDocument.content || "No content available"}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   // Render notes tab content
   const renderNotesTab = () => (
@@ -2667,44 +3386,50 @@ export default function HiringManagerView() {
             <div className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"} border-l border-gray-300`}>
               <div className="flex flex-col h-full">
                 <div className="flex items-center justify-between p-2 border-b bg-gray-50">
-                  <h3 className="font-semibold">Hiring Manager Summary</h3>
+                  <h3 className="font-semibold text-sm">Hiring Manager Summary</h3>
                   <div className="flex items-center gap-1">
                     <button
                       onClick={() => setIsCollapsed(!isCollapsed)}
                       className="p-1 hover:bg-gray-200 rounded"
+                      title={isCollapsed ? "Expand" : "Collapse"}
                     >
                       {isCollapsed ? "▶" : "◀"}
                     </button>
                     <button
                       onClick={togglePin}
                       className="p-1 hover:bg-gray-200 rounded"
+                      title="Unpin panel"
                     >
                       <FiUnlock className="w-4 h-4 text-blue-600" />
                     </button>
                   </div>
                 </div>
                 {!isCollapsed && (
-                  <div className="flex-1 overflow-y-auto p-3">
-                    <DndContext
-                      collisionDetection={closestCenter}
-                      modifiers={[restrictToWindowEdges]}
-                      onDragStart={handleDragStart}
-                      onDragOver={handleDragOver}
-                      onDragEnd={handleDragEnd}
-                    >
-                      <div className="flex flex-col gap-4">
-                        <SortableContext id="left" items={columns.left} strategy={verticalListSortingStrategy}>
-                          <div className="flex flex-col gap-4">
-                            {columns.left.map(renderPanel)}
-                          </div>
-                        </SortableContext>
-                        <SortableContext id="right" items={columns.right} strategy={verticalListSortingStrategy}>
-                          <div className="flex flex-col gap-4">
-                            {columns.right.map(renderPanel)}
-                          </div>
-                        </SortableContext>
-                      </div>
-                    </DndContext>
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div id="printable-summary">
+                      <DndContext
+                        id="pinned-summary-dnd"
+                        sensors={sensors}
+                        collisionDetection={closestCorners}
+                        measuring={measuringConfig}
+                        modifiers={[restrictToWindowEdges]}
+                        onDragStart={handlePanelDragStart}
+                        onDragOver={handlePanelDragOver}
+                        onDragEnd={handlePanelDragEnd}
+                      >
+                        <div className="flex flex-col gap-4">
+                          <DroppableContainer id="left" items={columns.left}>
+                            {columns.left.map((id) => renderPanel(id))}
+                          </DroppableContainer>
+                          <DroppableContainer id="right" items={columns.right}>
+                            {columns.right.map((id) => renderPanel(id))}
+                          </DroppableContainer>
+                        </div>
+                        <DragOverlay dropAnimation={dropAnimationConfig}>
+                          {activeId ? renderPanel(activeId, true) : null}
+                        </DragOverlay>
+                      </DndContext>
+                    </div>
                   </div>
                 )}
               </div>
@@ -2713,29 +3438,34 @@ export default function HiringManagerView() {
 
           {/* Regular summary (not pinned) */}
           {!isPinned && (
-            <DndContext
-              collisionDetection={closestCenter}
-              modifiers={[restrictToWindowEdges]}
-              onDragStart={handleDragStart}
-              onDragOver={handleDragOver}
-              onDragEnd={handleDragEnd}
-            >
-              <div className="flex flex-col lg:flex-row gap-4 w-full items-start">
-                {/* Left Column */}
-                <SortableContext id="left" items={columns.left} strategy={verticalListSortingStrategy}>
-                  <div className="flex flex-col gap-4 w-full lg:w-1/2 min-h-[100px]">
-                    {columns.left.map(renderPanel)}
+            <div id="printable-summary" className="p-4">
+              <DndContext
+                id="regular-summary-dnd"
+                sensors={sensors}
+                collisionDetection={closestCorners}
+                measuring={measuringConfig}
+                modifiers={[restrictToWindowEdges]}
+                onDragStart={handlePanelDragStart}
+                onDragOver={handlePanelDragOver}
+                onDragEnd={handlePanelDragEnd}
+              >
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <DroppableContainer id="left" items={columns.left}>
+                      {columns.left.map((id) => renderPanel(id))}
+                    </DroppableContainer>
                   </div>
-                </SortableContext>
-
-                {/* Right Column */}
-                <SortableContext id="right" items={columns.right} strategy={verticalListSortingStrategy}>
-                  <div className="flex flex-col gap-4 w-full lg:w-1/2 min-h-[100px]">
-                    {columns.right.map(renderPanel)}
+                  <div>
+                    <DroppableContainer id="right" items={columns.right}>
+                      {columns.right.map((id) => renderPanel(id))}
+                    </DroppableContainer>
                   </div>
-                </SortableContext>
-              </div>
-            </DndContext>
+                </div>
+                <DragOverlay dropAnimation={dropAnimationConfig}>
+                  {activeId ? renderPanel(activeId, true) : null}
+                </DragOverlay>
+              </DndContext>
+            </div>
           )}
         </div>
       )}
@@ -3080,12 +3810,7 @@ export default function HiringManagerView() {
 
           {/* Placeholder for other tabs */}
           {activeTab === "docs" && (
-            <div className="col-span-2">
-              <div className="bg-white p-4 rounded shadow-sm">
-                <h2 className="text-lg font-semibold mb-4">Documents</h2>
-                <p className="text-gray-500 italic">No documents available</p>
-              </div>
-            </div>
+            <div className="col-span-2">{renderDocsTab()}</div>
           )}
 
           {activeTab === "active-applicants" && (
@@ -3128,52 +3853,132 @@ export default function HiringManagerView() {
             </div>
           )}
         </div>
-      </div>
+      </div >
 
       {/* Edit Fields Modal */}
-      {editingPanel && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">
-                Edit Fields - {editingPanel}
-              </h2>
-              <button
-                onClick={handleCloseEditModal}
-                className="p-1 rounded hover:bg-gray-200"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
-            <div className="p-6">
-              <div className="mb-4">
-                <h3 className="font-medium mb-3">
-                  Available Fields from Modify Page:
-                </h3>
-                <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
-                  {isLoadingFields ? (
-                    <div className="text-center py-4 text-gray-500">
-                      Loading fields...
-                    </div>
-                  ) : (() => {
-                    // Filter out hidden fields - only show non-hidden fields
-                    const visibleAvailableFields = availableFields.filter((field) => {
-                      // Check both is_hidden and hidden properties
-                      const isHidden = field.is_hidden === true || field.hidden === true || field.isHidden === true;
-                      // Only include fields that are NOT hidden
-                      return !isHidden;
-                    });
+      {
+        editingPanel && (
+          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+              <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                <h2 className="text-lg font-semibold">
+                  Edit Fields - {editingPanel}
+                </h2>
+                <button
+                  onClick={handleCloseEditModal}
+                  className="p-1 rounded hover:bg-gray-200"
+                >
+                  <span className="text-2xl font-bold">×</span>
+                </button>
+              </div>
+              <div className="p-6">
+                <div className="mb-4">
+                  <h3 className="font-medium mb-3">
+                    Available Fields from Modify Page:
+                  </h3>
+                  <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                    {isLoadingFields ? (
+                      <div className="text-center py-4 text-gray-500">
+                        Loading fields...
+                      </div>
+                    ) : (() => {
+                      // Filter out hidden fields - only show non-hidden fields
+                      const visibleAvailableFields = availableFields.filter((field) => {
+                        // Check both is_hidden and hidden properties
+                        const isHidden = field.is_hidden === true || field.hidden === true || field.isHidden === true;
+                        // Only include fields that are NOT hidden
+                        return !isHidden;
+                      });
 
-                    return visibleAvailableFields.length > 0 ? (
-                      visibleAvailableFields.map((field) => {
-                        const fieldKey =
-                          field.field_name || field.field_label || field.id;
+                      return visibleAvailableFields.length > 0 ? (
+                        visibleAvailableFields.map((field) => {
+                          const fieldKey =
+                            field.field_name || field.field_label || field.id;
+                          const isVisible =
+                            visibleFields[editingPanel]?.includes(fieldKey) ||
+                            false;
+                          return (
+                            <div
+                              key={field.id || fieldKey}
+                              className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                            >
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isVisible}
+                                  onChange={() =>
+                                    toggleFieldVisibility(editingPanel, fieldKey)
+                                  }
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <label className="text-sm text-gray-700">
+                                  {field.field_label ||
+                                    field.field_name ||
+                                    fieldKey}
+                                </label>
+                              </div>
+                              <span className="text-xs text-gray-500">
+                                {field.field_type || "text"}
+                              </span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="text-center py-4 text-gray-500">
+                          <p>No visible fields available</p>
+                          <p className="text-xs mt-1">
+                            Only non-hidden fields from the modify page will appear here
+                          </p>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <h3 className="font-medium mb-3">Standard Fields:</h3>
+                  <div className="space-y-2 border border-gray-200 rounded p-3">
+                    {(() => {
+                      const standardFieldsMap: Record<
+                        string,
+                        Array<{ key: string; label: string }>
+                      > = {
+                        details: [
+                          { key: "status", label: "Status" },
+                          { key: "organization", label: "Organization" },
+                          { key: "department", label: "Department" },
+                          { key: "email", label: "Email" },
+                          { key: "email2", label: "Email 2" },
+                          { key: "mobilePhone", label: "Mobile Phone" },
+                          { key: "directLine", label: "Direct Line" },
+                          { key: "reportsTo", label: "Reports To" },
+                          { key: "linkedinUrl", label: "LinkedIn URL" },
+                          { key: "dateAdded", label: "Date Added" },
+                          { key: "owner", label: "Owner" },
+                          { key: "secondaryOwners", label: "Secondary Owners" },
+                          { key: "address", label: "Address" },
+                        ],
+                        organizationDetails: [
+                          { key: "status", label: "Status" },
+                          { key: "organizationName", label: "Organization Name" },
+                          {
+                            key: "organizationPhone",
+                            label: "Organization Phone",
+                          },
+                          { key: "url", label: "URL" },
+                          { key: "dateAdded", label: "Date Added" },
+                        ],
+                        recentNotes: [{ key: "notes", label: "Notes" }],
+                      };
+
+                      const fields = standardFieldsMap[editingPanel] || [];
+                      return fields.map((field) => {
                         const isVisible =
-                          visibleFields[editingPanel]?.includes(fieldKey) ||
+                          visibleFields[editingPanel]?.includes(field.key) ||
                           false;
                         return (
                           <div
-                            key={field.id || fieldKey}
+                            key={field.key}
                             className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
                           >
                             <div className="flex items-center space-x-2">
@@ -3181,1259 +3986,1263 @@ export default function HiringManagerView() {
                                 type="checkbox"
                                 checked={isVisible}
                                 onChange={() =>
-                                  toggleFieldVisibility(editingPanel, fieldKey)
+                                  toggleFieldVisibility(editingPanel, field.key)
                                 }
                                 className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                               />
                               <label className="text-sm text-gray-700">
-                                {field.field_label ||
-                                  field.field_name ||
-                                  fieldKey}
+                                {field.label}
                               </label>
                             </div>
                             <span className="text-xs text-gray-500">
-                              {field.field_type || "text"}
+                              standard
                             </span>
                           </div>
                         );
-                      })
-                    ) : (
-                      <div className="text-center py-4 text-gray-500">
-                        <p>No visible fields available</p>
-                        <p className="text-xs mt-1">
-                          Only non-hidden fields from the modify page will appear here
-                        </p>
-                      </div>
-                    );
-                  })()}
+                      });
+                    })()}
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-2 pt-4 border-t">
+                  <button
+                    onClick={handleCloseEditModal}
+                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                  >
+                    Close
+                  </button>
                 </div>
               </div>
+            </div>
+          </div>
+        )
+      }
 
-              <div className="mb-4">
-                <h3 className="font-medium mb-3">Standard Fields:</h3>
-                <div className="space-y-2 border border-gray-200 rounded p-3">
-                  {(() => {
-                    const standardFieldsMap: Record<
-                      string,
-                      Array<{ key: string; label: string }>
-                    > = {
-                      details: [
-                        { key: "status", label: "Status" },
-                        { key: "organization", label: "Organization" },
-                        { key: "department", label: "Department" },
-                        { key: "email", label: "Email" },
-                        { key: "email2", label: "Email 2" },
-                        { key: "mobilePhone", label: "Mobile Phone" },
-                        { key: "directLine", label: "Direct Line" },
-                        { key: "reportsTo", label: "Reports To" },
-                        { key: "linkedinUrl", label: "LinkedIn URL" },
-                        { key: "dateAdded", label: "Date Added" },
-                        { key: "owner", label: "Owner" },
-                        { key: "secondaryOwners", label: "Secondary Owners" },
-                        { key: "address", label: "Address" },
-                      ],
-                      organizationDetails: [
-                        { key: "status", label: "Status" },
-                        { key: "organizationName", label: "Organization Name" },
-                        {
-                          key: "organizationPhone",
-                          label: "Organization Phone",
-                        },
-                        { key: "url", label: "URL" },
-                        { key: "dateAdded", label: "Date Added" },
-                      ],
-                      recentNotes: [{ key: "notes", label: "Notes" }],
-                    };
-
-                    const fields = standardFieldsMap[editingPanel] || [];
-                    return fields.map((field) => {
-                      const isVisible =
-                        visibleFields[editingPanel]?.includes(field.key) ||
-                        false;
-                      return (
-                        <div
-                          key={field.key}
-                          className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={isVisible}
-                              onChange={() =>
-                                toggleFieldVisibility(editingPanel, field.key)
-                              }
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            />
-                            <label className="text-sm text-gray-700">
-                              {field.label}
-                            </label>
-                          </div>
-                          <span className="text-xs text-gray-500">
-                            standard
-                          </span>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-4 border-t">
+      {/* Add Appointment Modal */}
+      {
+        showAppointmentModal && (
+          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto py-8">
+            <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+              <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                <h2 className="text-lg font-semibold">Create Calendar Appointment</h2>
                 <button
-                  onClick={handleCloseEditModal}
-                  className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                  onClick={() => {
+                    setShowAppointmentModal(false);
+                    setAppointmentForm({
+                      date: "",
+                      time: "",
+                      type: "",
+                      description: "",
+                      location: "",
+                      duration: 30,
+                      attendees: [],
+                      sendInvites: true,
+                    });
+                  }}
+                  className="p-1 rounded hover:bg-gray-200"
                 >
-                  Close
+                  <span className="text-2xl font-bold">×</span>
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                {/* Date */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={appointmentForm.date}
+                    onChange={(e) =>
+                      setAppointmentForm((prev) => ({ ...prev, date: e.target.value }))
+                    }
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+
+                {/* Time */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Time <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="time"
+                    value={appointmentForm.time}
+                    onChange={(e) =>
+                      setAppointmentForm((prev) => ({ ...prev, time: e.target.value }))
+                    }
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+
+                {/* Duration */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Duration (minutes)
+                  </label>
+                  <input
+                    type="number"
+                    value={appointmentForm.duration}
+                    onChange={(e) =>
+                      setAppointmentForm((prev) => ({ ...prev, duration: parseInt(e.target.value) || 30 }))
+                    }
+                    min="15"
+                    step="15"
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                {/* Type */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Appointment Type <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={appointmentForm.type}
+                    onChange={(e) =>
+                      setAppointmentForm((prev) => ({ ...prev, type: e.target.value }))
+                    }
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  >
+                    <option value="">Select type</option>
+                    <option value="Interview">Interview</option>
+                    <option value="Meeting">Meeting</option>
+                    <option value="Phone Call">Phone Call</option>
+                    <option value="Follow-up">Follow-up</option>
+                    <option value="Assessment">Assessment</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+
+                {/* Description */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Description
+                  </label>
+                  <textarea
+                    value={appointmentForm.description}
+                    onChange={(e) =>
+                      setAppointmentForm((prev) => ({ ...prev, description: e.target.value }))
+                    }
+                    rows={4}
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter appointment description..."
+                  />
+                </div>
+
+                {/* Location */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Location
+                  </label>
+                  <input
+                    type="text"
+                    value={appointmentForm.location}
+                    onChange={(e) =>
+                      setAppointmentForm((prev) => ({ ...prev, location: e.target.value }))
+                    }
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Enter location or video link..."
+                  />
+                </div>
+
+                {/* Attendees */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Attendees (will receive calendar invite)
+                  </label>
+                  {isLoadingAppointmentUsers ? (
+                    <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                      Loading users...
+                    </div>
+                  ) : (
+                    <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500">
+                      <div className="max-h-48 overflow-y-auto p-2">
+                        {appointmentUsers.length === 0 ? (
+                          <div className="text-gray-500 text-sm p-2">
+                            No users available
+                          </div>
+                        ) : (
+                          appointmentUsers.map((user) => (
+                            <label
+                              key={user.id}
+                              className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={appointmentForm.attendees.includes(user.email || user.id)}
+                                onChange={(e) => {
+                                  const email = user.email || user.id;
+                                  if (e.target.checked) {
+                                    setAppointmentForm((prev) => ({
+                                      ...prev,
+                                      attendees: [...prev.attendees, email],
+                                    }));
+                                  } else {
+                                    setAppointmentForm((prev) => ({
+                                      ...prev,
+                                      attendees: prev.attendees.filter((a) => a !== email),
+                                    }));
+                                  }
+                                }}
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                              />
+                              <span className="text-sm text-gray-700">
+                                {user.name || user.email || `User #${user.id}`}
+                              </span>
+                            </label>
+                          ))
+                        )}
+                      </div>
+                      {appointmentForm.attendees.length > 0 && (
+                        <div className="border-t border-gray-300 p-2 bg-gray-50">
+                          <div className="text-xs text-gray-600 mb-1">
+                            Selected: {appointmentForm.attendees.length} attendee(s)
+                          </div>
+                          <div className="flex flex-wrap gap-1">
+                            {appointmentForm.attendees.map((email) => (
+                              <span
+                                key={email}
+                                className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                              >
+                                {email}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setAppointmentForm((prev) => ({
+                                      ...prev,
+                                      attendees: prev.attendees.filter((a) => a !== email),
+                                    }));
+                                  }}
+                                  className="ml-1 text-blue-600 hover:text-blue-800"
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Send Invites Checkbox */}
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={appointmentForm.sendInvites}
+                    onChange={(e) =>
+                      setAppointmentForm((prev) => ({ ...prev, sendInvites: e.target.checked }))
+                    }
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <label className="text-sm text-gray-700">
+                    Send calendar invites to attendees
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 p-4 border-t">
+                <button
+                  onClick={() => {
+                    setShowAppointmentModal(false);
+                    setAppointmentForm({
+                      date: "",
+                      time: "",
+                      type: "",
+                      description: "",
+                      location: "",
+                      duration: 30,
+                      attendees: [],
+                      sendInvites: true,
+                    });
+                  }}
+                  className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                  disabled={isSavingAppointment}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleAppointmentSubmit}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  disabled={
+                    isSavingAppointment ||
+                    !appointmentForm.date ||
+                    !appointmentForm.time ||
+                    !appointmentForm.type
+                  }
+                >
+                  {isSavingAppointment ? "Creating..." : "Create Appointment"}
                 </button>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      }
 
-      {/* Add Appointment Modal */}
-      {showAppointmentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto py-8">
-          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Create Calendar Appointment</h2>
-              <button
-                onClick={() => {
-                  setShowAppointmentModal(false);
-                  setAppointmentForm({
-                    date: "",
-                    time: "",
-                    type: "",
-                    description: "",
-                    location: "",
-                    duration: 30,
-                    attendees: [],
-                    sendInvites: true,
-                  });
-                }}
-                className="p-1 rounded hover:bg-gray-200"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              {/* Date */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Date <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={appointmentForm.date}
-                  onChange={(e) =>
-                    setAppointmentForm((prev) => ({ ...prev, date: e.target.value }))
-                  }
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-
-              {/* Time */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Time <span className="text-red-500">*</span>
-                </label>
-                <input
-                  type="time"
-                  value={appointmentForm.time}
-                  onChange={(e) =>
-                    setAppointmentForm((prev) => ({ ...prev, time: e.target.value }))
-                  }
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-
-              {/* Duration */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Duration (minutes)
-                </label>
-                <input
-                  type="number"
-                  value={appointmentForm.duration}
-                  onChange={(e) =>
-                    setAppointmentForm((prev) => ({ ...prev, duration: parseInt(e.target.value) || 30 }))
-                  }
-                  min="15"
-                  step="15"
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-
-              {/* Type */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Appointment Type <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={appointmentForm.type}
-                  onChange={(e) =>
-                    setAppointmentForm((prev) => ({ ...prev, type: e.target.value }))
-                  }
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
+      {/* Add Tearsheet Modal */}
+      {
+        showAddTearsheetModal && (
+          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+              {/* Header */}
+              <div className="flex justify-between items-center p-4 border-b border-gray-200">
+                <h2 className="text-lg font-semibold">Add to Tearsheet</h2>
+                <button
+                  onClick={() => {
+                    setShowAddTearsheetModal(false);
+                    setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
+                    setTearsheetSearchQuery("");
+                  }}
+                  className="text-gray-500 hover:text-gray-700"
                 >
-                  <option value="">Select type</option>
-                  <option value="Interview">Interview</option>
-                  <option value="Meeting">Meeting</option>
-                  <option value="Phone Call">Phone Call</option>
-                  <option value="Follow-up">Follow-up</option>
-                  <option value="Assessment">Assessment</option>
-                  <option value="Other">Other</option>
-                </select>
+                  <span className="text-2xl font-bold">×</span>
+                </button>
               </div>
 
-              {/* Description */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Description
-                </label>
-                <textarea
-                  value={appointmentForm.description}
-                  onChange={(e) =>
-                    setAppointmentForm((prev) => ({ ...prev, description: e.target.value }))
-                  }
-                  rows={4}
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter appointment description..."
-                />
-              </div>
-
-              {/* Location */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Location
-                </label>
-                <input
-                  type="text"
-                  value={appointmentForm.location}
-                  onChange={(e) =>
-                    setAppointmentForm((prev) => ({ ...prev, location: e.target.value }))
-                  }
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter location or video link..."
-                />
-              </div>
-
-              {/* Attendees */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Attendees (will receive calendar invite)
-                </label>
-                {isLoadingAppointmentUsers ? (
-                  <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
-                    Loading users...
+              {/* Form Content */}
+              <div className="p-6 space-y-6">
+                {/* Visibility Toggle */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Select Option
+                  </label>
+                  <div
+                    className="inline-flex rounded-md border border-gray-300 overflow-hidden"
+                    role="group"
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setTearsheetForm((prev) => ({
+                          ...prev,
+                          visibility: "New",
+                          selectedTearsheetId: "",
+                        }))
+                      }
+                      className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "New"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
+                        }`}
+                    >
+                      New Tearsheet
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setTearsheetForm((prev) => ({
+                          ...prev,
+                          visibility: "Existing",
+                          name: "",
+                        }))
+                      }
+                      className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "Existing"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white text-gray-700 hover:bg-gray-50"
+                        }`}
+                    >
+                      Existing Tearsheet
+                    </button>
                   </div>
-                ) : (
-                  <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500">
-                    <div className="max-h-48 overflow-y-auto p-2">
-                      {appointmentUsers.length === 0 ? (
-                        <div className="text-gray-500 text-sm p-2">
-                          No users available
-                        </div>
-                      ) : (
-                        appointmentUsers.map((user) => (
-                          <label
-                            key={user.id}
-                            className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={appointmentForm.attendees.includes(user.email || user.id)}
-                              onChange={(e) => {
-                                const email = user.email || user.id;
-                                if (e.target.checked) {
-                                  setAppointmentForm((prev) => ({
-                                    ...prev,
-                                    attendees: [...prev.attendees, email],
-                                  }));
-                                } else {
-                                  setAppointmentForm((prev) => ({
-                                    ...prev,
-                                    attendees: prev.attendees.filter((a) => a !== email),
-                                  }));
-                                }
-                              }}
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
-                            />
-                            <span className="text-sm text-gray-700">
-                              {user.name || user.email || `User #${user.id}`}
-                            </span>
-                          </label>
-                        ))
-                      )}
+                </div>
+
+                {/* New Tearsheet Name */}
+                {tearsheetForm.visibility === "New" && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <span className="text-red-500 mr-1">•</span>
+                      Tearsheet Name
+                    </label>
+                    <input
+                      type="text"
+                      value={tearsheetForm.name}
+                      onChange={(e) =>
+                        setTearsheetForm((prev) => ({
+                          ...prev,
+                          name: e.target.value,
+                        }))
+                      }
+                      placeholder="Enter tearsheet name"
+                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                  </div>
+                )}
+
+                {/* Existing Tearsheet Selection */}
+                {tearsheetForm.visibility === "Existing" && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      <span className="text-red-500 mr-1">•</span>
+                      Select Tearsheet
+                    </label>
+                    {isLoadingTearsheets ? (
+                      <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
+                        Loading tearsheets...
+                      </div>
+                    ) : (
+                      <div className="relative" ref={tearsheetSearchRef}>
+                        <input
+                          type="text"
+                          value={tearsheetSearchQuery}
+                          onChange={(e) => {
+                            setTearsheetSearchQuery(e.target.value);
+                            setShowTearsheetDropdown(true);
+                          }}
+                          onFocus={() => setShowTearsheetDropdown(true)}
+                          onClick={() => setShowTearsheetDropdown(true)}
+                          placeholder="Search for a tearsheet..."
+                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        {showTearsheetDropdown && (tearsheetSearchQuery || existingTearsheets.length > 0) && (
+                          <div className="absolute z-[60] w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
+                            {filteredTearsheets.length > 0 ? (
+                              filteredTearsheets.map((ts) => (
+                                <button
+                                  key={ts.id}
+                                  onClick={() => handleTearsheetSelect(ts)}
+                                  className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex flex-col"
+                                >
+                                  <span className="text-sm font-medium text-gray-900">{ts.name}</span>
+                                  {ts.owner_name && (
+                                    <span className="text-xs text-gray-500">Owner: {ts.owner_name}</span>
+                                  )}
+                                </button>
+                              ))
+                            ) : (
+                              <div className="p-3 text-center text-gray-500 text-sm">
+                                No matching tearsheets found
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <p className="mt-2 text-xs text-gray-500">
+                      Search and select an existing tearsheet to add this hiring manager to it.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+                <button
+                  onClick={() => {
+                    setShowAddTearsheetModal(false);
+                    setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
+                    setTearsheetSearchQuery("");
+                  }}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isSavingTearsheet}
+                >
+                  CANCEL
+                </button>
+                <button
+                  onClick={handleTearsheetSubmit}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                  disabled={
+                    isSavingTearsheet ||
+                    (tearsheetForm.visibility === "New" && !tearsheetForm.name.trim()) ||
+                    (tearsheetForm.visibility === "Existing" && !tearsheetForm.selectedTearsheetId)
+                  }
+                >
+                  {tearsheetForm.visibility === "New" ? "CREATE" : "ASSOCIATE"}
+                  <svg
+                    className="w-4 h-4 ml-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Transfer Modal */}
+      {
+        showTransferModal && (
+          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+              {/* Header */}
+              <div className="flex justify-between items-center p-4 border-b border-gray-200">
+                <h2 className="text-lg font-semibold">Transfer Hiring Manager</h2>
+                <button
+                  onClick={() => {
+                    setShowTransferModal(false);
+                    setTransferForm({ targetOrganizationId: "" });
+                  }}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <span className="text-2xl font-bold">×</span>
+                </button>
+              </div>
+
+              {/* Form Content */}
+              <div className="p-6 space-y-6">
+                {/* Source Hiring Manager Info */}
+                <div className="bg-gray-50 p-4 rounded">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Source Hiring Manager
+                  </label>
+                  <p className="text-sm text-gray-900 font-medium">
+                    {hiringManager
+                      ? `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName}`
+                      : "N/A"}
+                  </p>
+                </div>
+
+                {/* Target Organization Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <span className="text-red-500 mr-1">•</span>
+                    Select Target Organization
+                  </label>
+                  {isLoadingOrganizations ? (
+                    <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
+                      Loading organizations...
                     </div>
-                    {appointmentForm.attendees.length > 0 && (
-                      <div className="border-t border-gray-300 p-2 bg-gray-50">
-                        <div className="text-xs text-gray-600 mb-1">
-                          Selected: {appointmentForm.attendees.length} attendee(s)
-                        </div>
-                        <div className="flex flex-wrap gap-1">
-                          {appointmentForm.attendees.map((email) => (
+                  ) : availableOrganizations.length === 0 ? (
+                    <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
+                      No available organizations found
+                    </div>
+                  ) : (
+                    <select
+                      value={transferForm.targetOrganizationId}
+                      onChange={(e) =>
+                        setTransferForm((prev) => ({
+                          ...prev,
+                          targetOrganizationId: e.target.value,
+                        }))
+                      }
+                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    >
+                      <option value="">Select target organization...</option>
+                      {availableOrganizations.map((org) => (
+                        <option key={org.id} value={org.id}>
+                          {formatRecordId(org.id, "organization")} {org.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+
+                {/* Info Box */}
+                <div className="bg-blue-50 border border-blue-200 rounded p-4">
+                  <p className="text-sm text-blue-800">
+                    <strong>Note:</strong> This will create a transfer request. Payroll will be notified via email and must approve or deny the transfer. A note will be added to the hiring manager record.
+                  </p>
+                </div>
+              </div>
+
+              {/* Footer Buttons */}
+              <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+                <button
+                  onClick={() => {
+                    setShowTransferModal(false);
+                    setTransferForm({ targetOrganizationId: "" });
+                  }}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isSubmittingTransfer}
+                >
+                  CANCEL
+                </button>
+                <button
+                  onClick={handleTransferSubmit}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                  disabled={isSubmittingTransfer || !transferForm.targetOrganizationId}
+                >
+                  {isSubmittingTransfer ? "SUBMITTING..." : "SUBMIT TRANSFER"}
+                  {!isSubmittingTransfer && (
+                    <svg
+                      className="w-4 h-4 ml-2"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Delete Modal */}
+      {
+        showDeleteModal && (
+          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+              {/* Header */}
+              <div className="flex justify-between items-center p-4 border-b border-gray-200">
+                <h2 className="text-lg font-semibold">Request Deletion</h2>
+                <button
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setDeleteForm({ reason: "" });
+                  }}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <span className="text-2xl font-bold">×</span>
+                </button>
+              </div>
+
+              {/* Form Content */}
+              <div className="p-6 space-y-6">
+                {/* Delete Reason */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <span className="text-red-500 mr-1">•</span>
+                    Reason for Deletion
+                  </label>
+                  <textarea
+                    value={deleteForm.reason}
+                    onChange={(e) =>
+                      setDeleteForm((prev) => ({
+                        ...prev,
+                        reason: e.target.value,
+                      }))
+                    }
+                    placeholder="Please provide a detailed reason for deleting this hiring manager..."
+                    className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${!deleteForm.reason.trim()
+                      ? "border-red-300 focus:ring-red-500"
+                      : "border-gray-300 focus:ring-blue-500"
+                      }`}
+                    rows={5}
+                    required
+                  />
+                  {!deleteForm.reason.trim() && (
+                    <p className="mt-1 text-sm text-red-500">
+                      Reason is required
+                    </p>
+                  )}
+                </div>
+
+                {/* Info Box */}
+                <div className="bg-blue-50 border border-blue-200 rounded p-4">
+                  <p className="text-sm text-blue-800">
+                    <strong>Note:</strong> This will create a delete request. Payroll will be notified via email and must approve or deny the deletion. The record will be archived (not deleted) until payroll approval.
+                  </p>
+                </div>
+
+                {/* Pending Request Status */}
+                {pendingDeleteRequest && pendingDeleteRequest.status === "pending" && (
+                  <div className="bg-yellow-50 border border-yellow-200 rounded p-4">
+                    <p className="text-sm text-yellow-800">
+                      <strong>Pending Request:</strong> A delete request is already pending approval. You cannot submit another request until this one is resolved.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer Buttons */}
+              <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+                <button
+                  onClick={() => {
+                    setShowDeleteModal(false);
+                    setDeleteForm({ reason: "" });
+                  }}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isSubmittingDelete}
+                >
+                  CANCEL
+                </button>
+                <button
+                  onClick={handleDeleteRequestSubmit}
+                  className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                  disabled={isSubmittingDelete || !deleteForm.reason.trim() || (pendingDeleteRequest && pendingDeleteRequest.status === "pending")}
+                >
+                  {isSubmittingDelete ? "SUBMITTING..." : "SUBMIT DELETE REQUEST"}
+                  {!isSubmittingDelete && (
+                    <svg
+                      className="w-4 h-4 ml-2"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Password Reset Modal */}
+      {
+        showPasswordResetModal && (
+          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+              {/* Header */}
+              <div className="flex justify-between items-center p-4 border-b border-gray-200">
+                <h2 className="text-lg font-semibold">Password Reset</h2>
+                <button
+                  onClick={() => {
+                    setShowPasswordResetModal(false);
+                    setPasswordResetForm({ email: "", sendEmail: true });
+                  }}
+                  className="text-gray-500 hover:text-gray-700"
+                >
+                  <span className="text-2xl font-bold">×</span>
+                </button>
+              </div>
+
+              {/* Form Content */}
+              <div className="p-6 space-y-6">
+                {/* Email Address */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <span className="text-red-500 mr-1">•</span>
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    value={passwordResetForm.email}
+                    onChange={(e) =>
+                      setPasswordResetForm((prev) => ({
+                        ...prev,
+                        email: e.target.value,
+                      }))
+                    }
+                    placeholder="Enter email address for password reset"
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    required
+                  />
+                </div>
+
+                {/* Send Email Checkbox */}
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={passwordResetForm.sendEmail}
+                    onChange={(e) =>
+                      setPasswordResetForm((prev) => ({
+                        ...prev,
+                        sendEmail: e.target.checked,
+                      }))
+                    }
+                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                  />
+                  <label className="text-sm text-gray-700">
+                    Send password reset email to the user
+                  </label>
+                </div>
+
+                {/* Info Box */}
+                <div className="bg-blue-50 border border-blue-200 rounded p-4">
+                  <p className="text-sm text-blue-800">
+                    <strong>Note:</strong> A new password will be generated and sent to the email address provided if "Send email" is checked.
+                  </p>
+                </div>
+              </div>
+
+              {/* Footer Buttons */}
+              <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+                <button
+                  onClick={() => {
+                    setShowPasswordResetModal(false);
+                    setPasswordResetForm({ email: "", sendEmail: true });
+                  }}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isSubmittingPasswordReset}
+                >
+                  CANCEL
+                </button>
+                <button
+                  onClick={handlePasswordReset}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                  disabled={isSubmittingPasswordReset || !passwordResetForm.email.trim()}
+                >
+                  {isSubmittingPasswordReset ? "PROCESSING..." : "RESET PASSWORD"}
+                  {!isSubmittingPasswordReset && (
+                    <svg
+                      className="w-4 h-4 ml-2"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M5 13l4 4L19 7"
+                      />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )
+      }
+
+      {/* Add Note Modal */}
+      {
+        showAddNote && (
+          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-101">
+            <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+              <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                <div className="flex items-center space-x-2">
+                  <Image src="/file.svg" alt="Note" width={20} height={20} />
+                  <h2 className="text-lg font-semibold">Add Note</h2>
+                </div>
+                <button
+                  onClick={handleCloseAddNoteModal}
+                  className="p-1 rounded hover:bg-gray-200"
+                >
+                  <span className="text-2xl font-bold">×</span>
+                </button>
+              </div>
+              <div className="p-6">
+                <div className="space-y-4">
+                  {/* Note Text Area - Required */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Note Text {" "} {noteForm.text.length > 0 ? (
+                        <span className="text-green-500">✓</span>
+                      ) : (
+                        <span className="text-red-500">*</span>
+                      )}
+                    </label>
+                    <textarea
+                      value={noteForm.text}
+                      onChange={(e) => {
+                        setNoteForm((prev) => ({ ...prev, text: e.target.value }));
+                        // Clear error when user starts typing
+                        if (noteFormErrors.text) {
+                          setNoteFormErrors((prev) => ({ ...prev, text: undefined }));
+                        }
+                      }}
+                      placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
+                      className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${noteFormErrors.text
+                        ? "border-red-500 focus:ring-red-500"
+                        : "border-gray-300 focus:ring-blue-500"
+                        }`}
+                      rows={6}
+                    />
+                    {noteFormErrors.text && (
+                      <p className="mt-1 text-sm text-red-500">{noteFormErrors.text}</p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Action {noteForm.action ? (
+                        <span className="text-green-500">✓</span>
+                      ) : (
+                        <span className="text-red-500">*</span>
+                      )}
+                    </label>
+                    {isLoadingActionFields ? (
+                      <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                        Loading actions...
+                      </div>
+                    ) : (
+                      <select
+                        value={noteForm.action}
+                        onChange={(e) =>
+                          setNoteForm((prev) => ({ ...prev, action: e.target.value }))
+                        }
+                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 ${noteFormErrors.action
+                          ? "border-red-500 focus:ring-red-500"
+                          : "border-gray-300 focus:ring-blue-500"
+                          }`}
+                      >
+                        <option value="">Select an action...</option>
+                        {actionFields.map((action) => (
+                          <option key={action.id} value={action.field_name || action.id}>
+                            {action.field_label || action.field_name || action.id}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                    {noteFormErrors.action && (
+                      <p className="mt-1 text-sm text-red-500">{noteFormErrors.action}</p>
+                    )}
+                  </div>
+
+                  {/* About Section - Required, Multiple References, Global Search */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      About / Reference <span className="text-red-500">*</span>
+                    </label>
+                    <div className="relative" ref={aboutInputRef}>
+                      {/* Selected References Tags */}
+                      {noteForm.aboutReferences.length > 0 && (
+                        <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
+                          {noteForm.aboutReferences.map((ref, index) => (
                             <span
-                              key={email}
-                              className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                              key={`${ref.type}-${ref.id}-${index}`}
+                              className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
                             >
-                              {email}
+                              <FiUserCheck className="w-4 h-4" />
+                              {ref.display}
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setAppointmentForm((prev) => ({
-                                    ...prev,
-                                    attendees: prev.attendees.filter((a) => a !== email),
-                                  }));
-                                }}
-                                className="ml-1 text-blue-600 hover:text-blue-800"
+                                onClick={() => removeAboutReference(index)}
+                                className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
+                                title="Remove"
                               >
                                 ×
                               </button>
                             </span>
                           ))}
                         </div>
+                      )}
+
+                      {/* Search Input */}
+                      <div className="relative">
+                        {noteForm.aboutReferences.length !== 0 &&
+                          <label className="block text-sm font-medium text-gray-700 mb-1">
+                            Additional References
+                          </label>
+                        }
+                        <input
+                          type="text"
+                          value={aboutSearchQuery}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setAboutSearchQuery(value);
+                            searchAboutReferences(value);
+                          }}
+                          onFocus={() => {
+                            if (aboutSearchQuery.trim().length >= 2) {
+                              setShowAboutDropdown(true);
+                            }
+                          }}
+                          placeholder={
+                            noteForm.aboutReferences.length === 0
+                              ? "Search and select records (e.g., Job, Lead, Placement, Organization, Hiring Manager)..."
+                              : "Add another reference..."
+                          }
+                          className={`w-full p-2 border rounded focus:outline-none focus:ring-2 pr-8 ${noteFormErrors.about
+                            ? "border-red-500 focus:ring-red-500"
+                            : "border-gray-300 focus:ring-blue-500"
+                            }`}
+                        />
+                        <span className="absolute right-2 top-2 text-gray-400 text-sm">
+                          Q
+                        </span>
                       </div>
-                    )}
+
+                      {/* Validation Error */}
+                      {noteFormErrors.about && (
+                        <p className="mt-1 text-sm text-red-500">
+                          {noteFormErrors.about}
+                        </p>
+                      )}
+
+                      {/* Suggestions Dropdown */}
+                      {showAboutDropdown && (
+                        <div
+                          data-about-dropdown
+                          className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
+                        >
+                          {isLoadingAboutSearch ? (
+                            <div className="p-3 text-center text-gray-500 text-sm">
+                              Searching...
+                            </div>
+                          ) : aboutSuggestions.length > 0 ? (
+                            aboutSuggestions.map((suggestion, idx) => (
+                              <button
+                                key={`${suggestion.type}-${suggestion.id}-${idx}`}
+                                type="button"
+                                onClick={() => handleAboutReferenceSelect(suggestion)}
+                                className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
+                              >
+                                <FiUserCheck className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                <div className="flex-1">
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {suggestion.display}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {suggestion.type}
+                                  </div>
+                                </div>
+                              </button>
+                            ))
+                          ) : aboutSearchQuery.trim().length >= 2 ? (
+                            <div className="p-3 text-center text-gray-500 text-sm">
+                              No results found
+                            </div>
+                          ) : null}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
-              </div>
 
-              {/* Send Invites Checkbox */}
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  checked={appointmentForm.sendInvites}
-                  onChange={(e) =>
-                    setAppointmentForm((prev) => ({ ...prev, sendInvites: e.target.checked }))
-                  }
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <label className="text-sm text-gray-700">
-                  Send calendar invites to attendees
-                </label>
-              </div>
-            </div>
+                  {/* Additional References Section - Global Search */}
 
-            <div className="flex justify-end space-x-2 p-4 border-t">
-              <button
-                onClick={() => {
-                  setShowAppointmentModal(false);
-                  setAppointmentForm({
-                    date: "",
-                    time: "",
-                    type: "",
-                    description: "",
-                    location: "",
-                    duration: 30,
-                    attendees: [],
-                    sendInvites: true,
-                  });
-                }}
-                className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-                disabled={isSavingAppointment}
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleAppointmentSubmit}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
-                disabled={
-                  isSavingAppointment ||
-                  !appointmentForm.date ||
-                  !appointmentForm.time ||
-                  !appointmentForm.type
-                }
-              >
-                {isSavingAppointment ? "Creating..." : "Create Appointment"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Add Tearsheet Modal */}
-      {showAddTearsheetModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
-            {/* Header */}
-            <div className="flex justify-between items-center p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold">Add to Tearsheet</h2>
-              <button
-                onClick={() => {
-                  setShowAddTearsheetModal(false);
-                  setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
-                }}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
+                  {/* Email Notification Section - Internal Users Only */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
+                      <span className="mr-2">📧</span>
+                      Email Notification
+                    </label>
+                    <div className="relative">
+                      {isLoadingUsers ? (
+                        <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                          Loading users...
+                        </div>
+                      ) : (
+                        <select
+                          value={noteForm.emailNotification}
+                          onChange={(e) =>
+                            setNoteForm((prev) => ({
+                              ...prev,
+                              emailNotification: e.target.value,
+                            }))
+                          }
+                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                          <option value="Internal User">Internal User</option>
+                          {users.map((user) => (
+                            <option key={user.id} value={user.email || user.name}>
+                              {user.name || user.email} {user.email && `(${user.email})`}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                    <p className="mt-1 text-xs text-gray-500">
+                      Only internal system users are available for notification
+                    </p>
+                  </div>
+                </div>
 
-            {/* Form Content */}
-            <div className="p-6 space-y-6">
-              {/* Visibility Toggle */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select Option
-                </label>
-                <div
-                  className="inline-flex rounded-md border border-gray-300 overflow-hidden"
-                  role="group"
-                >
+                {/* Form Actions */}
+                <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
                   <button
-                    type="button"
-                    onClick={() =>
-                      setTearsheetForm((prev) => ({
-                        ...prev,
-                        visibility: "New",
-                        selectedTearsheetId: "",
-                      }))
-                    }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "New"
-                      ? "bg-blue-500 text-white"
-                      : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
-                      }`}
+                    onClick={handleCloseAddNoteModal}
+                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium"
                   >
-                    New Tearsheet
+                    CANCEL
                   </button>
                   <button
-                    type="button"
-                    onClick={() =>
-                      setTearsheetForm((prev) => ({
-                        ...prev,
-                        visibility: "Existing",
-                        name: "",
-                      }))
-                    }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "Existing"
-                      ? "bg-blue-500 text-white"
-                      : "bg-white text-gray-700 hover:bg-gray-50"
-                      }`}
+                    onClick={handleAddNote}
+                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                    disabled={!noteForm.text.trim() || !noteForm.action || noteForm.aboutReferences.length === 0}
                   >
-                    Existing Tearsheet
+                    SAVE
                   </button>
                 </div>
               </div>
-
-              {/* New Tearsheet Name */}
-              {tearsheetForm.visibility === "New" && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    <span className="text-red-500 mr-1">•</span>
-                    Tearsheet Name
-                  </label>
-                  <input
-                    type="text"
-                    value={tearsheetForm.name}
-                    onChange={(e) =>
-                      setTearsheetForm((prev) => ({
-                        ...prev,
-                        name: e.target.value,
-                      }))
-                    }
-                    placeholder="Enter tearsheet name"
-                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-              )}
-
-              {/* Existing Tearsheet Selection */}
-              {tearsheetForm.visibility === "Existing" && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    <span className="text-red-500 mr-1">•</span>
-                    Select Tearsheet
-                  </label>
-                  {isLoadingTearsheets ? (
-                    <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
-                      Loading tearsheets...
-                    </div>
-                  ) : existingTearsheets.length === 0 ? (
-                    <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
-                      No existing tearsheets available
-                    </div>
-                  ) : (
-                    <select
-                      value={tearsheetForm.selectedTearsheetId}
-                      onChange={(e) =>
-                        setTearsheetForm((prev) => ({
-                          ...prev,
-                          selectedTearsheetId: e.target.value,
-                        }))
-                      }
-                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    >
-                      <option value="">Select a tearsheet...</option>
-                      {existingTearsheets.map((tearsheet) => (
-                        <option key={tearsheet.id} value={tearsheet.id}>
-                          {tearsheet.name}
-                          {tearsheet.owner_name && ` (Owner: ${tearsheet.owner_name})`}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  <p className="mt-2 text-xs text-gray-500">
-                    Only existing tearsheets can be selected. New tearsheets must be created from the Tearsheets page.
-                  </p>
-                </div>
-              )}
             </div>
-
-            {/* Footer Buttons */}
-            <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
-              <button
-                onClick={() => {
-                  setShowAddTearsheetModal(false);
-                  setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
-                }}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isSavingTearsheet}
-              >
-                CANCEL
-              </button>
-              <button
-                onClick={handleTearsheetSubmit}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
-                disabled={
-                  isSavingTearsheet ||
-                  (tearsheetForm.visibility === "New" && !tearsheetForm.name.trim()) ||
-                  (tearsheetForm.visibility === "Existing" && !tearsheetForm.selectedTearsheetId)
-                }
-              >
-                {tearsheetForm.visibility === "New" ? "CREATE" : "ASSOCIATE"}
-                <svg
-                  className="w-4 h-4 ml-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+          </div>
+        )
+      }
+      {/* Header Fields Modal (PENCIL-HEADER-MODAL) */}
+      {
+        showHeaderFieldModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+              {/* Header */}
+              <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                <h2 className="text-lg font-semibold">Header Fields</h2>
+                <button
+                  onClick={() => setShowHeaderFieldModal(false)}
+                  className="p-1 rounded hover:bg-gray-200"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Transfer Modal */}
-      {showTransferModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
-            {/* Header */}
-            <div className="flex justify-between items-center p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold">Transfer Hiring Manager</h2>
-              <button
-                onClick={() => {
-                  setShowTransferModal(false);
-                  setTransferForm({ targetOrganizationId: "" });
-                }}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
-
-            {/* Form Content */}
-            <div className="p-6 space-y-6">
-              {/* Source Hiring Manager Info */}
-              <div className="bg-gray-50 p-4 rounded">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Source Hiring Manager
-                </label>
-                <p className="text-sm text-gray-900 font-medium">
-                  {hiringManager
-                    ? `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName}`
-                    : "N/A"}
-                </p>
+                  <span className="text-2xl font-bold">×</span>
+                </button>
               </div>
 
-              {/* Target Organization Selection */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  <span className="text-red-500 mr-1">•</span>
-                  Select Target Organization
-                </label>
-                {isLoadingOrganizations ? (
-                  <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
-                    Loading organizations...
+              {/* Body: two columns */}
+              <div className="p-6 grid grid-cols-2 gap-6">
+                {/* Left: Available fields */}
+                <div>
+                  <h3 className="font-medium mb-3">Available Fields</h3>
+                  <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                    {headerFieldCatalog.map((f) => {
+                      const checked = isHeaderFieldEnabled(f.key);
+                      return (
+                        <label
+                          key={f.key}
+                          className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleHeaderField(f.key)}
+                            className="w-4 h-4"
+                          />
+                          <div>
+                            <div className="text-sm text-gray-800">{f.label}</div>
+                            <div className="text-xs text-gray-500">
+                              Key: {f.key}
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
                   </div>
-                ) : availableOrganizations.length === 0 ? (
-                  <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
-                    No available organizations found
-                  </div>
-                ) : (
-                  <select
-                    value={transferForm.targetOrganizationId}
-                    onChange={(e) =>
-                      setTransferForm((prev) => ({
-                        ...prev,
-                        targetOrganizationId: e.target.value,
-                      }))
-                    }
-                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  >
-                    <option value="">Select target organization...</option>
-                    {availableOrganizations.map((org) => (
-                      <option key={org.id} value={org.id}>
-                        {formatRecordId(org.id, "organization")} {org.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {/* Info Box */}
-              <div className="bg-blue-50 border border-blue-200 rounded p-4">
-                <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> This will create a transfer request. Payroll will be notified via email and must approve or deny the transfer. A note will be added to the hiring manager record.
-                </p>
-              </div>
-            </div>
-
-            {/* Footer Buttons */}
-            <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
-              <button
-                onClick={() => {
-                  setShowTransferModal(false);
-                  setTransferForm({ targetOrganizationId: "" });
-                }}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isSubmittingTransfer}
-              >
-                CANCEL
-              </button>
-              <button
-                onClick={handleTransferSubmit}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
-                disabled={isSubmittingTransfer || !transferForm.targetOrganizationId}
-              >
-                {isSubmittingTransfer ? "SUBMITTING..." : "SUBMIT TRANSFER"}
-                {!isSubmittingTransfer && (
-                  <svg
-                    className="w-4 h-4 ml-2"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Modal */}
-      {showDeleteModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
-            {/* Header */}
-            <div className="flex justify-between items-center p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold">Request Deletion</h2>
-              <button
-                onClick={() => {
-                  setShowDeleteModal(false);
-                  setDeleteForm({ reason: "" });
-                }}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
-
-            {/* Form Content */}
-            <div className="p-6 space-y-6">
-              {/* Delete Reason */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  <span className="text-red-500 mr-1">•</span>
-                  Reason for Deletion
-                </label>
-                <textarea
-                  value={deleteForm.reason}
-                  onChange={(e) =>
-                    setDeleteForm((prev) => ({
-                      ...prev,
-                      reason: e.target.value,
-                    }))
-                  }
-                  placeholder="Please provide a detailed reason for deleting this hiring manager..."
-                  className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${!deleteForm.reason.trim()
-                    ? "border-red-300 focus:ring-red-500"
-                    : "border-gray-300 focus:ring-blue-500"
-                    }`}
-                  rows={5}
-                  required
-                />
-                {!deleteForm.reason.trim() && (
-                  <p className="mt-1 text-sm text-red-500">
-                    Reason is required
-                  </p>
-                )}
-              </div>
-
-              {/* Info Box */}
-              <div className="bg-blue-50 border border-blue-200 rounded p-4">
-                <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> This will create a delete request. Payroll will be notified via email and must approve or deny the deletion. The record will be archived (not deleted) until payroll approval.
-                </p>
-              </div>
-
-              {/* Pending Request Status */}
-              {pendingDeleteRequest && pendingDeleteRequest.status === "pending" && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded p-4">
-                  <p className="text-sm text-yellow-800">
-                    <strong>Pending Request:</strong> A delete request is already pending approval. You cannot submit another request until this one is resolved.
-                  </p>
                 </div>
-              )}
-            </div>
 
-            {/* Footer Buttons */}
-            <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
-              <button
-                onClick={() => {
-                  setShowDeleteModal(false);
-                  setDeleteForm({ reason: "" });
-                }}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isSubmittingDelete}
-              >
-                CANCEL
-              </button>
-              <button
-                onClick={handleDeleteRequestSubmit}
-                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
-                disabled={isSubmittingDelete || !deleteForm.reason.trim() || (pendingDeleteRequest && pendingDeleteRequest.status === "pending")}
-              >
-                {isSubmittingDelete ? "SUBMITTING..." : "SUBMIT DELETE REQUEST"}
-                {!isSubmittingDelete && (
-                  <svg
-                    className="w-4 h-4 ml-2"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Password Reset Modal */}
-      {showPasswordResetModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
-            {/* Header */}
-            <div className="flex justify-between items-center p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold">Password Reset</h2>
-              <button
-                onClick={() => {
-                  setShowPasswordResetModal(false);
-                  setPasswordResetForm({ email: "", sendEmail: true });
-                }}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
-
-            {/* Form Content */}
-            <div className="p-6 space-y-6">
-              {/* Email Address */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  <span className="text-red-500 mr-1">•</span>
-                  Email Address
-                </label>
-                <input
-                  type="email"
-                  value={passwordResetForm.email}
-                  onChange={(e) =>
-                    setPasswordResetForm((prev) => ({
-                      ...prev,
-                      email: e.target.value,
-                    }))
-                  }
-                  placeholder="Enter email address for password reset"
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                />
-              </div>
-
-              {/* Send Email Checkbox */}
-              <div className="flex items-center space-x-2">
-                <input
-                  type="checkbox"
-                  checked={passwordResetForm.sendEmail}
-                  onChange={(e) =>
-                    setPasswordResetForm((prev) => ({
-                      ...prev,
-                      sendEmail: e.target.checked,
-                    }))
-                  }
-                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                />
-                <label className="text-sm text-gray-700">
-                  Send password reset email to the user
-                </label>
-              </div>
-
-              {/* Info Box */}
-              <div className="bg-blue-50 border border-blue-200 rounded p-4">
-                <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> A new password will be generated and sent to the email address provided if "Send email" is checked.
-                </p>
-              </div>
-            </div>
-
-            {/* Footer Buttons */}
-            <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
-              <button
-                onClick={() => {
-                  setShowPasswordResetModal(false);
-                  setPasswordResetForm({ email: "", sendEmail: true });
-                }}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isSubmittingPasswordReset}
-              >
-                CANCEL
-              </button>
-              <button
-                onClick={handlePasswordReset}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
-                disabled={isSubmittingPasswordReset || !passwordResetForm.email.trim()}
-              >
-                {isSubmittingPasswordReset ? "PROCESSING..." : "RESET PASSWORD"}
-                {!isSubmittingPasswordReset && (
-                  <svg
-                    className="w-4 h-4 ml-2"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add Note Modal */}
-      {showAddNote && (
-        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-101">
-          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <div className="flex items-center space-x-2">
-                <Image src="/file.svg" alt="Note" width={20} height={20} />
-                <h2 className="text-lg font-semibold">Add Note</h2>
-              </div>
-              <button
-                onClick={handleCloseAddNoteModal}
-                className="p-1 rounded hover:bg-gray-200"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
-            <div className="p-6">
-              <div className="space-y-4">
-                {/* Note Text Area - Required */}
+                {/* Right: Selected + reorder */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Note Text {" "} {noteForm.text.length > 0 ? (
-                      <span className="text-green-500">✓</span>
+                  <h3 className="font-medium mb-3">Header Order</h3>
+                  <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                    {headerFields.length === 0 ? (
+                      <div className="text-sm text-gray-500 italic">
+                        No fields selected
+                      </div>
                     ) : (
-                      <span className="text-red-500">*</span>
-                    )}
-                  </label>
-                  <textarea
-                    value={noteForm.text}
-                    onChange={(e) => {
-                      setNoteForm((prev) => ({ ...prev, text: e.target.value }));
-                      // Clear error when user starts typing
-                      if (noteFormErrors.text) {
-                        setNoteFormErrors((prev) => ({ ...prev, text: undefined }));
-                      }
-                    }}
-                    placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
-                    className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${noteFormErrors.text
-                      ? "border-red-500 focus:ring-red-500"
-                      : "border-gray-300 focus:ring-blue-500"
-                      }`}
-                    rows={6}
-                  />
-                  {noteFormErrors.text && (
-                    <p className="mt-1 text-sm text-red-500">{noteFormErrors.text}</p>
-                  )}
-                </div>
+                      headerFields.map((key, idx) => (
+                        <div
+                          key={key}
+                          className="flex items-center justify-between p-2 border rounded"
+                        >
+                          <div>
+                            <div className="text-sm font-medium">
+                              {getHeaderFieldLabel(key)}
+                            </div>
+                            <div className="text-xs text-gray-500">
+                              Key: {key}
+                            </div>
+                          </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Action {noteForm.action ? (
-                      <span className="text-green-500">✓</span>
-                    ) : (
-                      <span className="text-red-500">*</span>
-                    )}
-                  </label>
-                  {isLoadingActionFields ? (
-                    <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
-                      Loading actions...
-                    </div>
-                  ) : (
-                    <select
-                      value={noteForm.action}
-                      onChange={(e) =>
-                        setNoteForm((prev) => ({ ...prev, action: e.target.value }))
-                      }
-                      className={`w-full p-2 border rounded focus:outline-none focus:ring-2 ${noteFormErrors.action
-                        ? "border-red-500 focus:ring-red-500"
-                        : "border-gray-300 focus:ring-blue-500"
-                        }`}
-                    >
-                      <option value="">Select an action...</option>
-                      {actionFields.map((action) => (
-                        <option key={action.id} value={action.field_name || action.id}>
-                          {action.field_label || action.field_name || action.id}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  {noteFormErrors.action && (
-                    <p className="mt-1 text-sm text-red-500">{noteFormErrors.action}</p>
-                  )}
-                </div>
-
-                {/* About Section - Required, Multiple References, Global Search */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    About / Reference <span className="text-red-500">*</span>
-                  </label>
-                  <div className="relative" ref={aboutInputRef}>
-                    {/* Selected References Tags */}
-                    {noteForm.aboutReferences.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
-                        {noteForm.aboutReferences.map((ref, index) => (
-                          <span
-                            key={`${ref.type}-${ref.id}-${index}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
-                          >
-                            <FiUserCheck className="w-4 h-4" />
-                            {ref.display}
+                          <div className="flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={() => removeAboutReference(index)}
-                              className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
+                              onClick={() => moveHeaderField(key, "up")}
+                              disabled={idx === 0}
+                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                              title="Move up"
+                            >
+                              ↑
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => moveHeaderField(key, "down")}
+                              disabled={idx === headerFields.length - 1}
+                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                              title="Move down"
+                            >
+                              ↓
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => toggleHeaderField(key)}
+                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50 text-red-600"
                               title="Remove"
                             >
-                              ×
+                              Remove
                             </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Search Input */}
-                    <div className="relative">
-                      {noteForm.aboutReferences.length !== 0 &&
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Additional References
-                        </label>
-                      }
-                      <input
-                        type="text"
-                        value={aboutSearchQuery}
-                        onChange={(e) => {
-                          const value = e.target.value;
-                          setAboutSearchQuery(value);
-                          searchAboutReferences(value);
-                        }}
-                        onFocus={() => {
-                          if (aboutSearchQuery.trim().length >= 2) {
-                            setShowAboutDropdown(true);
-                          }
-                        }}
-                        placeholder={
-                          noteForm.aboutReferences.length === 0
-                            ? "Search and select records (e.g., Job, Lead, Placement, Organization, Hiring Manager)..."
-                            : "Add another reference..."
-                        }
-                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 pr-8 ${noteFormErrors.about
-                          ? "border-red-500 focus:ring-red-500"
-                          : "border-gray-300 focus:ring-blue-500"
-                          }`}
-                      />
-                      <span className="absolute right-2 top-2 text-gray-400 text-sm">
-                        Q
-                      </span>
-                    </div>
-
-                    {/* Validation Error */}
-                    {noteFormErrors.about && (
-                      <p className="mt-1 text-sm text-red-500">
-                        {noteFormErrors.about}
-                      </p>
-                    )}
-
-                    {/* Suggestions Dropdown */}
-                    {showAboutDropdown && (
-                      <div
-                        data-about-dropdown
-                        className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
-                      >
-                        {isLoadingAboutSearch ? (
-                          <div className="p-3 text-center text-gray-500 text-sm">
-                            Searching...
                           </div>
-                        ) : aboutSuggestions.length > 0 ? (
-                          aboutSuggestions.map((suggestion, idx) => (
-                            <button
-                              key={`${suggestion.type}-${suggestion.id}-${idx}`}
-                              type="button"
-                              onClick={() => handleAboutReferenceSelect(suggestion)}
-                              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
-                            >
-                              <FiUserCheck className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                              <div className="flex-1">
-                                <div className="text-sm font-medium text-gray-900">
-                                  {suggestion.display}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {suggestion.type}
-                                </div>
-                              </div>
-                            </button>
-                          ))
-                        ) : aboutSearchQuery.trim().length >= 2 ? (
-                          <div className="p-3 text-center text-gray-500 text-sm">
-                            No results found
-                          </div>
-                        ) : null}
-                      </div>
+                        </div>
+                      ))
                     )}
                   </div>
+
+                  {/* Footer buttons */}
+                  <div className="flex justify-end gap-2 mt-4">
+                    <button
+                      onClick={() => setHeaderFields(HIRING_MANAGER_DEFAULT_HEADER_FIELDS)}
+                      className="px-4 py-2 border rounded hover:bg-gray-50"
+                    >
+                      Reset
+                    </button>
+                    <button
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      onClick={async () => {
+                        const success = await saveHeaderConfig();
+                        if (success) {
+                          setShowHeaderFieldModal(false);
+                        }
+                      }}
+                      disabled={isSavingHeaderConfig}
+                    >
+                      {isSavingHeaderConfig ? "Saving..." : "Done"}
+                    </button>
+                  </div>
                 </div>
+              </div>
+            </div>
+          </div>
+        )
+      }
 
-                {/* Additional References Section - Global Search */}
-
-
-                {/* Email Notification Section - Internal Users Only */}
+      {/* File Details Modal */}
+      {
+        showFileDetailsModal && pendingFiles.length > 0 && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 bg-opacity-50">
+            <div className="bg-white rounded shadow-lg p-6 w-full max-w-md">
+              <h3 className="text-lg font-semibold mb-4">Confirm File Details</h3>
+              <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                    <span className="mr-2">📧</span>
-                    Email Notification
-                  </label>
-                  <div className="relative">
-                    {isLoadingUsers ? (
-                      <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
-                        Loading users...
-                      </div>
-                    ) : (
-                      <select
-                        value={noteForm.emailNotification}
-                        onChange={(e) =>
-                          setNoteForm((prev) => ({
-                            ...prev,
-                            emailNotification: e.target.value,
-                          }))
-                        }
-                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="Internal User">Internal User</option>
-                        {users.map((user) => (
-                          <option key={user.id} value={user.email || user.name}>
-                            {user.name || user.email} {user.email && `(${user.email})`}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </div>
-                  <p className="mt-1 text-xs text-gray-500">
-                    Only internal system users are available for notification
-                  </p>
+                  <label className="block text-sm font-medium mb-1">File Name *</label>
+                  <input
+                    type="text"
+                    value={fileDetailsName}
+                    onChange={(e) => setFileDetailsName(e.target.value)}
+                    className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">File Type *</label>
+                  <select
+                    value={fileDetailsType}
+                    onChange={(e) => setFileDetailsType(e.target.value)}
+                    className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="Contract">Contract</option>
+                    <option value="Invoice">Invoice</option>
+                    <option value="Report">Report</option>
+                    <option value="ID">ID</option>
+                    <option value="General">General</option>
+                  </select>
                 </div>
               </div>
-
-              {/* Form Actions */}
-              <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
+              <div className="flex justify-end space-x-2 mt-5">
                 <button
-                  onClick={handleCloseAddNoteModal}
-                  className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium"
+                  onClick={() => {
+                    setShowFileDetailsModal(false);
+                    setPendingFiles([]);
+                  }}
+                  className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
                 >
-                  CANCEL
+                  Cancel
                 </button>
                 <button
-                  onClick={handleAddNote}
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  disabled={!noteForm.text.trim() || !noteForm.action || noteForm.aboutReferences.length === 0}
+                  onClick={handleConfirmFileDetails}
+                  className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm disabled:opacity-50"
+                  disabled={!fileDetailsName.trim()}
                 >
-                  SAVE
+                  Save & Upload
                 </button>
               </div>
             </div>
           </div>
-        </div>
-      )}
-      {/* Header Fields Modal (PENCIL-HEADER-MODAL) */}
-      {showHeaderFieldModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Header Fields</h2>
-              <button
-                onClick={() => setShowHeaderFieldModal(false)}
-                className="p-1 rounded hover:bg-gray-200"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
-
-            {/* Body: two columns */}
-            <div className="p-6 grid grid-cols-2 gap-6">
-              {/* Left: Available fields */}
-              <div>
-                <h3 className="font-medium mb-3">Available Fields</h3>
-                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
-                  {headerFieldCatalog.map((f) => {
-                    const checked = isHeaderFieldEnabled(f.key);
-                    return (
-                      <label
-                        key={f.key}
-                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => toggleHeaderField(f.key)}
-                          className="w-4 h-4"
-                        />
-                        <div>
-                          <div className="text-sm text-gray-800">{f.label}</div>
-                          <div className="text-xs text-gray-500">
-                            Key: {f.key}
-                          </div>
-                        </div>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Right: Selected + reorder */}
-              <div>
-                <h3 className="font-medium mb-3">Header Order</h3>
-                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
-                  {headerFields.length === 0 ? (
-                    <div className="text-sm text-gray-500 italic">
-                      No fields selected
-                    </div>
-                  ) : (
-                    headerFields.map((key, idx) => (
-                      <div
-                        key={key}
-                        className="flex items-center justify-between p-2 border rounded"
-                      >
-                        <div>
-                          <div className="text-sm font-medium">
-                            {getHeaderFieldLabel(key)}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            Key: {key}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => moveHeaderField(key, "up")}
-                            disabled={idx === 0}
-                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
-                            title="Move up"
-                          >
-                            ↑
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => moveHeaderField(key, "down")}
-                            disabled={idx === headerFields.length - 1}
-                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
-                            title="Move down"
-                          >
-                            ↓
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => toggleHeaderField(key)}
-                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 text-red-600"
-                            title="Remove"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                {/* Footer buttons */}
-                <div className="flex justify-end gap-2 mt-4">
-                  <button
-                    onClick={() => setHeaderFields(HIRING_MANAGER_DEFAULT_HEADER_FIELDS)}
-                    className="px-4 py-2 border rounded hover:bg-gray-50"
-                  >
-                    Reset
-                  </button>
-                  <button
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    onClick={async () => {
-                      const success = await saveHeaderConfig();
-                      if (success) {
-                        setShowHeaderFieldModal(false);
-                      }
-                    }}
-                    disabled={isSavingHeaderConfig}
-                  >
-                    {isSavingHeaderConfig ? "Saving..." : "Done"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+        )
+      }
+    </div >
   );
 }

@@ -560,7 +560,7 @@ export default function DashboardNav() {
   return (
     <>
       {/* Top Navigation Bar */}
-      <div className="fixed top-0 left-0 right-0 z-99 pl-60 pr-4">
+      <div className="fixed top-0 left-0 right-0 z-10 pl-60 pr-4">
         {/* Chrome-style tab strip (shown after clicking T.B.I) */}
         {chromeTabsVisible && (
           <div className="sd-tabs sd-tabs-bar">

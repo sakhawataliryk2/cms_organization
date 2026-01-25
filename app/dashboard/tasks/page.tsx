@@ -1,485 +1,800 @@
 'use client'
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import LoadingScreen from '@/components/LoadingScreen';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  horizontalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { TbGripVertical } from "react-icons/tb";
+import { FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
 
 interface Task {
-    id: string;
-    title: string;
-    description?: string;
-    is_completed: boolean;
-    due_date?: string;
-    due_time?: string;
-    job_seeker_name?: string;
-    hiring_manager_name?: string;
-    job_title?: string;
-    lead_name?: string;
-    placement_id?: string;
-    owner?: string;
-    priority: string;
-    status: string;
-    created_by_name?: string;
-    assigned_to_name?: string;
-    created_at: string;
+  id: string;
+  title: string;
+  description?: string;
+  is_completed: boolean;
+  due_date?: string;
+  due_time?: string;
+  job_seeker_name?: string;
+  hiring_manager_name?: string;
+  job_title?: string;
+  lead_name?: string;
+  placement_id?: string;
+  owner?: string;
+  priority: string;
+  status: string;
+  created_by_name?: string;
+  assigned_to_name?: string;
+  created_at: string;
+  customFields?: Record<string, any>;
+  custom_fields?: Record<string, any>;
 }
 
-export default function TaskList() {
-    const router = useRouter();
-    const [searchTerm, setSearchTerm] = useState('');
-    const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
-    const [selectAll, setSelectAll] = useState(false);
-    const [tasks, setTasks] = useState<Task[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
-    const [sortField, setSortField] = useState<string>('created_at');
-    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-    const [openActionId, setOpenActionId] = useState<string | null>(null);
-    const [availableFields, setAvailableFields] = useState<any[]>([]);
-    const [isLoadingFields, setIsLoadingFields] = useState(false);
-    const taskColumnsCatalog = useMemo(() => {
-      const standard = [
-        { key: "completed", label: "Completed?" },
-        { key: "due", label: "Due Date & Time" },
-        { key: "jobSeeker", label: "Job Seeker" },
-        { key: "hiringManager", label: "Hiring Manager" },
-        { key: "job", label: "Job" },
-        { key: "lead", label: "Lead" },
-        { key: "placement", label: "Placement" },
-        { key: "owner", label: "Owner" },
-        { key: "priority", label: "Priority" },
-        { key: "status", label: "Status" },
-        { key: "title", label: "Title" },
-      ];
+type ColumnSortState = "asc" | "desc" | null;
+type ColumnFilterState = string | null;
 
-      const custom = (availableFields || []).map((f: any) => {
-        const key = f?.field_key || f?.field_name || f?.api_name || f?.id;
+// Sortable Column Header Component
+function SortableColumnHeader({
+  id,
+  columnKey,
+  label,
+  sortState,
+  filterValue,
+  onSort,
+  onFilterChange,
+  filterType,
+  filterOptions,
+  children,
+}: {
+  id: string;
+  columnKey: string;
+  label: string;
+  sortState: ColumnSortState;
+  filterValue: ColumnFilterState;
+  onSort: () => void;
+  onFilterChange: (value: string) => void;
+  filterType: "text" | "select" | "number";
+  filterOptions?: { label: string; value: string }[];
+  children?: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
 
-        return {
-          key: `custom:${String(key)}`,
-          label: f?.field_label || f?.field_name || String(key),
-        };
-      });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
 
-      return [...standard, ...custom];
-    }, [availableFields]);
+  const [showFilter, setShowFilter] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
 
-    const normalizeFields = (payload: any) => {
-      const root =
-        payload?.customFields ??
-        payload?.fields ??
-        payload?.data?.fields ??
-        payload?.data?.data?.fields ??
-        payload?.taskFields ??
-        payload?.data ??
-        payload?.data?.data ??
-        [];
-
-      const list: any[] = Array.isArray(root) ? root : [];
-
-      const flat = list.flatMap((x: any) => {
-        if (!x) return [];
-        if (Array.isArray(x.fields)) return x.fields;
-        if (Array.isArray(x.children)) return x.children;
-        return [x];
-      });
-
-      return flat.filter(Boolean);
+  // Close filter on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        filterRef.current &&
+        !filterRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
+      ) {
+        setShowFilter(false);
+      }
     };
 
-    useEffect(() => {
-      const fetchAvailableFields = async () => {
-        setIsLoadingFields(true);
-        try {
-          const token = document.cookie
-            .split("; ")
-            .find((r) => r.startsWith("token="))
-            ?.split("=")[1];
+    if (showFilter) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showFilter, id]);
 
-          const res = await fetch("/api/admin/field-management/tasks", {
-            method: "GET",
-            headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-            credentials: "include",
-          });
+  return (
+    <th
+      ref={setNodeRef}
+      style={style}
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
+    >
+      <div className="flex items-center gap-2">
+        {/* Drag Handle */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Drag to reorder column"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={16} />
+        </button>
 
-          const raw = await res.text();
-          let data: any = {};
-          try {
-            data = JSON.parse(raw);
-          } catch {}
+        {/* Column Label */}
+        <span className="flex-1">{label}</span>
 
-          const fields = normalizeFields(data);
-          setAvailableFields(fields);
-        } catch {
-          setAvailableFields([]);
-        } finally {
-          setIsLoadingFields(false);
-        }
-      };
+        {/* Sort Control */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSort();
+          }}
+          className="text-gray-400 hover:text-gray-600 transition-colors"
+          title={
+            sortState === "asc"
+              ? "Sort descending"
+              : sortState === "desc"
+                ? "Clear sort"
+                : "Sort ascending"
+          }
+        >
+          {sortState === "asc" ? (
+            <FiArrowUp size={14} />
+          ) : sortState === "desc" ? (
+            <FiArrowDown size={14} />
+          ) : (
+            <div className="w-3.5 h-3.5 border border-gray-300 rounded" />
+          )}
+        </button>
 
-      fetchAvailableFields();
-    }, []);
+        {/* Filter Toggle */}
+        <button
+          data-filter-toggle={id}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowFilter(!showFilter);
+          }}
+          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
+            }`}
+          title="Filter column"
+        >
+          <FiFilter size={14} />
+        </button>
+      </div>
 
-     const DEFAULT_TASK_COLUMNS: string[] = [
-       "completed",
-       "due",
-       "job_seeker",
-       "hiring_manager",
-       "job",
-       "lead",
-       "placement",
-       "owner",
-     ];
+      {/* Filter Dropdown */}
+      {showFilter && (
+        <div
+          ref={filterRef}
+          className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-300 shadow-lg p-2 mt-1 min-w-[150px]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {filterType === "text" && (
+            <input
+              type="text"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "number" && (
+            <input
+              type="number"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "select" && filterOptions && (
+            <select
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            >
+              <option value="">All</option>
+              {filterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {filterValue && (
+            <button
+              onClick={() => {
+                onFilterChange("");
+                setShowFilter(false);
+              }}
+              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+            >
+              Clear Filter
+            </button>
+          )}
+        </div>
+      )}
+    </th>
+  );
+}
 
+const formatDateTime = (date?: string, time?: string) => {
+  if (!date) return '';
 
-     const getColumnLabel = (key: string) =>
-       taskColumnsCatalog.find((c) => c.key === key)?.label ?? key;
+  try {
+    const dateObj = new Date(date);
+    let formatted = new Intl.DateTimeFormat('en-US', {
+      month: '2-digit',
+      day: '2-digit',
+      year: 'numeric'
+    }).format(dateObj);
 
-const getColumnValue = (task: any, key: string) => {
-  if (key.startsWith("custom:")) {
-    const rawKey = key.replace("custom:", "");
-    const cf = task?.customFields || task?.custom_fields || {};
-    const val = cf?.[rawKey];
-    return val === undefined || val === null || val === "" ? "—" : String(val);
-  }
+    if (time) {
+      formatted += ` ${time}`;
+    }
 
-  switch (key) {
-    case "completed":
-      return task.is_completed ? "Yes" : "No";
-
-    case "due":
-      return formatDateTime(task.due_date, task.due_time) || "Not set";
-
-    case "jobSeeker":
-      return task.job_seeker_name || "—";
-
-    case "hiringManager":
-      return task.hiring_manager_name || "—";
-
-    case "job":
-      return task.job_title || "—";
-
-    case "lead":
-      return task.lead_name || "—";
-
-    case "placement":
-      return task.placement_id || "—";
-
-    case "owner":
-      return task.owner || task.created_by_name || "—";
-
-    case "priority":
-      return task.priority || "—";
-
-    case "status":
-      return task.status || "—";
-
-    case "title":
-      return task.title || "—";
-
-    case "dateCreated":
-      return formatDateTime(task.created_at) || "—";
-
-    case "createdBy":
-      return task.created_by_name || "—";
-
-    case "assignedTo":
-      return task.assigned_to_name || "—";
-
-    default:
-      return "—";
+    return formatted;
+  } catch (error) {
+    console.error('Error formatting date:', error);
+    return '';
   }
 };
 
-     const {
-       columnFields,
-       setColumnFields,
-       showHeaderFieldModal: showColumnModal,
-       setShowHeaderFieldModal: setShowColumnModal,
-       saveHeaderConfig: saveColumnConfig,
-       isSaving: isSavingColumns,
-     } = useHeaderConfig({
-       entityType: "TASK",
-       configType: "columns",
-       defaultFields: DEFAULT_TASK_COLUMNS,
-     });
+const getStatusColor = (status: string) => {
+  switch (status.toLowerCase()) {
+    case 'completed':
+      return 'bg-green-100 text-green-800';
+    case 'pending':
+      return 'bg-yellow-100 text-yellow-800';
+    case 'in progress':
+      return 'bg-blue-100 text-blue-800';
+    case 'overdue':
+      return 'bg-red-100 text-red-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+};
 
+const getPriorityColor = (priority: string) => {
+  switch (priority.toLowerCase()) {
+    case 'high':
+      return 'bg-red-100 text-red-800';
+    case 'medium':
+      return 'bg-yellow-100 text-yellow-800';
+    case 'low':
+      return 'bg-green-100 text-green-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+};
 
-    // Fetch tasks data when component mounts
-    useEffect(() => {
-        fetchTasks();
-    }, []);
+export default function TaskList() {
+  const router = useRouter();
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
+  const [selectAll, setSelectAll] = useState(false);
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [sortField, setSortField] = useState<string>('created_at');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
+  const [openActionId, setOpenActionId] = useState<string | null>(null);
+  const [availableFields, setAvailableFields] = useState<any[]>([]);
+  const [isLoadingFields, setIsLoadingFields] = useState(false);
 
-    const fetchTasks = async () => {
-        setIsLoading(true);
-        try {
-            const response = await fetch('/api/tasks', {
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
-                }
-            });
+  // Per-column sorting state
+  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
 
-            if (!response.ok) {
-                throw new Error('Failed to fetch tasks');
-            }
+  // Per-column filtering state
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
 
-            const data = await response.json();
-            console.log('Tasks data:', data);
-            setTasks(data.tasks || []);
-        } catch (err) {
-            console.error('Error fetching tasks:', err);
-            setError(err instanceof Error ? err.message : 'An error occurred while fetching tasks');
-        } finally {
-            setIsLoading(false);
-        }
-    };
+  const taskColumnsCatalog = useMemo(() => {
+    const standard = [
+      { key: "completed", label: "Completed?", sortable: true, filterType: "select" as const },
+      { key: "due", label: "Due Date & Time", sortable: true, filterType: "text" as const },
+      { key: "jobSeeker", label: "Job Seeker", sortable: true, filterType: "text" as const },
+      { key: "hiringManager", label: "Hiring Manager", sortable: true, filterType: "text" as const },
+      { key: "job", label: "Job", sortable: true, filterType: "text" as const },
+      { key: "lead", label: "Lead", sortable: true, filterType: "text" as const },
+      { key: "placement", label: "Placement", sortable: true, filterType: "text" as const },
+      { key: "owner", label: "Owner", sortable: true, filterType: "text" as const },
+      { key: "priority", label: "Priority", sortable: true, filterType: "select" as const },
+      { key: "status", label: "Status", sortable: true, filterType: "select" as const },
+      { key: "title", label: "Title", sortable: true, filterType: "text" as const },
+    ];
 
-    const filteredTasks = tasks.filter(
-        (task) =>
-            (task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false) ||
-            (task.description?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false) ||
-            (task.id?.toString().toLowerCase().includes(searchTerm.toLowerCase()) ?? false) ||
-            (task.owner?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false) ||
-            (task.job_seeker_name?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false) ||
-            (task.hiring_manager_name?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false) ||
-            (task.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false) ||
-            (task.lead_name?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false)
-    );
+    const custom = (availableFields || []).map((f: any) => {
+      const key = f?.field_key || f?.field_name || f?.api_name || f?.id;
 
-    // Sort tasks
-    const sortedTasks = [...filteredTasks].sort((a, b) => {
-        let aValue: any = a[sortField as keyof Task];
-        let bValue: any = b[sortField as keyof Task];
-
-        // Handle null/undefined values
-        if (aValue === null || aValue === undefined) aValue = '';
-        if (bValue === null || bValue === undefined) bValue = '';
-
-        // Convert to strings for comparison
-        const aStr = String(aValue).toLowerCase();
-        const bStr = String(bValue).toLowerCase();
-
-        if (sortDirection === 'asc') {
-            return aStr.localeCompare(bStr);
-        } else {
-            return bStr.localeCompare(aStr);
-        }
+      return {
+        key: `custom:${String(key)}`,
+        label: f?.field_label || f?.field_name || String(key),
+        sortable: false,
+        filterType: "text" as const,
+      };
     });
 
-    const handleViewTask = (id: string) => {
-        router.push(`/dashboard/tasks/view?id=${id}`);
-    };
+    return [...standard, ...custom];
+  }, [availableFields]);
 
-    const handleAddTask = () => {
-        router.push('/dashboard/tasks/add');
-    };
+  const normalizeFields = (payload: any) => {
+    const root =
+      payload?.customFields ??
+      payload?.fields ??
+      payload?.data?.fields ??
+      payload?.data?.data?.fields ??
+      payload?.taskFields ??
+      payload?.data ??
+      payload?.data?.data ??
+      [];
 
-    const handleSort = (field: string) => {
-        if (sortField === field) {
-            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-        } else {
-            setSortField(field);
-            setSortDirection('asc');
-        }
-    };
+    const list: any[] = Array.isArray(root) ? root : [];
 
-    const getSortIcon = (field: string) => {
-        if (sortField !== field) return '↕️';
-        return sortDirection === 'asc' ? '↑' : '↓';
-    };
+    const flat = list.flatMap((x: any) => {
+      if (!x) return [];
+      if (Array.isArray(x.fields)) return x.fields;
+      if (Array.isArray(x.children)) return x.children;
+      return [x];
+    });
 
-    const handleSelectAll = () => {
-        if (selectAll) {
-            setSelectedTasks([]);
-        } else {
-            setSelectedTasks(sortedTasks.map(task => task.id));
-        }
-        setSelectAll(!selectAll);
-    };
+    return flat.filter(Boolean);
+  };
 
-    const handleSelectTask = (id: string, e: React.MouseEvent) => {
-        e.stopPropagation(); // Prevent row click event
+  useEffect(() => {
+    const fetchAvailableFields = async () => {
+      setIsLoadingFields(true);
+      try {
+        const token = document.cookie
+          .split("; ")
+          .find((r) => r.startsWith("token="))
+          ?.split("=")[1];
 
-        if (selectedTasks.includes(id)) {
-            setSelectedTasks(selectedTasks.filter(taskId => taskId !== id));
-            if (selectAll) setSelectAll(false);
-        } else {
-            setSelectedTasks([...selectedTasks, id]);
-            // If all tasks are now selected, update selectAll state
-            if ([...selectedTasks, id].length === sortedTasks.length) {
-                setSelectAll(true);
-            }
-        }
-    };
+        const res = await fetch("/api/admin/field-management/tasks", {
+          method: "GET",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          credentials: "include",
+        });
 
-    const deleteSelectedTasks = async () => {
-        if (selectedTasks.length === 0) return;
-
-        const confirmMessage = selectedTasks.length === 1
-            ? 'Are you sure you want to delete this task?'
-            : `Are you sure you want to delete these ${selectedTasks.length} tasks?`;
-
-        if (!window.confirm(confirmMessage)) return;
-
-        setIsLoading(true);
-
+        const raw = await res.text();
+        let data: any = {};
         try {
-            // Create promises for all delete operations
-            const deletePromises = selectedTasks.map(id =>
-                fetch(`/api/tasks/${id}`, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
-                    }
-                })
-            );
+          data = JSON.parse(raw);
+        } catch { }
 
-            // Execute all delete operations
-            const results = await Promise.allSettled(deletePromises);
-
-            // Check for failures
-            const failures = results.filter(result => result.status === 'rejected');
-
-            if (failures.length > 0) {
-                throw new Error(`Failed to delete ${failures.length} tasks`);
-            }
-
-            // Refresh tasks after successful deletion
-            await fetchTasks();
-
-            // Clear selection after deletion
-            setSelectedTasks([]);
-            setSelectAll(false);
-        } catch (err) {
-            console.error('Error deleting tasks:', err);
-            setError(err instanceof Error ? err.message : 'An error occurred while deleting tasks');
-        } finally {
-            setIsLoading(false);
-        }
+        const fields = normalizeFields(data);
+        setAvailableFields(fields);
+      } catch {
+        setAvailableFields([]);
+      } finally {
+        setIsLoadingFields(false);
+      }
     };
 
-    const toggleTaskComplete = async (taskId: string, isCompleted: boolean) => {
-        if (!taskId) {
-            console.error('Task ID is required');
-            return;
-        }
+    fetchAvailableFields();
+  }, []);
 
-        try {
-            const response = await fetch(`/api/tasks/${taskId}`, {
-                method: 'PUT',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
-                },
-                body: JSON.stringify({
-                    isCompleted: !isCompleted,
-                    status: !isCompleted ? 'Completed' : 'Pending'
-                })
-            });
+  const DEFAULT_TASK_COLUMNS: string[] = [
+    "completed",
+    "due",
+    "job_seeker",
+    "hiring_manager",
+    "job",
+    "lead",
+    "placement",
+    "owner",
+  ];
 
-            if (!response.ok) {
-                throw new Error('Failed to update task');
-            }
 
-            // Refresh tasks
-            await fetchTasks();
-        } catch (err) {
-            console.error('Error updating task:', err);
-            setError(err instanceof Error ? err.message : 'An error occurred while updating the task');
-        }
-    };
+  const getColumnLabel = (key: string) =>
+    taskColumnsCatalog.find((c) => c.key === key)?.label ?? key;
 
-    const formatDateTime = (date?: string, time?: string) => {
-        if (!date) return '';
-
-        try {
-            const dateObj = new Date(date);
-            let formatted = new Intl.DateTimeFormat('en-US', {
-                month: '2-digit',
-                day: '2-digit',
-                year: 'numeric'
-            }).format(dateObj);
-
-            if (time) {
-                formatted += ` ${time}`;
-            }
-
-            return formatted;
-        } catch (error) {
-            console.error('Error formatting date:', error);
-            return '';
-        }
-    };
-
-    const getStatusColor = (status: string) => {
-        switch (status.toLowerCase()) {
-            case 'completed':
-                return 'bg-green-100 text-green-800';
-            case 'pending':
-                return 'bg-yellow-100 text-yellow-800';
-            case 'in progress':
-                return 'bg-blue-100 text-blue-800';
-            case 'overdue':
-                return 'bg-red-100 text-red-800';
-            default:
-                return 'bg-gray-100 text-gray-800';
-        }
-    };
-
-    const getPriorityColor = (priority: string) => {
-        switch (priority.toLowerCase()) {
-            case 'high':
-                return 'bg-red-100 text-red-800';
-            case 'medium':
-                return 'bg-yellow-100 text-yellow-800';
-            case 'low':
-                return 'bg-green-100 text-green-800';
-            default:
-                return 'bg-gray-100 text-gray-800';
-        }
-    };
-
-    if (isLoading) {
-        return <LoadingScreen message="Loading tasks..." />;
+  const getColumnValue = (task: any, key: string) => {
+    if (key.startsWith("custom:")) {
+      const rawKey = key.replace("custom:", "");
+      const cf = task?.customFields || task?.custom_fields || {};
+      const val = cf?.[rawKey];
+      return val === undefined || val === null || val === "" ? "—" : String(val);
     }
 
-    return (
-      <div className="bg-white rounded-lg shadow">
-        {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b border-gray-200">
-          <h1 className="text-xl font-bold">Tasks</h1>
-          <div className="flex space-x-4">
-            {selectedTasks.length > 0 && (
-              <button
-                onClick={deleteSelectedTasks}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 mr-1"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-                Delete Selected ({selectedTasks.length})
-              </button>
-            )}
+    switch (key) {
+      case "completed":
+        return task.is_completed ? "Yes" : "No";
+
+      case "due":
+        return formatDateTime(task.due_date, task.due_time) || "Not set";
+
+      case "jobSeeker":
+        return task.job_seeker_name || "—";
+
+      case "hiringManager":
+        return task.hiring_manager_name || "—";
+
+      case "job":
+        return task.job_title || "—";
+
+      case "lead":
+        return task.lead_name || "—";
+
+      case "placement":
+        return task.placement_id || "—";
+
+      case "owner":
+        return task.owner || task.created_by_name || "—";
+
+      case "priority":
+        return task.priority || "—";
+
+      case "status":
+        return task.status || "—";
+
+      case "title":
+        return task.title || "—";
+
+      case "dateCreated":
+        return formatDateTime(task.created_at) || "—";
+
+      case "createdBy":
+        return task.created_by_name || "—";
+
+      case "assignedTo":
+        return task.assigned_to_name || "—";
+
+      default:
+        return "—";
+    }
+  };
+
+  const {
+    columnFields,
+    setColumnFields,
+    showHeaderFieldModal: showColumnModal,
+    setShowHeaderFieldModal: setShowColumnModal,
+    saveHeaderConfig: saveColumnConfig,
+    isSaving: isSavingColumns,
+  } = useHeaderConfig({
+    entityType: "TASK",
+    configType: "columns",
+    defaultFields: DEFAULT_TASK_COLUMNS,
+  });
+
+  const getColumnInfo = (key: string) =>
+    taskColumnsCatalog.find((c) => c.key === key);
+
+  // Handle column sort toggle
+  const handleColumnSort = (columnKey: string) => {
+    setColumnSorts((prev) => {
+      const current = prev[columnKey];
+      if (current === "asc") {
+        return { ...prev, [columnKey]: "desc" };
+      } else if (current === "desc") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      } else {
+        return { ...prev, [columnKey]: "asc" };
+      }
+    });
+  };
+
+  // Handle column filter change
+  const handleColumnFilter = (columnKey: string, value: string) => {
+    setColumnFilters((prev) => {
+      if (!value || value.trim() === "") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      }
+      return { ...prev, [columnKey]: value };
+    });
+  };
+
+  // Handle drag end for column reordering
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = columnFields.indexOf(active.id as string);
+    const newIndex = columnFields.indexOf(over.id as string);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newOrder = arrayMove(columnFields, oldIndex, newIndex);
+      setColumnFields(newOrder);
+    }
+  };
+
+  // Load column order from localStorage on mount
+  useEffect(() => {
+    const savedOrder = localStorage.getItem("tasksColumnOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validOrder = parsed.filter((key) =>
+            [...DEFAULT_TASK_COLUMNS, ...columnFields].includes(key)
+          );
+          if (validOrder.length > 0) {
+            setColumnFields(validOrder);
+          }
+        }
+      } catch (e) {
+        console.error("Error loading column order:", e);
+      }
+    }
+  }, []);
+
+  // Save column order to localStorage whenever it changes
+  useEffect(() => {
+    if (columnFields.length > 0) {
+      localStorage.setItem("tasksColumnOrder", JSON.stringify(columnFields));
+    }
+  }, [columnFields]);
+
+  // Unique options for select filters
+  const statusOptions = useMemo(() => {
+    const statuses = new Set<string>();
+    tasks.forEach((t) => { if (t.status) statuses.add(t.status); });
+    return Array.from(statuses).map((s) => ({ label: s, value: s }));
+  }, [tasks]);
+
+  const priorityOptions = useMemo(() => {
+    const priorities = new Set<string>();
+    tasks.forEach((t) => { if (t.priority) priorities.add(t.priority); });
+    return Array.from(priorities).map((p) => ({ label: p, value: p }));
+  }, [tasks]);
+
+  const completedOptions = [
+    { label: "Yes", value: "Yes" },
+    { label: "No", value: "No" },
+  ];
+
+
+  // Fetch tasks data when component mounts
+  useEffect(() => {
+    fetchTasks();
+  }, []);
+
+  const fetchTasks = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/tasks', {
+        headers: {
+          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch tasks');
+      }
+
+      const data = await response.json();
+      console.log('Tasks data:', data);
+      setTasks(data.tasks || []);
+    } catch (err) {
+      console.error('Error fetching tasks:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred while fetching tasks');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const filteredAndSortedTasks = useMemo(() => {
+    let result = [...tasks];
+
+    // Apply global search
+    if (searchTerm.trim() !== "") {
+      const term = searchTerm.toLowerCase();
+      result = result.filter((task) => {
+        // ID search (support "T123" or just "123")
+        const idMatch =
+          String(task.id).toLowerCase().includes(term) ||
+          `t${task.id}`.toLowerCase().includes(term);
+
+        // Core fields
+        const coreMatch =
+          (task.title?.toLowerCase().includes(term) ?? false) ||
+          (task.description?.toLowerCase().includes(term) ?? false) ||
+          (task.owner?.toLowerCase().includes(term) ?? false) ||
+          (task.job_seeker_name?.toLowerCase().includes(term) ?? false) ||
+          (task.hiring_manager_name?.toLowerCase().includes(term) ?? false) ||
+          (task.job_title?.toLowerCase().includes(term) ?? false) ||
+          (task.lead_name?.toLowerCase().includes(term) ?? false) ||
+          (task.status?.toLowerCase().includes(term) ?? false) ||
+          (task.priority?.toLowerCase().includes(term) ?? false);
+
+        // Custom fields search
+        const cf = task.customFields || task.custom_fields || {};
+        const customMatch = Object.values(cf).some((val) =>
+          String(val || "").toLowerCase().includes(term)
+        );
+
+        return idMatch || coreMatch || customMatch;
+      });
+    }
+
+    // Apply column filters
+    Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
+      if (!filterValue || filterValue.trim() === "") return;
+
+      result = result.filter((task) => {
+        const value = getColumnValue(task, columnKey);
+        const valueStr = String(value).toLowerCase();
+        const filterStr = String(filterValue).toLowerCase();
+
+        const columnInfo = getColumnInfo(columnKey);
+        if ((columnInfo?.filterType as string) === "number") {
+          return String(value) === String(filterValue);
+        }
+
+        if (columnInfo?.filterType === "select") {
+          return valueStr === filterStr;
+        }
+
+        return valueStr.includes(filterStr);
+      });
+    });
+
+    // Apply sorting
+    const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
+    if (activeSorts.length > 0) {
+      const [sortKey, sortDir] = activeSorts[0];
+      result.sort((a, b) => {
+        let aValue = getColumnValue(a, sortKey);
+        let bValue = getColumnValue(b, sortKey);
+
+        // Handle dates for "due"
+        if (sortKey === "due") {
+          aValue = a.due_date ? new Date(a.due_date).getTime() : 0;
+          bValue = b.due_date ? new Date(b.due_date).getTime() : 0;
+        }
+
+        // Handle numeric values
+        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
+        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
+
+        let cmp = 0;
+        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+          cmp = aNum - bNum;
+        } else {
+          cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+        }
+
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [tasks, searchTerm, columnFilters, columnSorts]);
+
+  const handleViewTask = (id: string) => {
+    router.push(`/dashboard/tasks/view?id=${id}`);
+  };
+
+  const handleAddTask = () => {
+    router.push('/dashboard/tasks/add');
+  };
+
+
+  const handleSelectAll = () => {
+    if (selectAll) {
+      setSelectedTasks([]);
+    } else {
+      setSelectedTasks(filteredAndSortedTasks.map(task => task.id));
+    }
+    setSelectAll(!selectAll);
+  };
+
+  const handleSelectTask = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent row click event
+
+    if (selectedTasks.includes(id)) {
+      setSelectedTasks(selectedTasks.filter(taskId => taskId !== id));
+      if (selectAll) setSelectAll(false);
+    } else {
+      setSelectedTasks([...selectedTasks, id]);
+      // If all tasks are now selected, update selectAll state
+      if ([...selectedTasks, id].length === filteredAndSortedTasks.length) {
+        setSelectAll(true);
+      }
+    }
+  };
+
+  const deleteSelectedTasks = async () => {
+    if (selectedTasks.length === 0) return;
+
+    const confirmMessage = selectedTasks.length === 1
+      ? 'Are you sure you want to delete this task?'
+      : `Are you sure you want to delete these ${selectedTasks.length} tasks?`;
+
+    if (!window.confirm(confirmMessage)) return;
+
+    setIsLoading(true);
+
+    try {
+      // Create promises for all delete operations
+      const deletePromises = selectedTasks.map(id =>
+        fetch(`/api/tasks/${id}`, {
+          method: 'DELETE',
+          headers: {
+            'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+          }
+        })
+      );
+
+      // Execute all delete operations
+      const results = await Promise.allSettled(deletePromises);
+
+      // Check for failures
+      const failures = results.filter(result => result.status === 'rejected');
+
+      if (failures.length > 0) {
+        throw new Error(`Failed to delete ${failures.length} tasks`);
+      }
+
+      // Refresh tasks after successful deletion
+      await fetchTasks();
+
+      // Clear selection after deletion
+      setSelectedTasks([]);
+      setSelectAll(false);
+    } catch (err) {
+      console.error('Error deleting tasks:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred while deleting tasks');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const toggleTaskComplete = async (taskId: string, isCompleted: boolean) => {
+    if (!taskId) {
+      console.error('Task ID is required');
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+        },
+        body: JSON.stringify({
+          isCompleted: !isCompleted,
+          status: !isCompleted ? 'Completed' : 'Pending'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update task');
+      }
+
+      // Refresh tasks
+      await fetchTasks();
+    } catch (err) {
+      console.error('Error updating task:', err);
+      setError(err instanceof Error ? err.message : 'An error occurred while updating the task');
+    }
+  };
+
+
+  if (isLoading) {
+    return <LoadingScreen message="Loading tasks..." />;
+  }
+
+  return (
+    <div className="bg-white rounded-lg shadow">
+      {/* Header */}
+      <div className="flex justify-between items-center p-4 border-b border-gray-200">
+        <h1 className="text-xl font-bold">Tasks</h1>
+        <div className="flex space-x-4">
+          {selectedTasks.length > 0 && (
             <button
-              onClick={() => setShowColumnModal(true)}
-              className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
-            >
-              Columns
-            </button>
-            <button
-              onClick={handleAddTask}
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
+              onClick={deleteSelectedTasks}
+              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center"
             >
               <svg
                 xmlns="http://www.w3.org/2000/svg"
@@ -489,51 +804,77 @@ const getColumnValue = (task: any, key: string) => {
               >
                 <path
                   fillRule="evenodd"
-                  d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
+                  d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
                   clipRule="evenodd"
                 />
               </svg>
-              Add Task
+              Delete Selected ({selectedTasks.length})
             </button>
+          )}
+          <button
+            onClick={() => setShowColumnModal(true)}
+            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+          >
+            Columns
+          </button>
+          <button
+            onClick={handleAddTask}
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5 mr-1"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fillRule="evenodd"
+                d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
+                clipRule="evenodd"
+              />
+            </svg>
+            Add Task
+          </button>
+        </div>
+      </div>
+
+      {/* Error message */}
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 m-4 rounded">
+          <p>{error}</p>
+        </div>
+      )}
+
+      {/* Search and Filter */}
+      <div className="p-4 border-b border-gray-200">
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Search tasks..."
+            className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          <div className="absolute left-3 top-2.5 text-gray-400">
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-5 w-5"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fillRule="evenodd"
+                d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                clipRule="evenodd"
+              />
+            </svg>
           </div>
         </div>
+      </div>
 
-        {/* Error message */}
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 m-4 rounded">
-            <p>{error}</p>
-          </div>
-        )}
-
-        {/* Search and Filter */}
-        <div className="p-4 border-b border-gray-200">
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search tasks..."
-              className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <div className="absolute left-3 top-2.5 text-gray-400">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-          </div>
-        </div>
-
-        {/* Tasks Table */}
-        <div className="overflow-x-auto">
+      {/* Tasks Table */}
+      <div className="overflow-x-auto">
+        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
@@ -547,36 +888,55 @@ const getColumnValue = (task: any, key: string) => {
                   />
                 </th>
 
+                {/* Fixed ID */}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Id
+                </th>
+
                 {/* Fixed Actions */}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
 
-                {/* Fixed ID */}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <button
-                    onClick={() => handleSort("id")}
-                    className="hover:text-gray-700"
-                  >
-                    ID
-                  </button>
-                </th>
+                {/* Draggable Dynamic headers */}
+                <SortableContext
+                  items={columnFields}
+                  strategy={horizontalListSortingStrategy}
+                >
+                  {columnFields.map((key) => {
+                    const columnInfo = getColumnInfo(key);
+                    if (!columnInfo) return null;
 
-                {/* Dynamic */}
-                {columnFields.map((key) => (
-                  <th
-                    key={key}
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    {getColumnLabel(key)}
-                  </th>
-                ))}
+                    return (
+                      <SortableColumnHeader
+                        key={key}
+                        id={key}
+                        columnKey={key}
+                        label={getColumnLabel(key)}
+                        sortState={columnSorts[key] || null}
+                        filterValue={columnFilters[key] || null}
+                        onSort={() => handleColumnSort(key)}
+                        onFilterChange={(value) => handleColumnFilter(key, value)}
+                        filterType={columnInfo.filterType}
+                        filterOptions={
+                          key === "status"
+                            ? statusOptions
+                            : key === "priority"
+                              ? priorityOptions
+                              : key === "completed"
+                                ? completedOptions
+                                : undefined
+                        }
+                      />
+                    );
+                  })}
+                </SortableContext>
               </tr>
             </thead>
 
             <tbody className="bg-white divide-y divide-gray-200">
-              {sortedTasks.length > 0 ? (
-                sortedTasks.map((task) => (
+              {filteredAndSortedTasks.length > 0 ? (
+                filteredAndSortedTasks.map((task) => (
                   <tr
                     key={task.id}
                     className="hover:bg-gray-50 cursor-pointer"
@@ -591,9 +951,16 @@ const getColumnValue = (task: any, key: string) => {
                         type="checkbox"
                         className="h-4 w-4 text-blue-600 border-gray-300 rounded"
                         checked={selectedTasks.includes(task.id)}
-                        onChange={() => {}}
+                        onChange={() => { }}
                         onClick={(e) => handleSelectTask(task.id, e)}
                       />
+                    </td>
+
+                    {/* Fixed ID */}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">
+                        T {task.id}
+                      </div>
                     </td>
 
                     {/* Fixed Actions dropdown */}
@@ -684,13 +1051,6 @@ const getColumnValue = (task: any, key: string) => {
                       </div>
                     </td>
 
-                    {/* Fixed ID */}
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        T {task.id}
-                      </div>
-                    </td>
-
                     {/* Dynamic cells */}
                     {columnFields.map((key) => (
                       <td
@@ -703,11 +1063,10 @@ const getColumnValue = (task: any, key: string) => {
                               e.stopPropagation();
                               toggleTaskComplete(task.id, task.is_completed);
                             }}
-                            className={`px-2 py-1 rounded text-xs font-semibold ${
-                              task.is_completed
-                                ? "bg-green-100 text-green-800"
-                                : "bg-gray-100 text-gray-800 hover:bg-gray-200"
-                            }`}
+                            className={`px-2 py-1 rounded text-xs font-semibold ${task.is_completed
+                              ? "bg-green-100 text-green-800"
+                              : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+                              }`}
                           >
                             {task.is_completed ? "✓ Yes" : "○ No"}
                           </button>
@@ -748,168 +1107,174 @@ const getColumnValue = (task: any, key: string) => {
               )}
             </tbody>
           </table>
-        </div>
+        </DndContext>
+      </div>
 
-        {/* Pagination */}
-        <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-          <div className="flex-1 flex justify-between sm:hidden">
-            <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-              Previous
-            </button>
-            <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-              Next
-            </button>
-          </div>
-          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm text-gray-700">
-                Showing <span className="font-medium">1</span> to{" "}
-                <span className="font-medium">{sortedTasks.length}</span> of{" "}
-                <span className="font-medium">{sortedTasks.length}</span>{" "}
-                results
-              </p>
-            </div>
+      {/* Pagination */}
+      <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+        <div className="flex-1 flex justify-between sm:hidden">
+          <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+            Previous
+          </button>
+          <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+            Next
+          </button>
+        </div>
+        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm text-gray-700">
+              Showing <span className="font-medium">1</span> to{" "}
+              <span className="font-medium">{filteredAndSortedTasks.length}</span> of{" "}
+              <span className="font-medium">{filteredAndSortedTasks.length}</span>{" "}
+              results
+            </p>
           </div>
         </div>
-        {showColumnModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-              <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-                <h2 className="text-lg font-semibold">Customize Columns</h2>
-                <button
-                  onClick={() => setShowColumnModal(false)}
-                  className="p-1 rounded hover:bg-gray-200"
-                >
-                  <span className="text-2xl font-bold">×</span>
-                </button>
+      </div>
+      {filteredAndSortedTasks.length > 0 && (
+        <div className="px-4 py-3 border-t border-gray-200">
+          {/* nav etc if needed, but the original block was a bit messy, let's just use the count for now or fix nav if user wants */}
+        </div>
+      )}
+      {showColumnModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Customize Columns</h2>
+              <button
+                onClick={() => setShowColumnModal(false)}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            <div className="p-6 grid grid-cols-2 gap-6">
+              {/* Available */}
+              <div>
+                <h3 className="font-medium mb-3">Available Columns</h3>
+                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                  {taskColumnsCatalog.map((c) => {
+                    const checked = columnFields.includes(c.key);
+                    return (
+                      <label
+                        key={c.key}
+                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setColumnFields((prev) => {
+                              if (prev.includes(c.key))
+                                return prev.filter((x) => x !== c.key);
+                              return [...prev, c.key];
+                            });
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-800">
+                          {c.label}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
 
-              <div className="p-6 grid grid-cols-2 gap-6">
-                {/* Available */}
-                <div>
-                  <h3 className="font-medium mb-3">Available Columns</h3>
-                  <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
-                    {taskColumnsCatalog.map((c) => {
-                      const checked = columnFields.includes(c.key);
-                      return (
-                        <label
-                          key={c.key}
-                          className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => {
+              {/* Order */}
+              <div>
+                <h3 className="font-medium mb-3">Column Order</h3>
+                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                  {columnFields.length === 0 ? (
+                    <div className="text-sm text-gray-500 italic">
+                      No columns selected
+                    </div>
+                  ) : (
+                    columnFields.map((key, idx) => (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between p-2 border rounded"
+                      >
+                        <div className="text-sm font-medium">
+                          {getColumnLabel(key)}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                            disabled={idx === 0}
+                            onClick={() => {
                               setColumnFields((prev) => {
-                                if (prev.includes(c.key))
-                                  return prev.filter((x) => x !== c.key);
-                                return [...prev, c.key];
+                                const copy = [...prev];
+                                [copy[idx - 1], copy[idx]] = [
+                                  copy[idx],
+                                  copy[idx - 1],
+                                ];
+                                return copy;
                               });
                             }}
-                            className="w-4 h-4"
-                          />
-                          <span className="text-sm text-gray-800">
-                            {c.label}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
+                          >
+                            ↑
+                          </button>
+
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                            disabled={idx === columnFields.length - 1}
+                            onClick={() => {
+                              setColumnFields((prev) => {
+                                const copy = [...prev];
+                                [copy[idx], copy[idx + 1]] = [
+                                  copy[idx + 1],
+                                  copy[idx],
+                                ];
+                                return copy;
+                              });
+                            }}
+                          >
+                            ↓
+                          </button>
+
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50"
+                            onClick={() =>
+                              setColumnFields((prev) =>
+                                prev.filter((x) => x !== key)
+                              )
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
 
-                {/* Order */}
-                <div>
-                  <h3 className="font-medium mb-3">Column Order</h3>
-                  <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
-                    {columnFields.length === 0 ? (
-                      <div className="text-sm text-gray-500 italic">
-                        No columns selected
-                      </div>
-                    ) : (
-                      columnFields.map((key, idx) => (
-                        <div
-                          key={key}
-                          className="flex items-center justify-between p-2 border rounded"
-                        >
-                          <div className="text-sm font-medium">
-                            {getColumnLabel(key)}
-                          </div>
+                <div className="flex justify-end gap-2 mt-4">
+                  <button
+                    className="px-4 py-2 border rounded hover:bg-gray-50"
+                    onClick={() => setColumnFields(DEFAULT_TASK_COLUMNS)}
+                  >
+                    Reset
+                  </button>
 
-                          <div className="flex items-center gap-2">
-                            <button
-                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
-                              disabled={idx === 0}
-                              onClick={() => {
-                                setColumnFields((prev) => {
-                                  const copy = [...prev];
-                                  [copy[idx - 1], copy[idx]] = [
-                                    copy[idx],
-                                    copy[idx - 1],
-                                  ];
-                                  return copy;
-                                });
-                              }}
-                            >
-                              ↑
-                            </button>
-
-                            <button
-                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
-                              disabled={idx === columnFields.length - 1}
-                              onClick={() => {
-                                setColumnFields((prev) => {
-                                  const copy = [...prev];
-                                  [copy[idx], copy[idx + 1]] = [
-                                    copy[idx + 1],
-                                    copy[idx],
-                                  ];
-                                  return copy;
-                                });
-                              }}
-                            >
-                              ↓
-                            </button>
-
-                            <button
-                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50"
-                              onClick={() =>
-                                setColumnFields((prev) =>
-                                  prev.filter((x) => x !== key)
-                                )
-                              }
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <div className="flex justify-end gap-2 mt-4">
-                    <button
-                      className="px-4 py-2 border rounded hover:bg-gray-50"
-                      onClick={() => setColumnFields(DEFAULT_TASK_COLUMNS)}
-                    >
-                      Reset
-                    </button>
-
-                    <button
-                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                      disabled={!!isSavingColumns}
-                      onClick={async () => {
-                        const ok = await saveColumnConfig();
-                        if (ok !== false) setShowColumnModal(false);
-                      }}
-                    >
-                      Done
-                    </button>
-                  </div>
+                  <button
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                    disabled={!!isSavingColumns}
+                    onClick={async () => {
+                      const ok = await saveColumnConfig();
+                      if (ok !== false) setShowColumnModal(false);
+                    }}
+                  >
+                    Done
+                  </button>
                 </div>
               </div>
             </div>
           </div>
-        )}
-      </div>
-    );
+        </div>
+      )}
+    </div>
+  );
 }

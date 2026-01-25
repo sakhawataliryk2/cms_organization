@@ -83,8 +83,14 @@ export default function AddHiringManager() {
     phone: "",
     mobilePhone: "",
     directLine: "",
+    companyPhone: "",
     linkedinUrl: "",
     address: "",
+    address2: "",
+    city: "",
+    state: "",
+    zipCode: "",
+    lastContactDate: "",
   });
 
   // Fetch organization data (name, phone, address) if organizationId is provided
@@ -96,12 +102,14 @@ export default function AddHiringManager() {
         const data = await response.json();
         const org = data.organization || {};
 
-        console.log(org)
-
         // Extract organization data with fallbacks
         const orgName = org.name || "";
-        const orgPhone = org.contact_phone || org.phone || "";
+        const orgPhone = org.contact_phone || org.custom_fields["Main Phone"] || "";
         const orgAddress = org.address || "";
+        const orgAddress2 = org.custom_fields["Address 2"] || "";
+        const orgCity = org.custom_fields["City"] || "";
+        const orgState = org.custom_fields["State"] || "";
+        const orgZip = org.custom_fields["ZIP Code"] || "";
 
         // Validate required fields
         if (!orgName) {
@@ -119,7 +127,12 @@ export default function AddHiringManager() {
           organizationId: orgId,
           // Only auto-populate if fields are empty (don't overwrite user input)
           phone: prev.phone || orgPhone || "",
+          companyPhone: prev.companyPhone || orgPhone || "",
           address: prev.address || orgAddress || "",
+          address2: prev.address2 || orgAddress2 || "",
+          city: prev.city || orgCity || "",
+          state: prev.state || orgState || "",
+          zipCode: prev.zipCode || orgZip || "",
         }));
 
         // Auto-populate custom fields once they're loaded
@@ -202,8 +215,6 @@ export default function AddHiringManager() {
       const data = await response.json();
       const hm = data.hiringManager;
 
-      console.log("Received hiring manager data:", hm);
-
       // Convert database fields to form field names with proper defaults
       setFormData({
         firstName: hm.first_name || "",
@@ -222,8 +233,14 @@ export default function AddHiringManager() {
         phone: hm.phone || "",
         mobilePhone: hm.mobile_phone || "",
         directLine: hm.direct_line || "",
+        companyPhone: hm.company_phone || "",
         linkedinUrl: hm.linkedin_url || "",
         address: hm.address || "",
+        address2: hm.address2 || "",
+        city: hm.city || "",
+        state: hm.state || "",
+        zipCode: hm.zip_code || "",
+        lastContactDate: hm.last_contact_date || "",
       });
 
       // Parse existing custom fields from the hiring manager
@@ -411,11 +428,22 @@ export default function AddHiringManager() {
     // Get the current value from custom fields
     const orgValue = customFieldValues[orgField.field_name];
 
-    // Check if this value is an ID (numeric/string ID) and different from what we currently have loaded
-    // We also need to avoid loops if organizationName (the loaded name) matches orgValue (if orgValue is just the name)
-    // Assuming the custom field stores the Organization ID if it's a lookup
+    // Only fetch if:
+    // 1. orgValue exists
+    // 2. It looks like an ID (is numeric or a short string that could be an ID)
+    // 3. It's different from what we currently have loaded
+    // 4. It's not already the organization name (to prevent loops)
 
-    if (orgValue && orgValue !== organizationName && orgValue !== formData.organizationId) {
+    // Check if orgValue looks like an ID (numeric or very short string)
+    const looksLikeId = orgValue && (
+      !isNaN(Number(orgValue)) || // It's a number
+      (typeof orgValue === 'string' && orgValue.length < 10 && !orgValue.includes(' ')) // Short string without spaces
+    );
+
+    // Don't fetch if the value is already the organization name we have loaded
+    const isDifferentFromLoaded = orgValue !== organizationName && orgValue !== formData.organizationId;
+
+    if (orgValue && looksLikeId && isDifferentFromLoaded) {
       // Debounce fetching
       const timeoutId = setTimeout(() => {
         // Attempt to fetch if it looks like an ID or if we just want to try resolving it
@@ -488,6 +516,8 @@ export default function AddHiringManager() {
     if (customFields.length === 0) return;
 
     // Map standard field changes to custom fields
+    // NOTE: organizationId is intentionally excluded from this sync
+    // because it has dedicated handling logic in other useEffects
     const fieldMappings: Record<string, string[]> = {
       firstName: ["First Name", "First", "FName"],
       lastName: ["Last Name", "Last", "LName"],
@@ -496,16 +526,22 @@ export default function AddHiringManager() {
       phone: ["Phone", "Phone Number", "Telephone"],
       mobilePhone: ["Mobile Phone", "Mobile", "Cell Phone"],
       directLine: ["Direct Line"],
+      companyPhone: ["Company Phone", "Contact Phone", "Main Phone"],
       status: ["Status", "Current Status"],
       title: ["Title", "Job Title", "Position"],
-      organizationId: ["Organization", "Organization Name", "Company"],
+      // organizationId: REMOVED - has dedicated handling to prevent field reset
       department: ["Department", "Dept"],
       reportsTo: ["Reports To", "Manager"],
       owner: ["Owner", "Assigned To", "Assigned Owner"],
       secondaryOwners: ["Secondary Owners", "Secondary Owner"],
-      address: ["Address", "Street Address"],
+      address: ["Address", "Street Address", "Address 1"],
+      address2: ["Address 2", "Suite", "Apt", "Apartment", "Floor"],
+      city: ["City"],
+      state: ["State"],
+      zipCode: ["ZIP Code", "Zip", "ZipCode", "Postal Code"],
       linkedinUrl: ["LinkedIn URL", "LinkedIn", "LinkedIn Profile"],
       nickname: ["Nickname", "Nick Name"],
+      lastContactDate: ["Last Contact Date", "Last Contact"],
     };
 
     // Update custom fields when formData changes
@@ -615,8 +651,14 @@ export default function AddHiringManager() {
         phone: formData.phone,
         mobilePhone: formData.mobilePhone,
         directLine: formData.directLine,
+        companyPhone: formData.companyPhone,
         linkedinUrl: formData.linkedinUrl,
         address: formData.address,
+        address2: formData.address2,
+        city: formData.city,
+        state: formData.state,
+        zipCode: formData.zipCode,
+        lastContactDate: formData.lastContactDate,
       };
 
       // Map custom fields to standard fields if they exist
@@ -628,6 +670,7 @@ export default function AddHiringManager() {
         phone: ["Phone", "Phone Number", "Telephone"],
         mobilePhone: ["Mobile Phone", "Mobile", "Cell Phone"],
         directLine: ["Direct Line"],
+        companyPhone: ["Company Phone", "Contact Phone", "Main Phone"],
         status: ["Status", "Current Status"],
         title: ["Title", "Job Title", "Position"],
         organizationId: ["Organization", "Organization Name", "Company"],
@@ -635,19 +678,40 @@ export default function AddHiringManager() {
         reportsTo: ["Reports To", "Manager"],
         owner: ["Owner", "Assigned To", "Assigned Owner"],
         secondaryOwners: ["Secondary Owners", "Secondary Owner"],
-        address: ["Address", "Street Address"],
+        address: ["Address", "Street Address", "Address 1"],
+        address2: ["Address 2", "Suite", "Apt", "Apartment", "Floor"],
+        city: ["City"],
+        state: ["State"],
+        zipCode: ["ZIP Code", "Zip", "ZipCode", "Postal Code"],
         linkedinUrl: ["LinkedIn URL", "LinkedIn", "LinkedIn Profile"],
         nickname: ["Nickname", "Nick Name"],
+        lastContactDate: ["Last Contact Date", "Last Contact"],
       };
 
       // Override standard fields with custom field values if they exist
       Object.entries(fieldMappings).forEach(([apiKey, labels]) => {
         labels.forEach((label) => {
-          if (customFieldsToSend[label] !== undefined && customFieldsToSend[label] !== null && customFieldsToSend[label] !== "") {
-            apiData[apiKey] = customFieldsToSend[label];
+          const val = customFieldsToSend[label];
+          if (val !== undefined && val !== null && val !== "") {
+            apiData[apiKey] = val;
           }
         });
       });
+
+      // --- Normalize organization fields ---------------------------------
+      // If `organizationId` is not a pure number we treat it as a NAME, move it
+      // to organizationName and unset organizationId so backend stores only
+      // the human-readable name.
+      if (apiData.organizationId && isNaN(Number(apiData.organizationId))) {
+        apiData.organizationName = apiData.organizationId;
+        apiData.organizationId = "";
+      }
+
+      // If organizationName is still empty but organizationId is numeric, try to
+      // keep a textual backup so UI reflects changes immediately.
+      if (!apiData.organizationName && apiData.organizationId) {
+        apiData.organizationName = apiData.organizationId.toString();
+      }
 
       // Prepare custom_fields for database (clean object with all custom field values)
       const customFieldsForDB: Record<string, any> = {};
@@ -658,8 +722,8 @@ export default function AddHiringManager() {
         }
       });
 
-      // Add custom_fields to API data
-      apiData.custom_fields = customFieldsForDB;
+      // Add customFields to API data
+      apiData.customFields = customFieldsForDB;
 
       console.log("Custom Fields to Send:", customFieldsToSend);
       console.log("API Data:", apiData);

@@ -1,0 +1,15 @@
+app/dashboard/organizations/view/page.tsx(478,11): error TS2304: Cannot find name 'setPanelOrder'.
+app/dashboard/organizations/view/page.tsx(480,11): error TS2304: Cannot find name 'setPanelOrder'.
+app/dashboard/organizations/view/page.tsx(491,9): error TS2304: Cannot find name 'setPanelOrder'.
+app/dashboard/organizations/view/page.tsx(501,7): error TS2304: Cannot find name 'setPanelOrder'.
+app/dashboard/organizations/view/page.tsx(514,9): error TS2304: Cannot find name 'panelOrder'.
+app/dashboard/organizations/view/page.tsx(515,76): error TS2304: Cannot find name 'panelOrder'.
+app/dashboard/organizations/view/page.tsx(517,7): error TS2304: Cannot find name 'panelOrder'.
+app/dashboard/organizations/view/page.tsx(1388,9): error TS2451: Cannot redeclare block-scoped variable 'handleDragOver'.
+app/dashboard/organizations/view/page.tsx(1692,9): error TS2451: Cannot redeclare block-scoped variable 'handleDragOver'.
+app/dashboard/organizations/view/page.tsx(3905,29): error TS2322: Type '(e: React.DragEvent) => void' is not assignable to type '(event: DragOverEvent) => void'.
+  Types of parameters 'e' and 'event' are incompatible.
+    Type 'DragOverEvent' is missing the following properties from type 'DragEvent<Element>': dataTransfer, altKey, button, buttons, and 30 more.
+app/dashboard/organizations/view/page.tsx(3931,19): error TS2322: Type '(e: React.DragEvent) => void' is not assignable to type '(event: DragOverEvent) => void'.
+  Types of parameters 'e' and 'event' are incompatible.
+    Type 'DragOverEvent' is missing the following properties from type 'DragEvent<Element>': dataTransfer, altKey, button, buttons, and 30 more.

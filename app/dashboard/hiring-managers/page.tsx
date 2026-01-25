@@ -17,19 +17,19 @@ import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
 
 interface HiringManager {
-    id: string;
-    first_name: string;
-    last_name: string;
-    full_name: string;
-    email: string;
-    phone: string;
-    title: string;
-    organization_name: string;
-    status: string;
-    created_at: string;
-    created_by_name: string;
-    customFields?: Record<string, any>;
-    custom_fields?: Record<string, any>;
+  id: string;
+  first_name: string;
+  last_name: string;
+  full_name: string;
+  email: string;
+  phone: string;
+  title: string;
+  organization_name: string;
+  status: string;
+  created_at: string;
+  created_by_name: string;
+  customFields?: Record<string, any>;
+  custom_fields?: Record<string, any>;
 }
 
 type ColumnSortState = "asc" | "desc" | null;
@@ -127,8 +127,8 @@ function SortableColumnHeader({
             sortState === "asc"
               ? "Sort descending"
               : sortState === "desc"
-              ? "Clear sort"
-              : "Sort ascending"
+                ? "Clear sort"
+                : "Sort ascending"
           }
         >
           {sortState === "asc" ? (
@@ -147,9 +147,8 @@ function SortableColumnHeader({
             e.stopPropagation();
             setShowFilter(!showFilter);
           }}
-          className={`text-gray-400 hover:text-gray-600 transition-colors ${
-            filterValue ? "text-blue-600" : ""
-          }`}
+          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
+            }`}
           title="Filter column"
         >
           <FiFilter size={14} />
@@ -247,67 +246,67 @@ export default function HiringManagerList() {
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
 
-const normalizeFields = (payload: any) => {
-  const root =
-    payload?.customFields ?? // ✅ same as view file
-    payload?.fields ??
-    payload?.data?.fields ??
-    payload?.data?.data?.fields ??
-    payload?.hiringManagerFields ??
-    payload?.data ??
-    payload?.data?.data ??
-    [];
+  const normalizeFields = (payload: any) => {
+    const root =
+      payload?.customFields ?? // ✅ same as view file
+      payload?.fields ??
+      payload?.data?.fields ??
+      payload?.data?.data?.fields ??
+      payload?.hiringManagerFields ??
+      payload?.data ??
+      payload?.data?.data ??
+      [];
 
-  const list: any[] = Array.isArray(root) ? root : [];
+    const list: any[] = Array.isArray(root) ? root : [];
 
-  const flat = list.flatMap((x: any) => {
-    if (!x) return [];
-    if (Array.isArray(x.fields)) return x.fields;
-    if (Array.isArray(x.children)) return x.children;
-    return [x];
-  });
+    const flat = list.flatMap((x: any) => {
+      if (!x) return [];
+      if (Array.isArray(x.fields)) return x.fields;
+      if (Array.isArray(x.children)) return x.children;
+      return [x];
+    });
 
-  return flat.filter(Boolean);
-};
-
-useEffect(() => {
-  const fetchAvailableFields = async () => {
-    setIsLoadingFields(true);
-    try {
-      const token = document.cookie
-        .split("; ")
-        .find((r) => r.startsWith("token="))
-        ?.split("=")[1];
-
-      const res = await fetch("/api/admin/field-management/hiring-managers", {
-        method: "GET",
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        credentials: "include",
-      });
-
-      const raw = await res.text();
-      let data: any = {};
-      try {
-        data = JSON.parse(raw);
-      } catch {}
-
-      const fields = normalizeFields(data);
-
-      console.log("LIST field-management status:", res.status);
-      console.log("LIST fields count:", fields.length);
-      console.log("LIST fields sample:", fields.slice(0, 5));
-
-      setAvailableFields(fields);
-    } catch (e) {
-      console.error("LIST field-management error:", e);
-      setAvailableFields([]);
-    } finally {
-      setIsLoadingFields(false);
-    }
+    return flat.filter(Boolean);
   };
 
-  fetchAvailableFields();
-}, []);
+  useEffect(() => {
+    const fetchAvailableFields = async () => {
+      setIsLoadingFields(true);
+      try {
+        const token = document.cookie
+          .split("; ")
+          .find((r) => r.startsWith("token="))
+          ?.split("=")[1];
+
+        const res = await fetch("/api/admin/field-management/hiring-managers", {
+          method: "GET",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          credentials: "include",
+        });
+
+        const raw = await res.text();
+        let data: any = {};
+        try {
+          data = JSON.parse(raw);
+        } catch { }
+
+        const fields = normalizeFields(data);
+
+        console.log("LIST field-management status:", res.status);
+        console.log("LIST fields count:", fields.length);
+        console.log("LIST fields sample:", fields.slice(0, 5));
+
+        setAvailableFields(fields);
+      } catch (e) {
+        console.error("LIST field-management error:", e);
+        setAvailableFields([]);
+      } finally {
+        setIsLoadingFields(false);
+      }
+    };
+
+    fetchAvailableFields();
+  }, []);
 
   const humanize = (s: string) =>
     s
@@ -367,36 +366,36 @@ useEffect(() => {
     hmColumnsCatalog.find((c) => c.key === key);
 
   const getColumnValue = (hm: any, key: string) => {
-  // ✅ custom
-  if (key.startsWith("custom:")) {
-    const rawKey = key.replace("custom:", "");
-    const cf = hm?.customFields || hm?.custom_fields || {};
-    const val = cf?.[rawKey];
-    return val === undefined || val === null || val === "" ? "—" : String(val);
-  }
+    // ✅ custom
+    if (key.startsWith("custom:")) {
+      const rawKey = key.replace("custom:", "");
+      const cf = hm?.customFields || hm?.custom_fields || {};
+      const val = cf?.[rawKey];
+      return val === undefined || val === null || val === "" ? "—" : String(val);
+    }
 
-  // ✅ standard
-  switch (key) {
-    case "full_name":
-      return hm.full_name || `${hm.last_name}, ${hm.first_name}`;
-    case "status":
-      return hm.status || "—";
-    case "title":
-      return hm.title || "—";
-    case "organization_name":
-      return hm.organization_name || "—";
-    case "email":
-      return hm.email || "—";
-    case "phone":
-      return hm.phone || "—";
-    case "created_by_name":
-      return hm.created_by_name || "—";
-    case "created_at":
-      return formatDate(hm.created_at);
-    default:
-      return "—";
-  }
-};
+    // ✅ standard
+    switch (key) {
+      case "full_name":
+        return hm.full_name || `${hm.last_name}, ${hm.first_name}`;
+      case "status":
+        return hm.status || "—";
+      case "title":
+        return hm.title || "—";
+      case "organization_name":
+        return hm.organization_name || "—";
+      case "email":
+        return hm.email || "—";
+      case "phone":
+        return hm.phone || "—";
+      case "created_by_name":
+        return hm.created_by_name || "—";
+      case "created_at":
+        return formatDate(hm.created_at);
+      default:
+        return "—";
+    }
+  };
 
   // Fetch hiring managers data when component mounts
   useEffect(() => {
@@ -857,165 +856,165 @@ useEffect(() => {
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredAndSortedHiringManagers.length > 0 ? (
                 filteredAndSortedHiringManagers.map((hm) => (
-                <tr
-                  key={hm.id}
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => handleViewHiringManager(hm.id)}
-                >
-                  {/* Fixed checkbox */}
-                  <td
-                    className="px-6 py-4 whitespace-nowrap"
-                    onClick={(e) => e.stopPropagation()}
+                  <tr
+                    key={hm.id}
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() => handleViewHiringManager(hm.id)}
                   >
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                      checked={selectedHiringManagers.includes(hm.id)}
-                      onChange={() => {}}
-                      onClick={(e) => handleSelectHiringManager(hm.id, e)}
-                    />
-                  </td>
-
-                  {/* Fixed Actions dropdown (LOCKED) */}
-                  <td
-                    className="px-6 py-4 whitespace-nowrap text-sm"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <div className="relative inline-block text-left">
-                      <button
-                        type="button"
-                        className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setOpenActionId((prev) =>
-                            prev === hm.id ? null : hm.id
-                          );
-                        }}
-                      >
-                        Actions ▾
-                      </button>
-
-                      {openActionId === hm.id && (
-                        <div
-                          className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="flex flex-col">
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setOpenActionId(null);
-                                handleViewHiringManager(hm.id);
-                              }}
-                            >
-                              View
-                            </button>
-
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-50"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                setOpenActionId(null);
-
-                                if (
-                                  !window.confirm(
-                                    "Are you sure you want to delete this hiring manager?"
-                                  )
-                                )
-                                  return;
-
-                                setIsLoading(true);
-                                try {
-                                  const token = document.cookie
-                                    .split("; ")
-                                    .find((row) => row.startsWith("token="))
-                                    ?.split("=")[1];
-
-                                  const res = await fetch(
-                                    `/api/hiring-managers/${hm.id}`,
-                                    {
-                                      method: "DELETE",
-                                      headers: token
-                                        ? { Authorization: `Bearer ${token}` }
-                                        : undefined,
-                                    }
-                                  );
-
-                                  if (!res.ok)
-                                    throw new Error(
-                                      "Failed to delete hiring manager"
-                                    );
-                                  await fetchHiringManagers();
-                                } catch (err) {
-                                  setError(
-                                    err instanceof Error
-                                      ? err.message
-                                      : "Delete failed"
-                                  );
-                                } finally {
-                                  setIsLoading(false);
-                                }
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-
-                  {/* Fixed ID */}
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-sm font-medium text-gray-900">
-                      HM {hm.id}
-                    </div>
-                  </td>
-
-                  {/* Dynamic cells */}
-                  {columnFields.map((key) => (
+                    {/* Fixed checkbox */}
                     <td
-                      key={key}
-                      className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                      className="px-6 py-4 whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      {key === "status" ? (
-                        <span
-                          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
-                            hm.status
-                          )}`}
-                        >
-                          {getColumnValue(hm, key)}
-                        </span>
-                      ) : key === "email" ? (
-                        <a
-                          href={`mailto:${hm.email}`}
-                          className="text-blue-600 hover:underline"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {getColumnValue(hm, key)}
-                        </a>
-                      ) : (
-                        getColumnValue(hm, key)
-                      )}
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                        checked={selectedHiringManagers.includes(hm.id)}
+                        onChange={() => { }}
+                        onClick={(e) => handleSelectHiringManager(hm.id, e)}
+                      />
                     </td>
-                  ))}
+
+                    {/* Fixed Actions dropdown (LOCKED) */}
+                    <td
+                      className="px-6 py-4 whitespace-nowrap text-sm"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div className="relative inline-block text-left">
+                        <button
+                          type="button"
+                          className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenActionId((prev) =>
+                              prev === hm.id ? null : hm.id
+                            );
+                          }}
+                        >
+                          Actions ▾
+                        </button>
+
+                        {openActionId === hm.id && (
+                          <div
+                            className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex flex-col">
+                              <button
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenActionId(null);
+                                  handleViewHiringManager(hm.id);
+                                }}
+                              >
+                                View
+                              </button>
+
+                              <button
+                                className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-50"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  setOpenActionId(null);
+
+                                  if (
+                                    !window.confirm(
+                                      "Are you sure you want to delete this hiring manager?"
+                                    )
+                                  )
+                                    return;
+
+                                  setIsLoading(true);
+                                  try {
+                                    const token = document.cookie
+                                      .split("; ")
+                                      .find((row) => row.startsWith("token="))
+                                      ?.split("=")[1];
+
+                                    const res = await fetch(
+                                      `/api/hiring-managers/${hm.id}`,
+                                      {
+                                        method: "DELETE",
+                                        headers: token
+                                          ? { Authorization: `Bearer ${token}` }
+                                          : undefined,
+                                      }
+                                    );
+
+                                    if (!res.ok)
+                                      throw new Error(
+                                        "Failed to delete hiring manager"
+                                      );
+                                    await fetchHiringManagers();
+                                  } catch (err) {
+                                    setError(
+                                      err instanceof Error
+                                        ? err.message
+                                        : "Delete failed"
+                                    );
+                                  } finally {
+                                    setIsLoading(false);
+                                  }
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Fixed ID */}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">
+                        HM {hm.id}
+                      </div>
+                    </td>
+
+                    {/* Dynamic cells */}
+                    {columnFields.map((key) => (
+                      <td
+                        key={key}
+                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                      >
+                        {key === "status" ? (
+                          <span
+                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
+                              hm.status
+                            )}`}
+                          >
+                            {getColumnValue(hm, key)}
+                          </span>
+                        ) : key === "email" ? (
+                          <a
+                            href={`mailto:${hm.email}`}
+                            className="text-blue-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {getColumnValue(hm, key)}
+                          </a>
+                        ) : (
+                          getColumnValue(hm, key)
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={3 + columnFields.length}
+                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
+                  >
+                    {Object.keys(columnFilters).length > 0
+                      ? "No hiring managers found matching your filters."
+                      : 'No hiring managers found. Click "Add Hiring Manager" to create one.'}
+                  </td>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td
-                  colSpan={3 + columnFields.length}
-                  className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
-                >
-                  {Object.keys(columnFilters).length > 0
-                    ? "No hiring managers found matching your filters."
-                    : 'No hiring managers found. Click "Add Hiring Manager" to create one.'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
         </DndContext>
       </div>
 

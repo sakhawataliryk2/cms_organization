@@ -1,13 +1,20 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
-import { useListControls } from "@/hooks/useListSortFilter";
-import SortFilterBar from "@/components/list/SortFilterBar";
-import FiltersModal from "@/components/list/FiltersModal";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  horizontalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { TbGripVertical } from "react-icons/tb";
+import { FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
 
 interface JobSeeker {
   id: string;
@@ -24,29 +31,190 @@ interface JobSeeker {
   custom_fields?: Record<string, any>;
 }
 
+type ColumnSortState = "asc" | "desc" | null;
+type ColumnFilterState = string | null;
+
+// Sortable Column Header Component
+function SortableColumnHeader({
+  id,
+  columnKey,
+  label,
+  sortState,
+  filterValue,
+  onSort,
+  onFilterChange,
+  filterType,
+  filterOptions,
+  children,
+}: {
+  id: string;
+  columnKey: string;
+  label: string;
+  sortState: ColumnSortState;
+  filterValue: ColumnFilterState;
+  onSort: () => void;
+  onFilterChange: (value: string) => void;
+  filterType: "text" | "select" | "number";
+  filterOptions?: { label: string; value: string }[];
+  children?: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const [showFilter, setShowFilter] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  // Close filter on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        filterRef.current &&
+        !filterRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
+      ) {
+        setShowFilter(false);
+      }
+    };
+
+    if (showFilter) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showFilter, id]);
+
+  return (
+    <th
+      ref={setNodeRef}
+      style={style}
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
+    >
+      <div className="flex items-center gap-2">
+        {/* Drag Handle */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Drag to reorder column"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={16} />
+        </button>
+
+        {/* Column Label */}
+        <span className="flex-1">{label}</span>
+
+        {/* Sort Control */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSort();
+          }}
+          className="text-gray-400 hover:text-gray-600 transition-colors"
+          title={
+            sortState === "asc"
+              ? "Sort descending"
+              : sortState === "desc"
+                ? "Clear sort"
+                : "Sort ascending"
+          }
+        >
+          {sortState === "asc" ? (
+            <FiArrowUp size={14} />
+          ) : sortState === "desc" ? (
+            <FiArrowDown size={14} />
+          ) : (
+            <div className="w-3.5 h-3.5 border border-gray-300 rounded" />
+          )}
+        </button>
+
+        {/* Filter Toggle */}
+        <button
+          data-filter-toggle={id}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowFilter(!showFilter);
+          }}
+          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
+            }`}
+          title="Filter column"
+        >
+          <FiFilter size={14} />
+        </button>
+      </div>
+
+      {/* Filter Dropdown */}
+      {showFilter && (
+        <div
+          ref={filterRef}
+          className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-300 shadow-lg p-2 mt-1 min-w-[150px]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {filterType === "text" && (
+            <input
+              type="text"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "number" && (
+            <input
+              type="number"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "select" && filterOptions && (
+            <select
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            >
+              <option value="">All</option>
+              {filterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {filterValue && (
+            <button
+              onClick={() => {
+                onFilterChange("");
+                setShowFilter(false);
+              }}
+              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+            >
+              Clear Filter
+            </button>
+          )}
+        </div>
+      )}
+    </th>
+  );
+}
+
 export default function JobSeekerList() {
   const router = useRouter();
-  
-  const list = useListControls({
-    defaultSortKey: "id",
-    defaultSortDir: "desc",
-    sortOptions: [
-      { key: "id", label: "ID" },
-      { key: "full_name", label: "Name" },
-      { key: "email", label: "Email" },
-      { key: "phone", label: "Phone" },
-      { key: "status", label: "Status" },
-      { key: "last_contact_date", label: "Last Contact" },
-      { key: "owner", label: "Owner" },
-    ],
-  });
-
-  const [showFilters, setShowFilters] = useState(false);
-  const [draftFilters, setDraftFilters] = useState<Record<string, any>>({});
-
-  useEffect(() => {
-    if (showFilters) setDraftFilters(list.filters);
-  }, [showFilters, list.filters]);
 
   const [openActionId, setOpenActionId] = useState<string | null>(null);
   useEffect(() => {
@@ -79,6 +247,81 @@ export default function JobSeekerList() {
     defaultFields: JOB_SEEKER_DEFAULT_COLUMNS,
     configType: "columns",
   });
+
+  // Load column order from localStorage on mount
+  useEffect(() => {
+    const savedOrder = localStorage.getItem("jobSeekerColumnOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validOrder = parsed.filter((key) =>
+            [...JOB_SEEKER_DEFAULT_COLUMNS, ...columnFields].includes(key)
+          );
+          if (validOrder.length > 0) {
+            setColumnFields(validOrder);
+          }
+        }
+      } catch (e) {
+        console.error("Error loading column order:", e);
+      }
+    }
+  }, []);
+
+  // Save column order to localStorage whenever it changes
+  useEffect(() => {
+    if (columnFields.length > 0) {
+      localStorage.setItem("jobSeekerColumnOrder", JSON.stringify(columnFields));
+    }
+  }, [columnFields]);
+
+  // Per-column sorting state
+  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
+
+  // Per-column filtering state
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+
+  // Handle column sort toggle
+  const handleColumnSort = (columnKey: string) => {
+    setColumnSorts((prev) => {
+      const current = prev[columnKey];
+      if (current === "asc") {
+        return { ...prev, [columnKey]: "desc" };
+      } else if (current === "desc") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      } else {
+        return { ...prev, [columnKey]: "asc" };
+      }
+    });
+  };
+
+  // Handle column filter change
+  const handleColumnFilter = (columnKey: string, value: string) => {
+    setColumnFilters((prev) => {
+      if (!value || value.trim() === "") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      }
+      return { ...prev, [columnKey]: value };
+    });
+  };
+
+  // Handle drag end for column reordering
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = columnFields.indexOf(active.id as string);
+    const newIndex = columnFields.indexOf(over.id as string);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newOrder = arrayMove(columnFields, oldIndex, newIndex);
+      setColumnFields(newOrder);
+    }
+  };
 
   // =====================
   // AVAILABLE FIELDS (from Modify Page)
@@ -148,12 +391,12 @@ export default function JobSeekerList() {
   const columnsCatalog = useMemo(() => {
     // ✅ 1) Standard columns (fixed)
     const standard = [
-      { key: "full_name", label: "Name", sortable: true },
-      { key: "email", label: "Email", sortable: true },
-      { key: "phone", label: "Phone", sortable: true },
-      { key: "status", label: "Status", sortable: true },
-      { key: "last_contact_date", label: "Last Contact", sortable: true },
-      { key: "owner", label: "Owner", sortable: true },
+      { key: "full_name", label: "Name", sortable: true, filterType: "text" as const },
+      { key: "email", label: "Email", sortable: true, filterType: "text" as const },
+      { key: "phone", label: "Phone", sortable: true, filterType: "text" as const },
+      { key: "status", label: "Status", sortable: true, filterType: "select" as const },
+      { key: "last_contact_date", label: "Last Contact", sortable: true, filterType: "text" as const },
+      { key: "owner", label: "Owner", sortable: true, filterType: "text" as const },
     ];
 
     // ✅ 2) Custom keys (auto from ALL job seekers list)
@@ -168,6 +411,7 @@ export default function JobSeekerList() {
       key: `custom:${k}`,
       label: humanize(k),
       sortable: false,
+      filterType: "text" as const,
     }));
 
     // ✅ 3) merge + unique
@@ -182,6 +426,9 @@ export default function JobSeekerList() {
 
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
+
+  const getColumnInfo = (key: string) =>
+    columnsCatalog.find((c) => c.key === key);
 
   const getColumnValue = (js: any, key: string) => {
     // ✅ custom columns
@@ -212,6 +459,15 @@ export default function JobSeekerList() {
         return "N/A";
     }
   };
+
+  // Get unique status values for filter dropdown
+  const statusOptions = useMemo(() => {
+    const statuses = new Set<string>();
+    jobSeekers.forEach((js) => {
+      if (js.status) statuses.add(js.status);
+    });
+    return Array.from(statuses).map((s) => ({ label: s, value: s }));
+  }, [jobSeekers]);
 
   // Fetch job seekers data when component mounts
   useEffect(() => {
@@ -249,45 +505,68 @@ export default function JobSeekerList() {
     }
   };
 
-  const filteredJobSeekers = jobSeekers.filter(
-    (jobSeeker) =>
-      jobSeeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      jobSeeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      jobSeeker.id?.toString().toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredAndSortedJobSeekers = useMemo(() => {
+    let result = [...jobSeekers];
 
-  const viewJobSeekers = useMemo(() => {
-    const data = filteredJobSeekers;
+    // Apply global search
+    if (searchTerm.trim() !== "") {
+      const term = searchTerm.toLowerCase();
+      result = result.filter(
+        (js) =>
+          (js.full_name || "").toLowerCase().includes(term) ||
+          (js.email || "").toLowerCase().includes(term) ||
+          String(js.id || "").toLowerCase().includes(term)
+      );
+    }
 
-    return list.applySortFilter<JobSeeker>(data, {
-      getValue: (row, key) => {
-        if (key.startsWith("custom:")) {
-          const rawKey = key.replace("custom:", "");
-          const cf =
-            (row as any)?.customFields || (row as any)?.custom_fields || {};
-          return cf?.[rawKey];
+    // Apply filters
+    Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
+      if (!filterValue || filterValue.trim() === "") return;
+
+      result = result.filter((js) => {
+        const value = getColumnValue(js, columnKey);
+        const valueStr = String(value).toLowerCase();
+        const filterStr = String(filterValue).toLowerCase();
+
+        // For number columns, do exact match
+        const columnInfo = getColumnInfo(columnKey);
+        if ((columnInfo?.filterType as string) === "number") {
+          return String(value) === String(filterValue);
         }
-        if (key === "id") {
-          return parseInt((row as any).id) || 0;
-        }
-        if (key === "last_contact_date") {
-          return (row as any).last_contact_date
-            ? new Date((row as any).last_contact_date).getTime()
-            : 0;
-        }
-        if (key === "owner") {
-          return (row as any).owner || (row as any).created_by_name || "";
-        }
-        return (row as any)[key];
-      },
-      filterFns: {
-        status: (row, value) => {
-          if (!value) return true;
-          return (row as any).status?.toLowerCase() === value.toLowerCase();
-        },
-      },
+
+        // For text columns, do contains match
+        return valueStr.includes(filterStr);
+      });
     });
-  }, [filteredJobSeekers, list]);
+
+    // Apply sorting
+    const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
+    if (activeSorts.length > 0) {
+      const [sortKey, sortDir] = activeSorts[0];
+      result.sort((a, b) => {
+        const aValue = getColumnValue(a, sortKey);
+        const bValue = getColumnValue(b, sortKey);
+
+        // Handle numeric values
+        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
+        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
+
+        let cmp = 0;
+        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+          cmp = aNum - bNum;
+        } else {
+          cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+        }
+
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [jobSeekers, columnFilters, columnSorts, searchTerm]);
 
   const handleViewJobSeeker = (id: string) => {
     router.push(`/dashboard/job-seekers/view?id=${id}`);
@@ -302,7 +581,7 @@ export default function JobSeekerList() {
       setSelectedJobSeekers([]);
     } else {
       setSelectedJobSeekers(
-        viewJobSeekers.map((jobSeeker) => jobSeeker.id)
+        filteredAndSortedJobSeekers.map((jobSeeker) => jobSeeker.id)
       );
     }
     setSelectAll(!selectAll);
@@ -319,7 +598,9 @@ export default function JobSeekerList() {
     } else {
       setSelectedJobSeekers([...selectedJobSeekers, id]);
       // If all job seekers are now selected, update selectAll state
-      if ([...selectedJobSeekers, id].length === viewJobSeekers.length) {
+      if (
+        [...selectedJobSeekers, id].length === filteredAndSortedJobSeekers.length
+      ) {
         setSelectAll(true);
       }
     }
@@ -443,46 +724,7 @@ export default function JobSeekerList() {
               Delete Selected ({selectedJobSeekers.length})
             </button>
           )}
-          <SortFilterBar
-            sortKey={list.sortKey}
-            sortDir={list.sortDir}
-            onChangeSortKey={list.onChangeSortKey}
-            onToggleDir={list.onToggleDir}
-            sortOptions={list.sortOptions}
-            onOpenFilters={() => setShowFilters(true)}
-            onClearFilters={list.clearFilters}
-            hasFilters={list.hasFilters}
-          />
 
-          {showFilters && (
-            <FiltersModal
-              open={showFilters}
-              onClose={() => setShowFilters(false)}
-              fields={[
-                {
-                  key: "status",
-                  label: "Status",
-                  type: "select",
-                  options: [
-                    { label: "New Lead", value: "New Lead" },
-                    { label: "Active", value: "Active" },
-                    { label: "Qualified", value: "Qualified" },
-                    { label: "Placed", value: "Placed" },
-                    { label: "Inactive", value: "Inactive" },
-                  ],
-                },
-              ]}
-              values={draftFilters}
-              onChange={(key: string, value: any) =>
-                setDraftFilters((prev) => ({ ...prev, [key]: value }))
-              }
-              onApply={() => {
-                list.setFilters(draftFilters);
-                setShowFilters(false);
-              }}
-              onReset={() => setDraftFilters({})}
-            />
-          )}
 
           <button
             onClick={() => setShowColumnModal(true)}
@@ -547,220 +789,234 @@ export default function JobSeekerList() {
 
       {/* Job Seekers Table */}
       <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
-            <tr>
-              {/* Fixed checkbox header */}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                  checked={selectAll}
-                  onChange={handleSelectAll}
-                />
-              </th>
-
-              {/* Fixed Actions header (LOCKED) */}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Actions
-              </th>
-
-              {/* Fixed ID header */}
-              <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                <button
-                  onClick={() => list.toggleSort("id")}
-                  className="hover:text-gray-700"
-                >
-                  ID
-                </button>
-              </th>
-
-              {/* Dynamic headers */}
-              {columnFields.map((key) => (
-                <th
-                  key={key}
-                  className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                >
-                  {getColumnLabel(key)}
+        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                {/* Fixed checkbox header */}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  <input
+                    type="checkbox"
+                    className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                    checked={selectAll}
+                    onChange={handleSelectAll}
+                  />
                 </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {viewJobSeekers.length > 0 ? (
-              viewJobSeekers.map((jobSeeker) => (
-                <tr
-                  key={jobSeeker.id}
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => handleViewJobSeeker(jobSeeker.id)}
-                >
-                  {/* Fixed checkbox */}
-                  <td
-                    className="px-6 py-4 whitespace-nowrap"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                      checked={selectedJobSeekers.includes(jobSeeker.id)}
-                      onChange={() => {}}
-                      onClick={(e) => handleSelectJobSeeker(jobSeeker.id, e)}
-                    />
-                  </td>
 
-                  {/* Fixed Actions (LOCKED dropdown) */}
-                  <td
-                    className="px-6 py-4 whitespace-nowrap text-sm"
-                    onClick={(e) => e.stopPropagation()}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Id
+                </th>
+
+                {/* Fixed Actions header (LOCKED) */}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+
+                {/* Draggable Dynamic headers */}
+                <SortableContext
+                  items={columnFields}
+                  strategy={horizontalListSortingStrategy}
+                >
+                  {columnFields.map((key) => {
+                    const columnInfo = getColumnInfo(key);
+                    if (!columnInfo) return null;
+
+                    return (
+                      <SortableColumnHeader
+                        key={key}
+                        id={key}
+                        columnKey={key}
+                        label={getColumnLabel(key)}
+                        sortState={columnSorts[key] || null}
+                        filterValue={columnFilters[key] || null}
+                        onSort={() => handleColumnSort(key)}
+                        onFilterChange={(value) => handleColumnFilter(key, value)}
+                        filterType={columnInfo.filterType}
+                        filterOptions={
+                          key === "status" ? statusOptions : undefined
+                        }
+                      />
+                    );
+                  })}
+                </SortableContext>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {filteredAndSortedJobSeekers.length > 0 ? (
+                filteredAndSortedJobSeekers.map((jobSeeker) => (
+                  <tr
+                    key={jobSeeker.id}
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() => handleViewJobSeeker(jobSeeker.id)}
                   >
-                    <div
-                      className="relative inline-block text-left"
+                    {/* Fixed checkbox */}
+                    <td
+                      className="px-6 py-4 whitespace-nowrap"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <button
-                        type="button"
-                        className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setOpenActionId((prev) =>
-                            prev === jobSeeker.id ? null : jobSeeker.id
-                          );
-                        }}
-                      >
-                        Actions ▾
-                      </button>
-
-                      {openActionId === jobSeeker.id && (
-                        <div
-                          className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="flex flex-col">
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleViewJobSeeker(jobSeeker.id);
-                                setOpenActionId(null);
-                              }}
-                            >
-                              View
-                            </button>
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                router.push(
-                                  `/dashboard/job-seekers/add?id=${jobSeeker.id}`
-                                );
-                                setOpenActionId(null);
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm hover:bg-red-50 text-red-600"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                setOpenActionId(null);
-
-                                if (
-                                  !window.confirm(
-                                    "Are you sure you want to delete this job seeker?"
-                                  )
-                                )
-                                  return;
-
-                                setIsDeleting(true);
-                                try {
-                                  const response = await fetch(
-                                    `/api/job-seekers/${jobSeeker.id}`,
-                                    {
-                                      method: "DELETE",
-                                      headers: {
-                                        Authorization: `Bearer ${document.cookie.replace(
-                                          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-                                          "$1"
-                                        )}`,
-                                      },
-                                    }
-                                  );
-                                  if (!response.ok)
-                                    throw new Error(
-                                      "Failed to delete job seeker"
-                                    );
-                                  await fetchJobSeekers();
-                                } catch (err) {
-                                  setError(
-                                    err instanceof Error
-                                      ? err.message
-                                      : "An error occurred"
-                                  );
-                                } finally {
-                                  setIsDeleting(false);
-                                }
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </td>
-
-                  {/* Fixed ID */}
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    JS {jobSeeker.id}
-                  </td>
-
-                  {/* Dynamic columns */}
-                  {columnFields.map((key) => (
-                    <td
-                      key={key}
-                      className="px-6 py-4 whitespace-nowrap text-sm"
-                    >
-                      {key === "status" ? (
-                        <span
-                          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
-                            getColumnValue(jobSeeker, key)
-                          )}`}
-                        >
-                          {getColumnValue(jobSeeker, key)}
-                        </span>
-                      ) : key === "email" ? (
-                        <div className="text-sm text-blue-600">
-                          {getColumnValue(jobSeeker, key)}
-                        </div>
-                      ) : key === "last_contact_date" ? (
-                        <span className="text-sm text-gray-500">
-                          {getColumnValue(jobSeeker, key) !== "N/A"
-                            ? formatDate(getColumnValue(jobSeeker, key))
-                            : "Not contacted"}
-                        </span>
-                      ) : (
-                        <span className="text-sm text-gray-900">
-                          {getColumnValue(jobSeeker, key)}
-                        </span>
-                      )}
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                        checked={selectedJobSeekers.includes(jobSeeker.id)}
+                        onChange={() => { }}
+                        onClick={(e) => handleSelectJobSeeker(jobSeeker.id, e)}
+                      />
                     </td>
-                  ))}
+
+                    {/* Fixed Actions (LOCKED dropdown) */}
+                    <td
+                      className="px-6 py-4 whitespace-nowrap text-sm"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div
+                        className="relative inline-block text-left"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button
+                          type="button"
+                          className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setOpenActionId((prev) =>
+                              prev === jobSeeker.id ? null : jobSeeker.id
+                            );
+                          }}
+                        >
+                          Actions ▾
+                        </button>
+
+                        {openActionId === jobSeeker.id && (
+                          <div
+                            className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="flex flex-col">
+                              <button
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewJobSeeker(jobSeeker.id);
+                                  setOpenActionId(null);
+                                }}
+                              >
+                                View
+                              </button>
+                              <button
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  router.push(
+                                    `/dashboard/job-seekers/add?id=${jobSeeker.id}`
+                                  );
+                                  setOpenActionId(null);
+                                }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="w-full text-left px-3 py-2 text-sm hover:bg-red-50 text-red-600"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  setOpenActionId(null);
+
+                                  if (
+                                    !window.confirm(
+                                      "Are you sure you want to delete this job seeker?"
+                                    )
+                                  )
+                                    return;
+
+                                  setIsDeleting(true);
+                                  try {
+                                    const response = await fetch(
+                                      `/api/job-seekers/${jobSeeker.id}`,
+                                      {
+                                        method: "DELETE",
+                                        headers: {
+                                          Authorization: `Bearer ${document.cookie.replace(
+                                            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                                            "$1"
+                                          )}`,
+                                        },
+                                      }
+                                    );
+                                    if (!response.ok)
+                                      throw new Error(
+                                        "Failed to delete job seeker"
+                                      );
+                                    await fetchJobSeekers();
+                                  } catch (err) {
+                                    setError(
+                                      err instanceof Error
+                                        ? err.message
+                                        : "An error occurred"
+                                    );
+                                  } finally {
+                                    setIsDeleting(false);
+                                  }
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+
+                    {/* Fixed ID */}
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      JS {jobSeeker.id}
+                    </td>
+
+                    {/* Dynamic columns */}
+                    {columnFields.map((key) => (
+                      <td
+                        key={key}
+                        className="px-6 py-4 whitespace-nowrap text-sm"
+                      >
+                        {key === "status" ? (
+                          <span
+                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
+                              getColumnValue(jobSeeker, key)
+                            )}`}
+                          >
+                            {getColumnValue(jobSeeker, key)}
+                          </span>
+                        ) : key === "email" ? (
+                          <div className="text-sm text-blue-600">
+                            {getColumnValue(jobSeeker, key)}
+                          </div>
+                        ) : key === "last_contact_date" ? (
+                          <span className="text-sm text-gray-500">
+                            {getColumnValue(jobSeeker, key) !== "N/A"
+                              ? formatDate(getColumnValue(jobSeeker, key))
+                              : "Not contacted"}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-gray-900">
+                            {getColumnValue(jobSeeker, key)}
+                          </span>
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={3 + columnFields.length}
+                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
+                  >
+                    {searchTerm
+                      ? "No job seekers found matching your search."
+                      : 'No job seekers found. Click "Add Job Seeker" to create one.'}
+                  </td>
                 </tr>
-              ))
-            ) : (
-              <tr>
-                <td
-                  colSpan={3 + columnFields.length}
-                  className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
-                >
-                  {searchTerm
-                    ? "No job seekers found matching your search."
-                    : 'No job seekers found. Click "Add Job Seeker" to create one.'}
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </DndContext>
       </div>
 
       {/* Pagination */}
@@ -777,12 +1033,12 @@ export default function JobSeekerList() {
           <div>
             <p className="text-sm text-gray-700">
               Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">{viewJobSeekers.length}</span> of{" "}
-              <span className="font-medium">{viewJobSeekers.length}</span>{" "}
+              <span className="font-medium">{filteredAndSortedJobSeekers.length}</span> of{" "}
+              <span className="font-medium">{filteredAndSortedJobSeekers.length}</span>{" "}
               results
             </p>
           </div>
-          {viewJobSeekers.length > 0 && (
+          {filteredAndSortedJobSeekers.length > 0 && (
             <div>
               <nav
                 className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"

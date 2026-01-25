@@ -504,7 +504,7 @@ const TearsheetsPage = () => {
                               },
                             ]}
                             buttonClassName="px-3 py-1 bg-gray-100 border border-gray-300 rounded flex items-center text-gray-600 hover:bg-gray-200 whitespace-nowrap"
-                            menuClassName="absolute z-100 mt-1 w-56 bg-white border border-gray-300 shadow-lg text-black rounded z-10"
+                            menuClassName="absolute z-100 mt-1 w-56 bg-white border border-gray-300 shadow-lg text-black rounded z-50"
                           />
                         </div>
                       </td>
@@ -577,7 +577,7 @@ const TearsheetsPage = () => {
 
         {/* Tearsheet Records Modal - Shows all affiliated records */}
         {selectedTearsheet && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col">
               {/* Modal Header */}
               <div className="p-6 border-b border-gray-200">
@@ -652,7 +652,7 @@ const TearsheetsPage = () => {
 
         {/* Send Internally Modal */}
         {showSendModal && selectedTearsheetForAction && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
               <div className="p-6 border-b border-gray-200">
                 <div className="flex justify-between items-center">
@@ -736,7 +736,7 @@ const TearsheetsPage = () => {
 
         {/* Delete Confirmation Modal */}
         {showDeleteConfirm && selectedTearsheetForAction && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded-lg shadow-xl max-w-md w-full mx-4">
               <div className="p-6 border-b border-gray-200">
                 <h3 className="text-lg font-semibold text-gray-900">

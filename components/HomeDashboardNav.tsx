@@ -236,7 +236,7 @@ export default function HomeDashboardNav() {
   return (
     <>
       {/* Top Navigation Bar */}
-      <div className="fixed top-0 left-0 right-0 h-12 bg-slate-800 flex items-center justify-end  z-10 pl-60 pr-7">
+      <div className="fixed top-0 left-0 right-0 h-12 bg-slate-800 flex items-center justify-end z-10 pl-60 pr-7">
         <div className="flex items-center ml-4 space-x-4">
           {/* {isSearchOpen ? (
             <form onSubmit={handleSearch} className="flex items-center">
@@ -307,7 +307,7 @@ export default function HomeDashboardNav() {
       </div>
 
       {/* Side Navigation */}
-      <div className="fixed top-0 left-0 bottom-0 w-60 bg-slate-800 text-white z-20 flex flex-col">
+      <div className="fixed top-0 left-0 bottom-0 w-60 bg-slate-800 text-white z-10 flex flex-col">
         {/* Logo area */}
         <div className="h-12 flex items-center px-4">
           <div className="flex items-center ml-4 space-x-4">
@@ -354,7 +354,7 @@ export default function HomeDashboardNav() {
 
               {/* Add dropdown menu */}
               {isAddMenuOpen && (
-                <div className="absolute top-full left-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-20">
+                <div className="absolute top-full left-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-10">
                   {addMenuItems.map((item) => (
                     <button
                       key={item.path}

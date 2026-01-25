@@ -1,61 +1,89 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import ActionDropdown from "@/components/ActionDropdown";
 import LoadingScreen from "@/components/LoadingScreen";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import { FaLinkedin, FaFacebookSquare } from "react-icons/fa";
+import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, sendCalendarInvite, type EmailMessage, type CalendarEvent } from "@/lib/office365";
-import { FiUsers, FiUpload, FiFile, FiX } from "react-icons/fi";
+import { FiUsers, FiUpload, FiFile, FiX, FiLock, FiUnlock } from "react-icons/fi";
 import { TbGripVertical } from "react-icons/tb";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import OnboardingTab from "./onboarding/OnboardingTab";
-import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+// Drag and drop imports
+import {
+  DndContext,
+  closestCorners,
+  type DragEndEvent,
+  type DragOverEvent,
+  useDroppable,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  defaultDropAnimationSideEffects,
+  MeasuringStrategy,
+} from "@dnd-kit/core";
+import { restrictToWindowEdges } from "@dnd-kit/modifiers";
 import {
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
+// Droppable Column Container
+function DroppableContainer({ id, children, items }: { id: string, children: React.ReactNode, items: string[] }) {
+  const { setNodeRef } = useDroppable({ id });
+  return (
+    <SortableContext id={id} items={items} strategy={verticalListSortingStrategy}>
+      <div ref={setNodeRef} className="flex flex-col gap-4 w-full min-h-[100px]">
+        {children}
+      </div>
+    </SortableContext>
+  );
+}
+
 // Sortable Panel Component with drag handle
-function SortablePanel({
-  id,
-  children,
-}: {
-  id: string;
-  children: React.ReactNode;
-}) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id });
+function SortablePanel({ id, children, isOverlay = false }: { id: string; children: React.ReactNode; isOverlay?: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
 
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Translate.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging && !isOverlay ? 0.3 : 1,
+    zIndex: isOverlay ? 1000 : undefined,
   };
 
   return (
-    <div ref={setNodeRef} style={style} className="relative group">
-      <button
-        {...attributes}
-        {...listeners}
-        className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
-        title="Drag to reorder"
-      >
-        <TbGripVertical className="w-5 h-5 text-gray-600" />
-      </button>
-      {children}
+    <div ref={setNodeRef} style={style} className={`relative group ${isOverlay ? 'cursor-grabbing' : ''}`}>
+      {!isOverlay && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Drag to reorder"
+        >
+          <TbGripVertical className="w-5 h-5 text-gray-600" />
+        </button>
+      )}
+      <div className={`${isDragging && !isOverlay ? 'invisible' : ''} pt-0`}>
+        {children}
+      </div>
+      {isDragging && !isOverlay && (
+        <div className="absolute inset-0 border-2 border-dashed border-gray-300 rounded bg-gray-50 flex items-center justify-center p-4">
+          <div className="text-gray-400 text-xs font-semibold uppercase tracking-wider italic">
+            Moving Panel...
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -63,7 +91,7 @@ function SortablePanel({
 export default function JobSeekerView() {
   const router = useRouter();
   const searchParams = useSearchParams();
-    const jobSeekerId = searchParams.get("id");
+  const jobSeekerId = searchParams.get("id");
 
   const [activeTab, setActiveTab] = useState("summary");
   const [activeQuickTab, setActiveQuickTab] = useState("prescreen");
@@ -76,6 +104,15 @@ export default function JobSeekerView() {
   // Notes and history state
   const [notes, setNotes] = useState<Array<any>>([]);
   const [history, setHistory] = useState<Array<any>>([]);
+
+  const [historySearchTerm, setHistorySearchTerm] = useState("");
+
+  // Note filtering/sorting state
+  const [noteActionFilter, setNoteActionFilter] = useState("");
+  const [noteAuthorFilter, setNoteAuthorFilter] = useState("");
+  const [noteSortKey, setNoteSortKey] = useState<"date" | "action" | "author">("date");
+  const [noteSortDir, setNoteSortDir] = useState<"asc" | "desc">("desc");
+
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [showAddNote, setShowAddNote] = useState(false);
@@ -86,22 +123,56 @@ export default function JobSeekerView() {
   const [tasksError, setTasksError] = useState<string | null>(null);
 
   // Add Note form state
-  const [noteForm, setNoteForm] = useState({
+  const [noteForm, setNoteForm] = useState<{
+    text: string;
+    action: string;
+    about: string;
+    aboutReferences: any[];
+    copyNote: string;
+    replaceGeneralContactComments: boolean;
+    additionalReferences: string;
+    scheduleNextAction: string;
+    emailNotification: string;
+  }>({
     text: "",
     action: "",
     about: jobSeeker
       ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
       : "",
+    aboutReferences: jobSeeker
+      ? [
+        {
+          id: jobSeeker.id,
+          type: "Job Seeker",
+          display: `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`,
+          value: formatRecordId(jobSeeker.id, "jobSeeker"),
+        },
+      ]
+      : [],
     copyNote: "No",
     replaceGeneralContactComments: false,
     additionalReferences: "",
     scheduleNextAction: "None",
     emailNotification: "Internal User",
   });
+
+  // Validation state
+  const [validationErrors, setValidationErrors] = useState<{
+    action?: string;
+    about?: string;
+  }>({});
+
+  // Reference search state for About field
+  const [aboutSearchQuery, setAboutSearchQuery] = useState("");
+  const [aboutSuggestions, setAboutSuggestions] = useState<any[]>([]);
+  const [showAboutDropdown, setShowAboutDropdown] = useState(false);
+  const [isLoadingAboutSearch, setIsLoadingAboutSearch] = useState(false);
+  const aboutInputRef = useRef<HTMLInputElement>(null);
+
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isOffice365Connected, setIsOffice365Connected] = useState(false);
-  
+
   // Action fields state (for dynamic dropdown options)
   const [actionFields, setActionFields] = useState<any[]>([]);
   const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
@@ -131,14 +202,46 @@ export default function JobSeekerView() {
     ],
   });
 
-  // Panel order state for drag-and-drop
-  const [panelOrder, setPanelOrder] = useState<string[]>([
-    "resume",
-    "overview",
-    "jobSeekerDetails",
-    "recentNotes",
-    "openTasks",
-  ]);
+  // ===== Summary layout state =====
+  const [columns, setColumns] = useState<{
+    left: string[];
+    right: string[];
+  }>({
+    left: ["resume", "jobSeekerDetails"],
+    right: ["overview", "recentNotes", "openTasks"],
+  });
+
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [isPinned, setIsPinned] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  // High-performance sensors configuration
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const measuringConfig = useMemo(() => ({
+    droppable: {
+      strategy: MeasuringStrategy.Always,
+    },
+  }), []);
+
+  const dropAnimationConfig = useMemo(() => ({
+    sideEffects: defaultDropAnimationSideEffects({
+      styles: {
+        active: {
+          opacity: "0.5",
+        },
+      },
+    }),
+  }), []);
   // ===== PENCIL-HEADER-MODAL (Job Seeker Header Fields) =====
 
   type HeaderFieldDef = {
@@ -187,9 +290,9 @@ export default function JobSeekerView() {
   const headerFieldDefs: HeaderFieldDef[] = (() => {
     const customKeys = new Set<string>();
 
-    // Prefer availableFields (from modify page)
+    // Collect all custom field keys from availableFields (use field_key or api_name as primary identifier)
     (availableFields || []).forEach((f: any) => {
-      const k = f.field_name || f.field_label || f.id;
+      const k = f.field_key || f.api_name || f.field_name || f.id;
       if (k) customKeys.add(String(k));
     });
 
@@ -201,8 +304,9 @@ export default function JobSeekerView() {
     }
 
     const customDefs: HeaderFieldDef[] = Array.from(customKeys).map((k) => {
+      // Find the field definition by matching field_key, api_name, or field_name
       const found = (availableFields || []).find((f: any) => {
-        const fk = f.field_name || f.field_label || f.id;
+        const fk = f.field_key || f.api_name || f.field_name || f.id;
         return String(fk) === k;
       });
       const label = found?.field_label || found?.field_name || k;
@@ -346,9 +450,9 @@ export default function JobSeekerView() {
     const links =
       chosen.length > 0
         ? "\n\nDocuments:\n" +
-          chosen
-            .map((d) => `- ${d.name}: ${window.location.origin}${d.url}`)
-            .join("\n")
+        chosen
+          .map((d) => `- ${d.name}: ${window.location.origin}${d.url}`)
+          .join("\n")
         : "";
     const body =
       "Here are your onboarding documents. Please fill these out and return promptly." +
@@ -432,15 +536,14 @@ export default function JobSeekerView() {
     const links =
       chosen.length > 0
         ? "\n\nPlease review and complete the following documents:\n" +
-          chosen
-            .map((d) => `- ${d.name}: ${window.location.origin}${d.url}`)
-            .join("\n")
+        chosen
+          .map((d) => `- ${d.name}: ${window.location.origin}${d.url}`)
+          .join("\n")
         : "";
     const body = `Dear Reference,
 
-We are requesting a reference for ${
-      jobSeeker?.fullName || "a candidate"
-    }. Please review and complete the attached reference documents at your earliest convenience.${links}
+We are requesting a reference for ${jobSeeker?.fullName || "a candidate"
+      }. Please review and complete the attached reference documents at your earliest convenience.${links}
 
 Thank you for your time and assistance.
 
@@ -482,38 +585,140 @@ Best regards`;
   };
 
 
-  // Load panel order from localStorage on mount
+  // Initialize columns from localStorage or default
   useEffect(() => {
-    const savedOrder = localStorage.getItem("jobSeekerSummaryPanelOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setPanelOrder(parsed);
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("jobSeekerSummaryColumns");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.left && Array.isArray(parsed.left) && parsed.right && Array.isArray(parsed.right)) {
+            setColumns(parsed);
+          }
+        } catch (e) {
+          console.error("Error loading panel order:", e);
         }
-      } catch (e) {
-        console.error("Error parsing saved panel order:", e);
       }
     }
   }, []);
 
-  // Save panel order to localStorage when it changes
-  useEffect(() => {
-    if (panelOrder.length > 0) {
-      localStorage.setItem("jobSeekerSummaryPanelOrder", JSON.stringify(panelOrder));
-    }
-  }, [panelOrder]);
+  const prevColumnsRef = useRef<string>("");
 
-  // Handle drag end for panel reordering
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    if (over && active.id !== over.id) {
-      setPanelOrder((items) => {
-        const oldIndex = items.indexOf(active.id as string);
-        const newIndex = items.indexOf(over.id as string);
-        return arrayMove(items, oldIndex, newIndex);
-      });
+  // Save columns to localStorage
+  useEffect(() => {
+    const colsString = JSON.stringify(columns);
+    if (prevColumnsRef.current !== colsString) {
+      localStorage.setItem("jobSeekerSummaryColumns", colsString);
+      prevColumnsRef.current = colsString;
     }
+  }, [columns]);
+
+  const findContainer = useCallback((id: string) => {
+    if (id in columns) {
+      return id as keyof typeof columns;
+    }
+    return Object.keys(columns).find((key) =>
+      columns[key as keyof typeof columns].includes(id)
+    ) as keyof typeof columns | undefined;
+  }, [columns]);
+
+  const handlePanelDragStart = useCallback((event: any) => {
+    setActiveId(event.active.id);
+  }, []);
+
+  const handlePanelDragOver = useCallback((event: DragOverEvent) => {
+    const { active, over } = event;
+    const overId = over?.id;
+
+    if (!overId || active.id === overId) {
+      return;
+    }
+
+    const activeContainer = findContainer(active.id as string);
+    const overContainer = findContainer(overId as string);
+
+    if (
+      !activeContainer ||
+      !overContainer ||
+      activeContainer === overContainer
+    ) {
+      return;
+    }
+
+    setColumns((prev) => {
+      const activeItems = prev[activeContainer];
+      const overItems = prev[overContainer];
+      const activeIndex = activeItems.indexOf(active.id as string);
+      const overIndex = overItems.indexOf(overId as string);
+
+      let newIndex;
+
+      if (overId in prev) {
+        newIndex = overItems.length + 1;
+      } else {
+        const isBelowOverItem =
+          over &&
+          active.rect.current.translated &&
+          active.rect.current.translated.top >
+          over.rect.top + over.rect.height;
+
+        const modifier = isBelowOverItem ? 1 : 0;
+
+        newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1;
+      }
+
+      const activeFiltered = prev[activeContainer].filter((item) => item !== active.id);
+      const overUpdated = [
+        ...prev[overContainer].slice(0, newIndex),
+        active.id as string,
+        ...prev[overContainer].slice(newIndex, prev[overContainer].length),
+      ];
+
+      return {
+        ...prev,
+        [activeContainer]: activeFiltered,
+        [overContainer]: overUpdated,
+      };
+    });
+  }, [findContainer]);
+
+  const handlePanelDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    const activeId = active.id as string;
+    const overId = over?.id as string;
+
+    const activeContainer = findContainer(activeId);
+    const overContainer = findContainer(overId);
+
+    if (
+      !activeContainer ||
+      !overContainer ||
+      activeContainer !== overContainer
+    ) {
+      setActiveId(null);
+      return;
+    }
+
+    const activeIndex = columns[activeContainer].indexOf(activeId);
+    const overIndex = columns[overContainer].indexOf(overId);
+
+    if (activeIndex !== overIndex) {
+      setColumns((prev) => ({
+        ...prev,
+        [activeContainer]: arrayMove(
+          prev[activeContainer],
+          activeIndex,
+          overIndex
+        ),
+      }));
+    }
+
+    setActiveId(null);
+  }, [columns, findContainer]);
+
+  const togglePin = () => {
+    setIsPinned((p) => !p);
+    if (isPinned === false) setIsCollapsed(false);
   };
 
   // Fetch job seeker when component mounts
@@ -544,6 +749,223 @@ Best regards`;
       fetchActionFields();
     }
   }, [showAddNote]);
+
+  // Search for references for About field
+  const searchAboutReferences = async (query: string) => {
+    if (!query || query.trim().length < 2) {
+      setAboutSuggestions([]);
+      setShowAboutDropdown(false);
+      return;
+    }
+
+    setIsLoadingAboutSearch(true);
+    setShowAboutDropdown(true);
+
+    try {
+      const searchTerm = query.trim();
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      const headers = {
+        Authorization: `Bearer ${token}`,
+      };
+
+      // Search across multiple entity types in parallel
+      const [
+        jobsRes,
+        orgsRes,
+        jobSeekersRes,
+        leadsRes,
+        tasksRes,
+        placementsRes,
+        hiringManagersRes,
+      ] = await Promise.allSettled([
+        fetch("/api/jobs", { headers }),
+        fetch("/api/organizations", { headers }),
+        fetch("/api/job-seekers", { headers }),
+        fetch("/api/leads", { headers }),
+        fetch("/api/tasks", { headers }),
+        fetch("/api/placements", { headers }),
+        fetch("/api/hiring-managers", { headers }),
+      ]);
+
+      const suggestions: any[] = [];
+
+      // Process jobs
+      if (jobsRes.status === "fulfilled" && jobsRes.value.ok) {
+        const data = await jobsRes.value.json();
+        const jobs = (data.jobs || []).filter(
+          (job: any) =>
+            job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            job.id?.toString().includes(searchTerm)
+        );
+        jobs.forEach((job: any) => {
+          suggestions.push({
+            id: job.id,
+            type: "Job",
+            display: `${formatRecordId(job.id, "job")} ${job.job_title || "Untitled"
+              }`,
+            value: formatRecordId(job.id, "job"),
+          });
+        });
+      }
+
+      // Process organizations
+      if (orgsRes.status === "fulfilled" && orgsRes.value.ok) {
+        const data = await orgsRes.value.json();
+        const orgs = (data.organizations || []).filter(
+          (org: any) =>
+            org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            org.id?.toString().includes(searchTerm)
+        );
+        orgs.forEach((org: any) => {
+          suggestions.push({
+            id: org.id,
+            type: "Organization",
+            display: `${formatRecordId(org.id, "organization")} ${org.name || "Unnamed"
+              }`,
+            value: formatRecordId(org.id, "organization"),
+          });
+        });
+      }
+
+      // Process job seekers
+      if (jobSeekersRes.status === "fulfilled" && jobSeekersRes.value.ok) {
+        const data = await jobSeekersRes.value.json();
+        const seekers = (data.jobSeekers || []).filter(
+          (seeker: any) =>
+            seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.id?.toString().includes(searchTerm)
+        );
+        seekers.forEach((seeker: any) => {
+          const name =
+            seeker.full_name ||
+            `${seeker.first_name || ""} ${seeker.last_name || ""}`.trim() ||
+            "Unnamed";
+          suggestions.push({
+            id: seeker.id,
+            type: "Job Seeker",
+            display: `${formatRecordId(seeker.id, "jobSeeker")} ${name}`,
+            value: formatRecordId(seeker.id, "jobSeeker"),
+          });
+        });
+      }
+
+      // Process leads
+      if (leadsRes.status === "fulfilled" && leadsRes.value.ok) {
+        const data = await leadsRes.value.json();
+        const leads = (data.leads || []).filter(
+          (lead: any) =>
+            lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            lead.id?.toString().includes(searchTerm)
+        );
+        leads.forEach((lead: any) => {
+          suggestions.push({
+            id: lead.id,
+            type: "Lead",
+            display: `${formatRecordId(lead.id, "lead")} ${lead.name || lead.company_name || "Unnamed"
+              }`,
+            value: formatRecordId(lead.id, "lead"),
+          });
+        });
+      }
+
+      // Process hiring managers
+      if (hiringManagersRes.status === "fulfilled" && hiringManagersRes.value.ok) {
+        const data = await hiringManagersRes.value.json();
+        const hms = (data.hiringManagers || []).filter(
+          (hm: any) =>
+            hm.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.id?.toString().includes(searchTerm)
+        );
+        hms.forEach((hm: any) => {
+          const name =
+            hm.full_name ||
+            `${hm.first_name || ""} ${hm.last_name || ""}`.trim() ||
+            "Unnamed";
+          suggestions.push({
+            id: hm.id,
+            type: "Hiring Manager",
+            display: `${formatRecordId(hm.id, "hiringManager")} ${name}`,
+            value: formatRecordId(hm.id, "hiringManager"),
+          });
+        });
+      }
+
+      // Filter out already selected references
+      const selectedIds = noteForm.aboutReferences.map((ref) => ref.id);
+      const filteredSuggestions = suggestions.filter(
+        (s) => !selectedIds.includes(s.id)
+      );
+
+      // Limit to top 10 suggestions
+      setAboutSuggestions(filteredSuggestions.slice(0, 10));
+    } catch (err) {
+      console.error("Error searching about references:", err);
+      setAboutSuggestions([]);
+    } finally {
+      setIsLoadingAboutSearch(false);
+    }
+  };
+
+  // Handle About reference selection
+  const handleAboutReferenceSelect = (reference: any) => {
+    setNoteForm((prev) => {
+      const newReferences = [...prev.aboutReferences, reference];
+      return {
+        ...prev,
+        aboutReferences: newReferences,
+        about: newReferences.map((ref) => ref.display).join(", "),
+      };
+    });
+    setAboutSearchQuery("");
+    setShowAboutDropdown(false);
+    setAboutSuggestions([]);
+    if (aboutInputRef.current) {
+      aboutInputRef.current.focus();
+    }
+  };
+
+  // Remove About reference
+  const removeAboutReference = (index: number) => {
+    setNoteForm((prev) => {
+      const newReferences = prev.aboutReferences.filter((_, i) => i !== index);
+      return {
+        ...prev,
+        aboutReferences: newReferences,
+        about: newReferences.length > 0
+          ? newReferences.map((ref) => ref.display).join(", ")
+          : "",
+      };
+    });
+  };
+
+  // Close About dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        aboutInputRef.current &&
+        !aboutInputRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest('[data-about-dropdown]')
+      ) {
+        setShowAboutDropdown(false);
+      }
+    };
+
+    if (showAboutDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showAboutDropdown]);
 
   // Fetch users for appointment attendees
   useEffect(() => {
@@ -623,7 +1045,7 @@ Best regards`;
         // Get custom fields from the response - handle both response structures
         const fields = data.customFields || data.fields || [];
         // Sort by sort_order if available
-        const sortedFields = fields.sort((a: any, b: any) => 
+        const sortedFields = fields.sort((a: any, b: any) =>
           (a.sort_order || 0) - (b.sort_order || 0)
         );
         setActionFields(sortedFields);
@@ -1120,7 +1542,7 @@ Best regards`;
       // Get response as text first for debugging
       const responseText = await response.text();
       let data;
-      
+
       try {
         data = JSON.parse(responseText);
       } catch (parseError) {
@@ -1147,12 +1569,14 @@ Best regards`;
         about: jobSeeker
           ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
           : "",
+        aboutReferences: [], // ✅ required
         copyNote: "No",
         replaceGeneralContactComments: false,
         additionalReferences: "",
         scheduleNextAction: "None",
         emailNotification: "Internal User",
       });
+
       setShowAddNote(false);
 
       // Refresh history and notes
@@ -1180,6 +1604,7 @@ Best regards`;
       about: jobSeeker
         ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
         : "",
+      aboutReferences: [], // ✅ REQUIRED
       copyNote: "No",
       replaceGeneralContactComments: false,
       additionalReferences: "",
@@ -1187,6 +1612,7 @@ Best regards`;
       emailNotification: "Internal User",
     });
   };
+
 
   const handleGoBack = () => {
     router.back();
@@ -1335,7 +1761,7 @@ Best regards`;
           const [hours, minutes] = appointmentForm.time.split(':');
           const appointmentDate = new Date(appointmentForm.date);
           appointmentDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
-          
+
           const endDate = new Date(appointmentDate);
           endDate.setMinutes(endDate.getMinutes() + appointmentForm.duration);
 
@@ -1517,6 +1943,11 @@ Best regards`;
     { label: "Delete", action: () => handleActionSelected("delete") },
   ];
 
+  const printableOptions = [
+    { label: "Summary", action: () => handlePrint() },
+    { label: "Full Profile", action: () => handlePrint() },
+  ];
+
   // Tabs from the image
   const tabs = [
     { id: "summary", label: "Summary" },
@@ -1539,140 +1970,296 @@ Best regards`;
   ];
 
   // Render notes tab content
-  const renderNotesTab = () => (
-    <div className="bg-white p-4 rounded shadow-sm">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold">
-          Job Seeker Notes{" "}
-          {notes.length > 0 && (
-            <span className="text-gray-500 font-normal">({notes.length})</span>
-          )}
-        </h2>
-        <button
-          onClick={() => setShowAddNote(true)}
-          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-        >
-          Add Note
-        </button>
-      </div>
+  const renderNotesTab = () => {
+    // Filter and sort notes
+    const sortedFilteredNotes = notes
+      .filter((note) => {
+        const matchesAction = noteActionFilter
+          ? (note.action === noteActionFilter)
+          : true;
+        const matchesAuthor = noteAuthorFilter
+          ? (note.created_by_name || "Unknown User") === noteAuthorFilter
+          : true;
+        return matchesAction && matchesAuthor;
+      })
+      .sort((a, b) => {
+        let cmp = 0;
+        if (noteSortKey === "date") {
+          cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        } else if (noteSortKey === "action") {
+          cmp = (a.action || "").localeCompare(b.action || "");
+        } else if (noteSortKey === "author") {
+          cmp = (a.created_by_name || "").localeCompare(b.created_by_name || "");
+        }
+        return noteSortDir === "asc" ? cmp : -cmp;
+      });
 
-      {/* Notes List */}
-      {isLoadingNotes ? (
-        <div className="flex justify-center py-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+    return (
+      <div className="bg-white p-4 rounded shadow-sm">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">
+            Job Seeker Notes{" "}
+            {notes.length > 0 && (
+              <span className="text-gray-500 font-normal">({notes.length})</span>
+            )}
+          </h2>
+          <button
+            onClick={() => setShowAddNote(true)}
+            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+          >
+            Add Note
+          </button>
         </div>
-      ) : notes.length > 0 ? (
-        <div className="space-y-4">
-          {notes.map((note) => (
-            <div key={note.id} className="p-3 border rounded hover:bg-gray-50">
-              <div className="flex justify-between items-start mb-2">
-                <span className="font-medium text-blue-600">
-                  {note.created_by_name || "Unknown User"}
-                </span>
-                <span className="text-sm text-gray-500">
-                  {new Date(note.created_at).toLocaleString()}
-                </span>
+
+        {/* Filters & Sort Controls */}
+        <div className="flex flex-wrap gap-4 items-end mb-4">
+          {/* Action Filter */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Action
+            </label>
+            <select
+              value={noteActionFilter}
+              onChange={(e) => setNoteActionFilter(e.target.value)}
+              className="p-2 border border-gray-300 rounded text-sm"
+            >
+              <option value="">All Actions</option>
+              {Array.from(new Set([...actionFields.map((af) => af.field_label || af.field_name), ...notes.map(n => n.action).filter(Boolean)])).sort().map(
+                (action) => (
+                  <option key={action} value={action}>
+                    {action}
+                  </option>
+                )
+              )}
+            </select>
+          </div>
+
+          {/* Author Filter */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Author
+            </label>
+            <select
+              value={noteAuthorFilter}
+              onChange={(e) => setNoteAuthorFilter(e.target.value)}
+              className="p-2 border border-gray-300 rounded text-sm"
+            >
+              <option value="">All Authors</option>
+              {Array.from(
+                new Set(notes.map((n) => n.created_by_name || "Unknown User"))
+              ).sort().map((author) => (
+                <option key={author} value={author}>
+                  {author}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Sort Key */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Sort By
+            </label>
+            <select
+              value={noteSortKey}
+              onChange={(e) =>
+                setNoteSortKey(e.target.value as "date" | "action" | "author")
+              }
+              className="p-2 border border-gray-300 rounded text-sm"
+            >
+              <option value="date">Date</option>
+              <option value="action">Action</option>
+              <option value="author">Author</option>
+            </select>
+          </div>
+
+          {/* Sort Direction Toggle */}
+          <div>
+            <button
+              onClick={() =>
+                setNoteSortDir((d) => (d === "asc" ? "desc" : "asc"))
+              }
+              className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs text-black"
+              title="Toggle Sort Direction"
+            >
+              {noteSortDir === "asc" ? "Asc ↑" : "Desc ↓"}
+            </button>
+          </div>
+
+          {/* Clear Filters */}
+          {(noteActionFilter || noteAuthorFilter) && (
+            <button
+              onClick={() => {
+                setNoteActionFilter("");
+                setNoteAuthorFilter("");
+              }}
+              className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs"
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
+
+        {/* Notes List */}
+        {isLoadingNotes ? (
+          <div className="flex justify-center py-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        ) : sortedFilteredNotes.length > 0 ? (
+          <div className="space-y-4">
+            {sortedFilteredNotes.map((note) => (
+              <div key={note.id} className="p-3 border rounded hover:bg-gray-50 bg-white">
+                <div className="flex justify-between items-start mb-2">
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-blue-600">
+                        {note.created_by_name || "Unknown User"}
+                      </span>
+                      {note.action && (
+                        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-medium">
+                          {note.action}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-500">
+                      {new Date(note.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+                <p className="text-gray-700 whitespace-pre-wrap">{note.text}</p>
               </div>
-              <p className="text-gray-700">{note.text}</p>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <p className="text-gray-500 italic">No notes have been added yet.</p>
-      )}
-    </div>
-  );
+            ))}
+          </div>
+        ) : (
+          <p className="text-gray-500 italic">No notes match your filters.</p>
+        )}
+      </div>
+    );
+  };
 
   // Render history tab content
-  const renderHistoryTab = () => (
-    <div className="bg-white p-4 rounded shadow-sm">
-      <h2 className="text-lg font-semibold mb-4">Job Seeker History</h2>
+  const renderHistoryTab = () => {
+    // Filter history based on search term
+    const filteredHistory = history.filter((item) => {
+      if (!historySearchTerm) return true;
+      const term = historySearchTerm.toLowerCase();
+      const personName = (item.performed_by_name || "").toLowerCase();
+      const dateStr = new Date(item.performed_at).toLocaleString().toLowerCase();
+      return personName.includes(term) || dateStr.includes(term);
+    });
 
-      {isLoadingHistory ? (
-        <div className="flex justify-center py-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+    return (
+      <div className="bg-white p-4 rounded shadow-sm">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Job Seeker History</h2>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search by name or date..."
+              value={historySearchTerm}
+              onChange={(e) => setHistorySearchTerm(e.target.value)}
+              className="pl-8 pr-4 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <svg
+              className="w-4 h-4 text-gray-400 absolute left-2.5 top-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+          </div>
         </div>
-      ) : history.length > 0 ? (
-        <div className="space-y-4">
-          {history.map((item) => {
-            // Format the history entry based on action type
-            let actionDisplay = "";
-            let detailsDisplay = "";
 
-            try {
-              const details =
-                typeof item.details === "string"
-                  ? JSON.parse(item.details)
-                  : item.details;
+        {isLoadingHistory ? (
+          <div className="flex justify-center py-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        ) : filteredHistory.length > 0 ? (
+          <div className="space-y-4">
+            {filteredHistory.map((item) => {
+              // Format the history entry based on action type
+              let actionDisplay = "";
+              let detailsDisplay = "";
 
-              switch (item.action) {
-                case "CREATE":
-                  actionDisplay = "Job Seeker Created";
-                  detailsDisplay = `Created by ${
-                    item.performed_by_name || "Unknown"
-                  }`;
-                  break;
-                case "UPDATE":
-                  actionDisplay = "Job Seeker Updated";
-                  if (details && details.before && details.after) {
-                    // Create a list of changes
-                    const changes = [];
-                    for (const key in details.after) {
-                      if (details.before[key] !== details.after[key]) {
-                        const fieldName = key.replace(/_/g, " ");
-                        changes.push(
-                          `${fieldName}: "${details.before[key] || ""}" → "${
-                            details.after[key] || ""
-                          }"`
-                        );
+              try {
+                const details =
+                  typeof item.details === "string"
+                    ? JSON.parse(item.details)
+                    : item.details;
+
+                switch (item.action) {
+                  case "CREATE":
+                    actionDisplay = "Job Seeker Created";
+                    detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
+                      }`;
+                    break;
+                  case "UPDATE":
+                    actionDisplay = "Job Seeker Updated";
+                    if (details && details.before && details.after) {
+                      // Create a list of changes
+                      const changes = [];
+                      for (const key in details.after) {
+                        if (details.before[key] !== details.after[key]) {
+                          const fieldName = key.replace(/_/g, " ");
+                          changes.push(
+                            `${fieldName}: "${details.before[key] || ""}" → "${details.after[key] || ""
+                            }"`
+                          );
+                        }
+                      }
+                      if (changes.length > 0) {
+                        detailsDisplay = `Changes: ${changes.join(", ")}`;
+                      } else {
+                        detailsDisplay = "No changes detected";
                       }
                     }
-                    if (changes.length > 0) {
-                      detailsDisplay = `Changes: ${changes.join(", ")}`;
-                    } else {
-                      detailsDisplay = "No changes detected";
-                    }
-                  }
-                  break;
-                case "ADD_NOTE":
-                  actionDisplay = "Note Added";
-                  detailsDisplay = details.text || "";
-                  break;
-                default:
-                  actionDisplay = item.action;
-                  detailsDisplay = JSON.stringify(details);
+                    break;
+                  case "ADD_NOTE":
+                    actionDisplay = "Note Added";
+                    detailsDisplay = details.text || "";
+                    break;
+                  default:
+                    actionDisplay = item.action;
+                    detailsDisplay = JSON.stringify(details);
+                }
+              } catch (e) {
+                console.error("Error parsing history details:", e);
+                detailsDisplay = "Error displaying details";
               }
-            } catch (e) {
-              console.error("Error parsing history details:", e);
-              detailsDisplay = "Error displaying details";
-            }
 
-            return (
-              <div
-                key={item.id}
-                className="p-3 border rounded hover:bg-gray-50"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="font-medium text-blue-600">
-                    {actionDisplay}
-                  </span>
-                  <span className="text-sm text-gray-500">
-                    {new Date(item.performed_at).toLocaleString()}
-                  </span>
+              return (
+                <div
+                  key={item.id}
+                  className="p-3 border rounded hover:bg-gray-50"
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="font-medium text-blue-600">
+                      {actionDisplay}
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      {new Date(item.performed_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mb-2">{detailsDisplay}</div>
+                  <div className="text-sm text-gray-600">
+                    By: {item.performed_by_name || "Unknown"}
+                  </div>
                 </div>
-                <div className="mb-2">{detailsDisplay}</div>
-                <div className="text-sm text-gray-600">
-                  By: {item.performed_by_name || "Unknown"}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      ) : (
-        <p className="text-gray-500 italic">No history records available</p>
-      )}
-    </div>
-  );
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-gray-500 italic">No history records match your search</p>
+        )}
+      </div>
+    );
+  };
 
   // Render modify tab to direct to edit form
   const renderModifyTab = () => (
@@ -1689,6 +2276,139 @@ Best regards`;
       </button>
     </div>
   );
+
+  // Render individual panels for summary
+  const renderResumePanel = () => {
+    if (!jobSeeker) return null;
+    return (
+      <PanelWithHeader title="Resume" onEdit={() => handleEditPanel("resume")}>
+        <div className="space-y-0 border border-gray-200 rounded">
+          {visibleFields.resume.includes("profile") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Profile:</div>
+              <div className="flex-1 p-2 text-sm">{jobSeeker.resume.profile}</div>
+            </div>
+          )}
+          {visibleFields.resume.includes("skills") && jobSeeker.skills?.length > 0 && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Skills:</div>
+              <div className="flex-1 p-2">
+                <div className="flex flex-wrap gap-2">
+                  {jobSeeker.skills.map((skill: string, index: number) => (
+                    <span key={index} className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm">{skill}</span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderOverviewPanel = () => {
+    if (!jobSeeker) return null;
+    return (
+      <PanelWithHeader title="Overview" onEdit={() => handleEditPanel("overview")}>
+        <div className="space-y-0 border border-gray-200 rounded">
+          {visibleFields.overview.map((key) => (
+            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{labelForHeaderKey(key)}:</div>
+              <div className="flex-1 p-2 text-sm">
+                {key === "status" ? (
+                  <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{getHeaderValue(key)}</span>
+                ) : key === "email" ? (
+                  <a href={`mailto:${getHeaderValue(key)}`} className="text-blue-600 hover:underline">{getHeaderValue(key)}</a>
+                ) : (
+                  getHeaderValue(key)
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderJobSeekerDetailsPanel = () => {
+    if (!jobSeeker) return null;
+    return (
+      <PanelWithHeader title="Job Seeker Details" onEdit={() => handleEditPanel("jobSeekerDetails")}>
+        <div className="space-y-0 border border-gray-200 rounded">
+          {visibleFields.jobSeekerDetails.map((key) => (
+            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{labelForHeaderKey(key)}:</div>
+              <div className="flex-1 p-2 text-sm">{getHeaderValue(key)}</div>
+            </div>
+          ))}
+
+          {/* Custom Fields that are not explicitly in visibleFields but exist on jobSeeker */}
+          {jobSeeker.customFields && Object.keys(jobSeeker.customFields).map(key => {
+            if (visibleFields.jobSeekerDetails.includes(key)) return null;
+            return (
+              <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{labelForHeaderKey(key)}:</div>
+                <div className="flex-1 p-2 text-sm">{getHeaderValue(key)}</div>
+              </div>
+            );
+          })}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderRecentNotesPanel = () => (
+    <PanelWithHeader title="Recent Notes:">
+      <div className="p-2 border border-gray-200 rounded">
+        {notes.length > 0 ? (
+          <div className="space-y-2">
+            {notes.slice(0, 3).map((note) => (
+              <div key={note.id} className="text-sm pb-2 border-b last:border-b-0">
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>{note.created_by_name}</span>
+                  <span>{new Date(note.created_at).toLocaleDateString()}</span>
+                </div>
+                <p className="mt-1">{note.text}</p>
+              </div>
+            ))}
+          </div>
+        ) : <p className="text-gray-500 italic text-sm">No recent notes</p>}
+      </div>
+    </PanelWithHeader>
+  );
+
+  const renderOpenTasksPanel = () => (
+    <PanelWithHeader title="Open Tasks:">
+      <div className="p-2 border border-gray-200 rounded">
+        {tasks.length > 0 ? (
+          <div className="space-y-2">
+            {tasks.map((task) => (
+              <div key={task.id} className="text-sm pb-2 border-b last:border-b-0">
+                <div className="font-medium text-blue-600">{task.title}</div>
+                <div className="text-xs text-gray-500">Due: {new Date(task.due_date).toLocaleDateString()}</div>
+              </div>
+            ))}
+          </div>
+        ) : <p className="text-gray-500 italic text-sm">No open tasks</p>}
+      </div>
+    </PanelWithHeader>
+  );
+
+  const renderPanel = useCallback((panelId: string, isOverlay = false) => {
+    let content = null;
+    if (panelId === "resume") content = renderResumePanel();
+    else if (panelId === "overview") content = renderOverviewPanel();
+    else if (panelId === "jobSeekerDetails") content = renderJobSeekerDetailsPanel();
+    else if (panelId === "recentNotes") content = renderRecentNotesPanel();
+    else if (panelId === "openTasks") content = renderOpenTasksPanel();
+
+    if (!content) return null;
+    return (
+      <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
+        {content}
+      </SortablePanel>
+    );
+  }, [jobSeeker, visibleFields, notes, tasks, isLoadingTasks, tasksError]);
 
   if (isLoading) {
     return <LoadingScreen message="Loading job seeker details..." />;
@@ -1752,26 +2472,26 @@ Best regards`;
               </span>
             ) : (
               headerFields.map((key) => (
-                  <div key={key} className="min-w-[140px]">
-                    <div className="text-xs text-gray-500">
-                      {labelForHeaderKey(key)}
-                    </div>
-
-                    {/* Special case: email clickable */}
-                    {key === "email" && getHeaderValue("email") !== "-" ? (
-                      <a
-                        href={`mailto:${getHeaderValue("email")}`}
-                        className="text-sm font-medium text-blue-600 hover:underline"
-                      >
-                        {getHeaderValue("email")}
-                      </a>
-                    ) : (
-                      <div className="text-sm font-medium text-gray-900">
-                        {getHeaderValue(key)}
-                      </div>
-                    )}
+                <div key={key} className="min-w-[140px]">
+                  <div className="text-xs text-gray-500">
+                    {labelForHeaderKey(key)}
                   </div>
-                ))
+
+                  {/* Special case: email clickable */}
+                  {key === "email" && getHeaderValue("email") !== "-" ? (
+                    <a
+                      href={`mailto:${getHeaderValue("email")}`}
+                      className="text-sm font-medium text-blue-600 hover:underline"
+                    >
+                      {getHeaderValue("email")}
+                    </a>
+                  ) : (
+                    <div className="text-sm font-medium text-gray-900">
+                      {getHeaderValue(key)}
+                    </div>
+                  )}
+                </div>
+              ))
             )}
           </div>
 
@@ -1800,6 +2520,7 @@ Best regards`;
               </svg>
             </button>
 
+            <ActionDropdown label="Printable" options={printableOptions} />
             <ActionDropdown label="Actions" options={actionOptions} />
 
             <button
@@ -1834,11 +2555,10 @@ Best regards`;
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            className={`px-4 py-2 ${
-              activeTab === tab.id
-                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
-                : "text-gray-700 hover:bg-gray-200"
-            }`}
+            className={`px-4 py-2 ${activeTab === tab.id
+              ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+              : "text-gray-700 hover:bg-gray-200"
+              }`}
             onClick={() => {
               if (tab.id === "modify") {
                 handleEdit();
@@ -1857,11 +2577,10 @@ Best regards`;
         {quickTabs.map((action) => (
           <button
             key={action.id}
-            className={`${
-              activeQuickTab === action.id
-                ? "bg-white text-blue-600 font-medium"
-                : "bg-white text-gray-700 hover:bg-gray-100"
-            } px-4 py-1 rounded-full shadow`}
+            className={`${activeQuickTab === action.id
+              ? "bg-white text-blue-600 font-medium"
+              : "bg-white text-gray-700 hover:bg-gray-100"
+              } px-4 py-1 rounded-full shadow`}
             onClick={() => setActiveQuickTab(action.id)}
           >
             {action.label}
@@ -1872,460 +2591,95 @@ Best regards`;
       {/* Main Content Area */}
       <div className="p-4">
         <div className="grid grid-cols-7 gap-4">
-          {/* Display content based on active tab */}
           {activeTab === "summary" && (
-            <DndContext
-              collisionDetection={closestCenter}
-              onDragEnd={handleDragEnd}
-            >
-              <SortableContext
-                items={panelOrder}
-                strategy={verticalListSortingStrategy}
-              >
-                <div className="col-span-7 space-y-4">
-                  {panelOrder.map((panelId) => {
-                    if (panelId === "resume") {
-                      return (
-                        <SortablePanel key={panelId} id={panelId}>
-                          <PanelWithHeader
-                              title="Resume"
-                              onEdit={() => handleEditPanel("resume")}
-                            >
-                              <div className="space-y-0 border border-gray-200 rounded">
-                                {visibleFields.resume.includes("profile") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      Profile:
-                                    </div>
-                                    <div className="flex-1 p-2 text-sm">
-                                      {jobSeeker.resume.profile}
-                                    </div>
-                                  </div>
-                                )}
-                                {visibleFields.resume.includes("skills") &&
-                                  jobSeeker.skills &&
-                                  jobSeeker.skills.length > 0 && (
-                                    <div className="flex border-b border-gray-200 last:border-b-0">
-                                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                        Skills:
-                                      </div>
-                                      <div className="flex-1 p-2">
-                                        <div className="flex flex-wrap gap-2">
-                                          {jobSeeker.skills.map(
-                                            (skill: string, index: number) => (
-                                              <span
-                                                key={index}
-                                                className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm"
-                                              >
-                                                {skill}
-                                              </span>
-                                            )
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  )}
-                                {visibleFields.resume.includes("experience") &&
-                                  jobSeeker.resume.experience &&
-                                  jobSeeker.resume.experience.length > 0 && (
-                                    <div className="flex border-b border-gray-200 last:border-b-0">
-                                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                        Work Experience:
-                                      </div>
-                                      <div className="flex-1 p-2">
-                                        {jobSeeker.resume.experience.map(
-                                          (exp: any, index: number) => (
-                                            <div key={index} className="mb-4 last:mb-0">
-                                              <div className="flex justify-between mb-1">
-                                                <div className="font-bold text-sm">
-                                                  {exp.title} {exp.location}
-                                                </div>
-                                                <div className="text-sm">{exp.period}</div>
-                                              </div>
-                                              <ul className="list-disc pl-5 mt-1">
-                                                {exp.responsibilities.map(
-                                                  (resp: string, respIndex: number) => (
-                                                    <li
-                                                      key={respIndex}
-                                                      className="text-sm mb-1"
-                                                    >
-                                                      {resp}
-                                                    </li>
-                                                  )
-                                                )}
-                                              </ul>
-                                            </div>
-                                          )
-                                        )}
-                                      </div>
-                                    </div>
-                                  )}
-                              </div>
-                            </PanelWithHeader>
-                        </SortablePanel>
-                      );
-                    }
-
-                    if (panelId === "overview") {
-                      return (
-                        <SortablePanel key={panelId} id={panelId}>
-                          <PanelWithHeader
-                              title="Overview"
-                              onEdit={() => handleEditPanel("overview")}
-                            >
-                              <div className="space-y-0 border border-gray-200 rounded">
-                                {visibleFields.overview.includes("status") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      Status:
-                                    </div>
-                                    <div className="flex-1 p-2">
-                                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                                        {jobSeeker.status}
-                                      </span>
-                                    </div>
-                                  </div>
-                                )}
-                                {visibleFields.overview.includes("currentOrganization") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      Current Organization:
-                                    </div>
-                                    <div className="flex-1 p-2 text-blue-600">
-                                      {jobSeeker.currentOrganization}
-                                    </div>
-                                  </div>
-                                )}
-                                {visibleFields.overview.includes("title") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      Title:
-                                    </div>
-                                    <div className="flex-1 p-2">{jobSeeker.title}</div>
-                                  </div>
-                                )}
-                                {visibleFields.overview.includes("email") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      Email:
-                                    </div>
-                                    <div className="flex-1 p-2 text-blue-600">
-                                      {jobSeeker.email}
-                                    </div>
-                                  </div>
-                                )}
-                                {visibleFields.overview.includes("mobilePhone") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      Mobile Phone:
-                                    </div>
-                                    <div className="flex-1 p-2">
-                                      {jobSeeker.mobilePhone}
-                                    </div>
-                                  </div>
-                                )}
-                                {/* Display custom fields for overview */}
-                                {jobSeeker.customFields &&
-                                  Object.keys(jobSeeker.customFields).map((fieldKey) => {
-                                    if (visibleFields.overview.includes(fieldKey)) {
-                                      const field = availableFields.find(
-                                        (f) =>
-                                          (f.field_name || f.field_label || f.id) ===
-                                          fieldKey
-                                      );
-                                      const fieldLabel =
-                                        field?.field_label || field?.field_name || fieldKey;
-                                      const fieldValue = jobSeeker.customFields[fieldKey];
-                                      return (
-                                        <div
-                                          key={fieldKey}
-                                          className="flex border-b border-gray-200 last:border-b-0"
-                                        >
-                                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                            {fieldLabel}:
-                                          </div>
-                                          <div className="flex-1 p-2">
-                                            {String(fieldValue || "-")}
-                                          </div>
-                                        </div>
-                                      );
-                                    }
-                                    return null;
-                                  })}
-                              </div>
-                            </PanelWithHeader>
-                        </SortablePanel>
-                      );
-                    }
-
-                    if (panelId === "jobSeekerDetails") {
-                      return (
-                        <SortablePanel key={panelId} id={panelId}>
-                          <PanelWithHeader
-                              title="Job Seeker Details"
-                              onEdit={() => handleEditPanel("jobSeekerDetails")}
-                            >
-                              <div className="space-y-0 border border-gray-200 rounded">
-                                {visibleFields.jobSeekerDetails.includes("status") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      Status:
-                                    </div>
-                                    <div className="flex-1 p-2">
-                                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                                        {jobSeeker.status}
-                                      </span>
-                                    </div>
-                                  </div>
-                                )}
-                                {visibleFields.jobSeekerDetails.includes("currentOrganization") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      Current Organization:
-                                    </div>
-                                    <div className="flex-1 p-2 text-blue-600">
-                                      {jobSeeker.currentOrganization}
-                                    </div>
-                                  </div>
-                                )}
-                                {visibleFields.jobSeekerDetails.includes("title") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      Title:
-                                    </div>
-                                    <div className="flex-1 p-2">{jobSeeker.title}</div>
-                                  </div>
-                                )}
-                                {visibleFields.jobSeekerDetails.includes("email") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      Email:
-                                    </div>
-                                    <div className="flex-1 p-2 text-blue-600">
-                                      {jobSeeker.email}
-                                    </div>
-                                  </div>
-                                )}
-                                {visibleFields.jobSeekerDetails.includes("mobilePhone") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      Mobile Phone:
-                                    </div>
-                                    <div className="flex-1 p-2">
-                                      {jobSeeker.mobilePhone}
-                                    </div>
-                                  </div>
-                                )}
-                                {visibleFields.jobSeekerDetails.includes("address") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      Address:
-                                    </div>
-                                    <div className="flex-1 p-2">
-                                      {jobSeeker.fullAddress}
-                                    </div>
-                                  </div>
-                                )}
-                                {visibleFields.jobSeekerDetails.includes("desiredSalary") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      Desired Salary:
-                                    </div>
-                                    <div className="flex-1 p-2">
-                                      {jobSeeker.desiredSalary}
-                                    </div>
-                                  </div>
-                                )}
-                                {visibleFields.jobSeekerDetails.includes("dateAdded") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      Date Added:
-                                    </div>
-                                    <div className="flex-1 p-2">{jobSeeker.dateAdded}</div>
-                                  </div>
-                                )}
-                                {visibleFields.jobSeekerDetails.includes("lastContactDate") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      Last Contact:
-                                    </div>
-                                    <div className="flex-1 p-2">
-                                      {jobSeeker.lastContactDate}
-                                    </div>
-                                  </div>
-                                )}
-                                {visibleFields.jobSeekerDetails.includes("owner") && (
-                                  <div className="flex border-b border-gray-200 last:border-b-0">
-                                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                      User Owner:
-                                    </div>
-                                    <div className="flex-1 p-2">{jobSeeker.owner}</div>
-                                  </div>
-                                )}
-                                {/* Display custom fields */}
-                                {jobSeeker.customFields &&
-                                  Object.keys(jobSeeker.customFields).map((fieldKey) => {
-                                    if (visibleFields.jobSeekerDetails.includes(fieldKey)) {
-                                      const field = availableFields.find(
-                                        (f) =>
-                                          (f.field_name || f.field_label || f.id) ===
-                                          fieldKey
-                                      );
-                                      const fieldLabel =
-                                        field?.field_label || field?.field_name || fieldKey;
-                                      const fieldValue = jobSeeker.customFields[fieldKey];
-                                      return (
-                                        <div
-                                          key={fieldKey}
-                                          className="flex border-b border-gray-200 last:border-b-0"
-                                        >
-                                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                                            {fieldLabel}:
-                                          </div>
-                                          <div className="flex-1 p-2">
-                                            {String(fieldValue || "-")}
-                                          </div>
-                                        </div>
-                                      );
-                                    }
-                                    return null;
-                                  })}
-                              </div>
-                            </PanelWithHeader>
-                        </SortablePanel>
-                      );
-                    }
-
-                    if (panelId === "recentNotes") {
-                      return (
-                        <SortablePanel key={panelId} id={panelId}>
-                          <PanelWithHeader title="Recent Notes:">
-                              <div className="border border-gray-200 rounded">
-                                <div className="p-2">
-                                  {notes.length > 0 ? (
-                                    <div>
-                                      {notes.slice(0, 3).map((note) => (
-                                        <div
-                                          key={note.id}
-                                          className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
-                                        >
-                                          <div className="flex justify-between text-sm mb-1">
-                                            <span className="font-medium">
-                                              {note.created_by_name || "Unknown User"}
-                                            </span>
-                                            <span className="text-gray-500">
-                                              {new Date(note.created_at).toLocaleString()}
-                                            </span>
-                                          </div>
-                                          <p className="text-sm text-gray-700">
-                                            {note.text.length > 100
-                                              ? `${note.text.substring(0, 100)}...`
-                                              : note.text}
-                                          </p>
-                                        </div>
-                                      ))}
-                                      {notes.length > 3 && (
-                                        <button
-                                          onClick={() => setActiveTab("notes")}
-                                          className="text-blue-500 text-sm hover:underline"
-                                        >
-                                          View all {notes.length} notes
-                                        </button>
-                                      )}
-                                    </div>
-                                  ) : (
-                                    <p className="text-gray-500 italic">No recent notes</p>
-                                  )}
-                                </div>
-                              </div>
-                            </PanelWithHeader>
-                        </SortablePanel>
-                      );
-                    }
-
-                    if (panelId === "openTasks") {
-                      return (
-                        <SortablePanel key={panelId} id={panelId}>
-                          <PanelWithHeader title="Open Tasks:">
-                              <div className="border border-gray-200 rounded">
-                                {isLoadingTasks ? (
-                                  <div className="flex justify-center py-4">
-                                    <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
-                                  </div>
-                                ) : tasksError ? (
-                                  <div className="p-2 text-red-500 text-sm">{tasksError}</div>
-                                ) : tasks.length > 0 ? (
-                                  <div className="divide-y divide-gray-200">
-                                    {tasks.map((task) => (
-                                      <div
-                                        key={task.id}
-                                        className="p-3 hover:bg-gray-50 cursor-pointer"
-                                        onClick={() =>
-                                          router.push(`/dashboard/tasks/view?id=${task.id}`)
-                                        }
-                                      >
-                                        <div className="flex justify-between items-start mb-1">
-                                          <h4 className="font-medium text-blue-600 hover:underline">
-                                            {task.title}
-                                          </h4>
-                                          {task.priority && (
-                                            <span
-                                              className={`px-2 py-0.5 rounded text-xs ${
-                                                task.priority === "High"
-                                                  ? "bg-red-100 text-red-800"
-                                                  : task.priority === "Medium"
-                                                  ? "bg-yellow-100 text-yellow-800"
-                                                  : "bg-gray-100 text-gray-800"
-                                              }`}
-                                            >
-                                              {task.priority}
-                                            </span>
-                                          )}
-                                        </div>
-                                        {task.description && (
-                                          <p className="text-sm text-gray-600 mb-2 line-clamp-2">
-                                            {task.description}
-                                          </p>
-                                        )}
-                                        <div className="flex justify-between items-center text-xs text-gray-500">
-                                          <div className="flex space-x-3">
-                                            {task.due_date && (
-                                              <span>
-                                                Due:{" "}
-                                                {new Date(task.due_date).toLocaleDateString()}
-                                              </span>
-                                            )}
-                                            {task.assigned_to_name && (
-                                              <span>
-                                                Assigned to: {task.assigned_to_name}
-                                              </span>
-                                            )}
-                                          </div>
-                                          {task.status && (
-                                            <span className="text-gray-600">
-                                              {task.status}
-                                            </span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : (
-                                  <div className="p-4 text-center text-gray-500 italic">
-                                    No open tasks
-                                  </div>
-                                )}
-                              </div>
-                            </PanelWithHeader>
-                        </SortablePanel>
-                      );
-                    }
-
-                    return null;
-                  })}
+            <div className="col-span-7 relative w-full">
+              {/* Pinned side drawer */}
+              {isPinned && (
+                <div className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"} border-l border-gray-300`}>
+                  <div className="flex flex-col h-full">
+                    <div className="flex items-center justify-between p-2 border-b bg-gray-50">
+                      <h3 className="font-semibold text-sm">Job Seeker Summary</h3>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setIsCollapsed(!isCollapsed)}
+                          className="p-1 hover:bg-gray-200 rounded"
+                          title={isCollapsed ? "Expand" : "Collapse"}
+                        >
+                          {isCollapsed ? "▶" : "◀"}
+                        </button>
+                        <button
+                          onClick={togglePin}
+                          className="p-1 hover:bg-gray-200 rounded"
+                          title="Unpin panel"
+                        >
+                          <FiUnlock className="w-4 h-4 text-blue-600" />
+                        </button>
+                      </div>
+                    </div>
+                    {!isCollapsed && (
+                      <div className="flex-1 overflow-y-auto p-4">
+                        <div id="printable-summary">
+                          <DndContext
+                            id="pinned-summary-dnd"
+                            sensors={sensors}
+                            collisionDetection={closestCorners}
+                            measuring={measuringConfig}
+                            modifiers={[restrictToWindowEdges]}
+                            onDragStart={handlePanelDragStart}
+                            onDragOver={handlePanelDragOver}
+                            onDragEnd={handlePanelDragEnd}
+                          >
+                            <div className="flex flex-col gap-4">
+                              <DroppableContainer id="left" items={columns.left}>
+                                {columns.left.map((id) => renderPanel(id))}
+                              </DroppableContainer>
+                              <DroppableContainer id="right" items={columns.right}>
+                                {columns.right.map((id) => renderPanel(id))}
+                              </DroppableContainer>
+                            </div>
+                            <DragOverlay dropAnimation={dropAnimationConfig}>
+                              {activeId ? renderPanel(activeId, true) : null}
+                            </DragOverlay>
+                          </DndContext>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </SortableContext>
-            </DndContext>
+              )}
+
+              {/* Regular summary (not pinned) */}
+              {!isPinned && (
+                <div id="printable-summary" className="p-4">
+                  <DndContext
+                    id="regular-summary-dnd"
+                    sensors={sensors}
+                    collisionDetection={closestCorners}
+                    measuring={measuringConfig}
+                    modifiers={[restrictToWindowEdges]}
+                    onDragStart={handlePanelDragStart}
+                    onDragOver={handlePanelDragOver}
+                    onDragEnd={handlePanelDragEnd}
+                  >
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <DroppableContainer id="left" items={columns.left}>
+                          {columns.left.map((id) => renderPanel(id))}
+                        </DroppableContainer>
+                      </div>
+                      <div>
+                        <DroppableContainer id="right" items={columns.right}>
+                          {columns.right.map((id) => renderPanel(id))}
+                        </DroppableContainer>
+                      </div>
+                    </div>
+                    <DragOverlay dropAnimation={dropAnimationConfig}>
+                      {activeId ? renderPanel(activeId, true) : null}
+                    </DragOverlay>
+                  </DndContext>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Notes Tab */}
@@ -2370,11 +2724,10 @@ Best regards`;
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
-                  className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                    isDragging
-                      ? "border-blue-500 bg-blue-50"
-                      : "border-gray-300 bg-gray-50 hover:border-gray-400"
-                  }`}
+                  className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isDragging
+                    ? "border-blue-500 bg-blue-50"
+                    : "border-gray-300 bg-gray-50 hover:border-gray-400"
+                    }`}
                 >
                   {isUploading ? (
                     <div className="flex flex-col items-center">
@@ -2460,205 +2813,8 @@ Best regards`;
                               <td className="p-3 text-gray-600">
                                 {doc.created_at
                                   ? new Date(
-                                      doc.created_at
-                                    ).toLocaleDateString()
-                                  : "-"}
-                              </td>
-                              <td className="p-3">
-                                <button
-                                  onClick={() => handleDeleteDocument(doc.id)}
-                                  className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
-                                  title="Delete document"
-                                >
-                                  <FiX size={18} />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="text-center py-8 mt-4">
-                    <p className="text-gray-500 italic">
-                      No documents have been uploaded yet.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === "references" && (
-            <div className="col-span-7">
-              <div className="bg-white p-4 rounded shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold">References</h2>
-                  <button
-                    onClick={() => setShowReferenceModal(true)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                  >
-                    Send Reference Form
-                  </button>
-                </div>
-                <p className="text-gray-600">
-                  Use the button above to send reference documents to a
-                  reference contact via email.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "applications" && (
-            <div className="col-span-7">
-              <div className="bg-white p-4 rounded shadow-sm">
-                <h2 className="text-lg font-semibold mb-4">Applications</h2>
-                <p className="text-gray-500 italic">No applications found</p>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "onboarding" && (
-            <div className="col-span-7">
-              <OnboardingTab jobSeeker={jobSeeker} />
-            </div>
-          )}
-
-          {/* Notes Tab */}
-          {activeTab === "notes" && (
-            <div className="col-span-7">{renderNotesTab()}</div>
-          )}
-
-          {/* History Tab */}
-          {activeTab === "history" && (
-            <div className="col-span-7">{renderHistoryTab()}</div>
-          )}
-
-          {/* Modify Tab */}
-          {activeTab === "modify" && (
-            <div className="col-span-7">{renderModifyTab()}</div>
-          )}
-
-          {/* Docs Tab */}
-          {activeTab === "docs" && (
-            <div className="col-span-7">
-              <div className="bg-white p-4 rounded shadow-sm">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-lg font-semibold">Documents</h2>
-                  <button
-                    onClick={triggerFileInput}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center space-x-2"
-                  >
-                    <FiUpload size={16} />
-                    <span>Add Docs</span>
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                    accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
-                  />
-                </div>
-
-                {/* Drag and Drop Area */}
-                <div
-                  onDragOver={handleDragOver}
-                  onDragLeave={handleDragLeave}
-                  onDrop={handleDrop}
-                  className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-                    isDragging
-                      ? "border-blue-500 bg-blue-50"
-                      : "border-gray-300 bg-gray-50 hover:border-gray-400"
-                  }`}
-                >
-                  {isUploading ? (
-                    <div className="flex flex-col items-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mb-2"></div>
-                      <p className="text-gray-600">Uploading document...</p>
-                    </div>
-                  ) : (
-                    <>
-                      <FiUpload className="mx-auto text-4xl text-gray-400 mb-4" />
-                      <p className="text-gray-600 mb-2">
-                        Drag and drop files here, or click "Add Docs" button
-                        above
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        Supported formats: PDF, DOC, DOCX, TXT, JPG, PNG (Max
-                        10MB)
-                      </p>
-                      {uploadError && (
-                        <p className="text-red-500 text-sm mt-2">
-                          {uploadError}
-                        </p>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {/* Documents List */}
-                {isLoadingDocuments ? (
-                  <div className="flex justify-center py-4 mt-4">
-                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-                  </div>
-                ) : documentError ? (
-                  <div className="text-red-500 py-4 mt-4">{documentError}</div>
-                ) : documents.length > 0 ? (
-                  <div className="mt-6">
-                    <div className="overflow-x-auto">
-                      <table className="w-full border-collapse">
-                        <thead>
-                          <tr className="bg-gray-100 border-b">
-                            <th className="text-left p-3 font-medium">
-                              Document Name
-                            </th>
-                            <th className="text-left p-3 font-medium">Type</th>
-                            <th className="text-left p-3 font-medium">Size</th>
-                            <th className="text-left p-3 font-medium">
-                              Created By
-                            </th>
-                            <th className="text-left p-3 font-medium">
-                              Created At
-                            </th>
-                            <th className="text-left p-3 font-medium">
-                              Actions
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {documents.map((doc) => (
-                            <tr
-                              key={doc.id}
-                              className="border-b hover:bg-gray-50"
-                            >
-                              <td className="p-3">
-                                <div className="flex items-center space-x-2">
-                                  <FiFile className="text-gray-400" />
-                                  <span className="text-blue-600 hover:underline cursor-pointer">
-                                    {doc.document_name ||
-                                      doc.name ||
-                                      "Untitled Document"}
-                                  </span>
-                                </div>
-                              </td>
-                              <td className="p-3 text-gray-600">
-                                {doc.document_type || doc.type || "General"}
-                              </td>
-                              <td className="p-3 text-gray-600">
-                                {doc.file_size
-                                  ? `${(doc.file_size / 1024).toFixed(2)} KB`
-                                  : "-"}
-                              </td>
-                              <td className="p-3 text-gray-600">
-                                {doc.created_by_name || "Unknown"}
-                              </td>
-                              <td className="p-3 text-gray-600">
-                                {doc.created_at
-                                  ? new Date(
-                                      doc.created_at
-                                    ).toLocaleDateString()
+                                    doc.created_at
+                                  ).toLocaleDateString()
                                   : "-"}
                               </td>
                               <td className="p-3">
@@ -2875,7 +3031,7 @@ Best regards`;
 
       {/* Edit Fields Modal */}
       {editingPanel && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">
@@ -2929,7 +3085,7 @@ Best regards`;
                             </div>
                           );
                         })}
-                        
+
                         {/* Also include original resume-specific fields if not already in headerFieldDefs */}
                         {(() => {
                           const resumeSpecificFields = [
@@ -3200,7 +3356,7 @@ Best regards`;
 
       {/* Add Appointment Modal */}
       {showAppointmentModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">Create Calendar Appointment</h2>
@@ -3464,7 +3620,7 @@ Best regards`;
 
       {/* Add Tearsheet Modal */}
       {showAddTearsheetModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
             {/* Header */}
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
@@ -3520,11 +3676,10 @@ Best regards`;
                         visibility: "New",
                       }))
                     }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === "New"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
-                    }`}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "New"
+                      ? "bg-blue-500 text-white"
+                      : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
+                      }`}
                   >
                     New
                   </button>
@@ -3536,11 +3691,10 @@ Best regards`;
                         visibility: "Existing",
                       }))
                     }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === "Existing"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 hover:bg-gray-50"
-                    }`}
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "Existing"
+                      ? "bg-blue-500 text-white"
+                      : "bg-white text-gray-700 hover:bg-gray-50"
+                      }`}
                   >
                     Existing
                   </button>
@@ -3587,7 +3741,7 @@ Best regards`;
 
       {/* Add Note Modal */}
       {showAddNote && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <div className="flex items-center space-x-2">
@@ -3606,7 +3760,12 @@ Best regards`;
                 {/* Note Text Area */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Note Text
+                    Note Text  {" "}
+                    {noteForm.text.length > 0 ? (
+                      <span className="text-green-500">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
                   </label>
                   <textarea
                     value={noteForm.text}
@@ -3622,7 +3781,12 @@ Best regards`;
                 {/* Action Dropdown */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Action
+                    Action  {" "}
+                    {noteForm.action ? (
+                      <span className="text-green-500">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
                   </label>
                   {isLoadingActionFields ? (
                     <div className="flex items-center space-x-2 text-sm text-gray-500">
@@ -3758,11 +3922,10 @@ Best regards`;
                           scheduleNextAction: "None",
                         }))
                       }
-                      className={`px-4 py-2 rounded text-sm ${
-                        noteForm.scheduleNextAction === "None"
-                          ? "bg-blue-500 text-white"
-                          : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
-                      }`}
+                      className={`px-4 py-2 rounded text-sm ${noteForm.scheduleNextAction === "None"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
+                        }`}
                     >
                       None
                     </button>
@@ -3774,11 +3937,10 @@ Best regards`;
                           scheduleNextAction: "Appointment",
                         }))
                       }
-                      className={`px-4 py-2 rounded text-sm ${
-                        noteForm.scheduleNextAction === "Appointment"
-                          ? "bg-blue-500 text-white"
-                          : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
-                      }`}
+                      className={`px-4 py-2 rounded text-sm ${noteForm.scheduleNextAction === "Appointment"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
+                        }`}
                     >
                       Appointment
                     </button>
@@ -3790,11 +3952,10 @@ Best regards`;
                           scheduleNextAction: "Task",
                         }))
                       }
-                      className={`px-4 py-2 rounded text-sm ${
-                        noteForm.scheduleNextAction === "Task"
-                          ? "bg-blue-500 text-white"
-                          : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
-                      }`}
+                      className={`px-4 py-2 rounded text-sm ${noteForm.scheduleNextAction === "Task"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
+                        }`}
                     >
                       Task
                     </button>

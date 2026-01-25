@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import ActionDropdown from '@/components/ActionDropdown';
@@ -10,33 +10,78 @@ import { FiBriefcase } from "react-icons/fi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 // Drag and drop imports
-import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import {
+  DndContext,
+  closestCorners,
+  type DragEndEvent,
+  type DragOverEvent,
+  useDroppable,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  defaultDropAnimationSideEffects,
+  MeasuringStrategy,
+} from "@dnd-kit/core";
 import { restrictToWindowEdges } from "@dnd-kit/modifiers";
-import { SortableContext, useSortable, verticalListSortingStrategy, rectSortingStrategy, arrayMove } from "@dnd-kit/sortable";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  arrayMove,
+} from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiLock, FiUnlock } from "react-icons/fi";
 
 // SortablePanel helper
-function SortablePanel({ id, children }: { id: string; children: React.ReactNode }) {
+function SortablePanel({ id, children, isOverlay = false }: { id: string; children: React.ReactNode; isOverlay?: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
   const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
+    transform: CSS.Translate.toString(transform),
     transition,
-    opacity: isDragging ? 0.5 : 1,
+    opacity: isDragging && !isOverlay ? 0.3 : 1,
+    zIndex: isOverlay ? 1000 : undefined,
   };
+
   return (
-    <div ref={setNodeRef} style={style} className="relative group">
-      <button
-        {...attributes}
-        {...listeners}
-        className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
-        title="Drag to reorder"
-      >
-        <TbGripVertical className="w-5 h-5 text-gray-600" />
-      </button>
-      {children}
+    <div ref={setNodeRef} style={style} className={`relative group ${isOverlay ? 'cursor-grabbing' : ''}`}>
+      {!isOverlay && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Drag to reorder"
+        >
+          <TbGripVertical className="w-5 h-5 text-gray-600" />
+        </button>
+      )}
+      <div className={`${isDragging && !isOverlay ? 'invisible' : ''} pt-0`}>
+        {children}
+      </div>
+      {isDragging && !isOverlay && (
+        <div className="absolute inset-0 border-2 border-dashed border-gray-300 rounded bg-gray-50 flex items-center justify-center p-4">
+          <div className="text-gray-400 text-xs font-semibold uppercase tracking-wider italic">
+            Moving Panel...
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+// Droppable Column Container
+function DroppableContainer({ id, children, items }: { id: string, children: React.ReactNode, items: string[] }) {
+  const { setNodeRef } = useDroppable({ id });
+  return (
+    <SortableContext id={id} items={items} strategy={verticalListSortingStrategy}>
+      <div ref={setNodeRef} className="flex flex-col gap-4 w-full min-h-[100px]">
+        {children}
+      </div>
+    </SortableContext>
   );
 }
 
@@ -242,7 +287,6 @@ export default function JobView() {
   });
 
   // ===== Summary layout state =====
-  // Independent columns for full sort control
   const [columns, setColumns] = useState<{
     left: string[];
     right: string[];
@@ -255,20 +299,76 @@ export default function JobView() {
   const [isPinned, setIsPinned] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
-  const findContainer = (id: string) => {
+  // High-performance sensors configuration
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const measuringConfig = useMemo(() => ({
+    droppable: {
+      strategy: MeasuringStrategy.Always,
+    },
+  }), []);
+
+  const dropAnimationConfig = useMemo(() => ({
+    sideEffects: defaultDropAnimationSideEffects({
+      styles: {
+        active: {
+          opacity: "0.5",
+        },
+      },
+    }),
+  }), []);
+
+  // Initialize columns from localStorage or default
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("jobsSummaryColumns");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.left && Array.isArray(parsed.left) && parsed.right && Array.isArray(parsed.right)) {
+            setColumns(parsed);
+          }
+        } catch (e) {
+          console.error("Error loading panel order:", e);
+        }
+      }
+    }
+  }, []);
+
+  const prevColumnsRef = useRef<string>("");
+
+  // Save columns to localStorage
+  useEffect(() => {
+    const colsString = JSON.stringify(columns);
+    if (prevColumnsRef.current !== colsString) {
+      localStorage.setItem("jobsSummaryColumns", colsString);
+      prevColumnsRef.current = colsString;
+    }
+  }, [columns]);
+
+  const findContainer = useCallback((id: string) => {
     if (id in columns) {
       return id as keyof typeof columns;
     }
     return Object.keys(columns).find((key) =>
       columns[key as keyof typeof columns].includes(id)
     ) as keyof typeof columns | undefined;
-  };
+  }, [columns]);
 
-  const handleDragStart = (event: any) => {
+  const handlePanelDragStart = useCallback((event: any) => {
     setActiveId(event.active.id);
-  }
+  }, []);
 
-  const handleDragOver = (event: any) => {
+  const handlePanelDragOver = useCallback((event: DragOverEvent) => {
     const { active, over } = event;
     const overId = over?.id;
 
@@ -276,8 +376,8 @@ export default function JobView() {
       return;
     }
 
-    const activeContainer = findContainer(active.id);
-    const overContainer = findContainer(overId);
+    const activeContainer = findContainer(active.id as string);
+    const overContainer = findContainer(overId as string);
 
     if (
       !activeContainer ||
@@ -290,8 +390,8 @@ export default function JobView() {
     setColumns((prev) => {
       const activeItems = prev[activeContainer];
       const overItems = prev[overContainer];
-      const activeIndex = activeItems.indexOf(active.id);
-      const overIndex = overItems.indexOf(overId);
+      const activeIndex = activeItems.indexOf(active.id as string);
+      const overIndex = overItems.indexOf(overId as string);
 
       let newIndex;
 
@@ -309,21 +409,22 @@ export default function JobView() {
         newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1;
       }
 
+      const activeFiltered = prev[activeContainer].filter((item) => item !== active.id);
+      const overUpdated = [
+        ...prev[overContainer].slice(0, newIndex),
+        active.id as string,
+        ...prev[overContainer].slice(newIndex, prev[overContainer].length),
+      ];
+
       return {
         ...prev,
-        [activeContainer]: [
-          ...prev[activeContainer].filter((item) => item !== active.id),
-        ],
-        [overContainer]: [
-          ...prev[overContainer].slice(0, newIndex),
-          active.id,
-          ...prev[overContainer].slice(newIndex, prev[overContainer].length),
-        ],
+        [activeContainer]: activeFiltered,
+        [overContainer]: overUpdated,
       };
     });
-  };
+  }, [findContainer]);
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handlePanelDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     const activeContainer = findContainer(active.id as string);
     const overContainer = findContainer(over?.id as string);
@@ -352,7 +453,7 @@ export default function JobView() {
     }
 
     setActiveId(null);
-  };
+  }, [columns, findContainer]);
 
   const togglePin = () => {
     setIsPinned((p) => !p);
@@ -676,37 +777,39 @@ export default function JobView() {
     );
   };
 
-  const renderPanel = (panelId: string) => {
+  const renderPanel = useCallback((panelId: string, isOverlay = false) => {
     if (panelId === "jobDetails") {
       return (
-        <SortablePanel key={panelId} id={panelId}>
+        <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
           {renderJobDetailsPanel()}
         </SortablePanel>
       );
     }
     if (panelId === "details") {
       return (
-        <SortablePanel key={panelId} id={panelId}>
+        <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
           {renderDetailsPanel()}
         </SortablePanel>
       );
     }
     if (panelId === "hiringManager") {
       return (
-        <SortablePanel key={panelId} id={panelId}>
+        <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
           {renderHiringManagerPanel()}
         </SortablePanel>
       );
     }
     if (panelId === "recentNotes") {
       return (
-        <SortablePanel key={panelId} id={panelId}>
+        <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
           {renderRecentNotesPanel()}
         </SortablePanel>
       );
     }
     return null;
-  };
+  }, [job, visibleFields, notes, availableFields]); // Dependencies for inner renderers
+
+  // ... (useHeaderConfig hook already exists below)
 
   const {
     headerFields,
@@ -1093,21 +1196,40 @@ export default function JobView() {
       const response = await fetch("/api/admin/field-management/jobs");
       if (response.ok) {
         const data = await response.json();
-        const fields = data.fields || [];
+        console.log("Data", data)
+        const fields = data.customFields || [];
+        console.log("Fields", fields)
         setAvailableFields(fields);
 
-        // Add custom fields to visible fields if they have values
-        if (job && job.customFields) {
-          const customFieldKeys = Object.keys(job.customFields);
-          customFieldKeys.forEach((fieldKey) => {
-            if (!visibleFields.jobDetails.includes(fieldKey)) {
-              setVisibleFields((prev) => ({
-                ...prev,
-                jobDetails: [...prev.jobDetails, fieldKey],
-              }));
-            }
-          });
-        }
+
+        // REMOVED: Auto-adding custom fields to visible fields
+        // if (job && job.customFields) {
+        //   const customFieldKeys = Object.keys(job.customFields);
+        //   customFieldKeys.forEach((fieldKey) => {
+        //     if (!visibleFields.jobDetails.includes(fieldKey)) {
+        //       setVisibleFields((prev) => ({
+        //         ...prev,
+        //         jobDetails: [...prev.jobDetails, fieldKey],
+        //       }));
+        //     }
+        //   });
+        // }
+        const visibleCustomFields = fields.filter((f: any) => {
+          const isHidden = f.is_hidden === true || f.hidden === true || f.isHidden === true;
+          return !isHidden;
+        });
+
+        const allCustomKeys = visibleCustomFields.map(
+          (f: any) => f.field_name || f.field_key || f.id
+        );
+
+        console.log("All Custom Keys", allCustomKeys)
+
+        setVisibleFields((prev) => ({
+          ...prev,
+          jobDetails: Array.from(new Set([...prev.jobDetails, ...allCustomKeys])),
+        }));
+        console.log("Visible Fields", visibleFields)
       }
     } catch (err) {
       console.error("Error fetching available fields:", err);
@@ -2488,44 +2610,50 @@ export default function JobView() {
                 <div className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"} border-l border-gray-300`}>
                   <div className="flex flex-col h-full">
                     <div className="flex items-center justify-between p-2 border-b bg-gray-50">
-                      <h3 className="font-semibold">Job Summary</h3>
+                      <h3 className="font-semibold text-sm">Job Summary</h3>
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => setIsCollapsed(!isCollapsed)}
                           className="p-1 hover:bg-gray-200 rounded"
+                          title={isCollapsed ? "Expand" : "Collapse"}
                         >
                           {isCollapsed ? "▶" : "◀"}
                         </button>
                         <button
                           onClick={togglePin}
                           className="p-1 hover:bg-gray-200 rounded"
+                          title="Unpin panel"
                         >
                           <FiUnlock className="w-4 h-4 text-blue-600" />
                         </button>
                       </div>
                     </div>
                     {!isCollapsed && (
-                      <div className="flex-1 overflow-y-auto p-3">
-                        <DndContext
-                          collisionDetection={closestCenter}
-                          modifiers={[restrictToWindowEdges]}
-                          onDragStart={handleDragStart}
-                          onDragOver={handleDragOver}
-                          onDragEnd={handleDragEnd}
-                        >
-                          <div className="flex flex-col gap-4">
-                            <SortableContext id="left" items={columns.left} strategy={verticalListSortingStrategy}>
-                              <div className="flex flex-col gap-4">
-                                {columns.left.map(renderPanel)}
-                              </div>
-                            </SortableContext>
-                            <SortableContext id="right" items={columns.right} strategy={verticalListSortingStrategy}>
-                              <div className="flex flex-col gap-4">
-                                {columns.right.map(renderPanel)}
-                              </div>
-                            </SortableContext>
-                          </div>
-                        </DndContext>
+                      <div className="flex-1 overflow-y-auto p-4">
+                        <div id="printable-summary">
+                          <DndContext
+                            id="pinned-summary-dnd"
+                            sensors={sensors}
+                            collisionDetection={closestCorners}
+                            measuring={measuringConfig}
+                            modifiers={[restrictToWindowEdges]}
+                            onDragStart={handlePanelDragStart}
+                            onDragOver={handlePanelDragOver}
+                            onDragEnd={handlePanelDragEnd}
+                          >
+                            <div className="flex flex-col gap-4">
+                              <DroppableContainer id="left" items={columns.left}>
+                                {columns.left.map((id) => renderPanel(id))}
+                              </DroppableContainer>
+                              <DroppableContainer id="right" items={columns.right}>
+                                {columns.right.map((id) => renderPanel(id))}
+                              </DroppableContainer>
+                            </div>
+                            <DragOverlay dropAnimation={dropAnimationConfig}>
+                              {activeId ? renderPanel(activeId, true) : null}
+                            </DragOverlay>
+                          </DndContext>
+                        </div>
                       </div>
                     )}
                   </div>
@@ -2533,29 +2661,36 @@ export default function JobView() {
               )}
 
               {/* Regular summary (not pinned) */}
-              <DndContext
-                collisionDetection={closestCenter}
-                modifiers={[restrictToWindowEdges]}
-                onDragStart={handleDragStart}
-                onDragOver={handleDragOver}
-                onDragEnd={handleDragEnd}
-              >
-                <div className="flex flex-col lg:flex-row gap-4 w-full items-start">
-                  {/* Left Column */}
-                  <SortableContext id="left" items={columns.left} strategy={verticalListSortingStrategy}>
-                    <div className="flex flex-col gap-4 w-full lg:w-1/2 min-h-[100px]">
-                      {columns.left.map(renderPanel)}
+              {!isPinned && (
+                <div id="printable-summary" className="p-4">
+                  <DndContext
+                    id="regular-summary-dnd"
+                    sensors={sensors}
+                    collisionDetection={closestCorners}
+                    measuring={measuringConfig}
+                    modifiers={[restrictToWindowEdges]}
+                    onDragStart={handlePanelDragStart}
+                    onDragOver={handlePanelDragOver}
+                    onDragEnd={handlePanelDragEnd}
+                  >
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <DroppableContainer id="left" items={columns.left}>
+                          {columns.left.map((id) => renderPanel(id))}
+                        </DroppableContainer>
+                      </div>
+                      <div>
+                        <DroppableContainer id="right" items={columns.right}>
+                          {columns.right.map((id) => renderPanel(id))}
+                        </DroppableContainer>
+                      </div>
                     </div>
-                  </SortableContext>
-
-                  {/* Right Column */}
-                  <SortableContext id="right" items={columns.right} strategy={verticalListSortingStrategy}>
-                    <div className="flex flex-col gap-4 w-full lg:w-1/2 min-h-[100px]">
-                      {columns.right.map(renderPanel)}
-                    </div>
-                  </SortableContext>
+                    <DragOverlay dropAnimation={dropAnimationConfig}>
+                      {activeId ? renderPanel(activeId, true) : null}
+                    </DragOverlay>
+                  </DndContext>
                 </div>
-              </DndContext>
+              )}
             </div>
           )}
 
@@ -2588,7 +2723,7 @@ export default function JobView() {
 
       {/* Edit Fields Modal */}
       {editingPanel && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50   bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">
@@ -2737,7 +2872,7 @@ export default function JobView() {
 
       {/* Add Placement Modal */}
       {showAddPlacementModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
           <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center sticky top-0 z-10">
               <h2 className="text-lg font-semibold">
@@ -3251,7 +3386,7 @@ export default function JobView() {
 
       {/* Add Tearsheet Modal */}
       {showAddTearsheetModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
             {/* Header */}
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
@@ -3372,7 +3507,7 @@ export default function JobView() {
 
       {/* Add Note Modal */}
       {showAddNote && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <div className="flex items-center space-x-2">
@@ -3670,7 +3805,7 @@ export default function JobView() {
         </div>
       )}
       {showHeaderFieldModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4">
             <div className="flex justify-between items-center p-4 border-b">
               <h2 className="text-lg font-semibold">Customize Header Fields</h2>

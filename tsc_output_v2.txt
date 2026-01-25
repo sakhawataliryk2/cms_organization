@@ -1,0 +1,1 @@
+app/dashboard/organizations/view/page.tsx(1678,39): error TS2552: Cannot find name 'DragOverEvent'. Did you mean 'DragEndEvent'?
