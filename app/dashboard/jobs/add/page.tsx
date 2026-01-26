@@ -41,7 +41,8 @@ export default function AddJob() {
   const jobId = searchParams.get("id"); // Get job ID from URL if present
   const jobType = searchParams.get("type"); // Get job type from URL if present
   const leadId = searchParams.get("leadId") || searchParams.get("lead_id");
-  const organizationIdFromUrl = searchParams.get("organizationId");
+  const organizationIdFromUrl =
+    searchParams.get("organizationId") || searchParams.get("organization_id");
   const hasPrefilledFromLeadRef = useRef(false);
   const hasPrefilledOrgRef = useRef(false);
   const hasInitializedOrgSyncRef = useRef(false);
@@ -989,7 +990,11 @@ useEffect(() => {
         : "Open";
 
       // Use organizationId from URL if available, otherwise use form value
-      const finalOrganizationId = organizationIdFromUrl || payload.organizationId || "";
+      const finalOrganizationId =
+        organizationIdFromUrl ||
+        currentOrganizationId ||
+        payload.organizationId ||
+        "";
 
       // 5) Final payload (✅ Use snake_case custom_fields like Organizations)
       const finalPayload: Record<string, any> = {

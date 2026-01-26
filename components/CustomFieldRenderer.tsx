@@ -1103,7 +1103,6 @@ export default function CustomFieldRenderer({
   }
 }
 
-// Hook for managing custom fields
 export function useCustomFields(entityType: string) {
   const [customFields, setCustomFields] = React.useState<
     CustomFieldDefinition[]
@@ -1127,11 +1126,17 @@ export function useCustomFields(entityType: string) {
         setCustomFields(sortedFields);
 
         // Initialize custom field values
-        const customFieldValues: Record<string, any> = {};
-        sortedFields.forEach((field: CustomFieldDefinition) => {
-          customFieldValues[field.field_name] = field.default_value || "";
+        setCustomFieldValues((prev) => {
+          const next: Record<string, any> = {};
+          sortedFields.forEach((field: CustomFieldDefinition) => {
+            if (prev[field.field_name] !== undefined) {
+              next[field.field_name] = prev[field.field_name];
+              return;
+            }
+            next[field.field_name] = field.default_value || "";
+          });
+          return next;
         });
-        setCustomFieldValues(customFieldValues);
       }
     } catch (err) {
       console.error("Error fetching custom fields:", err);

@@ -163,6 +163,23 @@ export default function JobView() {
   const [showAddNote, setShowAddNote] = useState(false);
   const [noteTypeFilter, setNoteTypeFilter] = useState<string>("");
 
+  const [documents, setDocuments] = useState<Array<any>>([]);
+  const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
+  const [documentError, setDocumentError] = useState<string | null>(null);
+  const [selectedDocument, setSelectedDocument] = useState<any>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
+  const [showAddDocument, setShowAddDocument] = useState(false);
+  const [newDocumentName, setNewDocumentName] = useState("");
+  const [newDocumentType, setNewDocumentType] = useState("General");
+  const [newDocumentContent, setNewDocumentContent] = useState("");
+  const [showFileDetailsModal, setShowFileDetailsModal] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [fileDetailsName, setFileDetailsName] = useState("");
+  const [fileDetailsType, setFileDetailsType] = useState("General");
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // Note sorting & filtering state
   const [noteActionFilter, setNoteActionFilter] = useState<string>("");
   const [noteAuthorFilter, setNoteAuthorFilter] = useState<string>("");
@@ -220,6 +237,264 @@ export default function JobView() {
     });
     return Array.from(set).sort();
   }, [notes]);
+
+  const fetchDocuments = async (id: string) => {
+    setIsLoadingDocuments(true);
+    setDocumentError(null);
+    try {
+      const response = await fetch(`/api/jobs/${id}/documents`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setDocuments(data.documents || []);
+      } else {
+        setDocumentError("Failed to fetch documents");
+      }
+    } catch (err) {
+      console.error("Error fetching documents:", err);
+      setDocumentError("An error occurred while fetching documents");
+    } finally {
+      setIsLoadingDocuments(false);
+    }
+  };
+
+  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      const fileArray = Array.from(files);
+      setPendingFiles(fileArray);
+      if (fileArray.length === 1) {
+        setFileDetailsName(fileArray[0].name.split(".")[0]);
+        setFileDetailsType("General");
+      }
+      setShowFileDetailsModal(true);
+    }
+
+    // Allow selecting the same file again to re-trigger onChange
+    event.target.value = "";
+  };
+
+  const handleDocDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDocDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDocDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDocDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const fileArray = Array.from(files);
+      setPendingFiles(fileArray);
+      if (fileArray.length === 1) {
+        setFileDetailsName(fileArray[0].name.split(".")[0]);
+        setFileDetailsType("General");
+      }
+      setShowFileDetailsModal(true);
+    }
+  };
+
+  const handleConfirmFileDetails = async () => {
+    if (pendingFiles.length === 0 || !jobId) return;
+
+    setShowFileDetailsModal(false);
+    const filesToUpload = [...pendingFiles];
+    setPendingFiles([]);
+
+    setUploadErrors({});
+    const newUploadProgress = { ...uploadProgress };
+
+    for (const file of filesToUpload) {
+      if (file.size > 10 * 1024 * 1024) {
+        setUploadErrors((prev) => ({
+          ...prev,
+          [file.name]: "File size exceeds 10MB limit",
+        }));
+        continue;
+      }
+
+      newUploadProgress[file.name] = 0;
+      setUploadProgress({ ...newUploadProgress });
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append(
+          "document_name",
+          filesToUpload.length === 1 ? fileDetailsName : file.name.split(".")[0]
+        );
+        formData.append(
+          "document_type",
+          filesToUpload.length === 1 ? fileDetailsType : "General"
+        );
+
+        const progressInterval = setInterval(() => {
+          setUploadProgress((prev) => {
+            const current = prev[file.name] || 0;
+            if (current >= 90) {
+              clearInterval(progressInterval);
+              return prev;
+            }
+            return { ...prev, [file.name]: current + 10 };
+          });
+        }, 200);
+
+        const response = await fetch(`/api/jobs/${jobId}/documents/upload`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+          body: formData,
+        });
+
+        clearInterval(progressInterval);
+
+        if (response.ok) {
+          setUploadProgress((prev) => {
+            const next = { ...prev };
+            delete next[file.name];
+            return next;
+          });
+          fetchDocuments(jobId);
+        } else {
+          const data = await response.json();
+          setUploadErrors((prev) => ({
+            ...prev,
+            [file.name]: data.message || "Upload failed",
+          }));
+          setUploadProgress((prev) => {
+            const next = { ...prev };
+            delete next[file.name];
+            return next;
+          });
+        }
+      } catch (err) {
+        console.error(`Error uploading ${file.name}:`, err);
+        setUploadErrors((prev) => ({
+          ...prev,
+          [file.name]: "An error occurred during upload",
+        }));
+        setUploadProgress((prev) => {
+          const next = { ...prev };
+          delete next[file.name];
+          return next;
+        });
+      }
+    }
+  };
+
+  const handleAddDocument = async () => {
+    if (!jobId || !newDocumentName.trim()) return;
+
+    try {
+      const response = await fetch(`/api/jobs/${jobId}/documents`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+        body: JSON.stringify({
+          document_name: newDocumentName,
+          document_type: newDocumentType,
+          content: newDocumentContent,
+        }),
+      });
+
+      if (response.ok) {
+        setShowAddDocument(false);
+        setNewDocumentName("");
+        setNewDocumentType("General");
+        setNewDocumentContent("");
+        fetchDocuments(jobId);
+      } else {
+        const data = await response.json();
+        alert(data.message || "Failed to add document");
+      }
+    } catch (err) {
+      console.error("Error adding document:", err);
+      alert("An error occurred while adding the document");
+    }
+  };
+
+  const handleDeleteDocument = async (documentId: string) => {
+    if (!confirm("Are you sure you want to delete this document?")) return;
+    if (!jobId) return;
+
+    try {
+      const response = await fetch(
+        `/api/jobs/${jobId}/documents/${documentId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        fetchDocuments(jobId);
+      } else {
+        const data = await response.json();
+        alert(data.message || "Failed to delete document");
+      }
+    } catch (err) {
+      console.error("Error deleting document:", err);
+      alert("An error occurred while deleting the document");
+    }
+  };
+
+  const handleDownloadDocument = (doc: any) => {
+    if (doc.file_path) {
+      const path = String(doc.file_path).startsWith("/")
+        ? String(doc.file_path)
+        : `/${doc.file_path}`;
+      window.open(path, "_blank");
+      return;
+    }
+
+    if (doc.content) {
+      const blob = new Blob([doc.content], { type: "text/plain;charset=utf-8" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${doc.document_name || "document"}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      alert("This document has no file or content to download.");
+    }
+  };
 
   // Add Note form state
   const [noteForm, setNoteForm] = useState({
@@ -949,6 +1224,7 @@ export default function JobView() {
       fetchAvailableFields();
       // Update note form about field when job is loaded
       setNoteForm((prev) => ({ ...prev, about: `${job.id} ${job.title}` }));
+      fetchDocuments(jobId);
     }
   }, [job, jobId]);
 
@@ -1505,6 +1781,7 @@ export default function JobView() {
       // Now fetch notes and history
       fetchNotes(id);
       fetchHistory(id);
+      fetchDocuments(id);
     } catch (err) {
       console.error("Error fetching job:", err);
       setError(
@@ -2185,7 +2462,7 @@ export default function JobView() {
         <h2 className="text-lg font-semibold">Job Notes</h2>
         <button
           onClick={() => setShowAddNote(true)}
-          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
         >
           Add Note
         </button>
@@ -2446,6 +2723,244 @@ export default function JobView() {
       </button>
     </div>
   );
+
+  const renderDocsTab = () => {
+    return (
+      <div className="bg-white p-4 rounded shadow-sm">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Job Documents</h2>
+          <div className="flex gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
+            >
+              Upload Files
+            </button>
+            <button
+              onClick={() => setShowAddDocument(true)}
+              className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+            >
+              Add Text Document
+            </button>
+          </div>
+        </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          onChange={handleFileSelect}
+          className="hidden"
+          accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
+        />
+
+        <div
+          onDragEnter={handleDocDragEnter}
+          onDragOver={handleDocDragOver}
+          onDragLeave={handleDocDragLeave}
+          onDrop={handleDocDrop}
+          className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 transition-colors ${isDragging
+            ? "border-blue-500 bg-blue-50"
+            : "border-gray-300 bg-gray-50 hover:border-gray-400"
+            }`}
+        >
+          <div className="flex flex-col items-center">
+            <svg
+              className="w-12 h-12 text-gray-400 mb-4"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+              />
+            </svg>
+            <p className="text-gray-600 mb-2">
+              Drag and drop files here, or{" "}
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="text-blue-500 hover:underline"
+              >
+                browse
+              </button>
+            </p>
+            <p className="text-sm text-gray-500">
+              Supported formats: PDF, DOC, DOCX, TXT, JPG, PNG, GIF (Max 10MB per file)
+            </p>
+          </div>
+        </div>
+
+        {Object.keys(uploadProgress).length > 0 && (
+          <div className="mb-4 space-y-2">
+            {Object.entries(uploadProgress).map(([fileName, progress]) => (
+              <div key={fileName} className="bg-gray-100 rounded p-2">
+                <div className="flex justify-between items-center mb-1">
+                  <span className="text-sm font-medium">{fileName}</span>
+                  <span className="text-sm text-gray-600">{Math.round(progress)}%</span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-2">
+                  <div
+                    className="bg-blue-500 h-2 rounded-full transition-all"
+                    style={{ width: `${progress}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {Object.keys(uploadErrors).length > 0 && (
+          <div className="mb-4 space-y-2">
+            {Object.entries(uploadErrors).map(([fileName, err]) => (
+              <div key={fileName} className="bg-red-50 border border-red-200 rounded p-2">
+                <p className="text-sm text-red-800">
+                  <strong>{fileName}:</strong> {err}
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {showAddDocument && (
+          <div className="mb-6 p-4 bg-gray-50 rounded border">
+            <h3 className="font-medium mb-2">Add New Document</h3>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium mb-1">Document Name *</label>
+                <input
+                  type="text"
+                  value={newDocumentName}
+                  onChange={(e) => setNewDocumentName(e.target.value)}
+                  placeholder="Enter document name"
+                  className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Document Type</label>
+                <select
+                  value={newDocumentType}
+                  onChange={(e) => setNewDocumentType(e.target.value)}
+                  className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="General">General</option>
+                  <option value="Contract">Contract</option>
+                  <option value="Agreement">Agreement</option>
+                  <option value="Policy">Policy</option>
+                  <option value="Welcome">Welcome</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Content</label>
+                <textarea
+                  value={newDocumentContent}
+                  onChange={(e) => setNewDocumentContent(e.target.value)}
+                  placeholder="Enter document content..."
+                  className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  rows={6}
+                />
+              </div>
+            </div>
+            <div className="flex justify-end space-x-2 mt-3">
+              <button
+                onClick={() => setShowAddDocument(false)}
+                className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAddDocument}
+                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                disabled={!newDocumentName.trim()}
+              >
+                Save Document
+              </button>
+            </div>
+          </div>
+        )}
+
+        {isLoadingDocuments ? (
+          <div className="flex justify-center py-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        ) : documentError ? (
+          <div className="text-red-500 py-2">{documentError}</div>
+        ) : documents.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full border-collapse">
+              <thead>
+                <tr className="bg-gray-100 border-b">
+                  <th className="text-left p-3 font-medium">Actions</th>
+                  <th className="text-left p-3 font-medium">Document Name</th>
+                  <th className="text-left p-3 font-medium">Type</th>
+                  <th className="text-left p-3 font-medium">Created By</th>
+                  <th className="text-left p-3 font-medium">Created At</th>
+                </tr>
+              </thead>
+              <tbody>
+                {documents.map((doc) => (
+                  <tr key={doc.id} className="border-b hover:bg-gray-50">
+                    <td className="p-3">
+                      <ActionDropdown
+                        label="Actions"
+                        options={[
+                          { label: "View", action: () => setSelectedDocument(doc) },
+                          { label: "Download", action: () => handleDownloadDocument(doc) },
+                          { label: "Delete", action: () => handleDeleteDocument(doc.id) },
+                        ]}
+                      />
+                    </td>
+                    <td className="p-3">
+                      <button
+                        onClick={() => setSelectedDocument(doc)}
+                        className="text-blue-600 hover:underline font-medium"
+                      >
+                        {doc.document_name}
+                      </button>
+                    </td>
+                    <td className="p-3">{doc.document_type}</td>
+                    <td className="p-3">{doc.created_by_name || "System"}</td>
+                    <td className="p-3">{new Date(doc.created_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="text-gray-500 italic">No documents available</p>
+        )}
+
+        {selectedDocument && (
+          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+              <div className="bg-gray-100 p-4 border-b flex justify-between items-center sticky top-0 z-10">
+                <h2 className="text-lg font-semibold">{selectedDocument.document_name}</h2>
+                <button
+                  onClick={() => setSelectedDocument(null)}
+                  className="p-1 rounded hover:bg-gray-200"
+                >
+                  <span className="text-2xl font-bold">×</span>
+                </button>
+              </div>
+              <div className="p-6">
+                <div className="mb-4">
+                  <p className="text-sm text-gray-600">
+                    Created by {selectedDocument.created_by_name || "System"} on{" "}
+                    {new Date(selectedDocument.created_at).toLocaleString()}
+                  </p>
+                </div>
+                <div className="bg-gray-50 p-4 rounded border whitespace-pre-wrap">
+                  {selectedDocument.content || "No content available"}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   if (isLoading) {
     return <LoadingScreen message="Loading job details..." />;
@@ -2775,14 +3290,9 @@ export default function JobView() {
             <div className="col-span-7">{renderModifyTab()}</div>
           )}
 
-          {/* Placeholder for Docs tab */}
+          {/* Docs Tab */}
           {activeTab === "docs" && (
-            <div className="col-span-7">
-              <div className="bg-white p-4 rounded shadow-sm">
-                <h2 className="text-lg font-semibold mb-4">Documents</h2>
-                <p className="text-gray-500 italic">No documents available</p>
-              </div>
-            </div>
+            <div className="col-span-7">{renderDocsTab()}</div>
           )}
         </div>
       </div>
@@ -3095,7 +3605,7 @@ export default function JobView() {
                         {/* Autocomplete Dropdown */}
                         {showCandidateDropdown &&
                           filteredCandidates.length > 0 && (
-                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-y-auto">
+                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
                               {filteredCandidates.map((candidate) => (
                                 <button
                                   key={candidate.id}
@@ -3137,7 +3647,7 @@ export default function JobView() {
                         {showCandidateDropdown &&
                           filteredCandidates.length === 0 &&
                           candidateSearchQuery.trim().length > 0 && (
-                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg p-3 text-sm text-gray-500 text-center">
+                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg p-3 text-sm text-gray-500 text-center">
                               No candidates found matching "
                               {candidateSearchQuery}"
                             </div>
@@ -3472,7 +3982,7 @@ export default function JobView() {
             <div className="p-6 space-y-6">
               {/* Tearsheet Name */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label className="block text-sm font-medium mb-1">
                   <span className="text-red-500 mr-1">•</span>
                   Tearsheet name
                 </label>
@@ -3493,7 +4003,7 @@ export default function JobView() {
 
               {/* Visibility */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium mb-2">
                   Visibility
                 </label>
                 <div
@@ -3638,9 +4148,9 @@ export default function JobView() {
                           }`}
                       >
                         <option value="">Select Action</option>
-                        {actionFields.map((field) => (
-                          <option key={field.id || field.field_name} value={field.field_label || field.field_name}>
-                            {field.field_label || field.field_name}
+                        {actionFields.map((f) => (
+                          <option key={f.id || f.field_name} value={f.field_label || f.field_name}>
+                            {f.field_label || f.field_name}
                           </option>
                         ))}
                       </select>
@@ -3870,6 +4380,80 @@ export default function JobView() {
           </div>
         </div>
       )}
+
+      {showFileDetailsModal && pendingFiles.length > 0 && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 bg-opacity-50">
+          <div className="bg-white rounded shadow-lg p-6 w-full max-w-md">
+            <h3 className="text-lg font-semibold mb-4">Confirm File Details</h3>
+            <div className="space-y-4">
+              {pendingFiles.length === 1 ? (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">File Name *</label>
+                    <input
+                      type="text"
+                      value={fileDetailsName}
+                      onChange={(e) => setFileDetailsName(e.target.value)}
+                      className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="Enter file name"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">Document Type</label>
+                    <select
+                      value={fileDetailsType}
+                      onChange={(e) => setFileDetailsType(e.target.value)}
+                      className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="General">General</option>
+                      <option value="Contract">Contract</option>
+                      <option value="Agreement">Agreement</option>
+                      <option value="Policy">Policy</option>
+                      <option value="Welcome">Welcome</option>
+                    </select>
+                  </div>
+                </>
+              ) : (
+                <div className="bg-gray-50 p-3 rounded border">
+                  <p className="text-sm text-gray-700 font-medium mb-2">
+                    You selected {pendingFiles.length} files
+                  </p>
+                  <ul className="text-sm text-gray-600 space-y-1 max-h-40 overflow-y-auto">
+                    {pendingFiles.map((file) => (
+                      <li key={file.name} className="truncate">
+                        {file.name}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Each file will use its filename as the document name and "General" as the type.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end space-x-2 mt-6">
+              <button
+                onClick={() => {
+                  setShowFileDetailsModal(false);
+                  setPendingFiles([]);
+                }}
+                className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmFileDetails}
+                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm disabled:opacity-50"
+                disabled={pendingFiles.length === 1 && !fileDetailsName.trim()}
+              >
+                Upload
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showHeaderFieldModal && (
         <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4">
