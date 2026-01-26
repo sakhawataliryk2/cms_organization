@@ -29,7 +29,7 @@ export default function PanelWithHeader({
                     {onEdit && (
                         <button
                             onClick={onEdit}
-                            className="text-gray-500 hover:text-gray-700"
+                            className="no-print text-gray-500 hover:text-gray-700"
                             aria-label="Edit Fields"
                             title="Edit Fields"
                         >
@@ -39,7 +39,7 @@ export default function PanelWithHeader({
                     {onRefresh && (
                         <button
                             onClick={onRefresh}
-                            className="text-blue-500 hover:text-blue-700"
+                            className="no-print text-blue-500 hover:text-blue-700"
                             aria-label="Refresh"
                         >
                             <Image src="/refresh-small.svg" alt="Refresh" width={16} height={16} />
@@ -48,7 +48,7 @@ export default function PanelWithHeader({
                     {onClose && (
                         <button
                             onClick={onClose}
-                            className="text-gray-500 hover:text-gray-700"
+                            className="no-print text-gray-500 hover:text-gray-700"
                             aria-label="Close"
                         >
                             <Image src="/x-small.svg" alt="Close" width={16} height={16} />

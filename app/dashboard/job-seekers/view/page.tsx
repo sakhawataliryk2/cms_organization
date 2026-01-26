@@ -71,7 +71,7 @@ function SortablePanel({ id, children, isOverlay = false }: { id: string; childr
           className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
           title="Drag to reorder"
         >
-          <TbGripVertical className="w-5 h-5 text-gray-600" />
+          <TbGripVertical className="no-print w-5 h-5 text-gray-600" />
         </button>
       )}
       <div className={`${isDragging && !isOverlay ? 'invisible' : ''} pt-0`}>
@@ -1175,25 +1175,49 @@ Best regards`;
   const fetchAvailableFields = async () => {
     setIsLoadingFields(true);
     try {
-      const response = await fetch("/api/admin/field-management/job-seekers");
-      if (response.ok) {
-        const data = await response.json();
-        const fields = data.fields || [];
-        setAvailableFields(fields);
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
 
-        // Add custom fields to visible fields if they have values
-        if (jobSeeker && jobSeeker.customFields) {
-          const customFieldKeys = Object.keys(jobSeeker.customFields);
-          customFieldKeys.forEach((fieldKey) => {
-            if (!visibleFields.jobSeekerDetails.includes(fieldKey)) {
-              setVisibleFields((prev) => ({
-                ...prev,
-                jobSeekerDetails: [...prev.jobSeekerDetails, fieldKey],
-              }));
-            }
-          });
-        }
-      }
+      const response = await fetch("/api/admin/field-management/job-seekers", {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const raw = await response.text();
+      let data: any = {};
+      try {
+        data = JSON.parse(raw);
+      } catch {}
+
+      const fields =
+        data.customFields ||
+        data.fields ||
+        data.data?.fields ||
+        data.jobSeekerFields ||
+        [];
+
+      setAvailableFields(fields);
+
+      const visibleCustomFields = (fields || []).filter((f: any) => {
+        const isHidden = f.is_hidden === true || f.hidden === true || f.isHidden === true;
+        return !isHidden;
+      });
+
+      // Add custom fields to visible fields if they have values
+      const allCustomKeys = (visibleCustomFields || [])
+        .map((f: any) => f.field_key || f.api_name || f.field_name || f.id)
+        .filter(Boolean)
+        .map((k: any) => String(k));
+
+      setVisibleFields((prev) => ({
+        ...prev,
+        jobSeekerDetails: Array.from(
+          new Set([...(prev.jobSeekerDetails || []), ...allCustomKeys])
+        ),
+      }));
     } catch (err) {
       console.error("Error fetching available fields:", err);
     } finally {
@@ -1555,6 +1579,28 @@ Best regards`;
         experience: [], // Would be populated from a formatted resume if available
       };
 
+      let customFieldsObj: any = {};
+      const possibleCustomSources = [
+        jobSeekerData.custom_fields,
+        jobSeekerData.customFields,
+        jobSeekerData.custom_fields_json,
+        jobSeekerData.job_seeker_custom_fields,
+      ];
+
+      for (const src of possibleCustomSources) {
+        if (!src) continue;
+        try {
+          if (typeof src === "string") {
+            customFieldsObj = JSON.parse(src);
+          } else if (typeof src === "object") {
+            customFieldsObj = src;
+          }
+          if (Object.keys(customFieldsObj).length > 0) break;
+        } catch {
+          customFieldsObj = {};
+        }
+      }
+
       // Format the job seeker data with default values for all fields
       const formattedJobSeeker = {
         id: jobSeekerData.id || "Unknown ID",
@@ -1590,7 +1636,7 @@ Best regards`;
           : [],
         desiredSalary: jobSeekerData.desired_salary || "Not specified",
         resume: resume,
-        customFields: jobSeekerData.custom_fields || {},
+        customFields: customFieldsObj,
       };
 
       console.log("Formatted job seeker data:", formattedJobSeeker);
@@ -2121,16 +2167,129 @@ Best regards`;
 
   // Print handler: ensure Summary tab (with Job Seeker Details) is active when printing
   const handlePrint = () => {
-    const prevTab = activeTab;
-    if (prevTab !== "summary") {
-      setActiveTab("summary");
-      setTimeout(() => {
-        window.print();
-        setActiveTab(prevTab);
-      }, 300);
-    } else {
-      window.print();
-    }
+    const printContent = document.getElementById("printable-summary");
+    if (!printContent) return;
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+
+    const tabTitle = activeTab?.toUpperCase() || "Job Seeker SUMMARY";
+
+    // clone styles
+    const styles = Array.from(document.styleSheets)
+      .map(sheet => {
+        try {
+          if (sheet.href) {
+            return `<link rel="stylesheet" href="${sheet.href}" />`;
+          }
+          return `<style>${Array.from(sheet.cssRules)
+            .map(rule => rule.cssText)
+            .join("")}</style>`;
+        } catch {
+          return "";
+        }
+      })
+      .join("");
+
+    printWindow.document.write(`
+    <html>
+      <head>
+        <title>${tabTitle}</title>
+        ${styles}
+        <style>
+          /* PAGE SETUP */
+          @page {
+            size: A4;
+            margin: 18mm 16mm;
+          }
+
+          body {
+            font-family: Inter, system-ui, Arial, sans-serif;
+            background: #fff;
+            color: #111827;
+          }
+
+          /* WRAPPER */
+          .print-wrapper {
+            max-width: 800px;
+            margin: auto;
+          }
+
+          /* HEADER */
+          .print-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+          }
+
+          .print-title {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+          }
+
+          .print-date {
+            font-size: 11px;
+            color: #6b7280;
+          }
+
+          /* FOOTER */
+          .print-footer {
+            position: fixed;
+            bottom: 10mm;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 10px;
+            color: #9ca3af;
+          }
+
+          /* CLEANUP */
+          .no-print {
+            display: none !important;
+          }
+
+          table {
+            page-break-inside: avoid;
+          }
+
+          .panel {
+            page-break-inside: avoid;
+          }
+        </style>
+      </head>
+
+      <body>
+        <div class="print-wrapper">
+
+          <div class="print-header">
+            <div class="print-title">${tabTitle}</div>
+            <div class="print-date">
+              ${new Date().toLocaleDateString()}
+            </div>
+          </div>
+
+          ${printContent.innerHTML}
+
+        </div>
+
+        <div class="print-footer">
+          Generated by System • Page <span class="pageNumber"></span>
+        </div>
+      </body>
+    </html>
+  `);
+
+    printWindow.document.close();
+    printWindow.focus();
+
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 600);
   };
 
   // Handle job seeker deletion
@@ -2590,15 +2749,7 @@ Best regards`;
           ))}
 
           {/* Custom Fields that are not explicitly in visibleFields but exist on jobSeeker */}
-          {jobSeeker.customFields && Object.keys(jobSeeker.customFields).map(key => {
-            if (visibleFields.jobSeekerDetails.includes(key)) return null;
-            return (
-              <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-                <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{labelForHeaderKey(key)}:</div>
-                <div className="flex-1 p-2 text-sm">{getHeaderValue(key)}</div>
-              </div>
-            );
-          })}
+          {null}
         </div>
       </PanelWithHeader>
     );

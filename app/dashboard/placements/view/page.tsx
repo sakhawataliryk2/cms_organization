@@ -1,17 +1,111 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import type { ReactNode, CSSProperties } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getCookie } from "cookies-next";
 import Image from "next/image";
 import ActionDropdown from "@/components/ActionDropdown";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import LoadingScreen from "@/components/LoadingScreen";
-import { FiBriefcase } from "react-icons/fi";
+import { FiBriefcase, FiLock, FiUnlock } from "react-icons/fi";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+
+import {
+  DndContext,
+  closestCorners,
+  type DragEndEvent,
+  type DragOverEvent,
+  useDroppable,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  defaultDropAnimationSideEffects,
+  MeasuringStrategy,
+} from "@dnd-kit/core";
+import { restrictToWindowEdges } from "@dnd-kit/modifiers";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { TbGripVertical } from "react-icons/tb";
 
 // Default header fields for Placements module - defined outside component to ensure stable reference
 const PLACEMENT_DEFAULT_HEADER_FIELDS = ["status", "owner"];
+
+function DroppableContainer({
+  id,
+  children,
+  items,
+}: {
+  id: string;
+  children: ReactNode;
+  items: string[];
+}) {
+  const { setNodeRef } = useDroppable({ id });
+  return (
+    <SortableContext id={id} items={items} strategy={verticalListSortingStrategy}>
+      <div ref={setNodeRef} className="flex flex-col gap-4 w-full min-h-[100px]">
+        {children}
+      </div>
+    </SortableContext>
+  );
+}
+
+function SortablePanel({
+  id,
+  children,
+  isOverlay = false,
+}: {
+  id: string;
+  children: ReactNode;
+  isOverlay?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id });
+
+  const style: CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging && !isOverlay ? 0.3 : 1,
+    zIndex: isOverlay ? 1000 : undefined,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`relative group ${isOverlay ? "cursor-grabbing" : ""}`}
+    >
+      {!isOverlay && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Drag to reorder"
+        >
+          <TbGripVertical className="no-print w-5 h-5 text-gray-600" />
+        </button>
+      )}
+      <div className={`${isDragging && !isOverlay ? "invisible" : ""} pt-0`}>
+        {children}
+      </div>
+      {isDragging && !isOverlay && (
+        <div className="absolute inset-0 border-2 border-dashed border-gray-300 rounded bg-gray-50 flex items-center justify-center p-4">
+          <div className="text-gray-400 text-xs font-semibold uppercase tracking-wider italic">
+            Moving Panel...
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function PlacementView() {
   const router = useRouter();
@@ -57,6 +151,186 @@ export default function PlacementView() {
   const [fileDetailsName, setFileDetailsName] = useState("");
   const [fileDetailsType, setFileDetailsType] = useState("General");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [columns, setColumns] = useState<{
+    left: string[];
+    right: string[];
+  }>({
+    left: ["placementDetails"],
+    right: ["details", "recentNotes"],
+  });
+
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [isPinned, setIsPinned] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const measuringConfig = useMemo(
+    () => ({
+      droppable: {
+        strategy: MeasuringStrategy.Always,
+      },
+    }),
+    []
+  );
+
+  const dropAnimationConfig = useMemo(
+    () => ({
+      sideEffects: defaultDropAnimationSideEffects({
+        styles: {
+          active: {
+            opacity: "0.5",
+          },
+        },
+      }),
+    }),
+    []
+  );
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("placementSummaryColumns");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (
+            parsed.left &&
+            Array.isArray(parsed.left) &&
+            parsed.right &&
+            Array.isArray(parsed.right)
+          ) {
+            setColumns(parsed);
+          }
+        } catch (e) {
+          console.error("Error loading panel order:", e);
+        }
+      }
+    }
+  }, []);
+
+  const prevColumnsRef = useRef<string>("");
+
+  useEffect(() => {
+    const colsString = JSON.stringify(columns);
+    if (prevColumnsRef.current !== colsString) {
+      localStorage.setItem("placementSummaryColumns", colsString);
+      prevColumnsRef.current = colsString;
+    }
+  }, [columns]);
+
+  const findContainer = useCallback(
+    (id: string) => {
+      if (id in columns) {
+        return id as keyof typeof columns;
+      }
+      return Object.keys(columns).find((key) =>
+        columns[key as keyof typeof columns].includes(id)
+      ) as keyof typeof columns | undefined;
+    },
+    [columns]
+  );
+
+  const handlePanelDragStart = useCallback((event: any) => {
+    setActiveId(event.active.id);
+  }, []);
+
+  const handlePanelDragOver = useCallback(
+    (event: DragOverEvent) => {
+      const { active, over } = event;
+      const overId = over?.id;
+
+      if (!overId || active.id === overId) {
+        return;
+      }
+
+      const activeContainer = findContainer(active.id as string);
+      const overContainer = findContainer(overId as string);
+
+      if (!activeContainer || !overContainer || activeContainer === overContainer) {
+        return;
+      }
+
+      setColumns((prev) => {
+        const overItems = prev[overContainer];
+        const overIndex = overItems.indexOf(overId as string);
+
+        let newIndex;
+
+        if (overId in prev) {
+          newIndex = overItems.length + 1;
+        } else {
+          const isBelowOverItem =
+            over &&
+            active.rect.current.translated &&
+            active.rect.current.translated.top > over.rect.top + over.rect.height;
+
+          const modifier = isBelowOverItem ? 1 : 0;
+
+          newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1;
+        }
+
+        const activeFiltered = prev[activeContainer].filter(
+          (item) => item !== active.id
+        );
+        const overUpdated = [
+          ...prev[overContainer].slice(0, newIndex),
+          active.id as string,
+          ...prev[overContainer].slice(newIndex, prev[overContainer].length),
+        ];
+
+        return {
+          ...prev,
+          [activeContainer]: activeFiltered,
+          [overContainer]: overUpdated,
+        };
+      });
+    },
+    [findContainer]
+  );
+
+  const handlePanelDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active, over } = event;
+      const activeId = active.id as string;
+      const overId = over?.id as string;
+
+      const activeContainer = findContainer(activeId);
+      const overContainer = findContainer(overId);
+
+      if (!activeContainer || !overContainer || activeContainer !== overContainer) {
+        setActiveId(null);
+        return;
+      }
+
+      const activeIndex = columns[activeContainer].indexOf(activeId);
+      const overIndex = columns[overContainer].indexOf(overId);
+
+      if (activeIndex !== overIndex) {
+        setColumns((prev) => ({
+          ...prev,
+          [activeContainer]: arrayMove(prev[activeContainer], activeIndex, overIndex),
+        }));
+      }
+
+      setActiveId(null);
+    },
+    [columns, findContainer]
+  );
+
+  const togglePin = () => {
+    setIsPinned((p) => !p);
+    if (isPinned === false) setIsCollapsed(false);
+  };
 
   // Current active tab
   const [activeTab, setActiveTab] = useState("summary");
@@ -693,16 +967,129 @@ export default function PlacementView() {
 
   // Print handler: ensure Summary tab is active when printing (same behavior as Jobs view)
   const handlePrint = () => {
-    const prevTab = activeTab;
-    if (prevTab !== "summary") {
-      setActiveTab("summary");
-      setTimeout(() => {
-        window.print();
-        setActiveTab(prevTab);
-      }, 300);
-    } else {
-      window.print();
-    }
+    const printContent = document.getElementById("printable-summary");
+    if (!printContent) return;
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) return;
+
+    const tabTitle = activeTab?.toUpperCase() || "Placement SUMMARY";
+
+    // clone styles
+    const styles = Array.from(document.styleSheets)
+      .map(sheet => {
+        try {
+          if (sheet.href) {
+            return `<link rel="stylesheet" href="${sheet.href}" />`;
+          }
+          return `<style>${Array.from(sheet.cssRules)
+            .map(rule => rule.cssText)
+            .join("")}</style>`;
+        } catch {
+          return "";
+        }
+      })
+      .join("");
+
+    printWindow.document.write(`
+    <html>
+      <head>
+        <title>${tabTitle}</title>
+        ${styles}
+        <style>
+          /* PAGE SETUP */
+          @page {
+            size: A4;
+            margin: 18mm 16mm;
+          }
+
+          body {
+            font-family: Inter, system-ui, Arial, sans-serif;
+            background: #fff;
+            color: #111827;
+          }
+
+          /* WRAPPER */
+          .print-wrapper {
+            max-width: 800px;
+            margin: auto;
+          }
+
+          /* HEADER */
+          .print-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 2px solid #e5e7eb;
+            padding-bottom: 10px;
+            margin-bottom: 20px;
+          }
+
+          .print-title {
+            font-size: 18px;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+          }
+
+          .print-date {
+            font-size: 11px;
+            color: #6b7280;
+          }
+
+          /* FOOTER */
+          .print-footer {
+            position: fixed;
+            bottom: 10mm;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 10px;
+            color: #9ca3af;
+          }
+
+          /* CLEANUP */
+          .no-print {
+            display: none !important;
+          }
+
+          table {
+            page-break-inside: avoid;
+          }
+
+          .panel {
+            page-break-inside: avoid;
+          }
+        </style>
+      </head>
+
+      <body>
+        <div class="print-wrapper">
+
+          <div class="print-header">
+            <div class="print-title">${tabTitle}</div>
+            <div class="print-date">
+              ${new Date().toLocaleDateString()}
+            </div>
+          </div>
+
+          ${printContent.innerHTML}
+
+        </div>
+
+        <div class="print-footer">
+          Generated by System • Page <span class="pageNumber"></span>
+        </div>
+      </body>
+    </html>
+  `);
+
+    printWindow.document.close();
+    printWindow.focus();
+
+    setTimeout(() => {
+      printWindow.print();
+      printWindow.close();
+    }, 600);
   };
 
   const handleEmailJobSeeker = async () => {
@@ -1573,6 +1960,176 @@ export default function PlacementView() {
     );
   };
 
+  const renderPlacementDetailsPanel = () => {
+    return (
+      <PanelWithHeader
+        title="Placement Details:"
+        onEdit={() => handleEditPanel("placementDetails")}
+      >
+        <div className="space-y-0 border border-gray-200 rounded">
+          {visibleFields.placementDetails.includes("candidate") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Candidate:</div>
+              <div className="flex-1 p-2 text-blue-600">{placement.jobSeekerName}</div>
+            </div>
+          )}
+          {visibleFields.placementDetails.includes("job") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Job:</div>
+              <div className="flex-1 p-2 text-blue-600">{placement.jobTitle}</div>
+            </div>
+          )}
+          {visibleFields.placementDetails.includes("status") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
+              <div className="flex-1 p-2">
+                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
+                  {placement.status}
+                </span>
+              </div>
+            </div>
+          )}
+          {visibleFields.placementDetails.includes("startDate") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Start Date:</div>
+              <div className="flex-1 p-2">{placement.startDate || "-"}</div>
+            </div>
+          )}
+          {visibleFields.placementDetails.includes("endDate") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">End Date:</div>
+              <div className="flex-1 p-2">{placement.endDate || "-"}</div>
+            </div>
+          )}
+          {visibleFields.placementDetails.includes("salary") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Salary:</div>
+              <div className="flex-1 p-2">{placement.salary || "-"}</div>
+            </div>
+          )}
+          {placement.customFields &&
+            Object.keys(placement.customFields).map((fieldKey) => {
+              if (visibleFields.placementDetails.includes(fieldKey)) {
+                const field = availableFields.find(
+                  (f) => (f.field_name || f.field_label || f.id) === fieldKey
+                );
+                const fieldLabel = field?.field_label || field?.field_name || fieldKey;
+                const fieldValue = placement.customFields[fieldKey];
+                return (
+                  <div key={fieldKey} className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
+                    <div className="flex-1 p-2">{String(fieldValue || "-")}</div>
+                  </div>
+                );
+              }
+              return null;
+            })}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderDetailsPanel = () => {
+    return (
+      <PanelWithHeader title="Details:" onEdit={() => handleEditPanel("details")}>
+        <div className="space-y-0 border border-gray-200 rounded">
+          {visibleFields.details.includes("owner") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Owner:</div>
+              <div className="flex-1 p-2">{placement.owner || "-"}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("dateAdded") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
+              <div className="flex-1 p-2">{placement.dateAdded || "-"}</div>
+            </div>
+          )}
+          {visibleFields.details.includes("lastContactDate") && (
+            <div className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Last Contact:</div>
+              <div className="flex-1 p-2">{placement.lastContactDate}</div>
+            </div>
+          )}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderRecentNotesPanel = () => {
+    return (
+      <PanelWithHeader
+        title="Recent Notes:"
+        onEdit={() => handleEditPanel("recentNotes")}
+      >
+        <div className="border border-gray-200 rounded">
+          {visibleFields.recentNotes.includes("notes") && (
+            <div className="p-2">
+              {notes.length > 0 ? (
+                <div>
+                  {notes.slice(0, 3).map((note) => (
+                    <div
+                      key={note.id}
+                      className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
+                    >
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="font-medium">{note.created_by_name || "Unknown User"}</span>
+                        <span className="text-gray-500">{new Date(note.created_at).toLocaleString()}</span>
+                      </div>
+                      <p className="text-sm text-gray-700">
+                        {note.text.length > 100
+                          ? `${note.text.substring(0, 100)}...`
+                          : note.text}
+                      </p>
+                    </div>
+                  ))}
+                  {notes.length > 3 && (
+                    <button
+                      onClick={() => setActiveTab("notes")}
+                      className="text-blue-500 text-sm hover:underline"
+                    >
+                      View all {notes.length} notes
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <p className="text-gray-500 italic">No recent notes</p>
+              )}
+            </div>
+          )}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderPanel = useCallback(
+    (panelId: string, isOverlay = false) => {
+      if (panelId === "placementDetails") {
+        return (
+          <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
+            {renderPlacementDetailsPanel()}
+          </SortablePanel>
+        );
+      }
+      if (panelId === "details") {
+        return (
+          <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
+            {renderDetailsPanel()}
+          </SortablePanel>
+        );
+      }
+      if (panelId === "recentNotes") {
+        return (
+          <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
+            {renderRecentNotesPanel()}
+          </SortablePanel>
+        );
+      }
+      return null;
+    },
+    [availableFields, notes, placement, visibleFields]
+  );
+
   // Render history tab content
   const renderHistoryTab = () => (
     <div className="bg-white p-4 rounded shadow-sm">
@@ -1823,160 +2380,124 @@ export default function PlacementView() {
         ))}
       </div>
 
+      {/* Quick Action Buttons (match Hiring Manager layout) */}
+      <div className="flex bg-gray-300 p-2 space-x-2">
+        <div className="flex-1 space-x-2"></div>
+        {activeTab === "summary" && (
+          <button
+            onClick={togglePin}
+            className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
+            title={isPinned ? "Unpin panel" : "Pin panel"}
+            type="button"
+          >
+            {isPinned ? (
+              <FiLock className="w-5 h-5 text-blue-600" />
+            ) : (
+              <FiUnlock className="w-5 h-5 text-gray-600" />
+            )}
+          </button>
+        )}
+      </div>
+
       {/* Main Content Area */}
+
+      {activeTab === "summary" && (
+        <div className="relative w-full">
+          {/* Pinned side drawer */}
+          {isPinned && (
+            <div
+              className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"} border-l border-gray-300`}
+            >
+              <div className="flex flex-col h-full">
+                <div className="flex items-center justify-between p-2 border-b bg-gray-50">
+                  <h3 className="font-semibold text-sm">Placement Summary</h3>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setIsCollapsed(!isCollapsed)}
+                      className="p-1 hover:bg-gray-200 rounded"
+                      title={isCollapsed ? "Expand" : "Collapse"}
+                      type="button"
+                    >
+                      {isCollapsed ? "▶" : "◀"}
+                    </button>
+                    <button
+                      onClick={togglePin}
+                      className="p-1 hover:bg-gray-200 rounded"
+                      title="Unpin panel"
+                      type="button"
+                    >
+                      <FiUnlock className="w-4 h-4 text-blue-600" />
+                    </button>
+                  </div>
+                </div>
+                {!isCollapsed && (
+                  <div className="flex-1 overflow-y-auto p-4">
+                    <div id="printable-summary">
+                      <DndContext
+                        id="pinned-summary-dnd"
+                        sensors={sensors}
+                        collisionDetection={closestCorners}
+                        measuring={measuringConfig}
+                        modifiers={[restrictToWindowEdges]}
+                        onDragStart={handlePanelDragStart}
+                        onDragOver={handlePanelDragOver}
+                        onDragEnd={handlePanelDragEnd}
+                      >
+                        <div className="flex flex-col gap-4">
+                          <DroppableContainer id="left" items={columns.left}>
+                            {columns.left.map((id) => renderPanel(id))}
+                          </DroppableContainer>
+                          <DroppableContainer id="right" items={columns.right}>
+                            {columns.right.map((id) => renderPanel(id))}
+                          </DroppableContainer>
+                        </div>
+                        <DragOverlay dropAnimation={dropAnimationConfig}>
+                          {activeId ? renderPanel(activeId, true) : null}
+                        </DragOverlay>
+                      </DndContext>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Regular summary (not pinned) */}
+          {!isPinned && (
+            <div id="printable-summary" className="p-4">
+              <DndContext
+                id="regular-summary-dnd"
+                sensors={sensors}
+                collisionDetection={closestCorners}
+                measuring={measuringConfig}
+                modifiers={[restrictToWindowEdges]}
+                onDragStart={handlePanelDragStart}
+                onDragOver={handlePanelDragOver}
+                onDragEnd={handlePanelDragEnd}
+              >
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <DroppableContainer id="left" items={columns.left}>
+                      {columns.left.map((id) => renderPanel(id))}
+                    </DroppableContainer>
+                  </div>
+                  <div>
+                    <DroppableContainer id="right" items={columns.right}>
+                      {columns.right.map((id) => renderPanel(id))}
+                    </DroppableContainer>
+                  </div>
+                </div>
+                <DragOverlay dropAnimation={dropAnimationConfig}>
+                  {activeId ? renderPanel(activeId, true) : null}
+                </DragOverlay>
+              </DndContext>
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="p-4">
         {/* Display content based on active tab */}
-        {activeTab === "summary" && (
-          <div className="grid grid-cols-7 gap-4">
-            {/* Left Column - 4/7 width */}
-            <div className="col-span-4 space-y-4">
-              {/* Placement Details */}
-              <PanelWithHeader
-                title="Placement Details:"
-                onEdit={() => handleEditPanel('placementDetails')}
-              >
-                <div className="space-y-0 border border-gray-200 rounded">
-                  {visibleFields.placementDetails.includes('candidate') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Candidate:</div>
-                      <div className="flex-1 p-2 text-blue-600">
-                        {placement.jobSeekerName}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.placementDetails.includes('job') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Job:</div>
-                      <div className="flex-1 p-2 text-blue-600">
-                        {placement.jobTitle}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.placementDetails.includes('status') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
-                      <div className="flex-1 p-2">
-                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                          {placement.status}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.placementDetails.includes('startDate') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Start Date:</div>
-                      <div className="flex-1 p-2">{placement.startDate || "-"}</div>
-                    </div>
-                  )}
-                  {visibleFields.placementDetails.includes('endDate') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">End Date:</div>
-                      <div className="flex-1 p-2">{placement.endDate || "-"}</div>
-                    </div>
-                  )}
-                  {visibleFields.placementDetails.includes('salary') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Salary:</div>
-                      <div className="flex-1 p-2">{placement.salary || "-"}</div>
-                    </div>
-                  )}
-                  {/* Display custom fields */}
-                  {placement.customFields && Object.keys(placement.customFields).map((fieldKey) => {
-                    if (visibleFields.placementDetails.includes(fieldKey)) {
-                      const field = availableFields.find(f => (f.field_name || f.field_label || f.id) === fieldKey);
-                      const fieldLabel = field?.field_label || field?.field_name || fieldKey;
-                      const fieldValue = placement.customFields[fieldKey];
-                      return (
-                        <div key={fieldKey} className="flex border-b border-gray-200 last:border-b-0">
-                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
-                          <div className="flex-1 p-2">{String(fieldValue || "-")}</div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })}
-                </div>
-              </PanelWithHeader>
-
-              {/* Details */}
-              <PanelWithHeader
-                title="Details:"
-                onEdit={() => handleEditPanel('details')}
-              >
-                <div className="space-y-0 border border-gray-200 rounded">
-                  {visibleFields.details.includes('owner') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Owner:</div>
-                      <div className="flex-1 p-2">{placement.owner || "-"}</div>
-                    </div>
-                  )}
-                  {visibleFields.details.includes('dateAdded') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
-                      <div className="flex-1 p-2">{placement.dateAdded || "-"}</div>
-                    </div>
-                  )}
-                  {visibleFields.details.includes('lastContactDate') && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Last Contact:</div>
-                      <div className="flex-1 p-2">{placement.lastContactDate}</div>
-                    </div>
-                  )}
-                </div>
-              </PanelWithHeader>
-            </div>
-
-            {/* Right Column - 3/7 width */}
-            <div className="col-span-3 space-y-4">
-              {/* Recent Notes */}
-              <PanelWithHeader
-                title="Recent Notes:"
-                onEdit={() => handleEditPanel('recentNotes')}
-              >
-                <div className="border border-gray-200 rounded">
-                  {visibleFields.recentNotes.includes('notes') && (
-                    <div className="p-2">
-                      {notes.length > 0 ? (
-                        <div>
-                          {notes.slice(0, 3).map((note) => (
-                            <div
-                              key={note.id}
-                              className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
-                            >
-                              <div className="flex justify-between text-sm mb-1">
-                                <span className="font-medium">
-                                  {note.created_by_name || "Unknown User"}
-                                </span>
-                                <span className="text-gray-500">
-                                  {new Date(note.created_at).toLocaleString()}
-                                </span>
-                              </div>
-                              <p className="text-sm text-gray-700">
-                                {note.text.length > 100
-                                  ? `${note.text.substring(0, 100)}...`
-                                  : note.text}
-                              </p>
-                            </div>
-                          ))}
-                          {notes.length > 3 && (
-                            <button
-                              onClick={() => setActiveTab("notes")}
-                              className="text-blue-500 text-sm hover:underline"
-                            >
-                              View all {notes.length} notes
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="text-gray-500 italic">No recent notes</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </PanelWithHeader>
-            </div>
-          </div>
-        )}
 
         {/* Modify Tab */}
         {activeTab === "modify" && renderModifyTab()}

@@ -56,7 +56,7 @@ function SortablePanel({
         className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
         title="Drag to reorder"
       >
-        <TbGripVertical className="w-5 h-5 text-gray-600" />
+        <TbGripVertical className="no-print w-5 h-5 text-gray-600" />
       </button>
       {children}
     </div>
@@ -2167,7 +2167,7 @@ export default function OrganizationView() {
     const printWindow = window.open("", "_blank");
     if (!printWindow) return;
 
-    const tabTitle = activeTab?.toUpperCase() || "SUMMARY";
+    const tabTitle = activeTab?.toUpperCase() || "Organization SUMMARY";
 
     // clone styles
     const styles = Array.from(document.styleSheets)
