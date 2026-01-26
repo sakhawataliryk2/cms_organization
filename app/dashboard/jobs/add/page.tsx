@@ -1000,6 +1000,7 @@ useEffect(() => {
       const finalPayload: Record<string, any> = {
         ...payload,
         jobTitle: mappedJobTitle,
+        jobType: jobType,
         hiringManager: mappedHiringManager,
         jobDescription: mappedJobDescription,
         status: mappedStatus,

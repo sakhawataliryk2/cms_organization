@@ -65,6 +65,7 @@ export async function POST(request: NextRequest) {
       // ✅ Clean payload (Organizations pattern)
       const apiData = {
         jobTitle: body.jobTitle || "",
+        jobType: body.jobType || "",
         category: body.category || "",
         organizationId: body.organizationId || "",
         hiringManager: body.hiringManager || "",

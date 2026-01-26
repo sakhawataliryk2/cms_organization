@@ -19,6 +19,7 @@ import { FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
 interface Job {
   id: string;
   job_title: string;
+  job_type: string;
   category: string;
   organization_name: string;
   worksite_location: string;
@@ -215,6 +216,7 @@ function SortableColumnHeader({
 const JOB_DEFAULT_COLUMNS = [
   "id",
   "job_title",
+  "job_type",
   "category",
   "organization_name",
   "worksite_location",
@@ -320,6 +322,7 @@ export default function JobList() {
     const standard = [
       { key: "id", label: "ID", sortable: true, filterType: "text" as const },
       { key: "job_title", label: "Job Title", sortable: true, filterType: "text" as const },
+      { key: "job_type", label: "Job Type", sortable: true, filterType: "text" as const },
       { key: "category", label: "Category", sortable: true, filterType: "text" as const },
       { key: "organization_name", label: "Organization", sortable: true, filterType: "text" as const },
       { key: "worksite_location", label: "Location", sortable: true, filterType: "text" as const },
@@ -380,6 +383,7 @@ export default function JobList() {
       result = result.filter(
         (job) =>
           job.job_title?.toLowerCase().includes(term) ||
+          job.job_type?.toLowerCase().includes(term) ||
           job.organization_name?.toLowerCase().includes(term) ||
           job.id?.toString().toLowerCase().includes(term) ||
           job.category?.toLowerCase().includes(term) ||
@@ -946,6 +950,12 @@ export default function JobList() {
                             </div>
                             <div className="text-sm text-gray-500">
                               {job.employment_type}
+                            </div>
+                          </>
+                        ) : colKey === 'job_type' ? (
+                          <>
+                            <div className="capitalize text-sm font-medium text-gray-900">
+                              {job.job_type || "-"}
                             </div>
                           </>
                         ) : colKey === 'organization_name' ? (
