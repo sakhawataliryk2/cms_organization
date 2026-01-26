@@ -15,7 +15,7 @@ type OnboardingStatus =
   | "SUBMITTED"
   | "APPROVED"
   | "REJECTED"
-  | "COMPLETED"; 
+  | "COMPLETED";
 
 type OnboardingItem = {
   id: number;
@@ -32,9 +32,9 @@ export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
     const token =
       typeof document !== "undefined"
         ? document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        )
         : "";
     if (!token) return {};
     return { Authorization: `Bearer ${token}` };
@@ -113,6 +113,14 @@ export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
             </div>
           ) : (
             <div className="divide-y">
+
+              {/* Header */}
+              <div className="flex items-center justify-between p-3 bg-gray-50 text-xs font-semibold text-gray-500 uppercase">
+                <div>Document Name</div>
+                <div>Packet Status</div>
+              </div>
+
+              {/* Rows */}
               {pending.map((doc) => (
                 <div key={doc.id} className="flex items-center justify-between p-3">
                   <div className="text-sm">{doc.document_name}</div>
@@ -122,6 +130,7 @@ export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
                 </div>
               ))}
             </div>
+
           )}
         </div>
 
@@ -135,6 +144,14 @@ export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
             </div>
           ) : (
             <div className="divide-y">
+
+              {/* Header */}
+              <div className="flex items-center justify-between p-3 bg-gray-50 text-xs font-semibold text-gray-500 uppercase">
+                <div>Document Name</div>
+                <div>Packet Status</div>
+              </div>
+
+              {/* Rows */}
               {completed.map((doc) => (
                 <div key={doc.id} className="flex items-center justify-between p-3">
                   <div className="text-sm">{doc.document_name}</div>
@@ -144,6 +161,7 @@ export default function OnboardingTab({ jobSeeker }: { jobSeeker: JobSeeker }) {
                 </div>
               ))}
             </div>
+
           )}
         </div>
       </div>
