@@ -44,6 +44,7 @@ export default function AddJob() {
   const organizationIdFromUrl = searchParams.get("organizationId");
   const hasPrefilledFromLeadRef = useRef(false);
   const hasPrefilledOrgRef = useRef(false);
+  const hasInitializedOrgSyncRef = useRef(false);
   const [selectedJobType, setSelectedJobType] = useState<string>("");
   const [organizationName, setOrganizationName] = useState<string>("");
   const [leadPrefillData, setLeadPrefillData] = useState<any>(null);
@@ -321,20 +322,21 @@ export default function AddJob() {
         if (selectedOrg && selectedOrg.id.toString() !== currentOrganizationId) {
           const newOrgId = selectedOrg.id.toString();
           setCurrentOrganizationId(newOrgId);
-          
-          // Clear Field_4 (Billing Contact) and Field_503 (Timecard Approver) when organization changes
-          setCustomFieldValues((prev) => {
-            const updated = { ...prev };
-            // Clear billing contacts
-            if (updated["Field_4"]) {
-              updated["Field_4"] = "";
-            }
-            // Clear timecard approvers
-            if (updated["Field_503"]) {
-              updated["Field_503"] = "";
-            }
-            return updated;
-          });
+
+          if (hasInitializedOrgSyncRef.current) {
+            setCustomFieldValues((prev) => {
+              const updated = { ...prev };
+              if (updated["Field_4"]) {
+                updated["Field_4"] = "";
+              }
+              if (updated["Field_503"]) {
+                updated["Field_503"] = "";
+              }
+              return updated;
+            });
+          } else {
+            hasInitializedOrgSyncRef.current = true;
+          }
         }
       }
     }

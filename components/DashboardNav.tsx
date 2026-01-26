@@ -557,6 +557,12 @@ export default function DashboardNav() {
   // The search query is only for the global search functionality, not for filtering sidebar
   const filteredNavItems = navItems;
 
+  const isNavItemActive = (itemPath: string) => {
+    if (pathname === itemPath) return true;
+    if (itemPath === "/") return pathname === "/";
+    return pathname.startsWith(`${itemPath}/`);
+  };
+
   return (
     <>
       {/* Top Navigation Bar */}
@@ -1005,7 +1011,7 @@ export default function DashboardNav() {
                 // }
               }}
               className={`flex items-center py-2 px-4 ${
-                pathname === item.path
+                isNavItemActive(item.path)
                   ? "bg-blue-600 text-white"
                   : "text-gray-300 hover:bg-slate-700"
               }`}

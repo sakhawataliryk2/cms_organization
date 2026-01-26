@@ -898,42 +898,15 @@ export default function OrganizationView() {
 
       console.log("field-management status:", response.status);
 
-      const raw = await response.text();
-      console.log("field-management raw:", raw);
-
-      let data: any = {};
-      try {
-        data = JSON.parse(raw);
-      } catch { }
-
+      const data = await response.json().catch(() => ({}));
       const fields =
-        data.fields || data.data?.fields || data.organizationFields || [];
-      setAvailableFields(fields);
-      if (response.ok) {
-        const data = await response.json();
-        const fields = data.fields || [];
-        setAvailableFields(fields);
-
-        // Add custom fields to visible fields if they have values
-        if (organization && organization.customFields) {
-          const customFieldKeys = Object.keys(organization.customFields);
-          customFieldKeys.forEach((fieldKey) => {
-            // Add to appropriate panel based on field name
-            if (
-              fieldKey.toLowerCase().includes("contact") ||
-              fieldKey.toLowerCase().includes("phone") ||
-              fieldKey.toLowerCase().includes("address")
-            ) {
-              if (!visibleFields.contactInfo.includes(fieldKey)) {
-                setVisibleFields((prev) => ({
-                  ...prev,
-                  contactInfo: [...prev.contactInfo, fieldKey],
-                }));
-              }
-            }
-          });
-        }
-      }
+        (data as any).customFields ||
+        (data as any).fields ||
+        (data as any).data?.customFields ||
+        (data as any).data?.fields ||
+        (data as any).organizationFields ||
+        [];
+      setAvailableFields(Array.isArray(fields) ? fields : []);
     } catch (err) {
       console.error("Error fetching available fields:", err);
     } finally {
@@ -1827,31 +1800,98 @@ export default function OrganizationView() {
                 </div>
               )}
               {organization?.customFields &&
-                Object.keys(organization.customFields).map((fieldKey) => {
-                  if (visibleFields.contactInfo.includes(fieldKey)) {
-                    const field = availableFields.find(
-                      (f) =>
-                        (f.field_name || f.field_label || f.id) === fieldKey
-                    );
-                    const fieldLabel =
-                      field?.field_label || field?.field_name || fieldKey;
-                    const fieldValue = organization.customFields[fieldKey];
-                    return (
-                      <div
-                        key={fieldKey}
-                        className="flex border-b border-gray-200 last:border-b-0"
-                      >
-                        <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          {fieldLabel}:
+                (() => {
+                  const customObj = organization.customFields || {};
+
+                  const customFieldDefs = (availableFields || []).filter((f: any) => {
+                    const isHidden =
+                      f?.is_hidden === true ||
+                      f?.hidden === true ||
+                      f?.isHidden === true;
+                    return !isHidden;
+                  });
+
+                  const renderedStableKeys = new Set<string>();
+
+                  const rowsFromDefs = customFieldDefs
+                    .map((f: any) => {
+                      const stableKey = String(
+                        f.field_key || f.api_name || f.field_name || f.id
+                      );
+
+                      const value =
+                        (customObj as any)?.[stableKey] ??
+                        (f.field_label ? (customObj as any)?.[f.field_label] : undefined) ??
+                        (f.field_name ? (customObj as any)?.[f.field_name] : undefined);
+
+                      const hasAnyValue =
+                        value !== undefined &&
+                        value !== null &&
+                        String(value).trim() !== "";
+
+                      if (!hasAnyValue) return null;
+                      if (!visibleFields.contactInfo.includes(stableKey)) return null;
+
+                      renderedStableKeys.add(stableKey);
+                      const label = f.field_label || f.field_name || stableKey;
+
+                      return (
+                        <div
+                          key={stableKey}
+                          className="flex border-b border-gray-200 last:border-b-0"
+                        >
+                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                            {label}:
+                          </div>
+                          <div className="flex-1 p-2">{String(value || "-")}</div>
                         </div>
-                        <div className="flex-1 p-2">
-                          {String(fieldValue || "-")}
+                      );
+                    })
+                    .filter(Boolean);
+
+                  const rowsFromUnknownKeys = Object.keys(customObj)
+                    .filter((k) => !renderedStableKeys.has(String(k)))
+                    .map((fieldKey) => {
+                      if (!visibleFields.contactInfo.includes(fieldKey)) return null;
+
+                      const field = (availableFields || []).find(
+                        (f: any) =>
+                          String(
+                            f.field_key ||
+                              f.api_name ||
+                              f.field_name ||
+                              f.field_label ||
+                              f.id
+                          ) === String(fieldKey) ||
+                          String(f.field_label || "") === String(fieldKey) ||
+                          String(f.field_name || "") === String(fieldKey)
+                      );
+
+                      const fieldLabel =
+                        field?.field_label || field?.field_name || String(fieldKey);
+                      const fieldValue = (customObj as any)[fieldKey];
+
+                      return (
+                        <div
+                          key={fieldKey}
+                          className="flex border-b border-gray-200 last:border-b-0"
+                        >
+                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                            {fieldLabel}:
+                          </div>
+                          <div className="flex-1 p-2">{String(fieldValue || "-")}</div>
                         </div>
-                      </div>
-                    );
-                  }
-                  return null;
-                })}
+                      );
+                    })
+                    .filter(Boolean);
+
+                  return (
+                    <>
+                      {rowsFromDefs}
+                      {rowsFromUnknownKeys}
+                    </>
+                  );
+                })()}
             </div>
           </PanelWithHeader>
         </SortablePanel>
@@ -4548,7 +4588,7 @@ export default function OrganizationView() {
                   ) : availableFields.length > 0 ? (
                     availableFields.map((field) => {
                       const fieldKey =
-                        field.field_name || field.field_label || field.id;
+                        field.field_key || field.api_name || field.field_name || field.id;
                       const isVisible =
                         visibleFields[editingPanel]?.includes(fieldKey) ||
                         false;

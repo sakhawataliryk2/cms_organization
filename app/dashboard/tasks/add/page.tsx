@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
+import { getCookie } from "cookies-next";
 import CustomFieldRenderer, {
   useCustomFields,
 } from "@/components/CustomFieldRenderer";
@@ -38,6 +39,7 @@ export default function AddTask() {
   const [isLoadingTask, setIsLoadingTask] = useState(!!taskId);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeUsers, setActiveUsers] = useState<User[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hasFetchedRef = useRef(false); // Track if we've already fetched task data
@@ -57,6 +59,86 @@ export default function AddTask() {
   useEffect(() => {
     fetchActiveUsers();
   }, []);
+
+  // Load current user from cookie (set at login)
+  useEffect(() => {
+    try {
+      const rawUser = getCookie("user");
+      if (rawUser) {
+        const parsed =
+          typeof rawUser === "string"
+            ? JSON.parse(rawUser)
+            : JSON.parse(String(rawUser));
+        if (parsed?.id) {
+          setCurrentUser({
+            id: String(parsed.id),
+            name: String(parsed.name || ""),
+            email: String(parsed.email || ""),
+          });
+          return;
+        }
+      }
+
+      // Fallback: decode token payload to extract userId
+      const rawToken = getCookie("token");
+      const tokenStr = rawToken ? String(rawToken) : "";
+      const payloadB64 = tokenStr.split(".")[1];
+      if (payloadB64) {
+        const json = atob(payloadB64.replace(/-/g, "+").replace(/_/g, "/"));
+        const decoded = JSON.parse(json);
+        const uid = decoded?.userId ?? decoded?.id ?? decoded?.user?.id;
+        if (uid !== undefined && uid !== null) {
+          setCurrentUser({ id: String(uid), name: "", email: "" });
+        }
+      }
+    } catch (e) {
+      console.error("Error parsing user cookie:", e);
+    }
+  }, []);
+
+  // If we only have currentUser.id (from token) but no name, derive it from activeUsers
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    if (currentUser.name) return;
+    if (!activeUsers || activeUsers.length === 0) return;
+
+    const found = activeUsers.find((u) => String(u.id) === String(currentUser.id));
+    if (found) {
+      setCurrentUser({
+        id: String(found.id),
+        name: String(found.name || ""),
+        email: String(found.email || ""),
+      });
+    }
+  }, [activeUsers, currentUser?.id, currentUser?.name]);
+
+  // Auto-populate Owner field for new tasks
+  useEffect(() => {
+    if (isEditMode) return;
+    if (!currentUser?.name) return;
+    if (!customFields || customFields.length === 0) return;
+
+    const ownerField = customFields.find(
+      (f: any) =>
+        String(f.field_label || "").toLowerCase() === "owner" ||
+        String(f.field_name || "").toLowerCase() === "field_17" ||
+        String(f.field_name || "").toLowerCase() === "field17" ||
+        String(f.field_name || "").toLowerCase() === "owner"
+    );
+
+    if (!ownerField?.field_name) return;
+
+    setCustomFieldValues((prev) => {
+      const existing = prev?.[ownerField.field_name];
+      if (existing !== undefined && existing !== null && String(existing).trim() !== "") {
+        return prev;
+      }
+      return {
+        ...prev,
+        [ownerField.field_name]: currentUser.name,
+      };
+    });
+  }, [isEditMode, currentUser, customFields, setCustomFieldValues]);
 
   // Fetch active users for assignment dropdown
   const fetchActiveUsers = async () => {
@@ -578,6 +660,59 @@ export default function AddTask() {
                   // Don't render hidden fields at all (neither label nor input)
                   if (field.is_hidden) return null;
 
+                  const isOwnerField =
+                    String(field.field_label || "").toLowerCase() === "owner" ||
+                    String(field.field_name || "").toLowerCase() === "field_17" ||
+                    String(field.field_name || "").toLowerCase() === "field17" ||
+                    String(field.field_name || "").toLowerCase() === "owner";
+
+                  const labelLower = String(field.field_label || "").toLowerCase();
+                  const nameLower = String(field.field_name || "").toLowerCase();
+                  const isAssignedField =
+                    labelLower === "assigned to" ||
+                    labelLower === "assigned" ||
+                    labelLower === "assignee" ||
+                    labelLower.includes("assigned") ||
+                    labelLower.includes("assignee") ||
+                    nameLower.includes("assigned") ||
+                    nameLower.includes("assignee");
+
+                  const dynamicOwnerOptions =
+                    isOwnerField &&
+                    String(field.field_type || "").toLowerCase() === "select" &&
+                    activeUsers.length > 0
+                      ? Array.from(
+                          new Set(
+                            [
+                              ...activeUsers
+                                .map((u) => String(u.name || "").trim())
+                                .filter(Boolean),
+                              String(currentUser?.name || "").trim(),
+                            ].filter(Boolean)
+                          )
+                        )
+                      : null;
+
+                  const dynamicAssignedOptions =
+                    isAssignedField &&
+                    String(field.field_type || "").toLowerCase() === "select" &&
+                    activeUsers.length > 0
+                      ? Array.from(
+                          new Set(
+                            activeUsers
+                              .map((u) => String(u.name || "").trim())
+                              .filter(Boolean)
+                          )
+                        )
+                      : null;
+
+                  const fieldToRender: any =
+                    dynamicOwnerOptions && dynamicOwnerOptions.length > 0
+                      ? { ...field, options: dynamicOwnerOptions }
+                      : dynamicAssignedOptions && dynamicAssignedOptions.length > 0
+                        ? { ...field, options: dynamicAssignedOptions }
+                      : field;
+
                   return (
                     <div key={field.id} className="flex items-center">
                       <label className="w-48 font-medium">
@@ -588,7 +723,7 @@ export default function AddTask() {
                       </label>
                       <div className="flex-1 relative">
                         <CustomFieldRenderer
-                          field={field}
+                          field={fieldToRender}
                           value={customFieldValues[field.field_name]}
                           onChange={handleCustomFieldChange}
                         />

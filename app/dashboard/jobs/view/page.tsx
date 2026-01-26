@@ -543,32 +543,98 @@ export default function JobView() {
           )}
           {/* Display custom fields */}
           {job.customFields &&
-            Object.keys(job.customFields).map((fieldKey) => {
-              if (visibleFields.jobDetails.includes(fieldKey)) {
-                const field = availableFields.find(
-                  (f) =>
-                    (f.field_name || f.field_label || f.id) ===
-                    fieldKey
-                );
-                const fieldLabel =
-                  field?.field_label || field?.field_name || fieldKey;
-                const fieldValue = job.customFields[fieldKey];
-                return (
-                  <div
-                    key={fieldKey}
-                    className="flex border-b border-gray-200 last:border-b-0"
-                  >
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      {fieldLabel}:
+            (() => {
+              const customObj = job.customFields || {};
+
+              const customFieldDefs = (availableFields || []).filter((f: any) => {
+                const isHidden =
+                  f?.is_hidden === true ||
+                  f?.hidden === true ||
+                  f?.isHidden === true;
+                return !isHidden;
+              });
+
+              const renderedStableKeys = new Set<string>();
+
+              const rowsFromDefs = customFieldDefs
+                .map((f: any) => {
+                  const stableKey = String(
+                    f.field_key || f.api_name || f.field_name || f.id
+                  );
+
+                  const value =
+                    (customObj as any)?.[stableKey] ??
+                    (f.field_label ? (customObj as any)?.[f.field_label] : undefined) ??
+                    (f.field_name ? (customObj as any)?.[f.field_name] : undefined);
+
+                  const hasAnyValue =
+                    value !== undefined &&
+                    value !== null &&
+                    String(value).trim() !== "";
+
+                  if (!hasAnyValue) return null;
+                  if (!visibleFields.jobDetails.includes(stableKey)) return null;
+
+                  renderedStableKeys.add(stableKey);
+                  const label = f.field_label || f.field_name || stableKey;
+
+                  return (
+                    <div
+                      key={stableKey}
+                      className="flex border-b border-gray-200 last:border-b-0"
+                    >
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                        {label}:
+                      </div>
+                      <div className="flex-1 p-2">{String(value || "-")}</div>
                     </div>
-                    <div className="flex-1 p-2">
-                      {String(fieldValue || "-")}
+                  );
+                })
+                .filter(Boolean);
+
+              const rowsFromUnknownKeys = Object.keys(customObj)
+                .filter((k) => !renderedStableKeys.has(String(k)))
+                .map((fieldKey) => {
+                  if (!visibleFields.jobDetails.includes(fieldKey)) return null;
+
+                  const field = (availableFields || []).find(
+                    (f: any) =>
+                      String(
+                        f.field_key ||
+                          f.api_name ||
+                          f.field_name ||
+                          f.field_label ||
+                          f.id
+                      ) === String(fieldKey) ||
+                      String(f.field_label || "") === String(fieldKey) ||
+                      String(f.field_name || "") === String(fieldKey)
+                  );
+
+                  const fieldLabel =
+                    field?.field_label || field?.field_name || String(fieldKey);
+                  const fieldValue = (customObj as any)[fieldKey];
+
+                  return (
+                    <div
+                      key={fieldKey}
+                      className="flex border-b border-gray-200 last:border-b-0"
+                    >
+                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                        {fieldLabel}:
+                      </div>
+                      <div className="flex-1 p-2">{String(fieldValue || "-")}</div>
                     </div>
-                  </div>
-                );
-              }
-              return null;
-            })}
+                  );
+                })
+                .filter(Boolean);
+
+              return (
+                <>
+                  {rowsFromDefs}
+                  {rowsFromUnknownKeys}
+                </>
+              );
+            })()}
         </div>
       </PanelWithHeader>
     );

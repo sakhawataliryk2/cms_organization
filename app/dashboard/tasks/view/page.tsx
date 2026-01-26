@@ -1,16 +1,105 @@
 'use client'
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import type { ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
+import PanelWithHeader from '@/components/PanelWithHeader';
 import { FiCheckSquare } from 'react-icons/fi';
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 
+import {
+    DndContext,
+    closestCorners,
+    type DragEndEvent,
+    type DragOverEvent,
+    useDroppable,
+    PointerSensor,
+    KeyboardSensor,
+    useSensor,
+    useSensors,
+    DragOverlay,
+    defaultDropAnimationSideEffects,
+    MeasuringStrategy,
+} from "@dnd-kit/core";
+import { restrictToWindowEdges } from "@dnd-kit/modifiers";
+import {
+    SortableContext,
+    useSortable,
+    verticalListSortingStrategy,
+    sortableKeyboardCoordinates,
+    arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { TbGripVertical } from "react-icons/tb";
+import { FiLock, FiUnlock } from "react-icons/fi";
+
 // Default header fields for Tasks module - defined outside component to ensure stable reference
 const TASK_DEFAULT_HEADER_FIELDS = ["dueDate", "assignedTo"];
+
+function DroppableContainer({
+    id,
+    children,
+    items,
+}: {
+    id: string;
+    children: ReactNode;
+    items: string[];
+}) {
+    const { setNodeRef } = useDroppable({ id });
+    return (
+        <SortableContext id={id} items={items} strategy={verticalListSortingStrategy}>
+            <div ref={setNodeRef} className="flex flex-col gap-4 w-full min-h-[100px]">
+                {children}
+            </div>
+        </SortableContext>
+    );
+}
+
+function SortablePanel({
+    id,
+    children,
+    isOverlay = false,
+}: {
+    id: string;
+    children: ReactNode;
+    isOverlay?: boolean;
+}) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+    const style: React.CSSProperties = {
+        transform: CSS.Translate.toString(transform),
+        transition,
+        opacity: isDragging && !isOverlay ? 0.3 : 1,
+        zIndex: isOverlay ? 1000 : undefined,
+    };
+
+    return (
+        <div ref={setNodeRef} style={style} className={`relative group ${isOverlay ? "cursor-grabbing" : ""}`}>
+            {!isOverlay && (
+                <button
+                    {...attributes}
+                    {...listeners}
+                    className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="Drag to reorder"
+                >
+                    <TbGripVertical className="w-5 h-5 text-gray-600" />
+                </button>
+            )}
+            <div className={`${isDragging && !isOverlay ? "invisible" : ""} pt-0`}>{children}</div>
+            {isDragging && !isOverlay && (
+                <div className="absolute inset-0 border-2 border-dashed border-gray-300 rounded bg-gray-50 flex items-center justify-center p-4">
+                    <div className="text-gray-400 text-xs font-semibold uppercase tracking-wider italic">
+                        Moving Panel...
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
 
 export default function TaskView() {
     const router = useRouter();
@@ -56,16 +145,16 @@ export default function TaskView() {
     // =====================
 
     const {
-      headerFields,
-      setHeaderFields,
-      showHeaderFieldModal,
-      setShowHeaderFieldModal,
-      saveHeaderConfig,
-      isSaving: isSavingHeaderConfig,
+        headerFields,
+        setHeaderFields,
+        showHeaderFieldModal,
+        setShowHeaderFieldModal,
+        saveHeaderConfig,
+        isSaving: isSavingHeaderConfig,
     } = useHeaderConfig({
-      entityType: "TASK",
-      configType: "header",
-      defaultFields: TASK_DEFAULT_HEADER_FIELDS,
+        entityType: "TASK",
+        configType: "header",
+        defaultFields: TASK_DEFAULT_HEADER_FIELDS,
     });
 
     // Build field list: Standard + Custom
@@ -297,25 +386,135 @@ export default function TaskView() {
         }
     };
 
-    // Custom fields section with proper type handling
-    const renderCustomFields = () => {
-        if (!task || !task.customFields) return null;
+    // Field management (Hiring Manager style)
+    const [availableFields, setAvailableFields] = useState<any[]>([]);
+    const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
+        taskOverview: [],
+        details: [
+            "status",
+            "priority",
+            "dueDate",
+            "dueTime",
+            "owner",
+            "assignedTo",
+            "dateCreated",
+            "createdBy",
+        ],
+        recentNotes: ["notes"],
+    });
+    const [editingPanel, setEditingPanel] = useState<string | null>(null);
+    const [isLoadingFields, setIsLoadingFields] = useState(false);
 
-        const customFieldKeys = Object.keys(task.customFields);
-        if (customFieldKeys.length === 0) return null;
+    const fetchAvailableFields = useCallback(async () => {
+        setIsLoadingFields(true);
+        try {
+            const token = document.cookie.replace(
+                /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                "$1"
+            );
 
-        return (
-            <div className="mb-6">
-                <h3 className="font-bold text-lg mb-2">Additional Information</h3>
-                <ul className="list-inside">
-                    {Object.entries(task.customFields).map(([key, value]) => (
-                        <li key={key} className="mb-1 text-gray-700">
-                            <span className="font-medium">{key}:</span> {String(value || '')}
-                        </li>
-                    ))}
-                </ul>
-            </div>
-        );
+            const response = await fetch("/api/admin/field-management/tasks", {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            const data = await response.json().catch(() => ({}));
+            const fields =
+                (data as any).customFields ||
+                (data as any).fields ||
+                (data as any).data?.customFields ||
+                (data as any).data?.fields ||
+                [];
+
+            setAvailableFields(Array.isArray(fields) ? fields : []);
+        } catch (err) {
+            console.error("Error fetching task available fields:", err);
+        } finally {
+            setIsLoadingFields(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (!task) return;
+        fetchAvailableFields();
+    }, [task, fetchAvailableFields]);
+
+    const toggleFieldVisibility = (panelId: string, fieldKey: string) => {
+        setVisibleFields((prev) => {
+            const panelFields = prev[panelId] || [];
+            if (panelFields.includes(fieldKey)) {
+                return { ...prev, [panelId]: panelFields.filter((x) => x !== fieldKey) };
+            }
+            return { ...prev, [panelId]: [...panelFields, fieldKey] };
+        });
+    };
+
+    const handleEditPanel = (panelId: string) => {
+        setEditingPanel(panelId);
+    };
+
+    const handleCloseEditModal = () => {
+        setEditingPanel(null);
+    };
+
+    const getTaskFieldLabel = (key: string) => {
+        const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+
+        const fromHeader = headerFieldCatalog.find((f) => f.key === key);
+        if (fromHeader?.label) return fromHeader.label;
+
+        const def = (availableFields || []).find((f: any) => {
+            const stableKey = f.field_key || f.api_name || f.field_name || f.id;
+            return stableKey === rawKey;
+        });
+
+        return def?.field_label || def?.field_name || rawKey;
+    };
+
+    const getTaskFieldValue = (key: string) => {
+        if (!task) return "-";
+
+        const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+
+        const getCustomValue = (k: string) => {
+            const direct = task.customFields?.[k];
+            if (direct !== undefined && direct !== null && String(direct).trim() !== "") {
+                return String(direct);
+            }
+
+            const def = (availableFields || []).find((f: any) => {
+                const stableKey = f.field_key || f.api_name || f.field_name || f.id;
+                return stableKey === k;
+            });
+
+            if (def?.field_label) {
+                const val = task.customFields?.[def.field_label];
+                if (val !== undefined && val !== null && String(val).trim() !== "") {
+                    return String(val);
+                }
+            }
+
+            if (def?.field_name) {
+                const val = task.customFields?.[def.field_name];
+                if (val !== undefined && val !== null && String(val).trim() !== "") {
+                    return String(val);
+                }
+            }
+
+            return null;
+        };
+
+        if (key.startsWith("custom:")) {
+            const val = getCustomValue(rawKey);
+            return val === null ? "-" : val;
+        }
+
+        const std = (task as any)[rawKey];
+        if (std !== undefined && std !== null && String(std).trim() !== "") {
+            return String(std);
+        }
+
+        const custom = getCustomValue(rawKey);
+        return custom === null ? "-" : custom;
     };
 
     // Fetch users for email notification dropdown
@@ -749,6 +948,343 @@ export default function TaskView() {
         </div>
     );
 
+    const [columns, setColumns] = useState<{ left: string[]; right: string[] }>({
+        left: ["taskOverview"],
+        right: ["details", "recentNotes"],
+    });
+    const [activeId, setActiveId] = useState<string | null>(null);
+    const [isPinned, setIsPinned] = useState(false);
+    const [isCollapsed, setIsCollapsed] = useState(false);
+
+    const sensors = useSensors(
+        useSensor(PointerSensor, {
+            activationConstraint: {
+                distance: 8,
+            },
+        }),
+        useSensor(KeyboardSensor, {
+            coordinateGetter: sortableKeyboardCoordinates,
+        })
+    );
+
+    const measuringConfig = useMemo(
+        () => ({
+            droppable: {
+                strategy: MeasuringStrategy.Always,
+            },
+        }),
+        []
+    );
+
+    const dropAnimationConfig = useMemo(
+        () => ({
+            sideEffects: defaultDropAnimationSideEffects({
+                styles: {
+                    active: {
+                        opacity: "0.5",
+                    },
+                },
+            }),
+        }),
+        []
+    );
+
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const saved = localStorage.getItem("taskSummaryColumns");
+        if (!saved) return;
+        try {
+            const parsed = JSON.parse(saved);
+            if (
+                parsed &&
+                Array.isArray(parsed.left) &&
+                Array.isArray(parsed.right)
+            ) {
+                setColumns({ left: parsed.left, right: parsed.right });
+            }
+        } catch (e) {
+            console.error("Error loading task panel order:", e);
+        }
+    }, []);
+
+    const prevColumnsRef = useRef<string>("");
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const colsString = JSON.stringify(columns);
+        if (prevColumnsRef.current !== colsString) {
+            localStorage.setItem("taskSummaryColumns", colsString);
+            prevColumnsRef.current = colsString;
+        }
+    }, [columns]);
+
+    const togglePin = () => {
+        setIsPinned((p) => !p);
+        if (isPinned === false) setIsCollapsed(false);
+    };
+
+    const findContainer = useCallback(
+        (id: string) => {
+            if (id in columns) {
+                return id as keyof typeof columns;
+            }
+            return Object.keys(columns).find((key) =>
+                columns[key as keyof typeof columns].includes(id)
+            ) as keyof typeof columns | undefined;
+        },
+        [columns]
+    );
+
+    const handlePanelDragStart = useCallback((event: any) => {
+        setActiveId(event.active.id);
+    }, []);
+
+    const handlePanelDragOver = useCallback(
+        (event: DragOverEvent) => {
+            const { active, over } = event;
+            const overId = over?.id;
+
+            if (!overId || active.id === overId) {
+                return;
+            }
+
+            const activeContainer = findContainer(active.id as string);
+            const overContainer = findContainer(overId as string);
+
+            if (!activeContainer || !overContainer || activeContainer === overContainer) {
+                return;
+            }
+
+            setColumns((prev) => {
+                const activeItems = prev[activeContainer];
+                const overItems = prev[overContainer];
+                const overIndex = overItems.indexOf(overId as string);
+
+                let newIndex;
+
+                if (overId in prev) {
+                    newIndex = overItems.length + 1;
+                } else {
+                    const isBelowOverItem =
+                        over &&
+                        active.rect.current.translated &&
+                        active.rect.current.translated.top > over.rect.top + over.rect.height;
+
+                    const modifier = isBelowOverItem ? 1 : 0;
+                    newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1;
+                }
+
+                const activeFiltered = prev[activeContainer].filter((item) => item !== active.id);
+                const overUpdated = [
+                    ...prev[overContainer].slice(0, newIndex),
+                    active.id as string,
+                    ...prev[overContainer].slice(newIndex, prev[overContainer].length),
+                ];
+
+                return {
+                    ...prev,
+                    [activeContainer]: activeFiltered,
+                    [overContainer]: overUpdated,
+                };
+            });
+        },
+        [findContainer]
+    );
+
+    const handlePanelDragEnd = useCallback(
+        (event: DragEndEvent) => {
+            const { active, over } = event;
+            const activePanelId = active.id as string;
+            const overPanelId = over?.id as string;
+
+            const activeContainer = findContainer(activePanelId);
+            const overContainer = findContainer(overPanelId);
+
+            if (!activeContainer || !overContainer || activeContainer !== overContainer) {
+                setActiveId(null);
+                return;
+            }
+
+            const activeIndex = columns[activeContainer].indexOf(activePanelId);
+            const overIndex = columns[overContainer].indexOf(overPanelId);
+
+            if (activeIndex !== overIndex) {
+                setColumns((prev) => ({
+                    ...prev,
+                    [activeContainer]: arrayMove(prev[activeContainer], activeIndex, overIndex),
+                }));
+            }
+
+            setActiveId(null);
+        },
+        [columns, findContainer]
+    );
+
+    const renderPanel = useCallback(
+        (panelId: string, isOverlay = false) => {
+            if (panelId === "taskOverview") {
+                return (
+                    <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
+                        <PanelWithHeader title="Task Overview" onEdit={() => handleEditPanel("taskOverview")}
+                        >
+                            <div className="border-b border-gray-300 pb-3 mb-4">
+                                <div className="flex justify-between items-center">
+                                    <h2 className="text-xl font-bold">{task.title}</h2>
+                                    <div
+                                        className={`text-xs px-2 py-1 rounded ${
+                                            task.isCompleted
+                                                ? "bg-green-100 text-green-800"
+                                                : "bg-yellow-100 text-yellow-800"
+                                        }`}
+                                    >
+                                        {task.isCompleted ? "Completed" : task.status}
+                                    </div>
+                                </div>
+                                <div className="text-sm text-gray-600 mt-1">
+                                    Due: {task.dueDateTimeFormatted} • Priority: {task.priority}
+                                </div>
+                            </div>
+
+                            <div className="mb-6">
+                                <h3 className="font-bold text-lg mb-2">Description</h3>
+                                <div className="whitespace-pre-line text-gray-700">{task.description}</div>
+                            </div>
+
+                            {visibleFields.taskOverview.length > 0 && (
+                                <div className="mb-6">
+                                    <h3 className="font-bold text-lg mb-2">Additional Information</h3>
+                                    <div className="space-y-0 border border-gray-200 rounded">
+                                        {visibleFields.taskOverview.map((k) => (
+                                            <div key={k} className="flex border-b border-gray-200 last:border-b-0">
+                                                <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">
+                                                    {getTaskFieldLabel(k)}:
+                                                </div>
+                                                <div className="flex-1 p-2">{getTaskFieldValue(k)}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="mb-6">
+                                <h3 className="font-bold text-lg mb-2">Related Records</h3>
+                                <div className="border border-gray-200 rounded">
+                                    <div className="flex border-b border-gray-200 last:border-b-0">
+                                        <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Job Seeker:</div>
+                                        <div className="flex-1 p-2">{task.jobSeeker}</div>
+                                    </div>
+                                    <div className="flex border-b border-gray-200 last:border-b-0">
+                                        <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Hiring Manager:</div>
+                                        <div className="flex-1 p-2">{task.hiringManager}</div>
+                                    </div>
+                                    <div className="flex border-b border-gray-200 last:border-b-0">
+                                        <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Job:</div>
+                                        <div className="flex-1 p-2">{task.job}</div>
+                                    </div>
+                                    <div className="flex border-b border-gray-200 last:border-b-0">
+                                        <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Lead:</div>
+                                        <div className="flex-1 p-2">{task.lead}</div>
+                                    </div>
+                                    {task.placement !== "Not specified" && (
+                                        <div className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Placement:</div>
+                                            <div className="flex-1 p-2">{task.placement}</div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {task.isCompleted && task.completedAt && (
+                                <div className="mb-6">
+                                    <h3 className="font-bold text-lg mb-2">Completion Details</h3>
+                                    <div className="bg-green-50 p-3 rounded">
+                                        <p>
+                                            <span className="font-medium">Completed on:</span> {task.completedAt}
+                                        </p>
+                                        {task.completedBy && (
+                                            <p>
+                                                <span className="font-medium">Completed by:</span> {task.completedBy}
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </PanelWithHeader>
+                    </SortablePanel>
+                );
+            }
+
+            if (panelId === "details") {
+                return (
+                    <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
+                        <PanelWithHeader title="Details" onEdit={() => handleEditPanel("details")}>
+                            <div className="space-y-0 border border-gray-200 rounded">
+                                {visibleFields.details.map((key) => (
+                                    <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                                        <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">
+                                            {getTaskFieldLabel(key)}:
+                                        </div>
+                                        <div className="flex-1 p-2">{getTaskFieldValue(key)}</div>
+                                    </div>
+                                ))}
+                            </div>
+                        </PanelWithHeader>
+                    </SortablePanel>
+                );
+            }
+
+            if (panelId === "recentNotes") {
+                return (
+                    <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
+                        <PanelWithHeader title="Recent Notes" onEdit={() => handleEditPanel("recentNotes")}>
+                            <div className="flex justify-end mb-3">
+                                <button
+                                    onClick={() => {
+                                        setShowAddNote(true);
+                                        setActiveTab('notes');
+                                    }}
+                                    className="text-sm text-blue-600 hover:underline"
+                                >
+                                    Add Note
+                                </button>
+                            </div>
+
+                            {notes.length > 0 ? (
+                                <div>
+                                    {notes.slice(0, 2).map((note) => (
+                                        <div key={note.id} className="mb-3 pb-3 border-b last:border-0">
+                                            <div className="flex justify-between text-sm mb-1">
+                                                <span className="font-medium">{note.created_by_name || 'Unknown User'}</span>
+                                                <span className="text-gray-500">{new Date(note.created_at).toLocaleString()}</span>
+                                            </div>
+                                            <p className="text-sm text-gray-700">
+                                                {note.text.length > 100
+                                                    ? `${note.text.substring(0, 100)}...`
+                                                    : note.text}
+                                            </p>
+                                        </div>
+                                    ))}
+                                    {notes.length > 2 && (
+                                        <button
+                                            onClick={() => setActiveTab('notes')}
+                                            className="text-blue-500 text-sm hover:underline"
+                                        >
+                                            View all {notes.length} notes
+                                        </button>
+                                    )}
+                                </div>
+                            ) : (
+                                <div className="text-center text-gray-500 p-4">No notes have been added yet.</div>
+                            )}
+                        </PanelWithHeader>
+                    </SortablePanel>
+                );
+            }
+
+            return null;
+        },
+        [notes, setActiveTab, setShowAddNote, task, visibleFields, availableFields, headerFieldCatalog]
+    );
+
     if (isLoading) {
         return <LoadingScreen message="Loading task details..." />;
     }
@@ -869,6 +1405,20 @@ export default function TaskView() {
                         >
                             <Image src="/x.svg" alt="Close" width={20} height={20} />
                         </button>
+
+                        {activeTab === "summary" && (
+                            <button
+                                onClick={togglePin}
+                                className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
+                                title={isPinned ? "Unpin panel" : "Pin panel"}
+                            >
+                                {isPinned ? (
+                                    <FiLock className="w-5 h-5 text-blue-600" />
+                                ) : (
+                                    <FiUnlock className="w-5 h-5 text-gray-600" />
+                                )}
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -898,221 +1448,106 @@ export default function TaskView() {
 
             {/* Main Content Area */}
             <div className="p-4">
-                <div className="grid grid-cols-7 gap-4">
-                {/* Display content based on active tab */}
-                {activeTab === 'summary' && (
-                    <>
-                        {/* Left Column - Task Details (4/7 width) */}
-                        <div className="col-span-4">
-                            <div className="bg-white rounded-lg shadow">
-                                <div className="border-b border-gray-300 p-4 font-medium">
-                                    <div className="flex justify-between items-center">
-                                        <h2 className="text-xl font-bold">{task.title}</h2>
-                                        <div className={`text-xs px-2 py-1 rounded ${task.isCompleted ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-                                            }`}>
-                                            {task.isCompleted ? 'Completed' : task.status}
+                {activeTab === "summary" && (
+                    <div className="relative w-full">
+                        {isPinned && (
+                            <div
+                                className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${
+                                    isCollapsed ? "w-12" : "w-1/3"
+                                } border-l border-gray-300`}
+                            >
+                                <div className="flex flex-col h-full">
+                                    <div className="flex items-center justify-between p-2 border-b bg-gray-50">
+                                        <h3 className="font-semibold text-sm">Task Summary</h3>
+                                        <div className="flex items-center gap-1">
+                                            <button
+                                                onClick={() => setIsCollapsed(!isCollapsed)}
+                                                className="p-1 hover:bg-gray-200 rounded"
+                                                title={isCollapsed ? "Expand" : "Collapse"}
+                                            >
+                                                {isCollapsed ? "▶" : "◀"}
+                                            </button>
+                                            <button
+                                                onClick={togglePin}
+                                                className="p-1 hover:bg-gray-200 rounded"
+                                                title="Unpin panel"
+                                            >
+                                                <FiUnlock className="w-4 h-4 text-blue-600" />
+                                            </button>
                                         </div>
                                     </div>
-                                    <div className="text-sm text-gray-600 mt-1">
-                                        Due: {task.dueDateTimeFormatted} • Priority: {task.priority}
-                                    </div>
-                                </div>
-                                <div className="p-4">
-                                    {/* Task Description */}
-                                    <div className="mb-6">
-                                        <h3 className="font-bold text-lg mb-2">Description</h3>
-                                        <div className="whitespace-pre-line text-gray-700">
-                                            {task.description}
-                                        </div>
-                                    </div>
-
-                                    {/* Custom fields section */}
-                                    {renderCustomFields()}
-
-                                    {/* Related Records */}
-                                    <div className="mb-6">
-                                        <h3 className="font-bold text-lg mb-2">Related Records</h3>
-                                        <div className="border border-gray-200 rounded">
-                                            <div className="flex border-b border-gray-200 last:border-b-0">
-                                                <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Job Seeker:</div>
-                                                <div className="flex-1 p-2">{task.jobSeeker}</div>
-                                            </div>
-                                            <div className="flex border-b border-gray-200 last:border-b-0">
-                                                <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Hiring Manager:</div>
-                                                <div className="flex-1 p-2">{task.hiringManager}</div>
-                                            </div>
-                                            <div className="flex border-b border-gray-200 last:border-b-0">
-                                                <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Job:</div>
-                                                <div className="flex-1 p-2">{task.job}</div>
-                                            </div>
-                                            <div className="flex border-b border-gray-200 last:border-b-0">
-                                                <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Lead:</div>
-                                                <div className="flex-1 p-2">{task.lead}</div>
-                                            </div>
-                                            {task.placement !== 'Not specified' && (
-                                                <div className="flex border-b border-gray-200 last:border-b-0">
-                                                    <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Placement:</div>
-                                                    <div className="flex-1 p-2">{task.placement}</div>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Completion Info */}
-                                    {task.isCompleted && task.completedAt && (
-                                        <div className="mb-6">
-                                            <h3 className="font-bold text-lg mb-2">Completion Details</h3>
-                                            <div className="bg-green-50 p-3 rounded">
-                                                <p><span className="font-medium">Completed on:</span> {task.completedAt}</p>
-                                                {task.completedBy && (
-                                                    <p><span className="font-medium">Completed by:</span> {task.completedBy}</p>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Right Column - Task Details (3/7 width) */}
-                        <div className="col-span-3 space-y-4">
-                            {/* Details Panel */}
-                            <div className="bg-white rounded-lg shadow">
-                                <div className="border-b border-gray-300 p-2 font-medium">
-                                    Details
-                                </div>
-                                <div className="p-4">
-                                    <div className="space-y-0 border border-gray-200 rounded">
-                                        <div className="flex border-b border-gray-200 last:border-b-0">
-                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Status:</div>
-                                            <div className="flex-1 p-2">
-                                                <span className={`px-2 py-1 rounded text-sm ${task.isCompleted ? 'bg-green-100 text-green-800' :
-                                                        task.status === 'In Progress' ? 'bg-blue-100 text-blue-800' :
-                                                            'bg-yellow-100 text-yellow-800'
-                                                    }`}>
-                                                    {task.isCompleted ? 'Completed' : task.status}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex border-b border-gray-200 last:border-b-0">
-                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Priority:</div>
-                                            <div className="flex-1 p-2">
-                                                <span className={`px-2 py-1 rounded text-sm ${task.priority === 'High' ? 'bg-red-100 text-red-800' :
-                                                        task.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                                                            'bg-green-100 text-green-800'
-                                                    }`}>
-                                                    {task.priority}
-                                                </span>
-                                            </div>
-                                        </div>
-
-                                        <div className="flex border-b border-gray-200 last:border-b-0">
-                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Due Date:</div>
-                                            <div className="flex-1 p-2">{task.dueDate}</div>
-                                        </div>
-
-                                        <div className="flex border-b border-gray-200 last:border-b-0">
-                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Due Time:</div>
-                                            <div className="flex-1 p-2">{task.dueTime}</div>
-                                        </div>
-
-                                        <div className="flex border-b border-gray-200 last:border-b-0">
-                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Owner:</div>
-                                            <div className="flex-1 p-2">{task.owner}</div>
-                                        </div>
-
-                                        <div className="flex border-b border-gray-200 last:border-b-0">
-                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Assigned To:</div>
-                                            <div className="flex-1 p-2">{task.assignedTo}</div>
-                                        </div>
-
-                                        <div className="flex border-b border-gray-200 last:border-b-0">
-                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Created:</div>
-                                            <div className="flex-1 p-2">{task.dateCreated}</div>
-                                        </div>
-
-                                        <div className="flex border-b border-gray-200 last:border-b-0">
-                                            <div className="w-32 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">Created By:</div>
-                                            <div className="flex-1 p-2">{task.createdBy}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* Recent Notes Section */}
-                            <div className="bg-white rounded-lg shadow">
-                                <div className="border-b border-gray-300 p-2 font-medium">
-                                    Recent Notes
-                                </div>
-                                <div className="p-4">
-                                    <div className="flex justify-end mb-3">
-                                        <button
-                                            onClick={() => {
-                                                setShowAddNote(true);
-                                                setActiveTab('notes');
-                                            }}
-                                            className="text-sm text-blue-600 hover:underline"
-                                        >
-                                            Add Note
-                                        </button>
-                                    </div>
-
-                                    {/* Notes preview */}
-                                    {notes.length > 0 ? (
-                                        <div>
-                                            {notes.slice(0, 2).map(note => (
-                                                <div key={note.id} className="mb-3 pb-3 border-b last:border-0">
-                                                    <div className="flex justify-between text-sm mb-1">
-                                                        <span className="font-medium">{note.created_by_name || 'Unknown User'}</span>
-                                                        <span className="text-gray-500">{new Date(note.created_at).toLocaleString()}</span>
-                                                    </div>
-                                                    <p className="text-sm text-gray-700">
-                                                        {note.text.length > 100 ? `${note.text.substring(0, 100)}...` : note.text}
-                                                    </p>
-                                                </div>
-                                            ))}
-                                            {notes.length > 2 && (
-                                                <button
-                                                    onClick={() => setActiveTab('notes')}
-                                                    className="text-blue-500 text-sm hover:underline"
+                                    {!isCollapsed && (
+                                        <div className="flex-1 overflow-y-auto p-4">
+                                            <div id="printable-summary">
+                                                <DndContext
+                                                    id="pinned-summary-dnd"
+                                                    sensors={sensors}
+                                                    collisionDetection={closestCorners}
+                                                    measuring={measuringConfig}
+                                                    modifiers={[restrictToWindowEdges]}
+                                                    onDragStart={handlePanelDragStart}
+                                                    onDragOver={handlePanelDragOver}
+                                                    onDragEnd={handlePanelDragEnd}
                                                 >
-                                                    View all {notes.length} notes
-                                                </button>
-                                            )}
-                                        </div>
-                                    ) : (
-                                        <div className="text-center text-gray-500 p-4">
-                                            No notes have been added yet.
+                                                    <div className="flex flex-col gap-4">
+                                                        <DroppableContainer id="left" items={columns.left}>
+                                                            {columns.left.map((id) => renderPanel(id))}
+                                                        </DroppableContainer>
+                                                        <DroppableContainer id="right" items={columns.right}>
+                                                            {columns.right.map((id) => renderPanel(id))}
+                                                        </DroppableContainer>
+                                                    </div>
+                                                    <DragOverlay dropAnimation={dropAnimationConfig}>
+                                                        {activeId ? renderPanel(activeId, true) : null}
+                                                    </DragOverlay>
+                                                </DndContext>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
                             </div>
-                        </div>
-                    </>
-                )}
+                        )}
 
-                {/* Notes Tab */}
-                {activeTab === 'notes' && (
-                    <div className="col-span-7">
-                        {renderNotesTab()}
+                        {!isPinned && (
+                            <div id="printable-summary" className="p-4">
+                                <DndContext
+                                    id="regular-summary-dnd"
+                                    sensors={sensors}
+                                    collisionDetection={closestCorners}
+                                    measuring={measuringConfig}
+                                    modifiers={[restrictToWindowEdges]}
+                                    onDragStart={handlePanelDragStart}
+                                    onDragOver={handlePanelDragOver}
+                                    onDragEnd={handlePanelDragEnd}
+                                >
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <DroppableContainer id="left" items={columns.left}>
+                                                {columns.left.map((id) => renderPanel(id))}
+                                            </DroppableContainer>
+                                        </div>
+                                        <div>
+                                            <DroppableContainer id="right" items={columns.right}>
+                                                {columns.right.map((id) => renderPanel(id))}
+                                            </DroppableContainer>
+                                        </div>
+                                    </div>
+                                    <DragOverlay dropAnimation={dropAnimationConfig}>
+                                        {activeId ? renderPanel(activeId, true) : null}
+                                    </DragOverlay>
+                                </DndContext>
+                            </div>
+                        )}
                     </div>
                 )}
 
-                {/* History Tab */}
-                {activeTab === 'history' && (
-                    <div className="col-span-7">
-                        {renderHistoryTab()}
+                {activeTab !== "summary" && (
+                    <div className="p-4">
+                        {activeTab === 'notes' && renderNotesTab()}
+                        {activeTab === 'history' && renderHistoryTab()}
+                        {activeTab === 'modify' && renderModifyTab()}
                     </div>
                 )}
-
-                {/* Modify Tab */}
-                {activeTab === 'modify' && (
-                    <div className="col-span-7">
-                        {renderModifyTab()}
-                    </div>
-                )}
-                </div>
             </div>
 
             {/* Add Tearsheet Modal */}
@@ -1320,6 +1755,130 @@ export default function TaskView() {
                                     disabled={!noteForm.text.trim()}
                                 >
                                     SAVE
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Fields Modal */}
+            {editingPanel && (
+                <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+                        <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                            <h2 className="text-lg font-semibold">Edit Fields - {editingPanel}</h2>
+                            <button
+                                onClick={handleCloseEditModal}
+                                className="p-1 rounded hover:bg-gray-200"
+                            >
+                                <span className="text-2xl font-bold">×</span>
+                            </button>
+                        </div>
+
+                        <div className="p-6">
+                            <div className="mb-4">
+                                <h3 className="font-medium mb-3">Available Fields from Modify Page:</h3>
+                                <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                                    {isLoadingFields ? (
+                                        <div className="text-center py-4 text-gray-500">Loading fields...</div>
+                                    ) : (() => {
+                                        const visibleAvailableFields = (availableFields || []).filter((field: any) => {
+                                            const isHidden =
+                                                field?.is_hidden === true ||
+                                                field?.hidden === true ||
+                                                field?.isHidden === true;
+                                            return !isHidden;
+                                        });
+
+                                        return visibleAvailableFields.length > 0 ? (
+                                            visibleAvailableFields.map((field: any) => {
+                                                const stableKey =
+                                                    field.field_key || field.api_name || field.field_name || field.id;
+                                                const prefixedKey = `custom:${String(stableKey)}`;
+                                                const isVisible =
+                                                    visibleFields[editingPanel]?.includes(prefixedKey) || false;
+
+                                                return (
+                                                    <div
+                                                        key={String(field.id || stableKey)}
+                                                        className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                                                    >
+                                                        <div className="flex items-center space-x-2">
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isVisible}
+                                                                onChange={() =>
+                                                                    toggleFieldVisibility(editingPanel, prefixedKey)
+                                                                }
+                                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                            />
+                                                            <label className="text-sm text-gray-700">
+                                                                {field.field_label || field.field_name || String(stableKey)}
+                                                            </label>
+                                                        </div>
+                                                        <span className="text-xs text-gray-500">
+                                                            {field.field_type || "text"}
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })
+                                        ) : (
+                                            <div className="text-center py-4 text-gray-500">
+                                                <p>No visible fields available</p>
+                                                <p className="text-xs mt-1">
+                                                    Only non-hidden fields from the modify page will appear here
+                                                </p>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            </div>
+
+                            <div className="mb-4">
+                                <h3 className="font-medium mb-3">Standard Fields:</h3>
+                                <div className="space-y-2 border border-gray-200 rounded p-3">
+                                    {(() => {
+                                        const standardFieldsMap: Record<string, Array<{ key: string; label: string }>> = {
+                                            taskOverview: headerFieldCatalog.filter((f) => !String(f.key).startsWith("custom:")),
+                                            details: headerFieldCatalog.filter((f) => !String(f.key).startsWith("custom:")),
+                                            recentNotes: [{ key: "notes", label: "Notes" }],
+                                        };
+
+                                        const fields = standardFieldsMap[editingPanel] || [];
+                                        return fields.map((field) => {
+                                            const isVisible =
+                                                visibleFields[editingPanel]?.includes(field.key) || false;
+                                            return (
+                                                <div
+                                                    key={field.key}
+                                                    className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                                                >
+                                                    <div className="flex items-center space-x-2">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={isVisible}
+                                                            onChange={() =>
+                                                                toggleFieldVisibility(editingPanel, field.key)
+                                                            }
+                                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                        />
+                                                        <label className="text-sm text-gray-700">{field.label}</label>
+                                                    </div>
+                                                    <span className="text-xs text-gray-500">standard</span>
+                                                </div>
+                                            );
+                                        });
+                                    })()}
+                                </div>
+                            </div>
+
+                            <div className="flex justify-end space-x-2 pt-4 border-t">
+                                <button
+                                    onClick={handleCloseEditModal}
+                                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                                >
+                                    Close
                                 </button>
                             </div>
                         </div>

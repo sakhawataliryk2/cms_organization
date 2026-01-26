@@ -377,12 +377,18 @@ export default function JobSeekerView() {
   const [isLoadingFields, setIsLoadingFields] = useState(false);
 
   // Documents state
-  const [documents, setDocuments] = useState<Array<any>>([]);
+  const [documents, setDocuments] = useState<any[]>([]);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [documentError, setDocumentError] = useState<string | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [showFileDetailsModal, setShowFileDetailsModal] = useState(false);
+  const [fileDetailsName, setFileDetailsName] = useState("");
+  const [fileDetailsType, setFileDetailsType] = useState("General");
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Tearsheet modal state
@@ -496,6 +502,27 @@ export default function JobSeekerView() {
     Record<string, boolean>
   >({});
   const [referenceEmail, setReferenceEmail] = useState("");
+
+  // Saved references state
+  const [references, setReferences] = useState<any[]>([]);
+  const [isLoadingReferences, setIsLoadingReferences] = useState(false);
+  const [referencesError, setReferencesError] = useState<string | null>(null);
+
+  // Add Reference modal state
+  const [showAddReferenceModal, setShowAddReferenceModal] = useState(false);
+  const [addReferenceMode, setAddReferenceMode] = useState<
+    "onboarding" | "manual"
+  >("onboarding");
+  const [selectedOnboardingReferenceIndex, setSelectedOnboardingReferenceIndex] =
+    useState<string>("");
+  const [manualReferenceForm, setManualReferenceForm] = useState({
+    name: "",
+    role: "",
+    company: "",
+    email: "",
+    phone: "",
+    relationship: "",
+  });
   const referenceDocs = [
     {
       id: "reference-form",
@@ -583,6 +610,146 @@ Best regards`;
       setSelectedReferenceDocs({});
     }
   };
+
+
+
+  const fetchReferences = async (id: string) => {
+    setIsLoadingReferences(true);
+    setReferencesError(null);
+
+    try {
+      const response = await fetch(`/api/job-seekers/${id}/references`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to fetch references");
+      }
+
+      setReferences(Array.isArray(data?.references) ? data.references : []);
+    } catch (err) {
+      console.error("Error fetching references:", err);
+      setReferencesError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while fetching references"
+      );
+    } finally {
+      setIsLoadingReferences(false);
+    }
+  };
+
+
+
+  const handleAddReference = async () => {
+    if (!jobSeekerId) return;
+
+    const onboardingRefs =
+      (jobSeeker?.customFields?.onboardingReferences as any[]) || [];
+
+    let payload: any = null;
+
+    if (addReferenceMode === "onboarding") {
+      const idx = Number(selectedOnboardingReferenceIndex);
+      if (!Number.isFinite(idx) || idx < 0 || idx >= onboardingRefs.length) {
+        alert("Please select an onboarding reference");
+        return;
+      }
+
+      const selected = onboardingRefs[idx] || {};
+      payload = {
+        name: selected.name || "",
+        role: selected.role || "",
+        company: selected.company || "",
+        email: selected.email || "",
+        phone: selected.phone || "",
+        relationship: selected.relationship || "",
+      };
+    } else {
+      if (!manualReferenceForm.name.trim()) {
+        alert("Please enter a reference name");
+        return;
+      }
+
+      payload = { ...manualReferenceForm };
+    }
+
+    try {
+      const response = await fetch(`/api/job-seekers/${jobSeekerId}/references`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to add reference");
+      }
+
+      setReferences(Array.isArray(data?.references) ? data.references : []);
+      setShowAddReferenceModal(false);
+      setAddReferenceMode("onboarding");
+      setSelectedOnboardingReferenceIndex("");
+      setManualReferenceForm({
+        name: "",
+        role: "",
+        company: "",
+        email: "",
+        phone: "",
+        relationship: "",
+      });
+    } catch (err) {
+      console.error("Error adding reference:", err);
+      alert(err instanceof Error ? err.message : "Failed to add reference");
+    }
+  };
+
+
+
+  const handleDeleteReference = async (referenceId: string) => {
+    if (!jobSeekerId) return;
+    if (!confirm("Are you sure you want to delete this reference?")) return;
+
+    try {
+      const response = await fetch(
+        `/api/job-seekers/${jobSeekerId}/references/${referenceId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to delete reference");
+      }
+
+      setReferences(Array.isArray(data?.references) ? data.references : []);
+    } catch (err) {
+      console.error("Error deleting reference:", err);
+      alert(err instanceof Error ? err.message : "Failed to delete reference");
+    }
+  };
+
 
 
   // Initialize columns from localStorage or default
@@ -727,6 +894,13 @@ Best regards`;
       fetchJobSeeker(jobSeekerId);
     }
   }, [jobSeekerId]);
+
+  // Fetch references when references tab is active
+  useEffect(() => {
+    if (activeTab === "references" && jobSeekerId) {
+      fetchReferences(jobSeekerId);
+    }
+  }, [activeTab, jobSeekerId]);
 
   // Fetch available fields after job seeker is loaded
   useEffect(() => {
@@ -1137,78 +1311,151 @@ Best regards`;
     setIsDragging(false);
 
     const droppedFiles = e.dataTransfer.files;
-    if (droppedFiles.length > 0 && jobSeekerId) {
-      handleFileUpload(droppedFiles[0]);
+    if (droppedFiles && droppedFiles.length > 0) {
+      const fileArray = Array.from(droppedFiles);
+      setPendingFiles(fileArray);
+      if (fileArray.length === 1) {
+        setFileDetailsName(fileArray[0].name.split(".")[0]);
+        setFileDetailsType("General");
+      }
+      setShowFileDetailsModal(true);
     }
   };
 
   // Handle file selection
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0 && jobSeekerId) {
-      handleFileUpload(e.target.files[0]);
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const fileArray = Array.from(files);
+      setPendingFiles(fileArray);
+      if (fileArray.length === 1) {
+        setFileDetailsName(fileArray[0].name.split(".")[0]);
+        setFileDetailsType("General");
+      }
+      setShowFileDetailsModal(true);
     }
   };
 
-  // Handle file upload
-  const handleFileUpload = async (file: File) => {
-    if (!jobSeekerId) return;
+  const handleConfirmFileDetails = async () => {
+    if (!jobSeekerId || pendingFiles.length === 0) return;
 
-    // Validate file
-    if (file.size > 10 * 1024 * 1024) {
-      setUploadError("File size should be less than 10MB");
+    setShowFileDetailsModal(false);
+    const filesToUpload = [...pendingFiles];
+    setPendingFiles([]);
+
+    setUploadError(null);
+    setUploadErrors({});
+
+    const newUploadProgress: Record<string, number> = { ...uploadProgress };
+
+    for (const file of filesToUpload) {
+      if (file.size > 10 * 1024 * 1024) {
+        setUploadErrors((prev) => ({
+          ...prev,
+          [file.name]: "File size exceeds 10MB limit",
+        }));
+        continue;
+      }
+
+      newUploadProgress[file.name] = 0;
+      setUploadProgress({ ...newUploadProgress });
+
+      try {
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append(
+          "document_name",
+          filesToUpload.length === 1 ? fileDetailsName : file.name.split(".")[0]
+        );
+        formData.append(
+          "document_type",
+          filesToUpload.length === 1 ? fileDetailsType : "General"
+        );
+
+        const progressInterval = setInterval(() => {
+          setUploadProgress((prev) => {
+            const current = prev[file.name] || 0;
+            if (current >= 90) {
+              clearInterval(progressInterval);
+              return prev;
+            }
+            return { ...prev, [file.name]: current + 10 };
+          });
+        }, 200);
+
+        setIsUploading(true);
+        const response = await fetch(
+          `/api/job-seekers/${jobSeekerId}/documents/upload`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${document.cookie.replace(
+                /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                "$1"
+              )}`,
+            },
+            body: formData,
+          }
+        );
+
+        clearInterval(progressInterval);
+
+        if (response.ok) {
+          setUploadProgress((prev) => {
+            const next = { ...prev };
+            delete next[file.name];
+            return next;
+          });
+          fetchDocuments(jobSeekerId);
+        } else {
+          const data = await response.json();
+          setUploadErrors((prev) => ({
+            ...prev,
+            [file.name]: data.message || "Upload failed",
+          }));
+          setUploadProgress((prev) => {
+            const next = { ...prev };
+            delete next[file.name];
+            return next;
+          });
+        }
+      } catch (err) {
+        console.error(`Error uploading ${file.name}:`, err);
+        setUploadErrors((prev) => ({
+          ...prev,
+          [file.name]: "An error occurred during upload",
+        }));
+        setUploadProgress((prev) => {
+          const next = { ...prev };
+          delete next[file.name];
+          return next;
+        });
+      } finally {
+        setIsUploading(false);
+      }
+    }
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+
+
+  const handleDownloadDocument = async (doc: any) => {
+    if (!doc.file_path) {
+      const element = document.createElement("a");
+      const file = new Blob([doc.content || ""], { type: "text/plain" });
+      element.href = URL.createObjectURL(file);
+      element.download = `${doc.document_name}.txt`;
+      document.body.appendChild(element);
+      element.click();
+      document.body.removeChild(element);
       return;
     }
 
-    setIsUploading(true);
-    setUploadError(null);
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("document_name", file.name);
-      formData.append("document_type", "General");
-
-      const response = await fetch(
-        `/api/job-seekers/${jobSeekerId}/documents`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${document.cookie.replace(
-              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-              "$1"
-            )}`,
-          },
-          body: formData,
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to upload document");
-      }
-
-      const data = await response.json();
-
-      // Add the new document to the list
-      setDocuments([data.document, ...documents]);
-
-      // Reset file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-
-      alert("Document uploaded successfully");
-    } catch (err) {
-      console.error("Error uploading document:", err);
-      const errorMessage =
-        err instanceof Error
-          ? err.message
-          : "An error occurred while uploading the document";
-      setUploadError(errorMessage);
-      alert(errorMessage);
-    } finally {
-      setIsUploading(false);
-    }
+    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+    window.open(`${apiUrl}/${doc.file_path}`, "_blank");
   };
 
   // Handle delete document
@@ -2818,13 +3065,22 @@ Best regards`;
                                   : "-"}
                               </td>
                               <td className="p-3">
-                                <button
-                                  onClick={() => handleDeleteDocument(doc.id)}
-                                  className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
-                                  title="Delete document"
-                                >
-                                  <FiX size={18} />
-                                </button>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => handleDownloadDocument(doc)}
+                                    className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50"
+                                    title="View / Download"
+                                  >
+                                    <FiFile size={18} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteDocument(doc.id)}
+                                    className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
+                                    title="Delete document"
+                                  >
+                                    <FiX size={18} />
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           ))}
@@ -2848,17 +3104,72 @@ Best regards`;
               <div className="bg-white p-4 rounded shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold">References</h2>
-                  <button
-                    onClick={() => setShowReferenceModal(true)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
-                  >
-                    Send Reference Form
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setShowAddReferenceModal(true)}
+                      className="px-4 py-2 bg-white border border-gray-300 text-gray-800 rounded hover:bg-gray-50"
+                    >
+                      Add Reference
+                    </button>
+                    <button
+                      onClick={() => setShowReferenceModal(true)}
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                      Send Reference Form
+                    </button>
+                  </div>
                 </div>
-                <p className="text-gray-600">
-                  Use the button above to send reference documents to a
-                  reference contact via email.
-                </p>
+
+                {isLoadingReferences && (
+                  <div className="text-sm text-gray-500 mb-3">Loading...</div>
+                )}
+
+                {referencesError && (
+                  <div className="text-sm text-red-600 mb-3">{referencesError}</div>
+                )}
+
+                {references.length === 0 ? (
+                  <div className="text-gray-500 italic">
+                    No references saved yet.
+                  </div>
+                ) : (
+                  <div className="border rounded overflow-hidden">
+                    <div className="divide-y">
+                      {references.map((ref) => (
+                        <div
+                          key={ref.id}
+                          className="flex items-start justify-between p-3"
+                        >
+                          <div>
+                            <div className="text-sm font-semibold text-gray-900">
+                              {ref.name || "Unnamed"}
+                            </div>
+                            <div className="text-sm text-gray-600">
+                              {ref.role || "-"}
+                              {ref.company ? `, ${ref.company}` : ""}
+                            </div>
+                            <div className="text-sm text-gray-600">
+                              {ref.email || "-"}
+                              {ref.phone ? ` | ${ref.phone}` : ""}
+                            </div>
+                            {ref.relationship ? (
+                              <div className="text-xs text-gray-500 mt-1">
+                                Relationship: {ref.relationship}
+                              </div>
+                            ) : null}
+                          </div>
+                          <button
+                            onClick={() => handleDeleteReference(ref.id)}
+                            className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
+                            title="Delete reference"
+                          >
+                            <FiX size={18} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -2880,6 +3191,69 @@ Best regards`;
 
         </div>
       </div>
+
+
+
+      {showFileDetailsModal && (
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-lg w-full mx-4">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Document Details</h2>
+              <button
+                onClick={() => setShowFileDetailsModal(false)}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Document Name
+                </label>
+                <input
+                  type="text"
+                  value={fileDetailsName}
+                  onChange={(e) => setFileDetailsName(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded"
+                  placeholder="Enter custom document name"
+                />
+              </div>
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Document Type
+                </label>
+                <select
+                  value={fileDetailsType}
+                  onChange={(e) => setFileDetailsType(e.target.value)}
+                  className="w-full p-2 border border-gray-300 rounded"
+                >
+                  <option value="General">General</option>
+                  <option value="Resume">Resume</option>
+                  <option value="ID">ID</option>
+                  <option value="Contract">Contract</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end space-x-2">
+                <button
+                  className="px-3 py-1 border rounded"
+                  onClick={() => setShowFileDetailsModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                  onClick={handleConfirmFileDetails}
+                >
+                  Upload
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Onboarding Modal */}
       {/* {showOnboardingModal && (
@@ -3023,6 +3397,173 @@ Best regards`;
                 {isOffice365Connected
                   ? "Send via Office 365"
                   : "Open in Outlook"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+
+      {/* Add Reference Modal */}
+      {showAddReferenceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded shadow-lg w-full max-w-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-semibold">Add Reference</h3>
+              <button
+                className="text-gray-600 hover:text-gray-900"
+                onClick={() => setShowAddReferenceModal(false)}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="mb-4">
+              <div className="text-sm font-medium text-gray-700 mb-2">
+                Choose how to add:
+              </div>
+              <div className="space-y-2">
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    checked={addReferenceMode === "onboarding"}
+                    onChange={() => setAddReferenceMode("onboarding")}
+                  />
+                  Select from onboarding references
+                </label>
+                <label className="flex items-center gap-2 text-sm text-gray-700">
+                  <input
+                    type="radio"
+                    checked={addReferenceMode === "manual"}
+                    onChange={() => setAddReferenceMode("manual")}
+                  />
+                  Add new reference manually
+                </label>
+              </div>
+            </div>
+
+            {addReferenceMode === "onboarding" ? (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Onboarding references:
+                </label>
+                {Array.isArray(jobSeeker?.customFields?.onboardingReferences) &&
+                jobSeeker.customFields.onboardingReferences.length > 0 ? (
+                  <select
+                    className="w-full p-2 border border-gray-300 rounded"
+                    value={selectedOnboardingReferenceIndex}
+                    onChange={(e) => setSelectedOnboardingReferenceIndex(e.target.value)}
+                  >
+                    <option value="">Select a reference...</option>
+                    {(jobSeeker.customFields.onboardingReferences as any[]).map(
+                      (r, idx) => (
+                        <option key={idx} value={String(idx)}>
+                          {(r?.name || "Unnamed") + (r?.company ? ` (${r.company})` : "")}
+                        </option>
+                      )
+                    )}
+                  </select>
+                ) : (
+                  <div className="text-sm text-gray-500 italic">
+                    No onboarding references found.
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Name
+                  </label>
+                  <input
+                    className="w-full p-2 border border-gray-300 rounded"
+                    value={manualReferenceForm.name}
+                    onChange={(e) =>
+                      setManualReferenceForm((p) => ({ ...p, name: e.target.value }))
+                    }
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Role
+                    </label>
+                    <input
+                      className="w-full p-2 border border-gray-300 rounded"
+                      value={manualReferenceForm.role}
+                      onChange={(e) =>
+                        setManualReferenceForm((p) => ({ ...p, role: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Company
+                    </label>
+                    <input
+                      className="w-full p-2 border border-gray-300 rounded"
+                      value={manualReferenceForm.company}
+                      onChange={(e) =>
+                        setManualReferenceForm((p) => ({ ...p, company: e.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Email
+                    </label>
+                    <input
+                      type="email"
+                      className="w-full p-2 border border-gray-300 rounded"
+                      value={manualReferenceForm.email}
+                      onChange={(e) =>
+                        setManualReferenceForm((p) => ({ ...p, email: e.target.value }))
+                      }
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Phone
+                    </label>
+                    <input
+                      className="w-full p-2 border border-gray-300 rounded"
+                      value={manualReferenceForm.phone}
+                      onChange={(e) =>
+                        setManualReferenceForm((p) => ({ ...p, phone: e.target.value }))
+                      }
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Relationship
+                  </label>
+                  <input
+                    className="w-full p-2 border border-gray-300 rounded"
+                    value={manualReferenceForm.relationship}
+                    onChange={(e) =>
+                      setManualReferenceForm((p) => ({ ...p, relationship: e.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+            )}
+
+            <div className="flex justify-end space-x-2">
+              <button
+                className="px-3 py-1 border rounded"
+                onClick={() => setShowAddReferenceModal(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                onClick={handleAddReference}
+              >
+                Save
               </button>
             </div>
           </div>

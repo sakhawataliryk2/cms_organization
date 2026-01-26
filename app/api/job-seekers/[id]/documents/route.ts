@@ -55,6 +55,8 @@ export async function POST(
     try {
         const { id } = await params;
 
+        const body = await request.json();
+
         // Get the token from cookies
         const cookieStore = await cookies();
         const token = cookieStore.get('token')?.value;
@@ -66,33 +68,15 @@ export async function POST(
             );
         }
 
-        // Parse the form data
-        const formData = await request.formData();
-        const file = formData.get('file') as File;
-        const documentName = formData.get('document_name') as string;
-        const documentType = formData.get('document_type') as string || 'General';
-
-        if (!file) {
-            return NextResponse.json(
-                { success: false, message: 'File is required' },
-                { status: 400 }
-            );
-        }
-
-        // Create FormData for backend
-        const backendFormData = new FormData();
-        backendFormData.append('file', file);
-        backendFormData.append('document_name', documentName || file.name);
-        backendFormData.append('document_type', documentType);
-
         // Make a request to your backend API
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
         const response = await fetch(`${apiUrl}/api/job-seekers/${id}/documents`, {
             method: 'POST',
             headers: {
+                'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: backendFormData
+            body: JSON.stringify(body)
         });
 
         const data = await response.json();
