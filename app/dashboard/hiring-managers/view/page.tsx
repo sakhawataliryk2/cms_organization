@@ -4591,7 +4591,7 @@ export default function HiringManagerView() {
                   }}
                   className="text-gray-500 hover:text-gray-700"
                 >
-                  <span className="text-2xl font-bold">×</span>
+                  <span className="text-2xl font-bold">x</span>
                 </button>
               </div>
 

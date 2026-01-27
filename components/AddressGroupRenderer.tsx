@@ -126,11 +126,11 @@ function UnderlineField({
         {/* Red circle or green checkmark at the beginning - consistent with other fields */}
         {field.is_required && (
           fieldIsValid ? (
-            <span className="text-green-500 text-sm transition-opacity duration-300 ease-in-out flex-shrink-0">
+            <span className="text-green-500 text-sm transition-opacity duration-300 ease-in-out shrink-0">
               ✔
             </span>
           ) : (
-            <span className="w-2 h-2 rounded-full inline-block bg-red-500 transition-colors duration-300 flex-shrink-0" />
+            <span className="w-2 h-2 rounded-full inline-block bg-red-500 transition-colors duration-300 shrink-0" />
           )
         )}
 

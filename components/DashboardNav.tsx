@@ -920,7 +920,7 @@ export default function DashboardNav() {
 
               {/* Add dropdown menu */}
               {isAddMenuOpen && (
-                <div className="absolute top-full left-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-[10000]">
+                <div className="absolute top-full left-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-10000">
                   {addMenuItems.map((item) => (
                     <button
                       key={item.path}
@@ -959,7 +959,7 @@ export default function DashboardNav() {
 
               {/* User dropdown menu */}
               {isUserMenuOpen && (
-                <div className="absolute top-full right-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-[10000]">
+                <div className="absolute top-full right-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-10000">
                   <div className="px-4 py-2 border-b border-slate-700">
                     <div className="font-medium text-white text-sm">{user.name}</div>
                     <div className="text-xs text-gray-400 capitalize">{user.userType}</div>
@@ -1016,7 +1016,7 @@ export default function DashboardNav() {
                   : "text-gray-300 hover:bg-slate-700"
               }`}
             >
-              <div className="w-6 h-6 mr-3 flex-shrink-0 flex items-center justify-center">
+              <div className="w-6 h-6 mr-3 shrink-0 flex items-center justify-center">
                 {item.icon}
               </div>
               {item.name}
@@ -1025,7 +1025,7 @@ export default function DashboardNav() {
         </div>
 
         {/* Flexible spacer */}
-        <div className="flex-grow"></div>
+        <div className="grow"></div>
 
         {/* T.B.I Button - Static, always visible */}
         <div className="p-4 border-t border-slate-700">
