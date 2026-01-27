@@ -101,6 +101,12 @@ export default function JobView() {
   const jobId = searchParams.get("id");
   const [activeTab, setActiveTab] = useState("summary");
   const [activeQuickTab, setActiveQuickTab] = useState("applied");
+  const [quickTabCounts, setQuickTabCounts] = useState({
+    applied: 0,
+    clientSubmissions: 0,
+    interviews: 0,
+    placements: 0,
+  });
 
   // Helper functions for notes and references
   const parseAboutReferences = (refs: any) => {
@@ -247,6 +253,101 @@ export default function JobView() {
     });
     return Array.from(set).sort();
   }, [notes]);
+
+  useEffect(() => {
+    const fetchCounts = async () => {
+      if (!jobId) {
+        setQuickTabCounts({
+          applied: 0,
+          clientSubmissions: 0,
+          interviews: 0,
+          placements: 0,
+        });
+        return;
+      }
+
+      try {
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        );
+
+        const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+
+        const [jobSeekersRes, notesRes, placementsRes] = await Promise.allSettled([
+          fetch("/api/job-seekers", { headers }),
+          fetch(`/api/jobs/${jobId}/notes`, { headers }),
+          fetch("/api/placements", { headers }),
+        ]);
+
+        let applied = 0;
+        let clientSubmissions = 0;
+        let interviews = 0;
+        let placements = 0;
+
+        if (jobSeekersRes.status === "fulfilled" && jobSeekersRes.value.ok) {
+          const data = await jobSeekersRes.value.json();
+          const jobSeekers = Array.isArray(data?.jobSeekers) ? data.jobSeekers : [];
+
+          jobSeekers.forEach((js: any) => {
+            let customFields: any = js?.custom_fields ?? js?.customFields ?? {};
+            if (typeof customFields === "string") {
+              try {
+                customFields = JSON.parse(customFields || "{}");
+              } catch {
+                customFields = {};
+              }
+            }
+
+            const apps = Array.isArray(customFields?.applications)
+              ? customFields.applications
+              : [];
+
+            apps.forEach((app: any) => {
+              if (!app) return;
+              if (String(app.job_id ?? "") !== String(jobId)) return;
+
+              const t = String(app.type || "").toLowerCase();
+              if (t === "client_submissions") {
+                clientSubmissions += 1;
+              } else if (t === "web_submissions" || t === "submissions") {
+                applied += 1;
+              }
+            });
+          });
+        }
+
+        if (notesRes.status === "fulfilled" && notesRes.value.ok) {
+          const data = await notesRes.value.json();
+          const list = Array.isArray(data?.notes) ? data.notes : [];
+          interviews = list.filter((n: any) => {
+            const action = String(n?.action || "").toLowerCase();
+            const text = String(n?.text || "").toLowerCase();
+            return action.includes("interview") || text.includes("interview");
+          }).length;
+        }
+
+        if (placementsRes.status === "fulfilled" && placementsRes.value.ok) {
+          const data = await placementsRes.value.json();
+          const list = Array.isArray(data?.placements) ? data.placements : [];
+          placements = list.filter(
+            (p: any) => String(p?.job_id ?? p?.jobId ?? "") === String(jobId)
+          ).length;
+        }
+
+        setQuickTabCounts({ applied, clientSubmissions, interviews, placements });
+      } catch {
+        setQuickTabCounts({
+          applied: 0,
+          clientSubmissions: 0,
+          interviews: 0,
+          placements: 0,
+        });
+      }
+    };
+
+    fetchCounts();
+  }, [jobId]);
 
   const fetchDocuments = async (id: string) => {
     setIsLoadingDocuments(true);
@@ -1571,7 +1672,10 @@ export default function JobView() {
         //   });
         // }
         const visibleCustomFields = fields.filter((f: any) => {
-          const isHidden = f.is_hidden === true || f.hidden === true || f.isHidden === true;
+          const isHidden =
+            f?.is_hidden === true ||
+            f?.hidden === true ||
+            f?.isHidden === true;
           return !isHidden;
         });
 
@@ -2577,10 +2681,10 @@ export default function JobView() {
 
   // Quick action tabs
   const quickTabs = [
-    { id: "applied", label: "Applied" },
-    { id: "client-submissions", label: "Client Submissions" },
-    { id: "interviews", label: "Interviews" },
-    { id: "placements", label: "Placements" },
+    { id: "applied", label: "Applied", countKey: "applied" as const },
+    { id: "client-submissions", label: "Client Submissions", countKey: "clientSubmissions" as const },
+    { id: "interviews", label: "Interviews", countKey: "interviews" as const },
+    { id: "placements", label: "Placements", countKey: "placements" as const },
   ];
 
   // Render notes tab content
@@ -2750,7 +2854,7 @@ export default function JobView() {
   // Render history tab content
   const renderHistoryTab = () => (
     <div className="bg-white p-4 rounded shadow-sm">
-      <h2 className="text-lg font-semibold mb-4">Job History</h2>
+      <h2 className="text-lg font-semibold">Job History</h2>
 
       {isLoadingHistory ? (
         <div className="flex justify-center py-4">
@@ -3298,7 +3402,10 @@ export default function JobView() {
                 } px-4 py-1 rounded-full shadow`}
               onClick={() => setActiveQuickTab(action.id)}
             >
-              {action.label}
+              <span className="flex items-center gap-2">
+                <span>{action.label}</span>
+                <span className="text-xs text-gray-600">({quickTabCounts[action.countKey] ?? 0})</span>
+              </span>
             </button>
           ))}
         </div>

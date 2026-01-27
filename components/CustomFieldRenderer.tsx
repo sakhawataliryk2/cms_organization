@@ -138,6 +138,12 @@ export default function CustomFieldRenderer({
     return [];
   }, [field.options]);
 
+  const isCredentialsMultiSelect =
+    field.field_type === "select" &&
+    String(field.field_label || "")
+      .trim()
+      .toLowerCase() === "credentials";
+
   if (field.is_hidden) return null;
 
   function formatNumberWithCommas(value: string | number) {
@@ -222,6 +228,48 @@ export default function CustomFieldRenderer({
         />
       );
     case "select":
+      if (isCredentialsMultiSelect) {
+        const selectedValues = Array.isArray(value)
+          ? value.map((v) => String(v))
+          : typeof value === "string" && value.trim() !== ""
+            ? value
+              .split(",")
+              .map((v) => v.trim())
+              .filter(Boolean)
+            : [];
+
+        return (
+          <div
+            id={field.field_name}
+            className="w-full p-2 border border-gray-300 rounded"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {normalizedOptions.map((option) => {
+                const checked = selectedValues.includes(option);
+                return (
+                  <label
+                    key={option}
+                    className="flex items-center gap-2 text-sm text-gray-800"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        const next = e.target.checked
+                          ? Array.from(new Set([...selectedValues, option]))
+                          : selectedValues.filter((v) => v !== option);
+                        onChange(field.field_name, next);
+                      }}
+                      className="h-4 w-4"
+                    />
+                    <span>{option}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        );
+      }
       return (
         <select {...fieldProps}>
           <option value="">Select an option</option>
@@ -1162,6 +1210,13 @@ export function useCustomFields(entityType: string) {
     const hasValidValue = (field: CustomFieldDefinition, value: any): boolean => {
       // Handle null, undefined, or empty values
       if (value === null || value === undefined) return false;
+      if (
+        field.field_type === "select" &&
+        String(field.field_label || "").trim().toLowerCase() === "credentials" &&
+        Array.isArray(value)
+      ) {
+        return value.map((v) => String(v).trim()).filter(Boolean).length > 0;
+      }
       const trimmed = String(value).trim();
       
       // Special validation for select fields - check if "Select an option" is selected

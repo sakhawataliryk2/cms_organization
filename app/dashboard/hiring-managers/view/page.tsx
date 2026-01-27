@@ -283,7 +283,7 @@ export default function HiringManagerView() {
     details: [
       "status", "organization", "department", "email", "email2", "mobilePhone",
       "directLine", "reportsTo", "linkedinUrl", "dateAdded", "owner",
-      "secondaryOwners", "address",
+      "address",
     ],
     organizationDetails: ["status", "organizationName", "organizationPhone", "url", "dateAdded"],
     recentNotes: ["notes"],
