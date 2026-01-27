@@ -20,7 +20,14 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
-import { FiLock, FiUnlock, FiEdit2 } from "react-icons/fi";
+import { FiLock, FiUnlock, FiEdit2, FiStar } from "react-icons/fi";
+import { BsFillPinAngleFill } from "react-icons/bs";
+import {
+  buildPinnedKey,
+  isPinnedRecord,
+  PINNED_RECORDS_CHANGED_EVENT,
+  togglePinnedRecord,
+} from "@/lib/pinnedRecords";
 
 // Default header fields for Organizations module - defined outside component to ensure stable reference
 const ORG_DEFAULT_HEADER_FIELDS = ["phone", "website"];
@@ -292,6 +299,9 @@ export default function OrganizationView() {
   // Pin/Pop-out panel state
   const [isPinned, setIsPinned] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
+
+  // Pinned record (bookmarks bar) state
+  const [isRecordPinned, setIsRecordPinned] = useState(false);
 
   // Panel order state for drag-and-drop
   const [columns, setColumns] = useState<{
@@ -2108,12 +2118,36 @@ export default function OrganizationView() {
   };
 
   // Toggle pin/pop-out panel
-  const togglePin = () => {
-    setIsPinned(!isPinned);
-    if (!isPinned) {
-      setIsCollapsed(false);
+  // const togglePin = () => {
+  //   setIsPinned(!isPinned);
+  //   if (!isPinned) {
+  //     setIsCollapsed(false);
+  //   }
+  // };
+
+  const handleTogglePinnedRecord = () => {
+    if (!organization) return;
+    const key = buildPinnedKey("org", organization.id);
+    const label = organization.name || `Organization ${organization.id}`;
+    const url = `/dashboard/organizations/view?id=${organization.id}`;
+
+    const res = togglePinnedRecord({ key, label, url });
+    if (res.action === "limit") {
+      window.alert("Maximum 10 pinned records reached");
     }
   };
+
+  useEffect(() => {
+    const syncPinned = () => {
+      if (!organization) return;
+      const key = buildPinnedKey("org", organization.id);
+      setIsRecordPinned(isPinnedRecord(key));
+    };
+
+    syncPinned();
+    window.addEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+    return () => window.removeEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+  }, [organization]);
 
   // Save about text
   const saveAboutText = async () => {
@@ -3709,6 +3743,16 @@ export default function OrganizationView() {
             </button>
 
             <button
+              onClick={handleTogglePinnedRecord}
+              className={`p-1 hover:bg-gray-200 rounded ${isRecordPinned ? "text-yellow-600" : "text-gray-600"}`}
+              aria-label={isRecordPinned ? "Unpin" : "Pin"}
+              title={isRecordPinned ? "Unpin" : "Pin"}
+              disabled={!organization}
+            >
+              <BsFillPinAngleFill size={18} />
+            </button>
+
+            <button
               className="p-1 hover:bg-gray-200 rounded"
               aria-label="Reload"
               onClick={() =>
@@ -3854,7 +3898,7 @@ export default function OrganizationView() {
             );
           })}
         </div>
-        <button
+        {/* <button
           onClick={togglePin}
           className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
           title={isPinned ? "Unpin panel" : "Pin panel"}
@@ -3864,7 +3908,7 @@ export default function OrganizationView() {
           ) : (
             <FiUnlock className="w-5 h-5 text-gray-600" />
           )}
-        </button>
+        </button> */}
       </div>
 
       {/* Main Content Area */}
@@ -3888,7 +3932,7 @@ export default function OrganizationView() {
             </div>
 
             {/* Floating Panel (when pinned) */}
-            {isPinned && (
+            {/* {isPinned && (
               <div
                 className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"
                   } border-l border-gray-300`}
@@ -3943,7 +3987,7 @@ export default function OrganizationView() {
                   </div>
                 </div>
               </div>
-            )}
+            )} */}
 
             {/* Regular Summary View (when not pinned) */}
             {!isPinned && (

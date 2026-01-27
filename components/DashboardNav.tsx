@@ -4,6 +4,14 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { getUser, logout } from "@/lib/auth";
+import {
+  type PinnedRecord,
+  loadPinnedRecords,
+  PINNED_RECORDS_CHANGED_EVENT,
+  unpinRecord,
+  pinRecord,
+  buildPinnedKey,
+} from "@/lib/pinnedRecords";
 // Import icons from react-icons
 import {
   FiHome,
@@ -55,11 +63,9 @@ export default function DashboardNav() {
   const [isAddMenuOpen, setIsAddMenuOpen] = useState<boolean>(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState<boolean>(false);
 
-  type ChromeTabId = "tbi" | "from-office" | "org";
-  type ChromeTab = { id: ChromeTabId; label: string; orgId?: string };
-  const [chromeTabsVisible, setChromeTabsVisible] = useState(false);
-  const [chromeTabs, setChromeTabs] = useState<ChromeTab[]>([]);
-  const [activeChromeTabId, setActiveChromeTabId] = useState<ChromeTabId>("tbi");
+  const [pinnedRecords, setPinnedRecords] = useState<PinnedRecord[]>([]);
+  const [showTbiQuickTab, setShowTbiQuickTab] = useState(false);
+  const [currentUrl, setCurrentUrl] = useState<string>("");
   const pathname = usePathname();
   const router = useRouter();
   const addMenuRef = useRef<HTMLDivElement>(null);
@@ -114,51 +120,55 @@ export default function DashboardNav() {
     }
   }, []);
 
-  // Keep layout padding in sync with whether the tab strip is visible
+  const hasQuickTabs = showTbiQuickTab || pinnedRecords.length > 0;
+
+  // Keep layout padding in sync with whether the quick-tab strip is visible
   useEffect(() => {
     if (typeof document === "undefined") return;
-    const nextOffset = chromeTabsVisible ? "88px" : "48px"; // 40px tab strip + 48px top bar
+    const nextOffset = hasQuickTabs ? "88px" : "48px"; // 40px bar + 48px top bar
     document.documentElement.style.setProperty("--dashboard-top-offset", nextOffset);
     return () => {
       // Restore default when component unmounts
       document.documentElement.style.setProperty("--dashboard-top-offset", "48px");
     };
-  }, [chromeTabsVisible]);
+  }, [hasQuickTabs]);
 
-  // Listen for pinned organization changes and update tab strip accordingly
+  // Listen for pinned records changes and update bar accordingly
   useEffect(() => {
-    const syncPinnedOrg = () => {
+    const syncPinned = () => {
       try {
-        const raw = localStorage.getItem("pinnedOrg");
-        setChromeTabs((prev) => {
-          // Remove any existing org tabs first
-          let next = prev.filter((t) => t.id !== "org");
-          if (!raw) {
-            // No pin -> return remaining tabs
-            return next;
-          }
-          const pinned = JSON.parse(raw) as { id: string; name: string };
-          const newTab: ChromeTab = {
-            id: "org",
-            label: pinned.name.slice(0, 12),
-            orgId: pinned.id,
-          };
-          // Ensure tab strip is visible
-          setChromeTabsVisible(true);
-          // Append if not already there
-          next = [...next, newTab];
-          return next;
-        });
+        // Back-compat: migrate legacy single pinnedOrg into pinnedRecords (once)
+        const legacyRaw = localStorage.getItem("pinnedOrg");
+        if (legacyRaw) {
+          const legacy = JSON.parse(legacyRaw) as { id: string; name: string };
+          const key = buildPinnedKey("org", legacy.id);
+          pinRecord({
+            key,
+            label: legacy.name || "Organization",
+            url: `/dashboard/organizations/view?id=${legacy.id}`,
+          });
+          localStorage.removeItem("pinnedOrg");
+        }
+
+        setPinnedRecords(loadPinnedRecords());
       } catch {
         // Ignore JSON errors
       }
     };
 
     // Initial sync
-    syncPinnedOrg();
-    // Listen for custom event dispatched from org view
-    window.addEventListener("pinnedOrgChanged", syncPinnedOrg);
-    return () => window.removeEventListener("pinnedOrgChanged", syncPinnedOrg);
+    syncPinned();
+    window.addEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+    return () => window.removeEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+  }, []);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("showTbiQuickTab");
+      setShowTbiQuickTab(raw === "1");
+    } catch {
+      // ignore
+    }
   }, []);
 
   // Global search with debouncing
@@ -310,33 +320,37 @@ export default function DashboardNav() {
       setIsAddMenuOpen(false);
     }
   };
-  const getTabPath = (tab: ChromeTab): string => {
-    if (tab.id === "tbi") return "/dashboard/tbi";
-    if (tab.id === "from-office") return "/dashboard/from-office";
-    if (tab.id === "org" && tab.orgId) {
-      return `/dashboard/organizations/view?id=${tab.orgId}`;
-    }
-    return "/dashboard";
+
+  const goToPinned = (url: string) => {
+    router.push(url);
   };
 
- const goToTab = (tabId: ChromeTabId) => {
-    const tab = chromeTabs.find((t) => t.id === tabId) || chromeTabs[0];
-   setChromeTabsVisible(true);
+  const openTbiQuickTab = () => {
+    try {
+      localStorage.setItem("showTbiQuickTab", "1");
+    } catch {
+      // ignore
+    }
+    setShowTbiQuickTab(true);
+    router.push("/dashboard/tbi");
+  };
 
-   setChromeTabs((prev) => {
-     const hasTbi = prev.some((t) => t.id === "tbi");
-     const hasFromOffice = prev.some((t) => t.id === "from-office");
+  const closeTbiQuickTab = () => {
+    try {
+      localStorage.removeItem("showTbiQuickTab");
+    } catch {
+      // ignore
+    }
+    setShowTbiQuickTab(false);
+    if (pathname === "/dashboard/tbi") {
+      router.push("/dashboard");
+    }
+  };
 
-     let next = [...prev];
-     if (!hasTbi) next = [{ id: "tbi", label: "T.B.I" }, ...next];
-     if (!hasFromOffice)
-       next = [...next, { id: "from-office", label: "From Office" }];
-     return next;
-   });
-
-   setActiveChromeTabId(tabId);
-   router.push(getTabPath(tab)); // ✅ IMPORTANT
- };
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    setCurrentUrl(`${pathname}${window.location.search || ""}`);
+  }, [pathname]);
 
 
   const handleSearch = (e: React.FormEvent) => {
@@ -463,41 +477,6 @@ export default function DashboardNav() {
     router.push("/dashboard");
   };
 
-  const openChromeTabs = () => {
-    setChromeTabsVisible(true);
-    setChromeTabs([
-      { id: "tbi", label: "T.B.I" },
-      { id: "from-office", label: "From Office" },
-    ]);
-    setActiveChromeTabId("tbi");
-  };
-
- const closeChromeTab = (tabId: ChromeTabId) => {
-   if (tabId === "org") {
-     localStorage.removeItem("pinnedOrg");
-   }
-   setChromeTabs((prev) => {
-     const next = prev.filter((t) => t.id !== tabId);
-
-     // if no tabs left -> hide strip and optionally go somewhere
-     if (next.length === 0) {
-       setChromeTabsVisible(false);
-       // router.push("/dashboard"); // optional
-       return [];
-     }
-
-     // if we closed the active tab -> switch to another + route
-     if (activeChromeTabId === tabId) {
-       const fallbackId = next[0].id;
-       setActiveChromeTabId(fallbackId);
-       const fbTab = next.find(t=>t.id===fallbackId)!;
-       router.push(getTabPath(fbTab)); // ✅ IMPORTANT
-     }
-
-     return next;
-   });
- };
-
 
   // All navigation items without role-based filtering
   const navItems = [
@@ -568,46 +547,77 @@ export default function DashboardNav() {
       {/* Top Navigation Bar */}
       <div className="fixed top-0 left-0 right-0 z-10 pl-60 pr-4">
         {/* Chrome-style tab strip (shown after clicking T.B.I) */}
-        {chromeTabsVisible && (
+        {hasQuickTabs && (
           <div className="sd-tabs sd-tabs-bar">
             <div className="sd-tabs-row">
-              {chromeTabs.map((tab) => {
-                const isActive = tab.id === activeChromeTabId;
-                const isTbi = tab.id === "tbi";
-
-                const activeBg = isTbi ? "#16a34a" : "rgb(233 233 233)";
-                const activeText = isTbi ? "#ffffff" : "rgb(0, 0,0)";
-
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    className={`sd-tab-label ${isActive ? "is-active" : ""}`}
-                    style={
-                      isActive
-                        ? ({
-                            ["--tabs-selected-bg-color" as any]: activeBg,
-                            ["--tabs-selected-text-color" as any]: activeText,
-                          } as React.CSSProperties)
-                        : undefined
-                    }
-                    onClick={() => goToTab(tab.id)}
-                  >
-                    <div className="sd-tab-desc">{tab.label}</div>
-
-                    <span
-                      className="sd-tab-icon sd-tab-close"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        closeChromeTab(tab.id);
-                      }}
-                      title="Close"
+              {showTbiQuickTab &&
+                (() => {
+                  const isActive = pathname === "/dashboard/tbi";
+                  return (
+                    <button
+                      key="tbi"
+                      type="button"
+                      className={`sd-tab-label ${isActive ? "is-active" : ""} transition-colors hover:bg-slate-200`}
+                      style={
+                        isActive
+                          ? ({
+                              ["--tabs-selected-bg-color" as any]: "#16a34a",
+                              ["--tabs-selected-text-color" as any]: "#ffffff",
+                            } as any)
+                          : undefined
+                      }
+                      onClick={openTbiQuickTab}
+                      title="T.B.I"
                     >
-                      <FiX size={14} />
-                    </span>
-                  </button>
-                );
-              })}
+                      <div className="sd-tab-desc">T.B.I</div>
+                      <span
+                        className="sd-tab-icon sd-tab-close"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          closeTbiQuickTab();
+                        }}
+                        title="Close"
+                      >
+                        <FiX size={14} />
+                      </span>
+                    </button>
+                  );
+                })()}
+
+              {pinnedRecords.map((rec) => (
+                (() => {
+                  const isActive = currentUrl === rec.url;
+                  return (
+                    <button
+                      key={rec.key}
+                      type="button"
+                      className={`sd-tab-label ${isActive ? "is-active" : ""} transition-colors hover:bg-slate-200`}
+                      style={
+                        isActive
+                          ? ({
+                              ["--tabs-selected-bg-color" as any]: "rgb(233 233 233)",
+                              ["--tabs-selected-text-color" as any]: "rgb(0, 0, 0)",
+                            } as any)
+                          : undefined
+                      }
+                      onClick={() => goToPinned(rec.url)}
+                    >
+                      <div className="sd-tab-desc">{String(rec.label || "")}</div>
+
+                      <span
+                        className="sd-tab-icon sd-tab-close"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          unpinRecord(rec.key);
+                        }}
+                        title="Unpin"
+                      >
+                        <FiX size={14} />
+                      </span>
+                    </button>
+                  );
+                })()
+              ))}
             </div>
           </div>
         )}
@@ -1033,33 +1043,7 @@ export default function DashboardNav() {
             type="button"
             className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold text-2xl rounded transition-colors"
             onClick={() => {
-              // show tabs (if not visible)
-              if (!chromeTabsVisible) {
-                openChromeTabs();
-              } else {
-                // Ensure both tabs exist
-                setChromeTabs((prev) => {
-                  const hasTbi = prev.some((t) => t.id === "tbi");
-                  const hasFromOffice = prev.some(
-                    (t) => t.id === "from-office"
-                  );
-
-                  let next = [...prev];
-                  if (!hasTbi) next = [{ id: "tbi", label: "T.B.I" }, ...next];
-                  if (!hasFromOffice)
-                    next = [
-                      ...next,
-                      { id: "from-office", label: "From Office" },
-                    ];
-
-                  return next;
-                });
-
-                setActiveChromeTabId("tbi");
-              }
-
-              // go to TBI page
-              goToTab("tbi");
+              openTbiQuickTab();
             }}
           >
             T.B.I
