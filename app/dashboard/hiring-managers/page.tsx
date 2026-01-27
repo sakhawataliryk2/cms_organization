@@ -123,20 +123,12 @@ function SortableColumnHeader({
             onSort();
           }}
           className="text-gray-400 hover:text-gray-600 transition-colors"
-          title={
-            sortState === "asc"
-              ? "Sort descending"
-              : sortState === "desc"
-                ? "Clear sort"
-                : "Sort ascending"
-          }
+          title={sortState === "asc" ? "Sort descending" : "Sort ascending"}
         >
           {sortState === "asc" ? (
             <FiArrowUp size={14} />
-          ) : sortState === "desc" ? (
-            <FiArrowDown size={14} />
           ) : (
-            <div className="w-3.5 h-3.5 border border-gray-300 rounded" />
+            <FiArrowDown size={14} />
           )}
         </button>
 

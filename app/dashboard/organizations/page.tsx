@@ -13,7 +13,14 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
-import { FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
+import {
+  FiArrowUp,
+  FiArrowDown,
+  FiFilter,
+  FiStar,
+  FiChevronDown,
+  FiX,
+} from "react-icons/fi";
 
 interface Organization {
   id: string;
@@ -32,6 +39,16 @@ interface Organization {
 
 type ColumnSortState = "asc" | "desc" | null;
 type ColumnFilterState = string | null;
+
+type OrganizationFavorite = {
+  id: string;
+  name: string;
+  searchTerm: string;
+  columnFilters: Record<string, ColumnFilterState>;
+  columnSorts: Record<string, ColumnSortState>;
+  columnFields: string[];
+  createdAt: number;
+};
 
 // Sortable Column Header Component
 function SortableColumnHeader({
@@ -208,6 +225,8 @@ function SortableColumnHeader({
 export default function OrganizationList() {
   const router = useRouter();
 
+  const FAVORITES_STORAGE_KEY = "organizationFavorites";
+
   // =====================
   // TABLE COLUMNS (Overview List)
   // =====================
@@ -266,6 +285,16 @@ export default function OrganizationList() {
 
   // Per-column filtering state
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+
+  const [favorites, setFavorites] = useState<OrganizationFavorite[]>([]);
+  const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
+
+  const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
+  const favoritesMenuRef = useRef<HTMLDivElement>(null);
+
+  const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
+  const [favoriteName, setFavoriteName] = useState("");
+  const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
 
   // Handle column sort toggle
   const handleColumnSort = (columnKey: string) => {
@@ -358,6 +387,32 @@ export default function OrganizationList() {
 
     fetchAvailableFields();
   }, []);
+
+  useEffect(() => {
+    const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
+    if (!raw) return;
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        setFavorites(parsed);
+      }
+    } catch {
+      return;
+    }
+  }, []);
+
+  useEffect(() => {
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (!favoritesMenuOpen) return;
+      if (!favoritesMenuRef.current) return;
+      if (!favoritesMenuRef.current.contains(e.target as Node)) {
+        setFavoritesMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [favoritesMenuOpen]);
 
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [selectedOrganizations, setSelectedOrganizations] = useState<string[]>([]);
@@ -498,6 +553,74 @@ export default function OrganizationList() {
     });
     return Array.from(statuses).map((s) => ({ label: s, value: s }));
   }, [organizations]);
+
+  const applyFavorite = (fav: OrganizationFavorite) => {
+    const catalogKeys = new Set(columnsCatalog.map((c) => c.key));
+    const validColumnFields = (fav.columnFields || []).filter((k) => catalogKeys.has(k));
+
+    const nextFilters: Record<string, ColumnFilterState> = {};
+    for (const [k, v] of Object.entries(fav.columnFilters || {})) {
+      if (!catalogKeys.has(k)) continue;
+      if (v === null || v === undefined) continue;
+      if (typeof v === "string" && v.trim() === "") continue;
+      nextFilters[k] = v;
+    }
+
+    const nextSorts: Record<string, ColumnSortState> = {};
+    for (const [k, v] of Object.entries(fav.columnSorts || {})) {
+      if (!catalogKeys.has(k)) continue;
+      if (v !== "asc" && v !== "desc" && v !== null) continue;
+      if (v === null) continue;
+      nextSorts[k] = v;
+    }
+
+    setSearchTerm(fav.searchTerm || "");
+    setColumnFilters(nextFilters);
+    setColumnSorts(nextSorts);
+    if (validColumnFields.length > 0) setColumnFields(validColumnFields);
+  };
+
+  const persistFavorites = (next: OrganizationFavorite[]) => {
+    setFavorites(next);
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
+  };
+
+  const handleOpenSaveFavoriteModal = () => {
+    setFavoriteName("");
+    setFavoriteNameError(null);
+    setShowSaveFavoriteModal(true);
+  };
+
+  const handleConfirmSaveFavorite = () => {
+    const trimmed = favoriteName.trim();
+    if (!trimmed) {
+      setFavoriteNameError("Please enter a name.");
+      return;
+    }
+
+    const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const next: OrganizationFavorite = {
+      id,
+      name: trimmed,
+      searchTerm,
+      columnFilters,
+      columnSorts,
+      columnFields,
+      createdAt: Date.now(),
+    };
+
+    const updated = [next, ...favorites];
+    persistFavorites(updated);
+    setSelectedFavoriteId(next.id);
+    setShowSaveFavoriteModal(false);
+  };
+
+  const handleClearAllFilters = () => {
+    setSearchTerm("");
+    setColumnFilters({});
+    setColumnSorts({});
+    setSelectedFavoriteId("");
+  };
 
   // Apply per-column filtering and sorting
   const filteredAndSortedOrganizations = useMemo(() => {
@@ -656,6 +779,95 @@ export default function OrganizationList() {
       <div className="flex justify-between items-center p-4 border-b border-gray-200">
         <h1 className="text-xl font-bold">Organizations</h1>
         <div className="flex items-center space-x-4">
+          <div className="flex items-center gap-2" ref={favoritesMenuRef}>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setFavoritesMenuOpen((v) => !v)}
+                className="px-3 py-2 border border-gray-300 rounded bg-white hover:bg-gray-50 flex items-center gap-2 text-sm"
+                title="Favorites"
+              >
+                <FiStar size={16} className={selectedFavoriteId ? "text-yellow-500" : "text-gray-500"} />
+                <span className="max-w-[180px] truncate">
+                  {selectedFavoriteId
+                    ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites"
+                    : "Favorites"}
+                </span>
+                <FiChevronDown size={16} className="text-gray-500" />
+              </button>
+
+              {favoritesMenuOpen && (
+                <div className="absolute right-0 mt-2 w-72 rounded border bg-white shadow-lg z-9999 overflow-hidden">
+                  <div className="px-3 py-2 border-b bg-gray-50 flex items-center justify-between">
+                    <div className="text-sm font-semibold text-gray-700">Favorites</div>
+                    <button
+                      className="p-1 rounded hover:bg-gray-200"
+                      onClick={() => setFavoritesMenuOpen(false)}
+                      title="Close"
+                    >
+                      <FiX size={16} />
+                    </button>
+                  </div>
+
+                  {favorites.length === 0 ? (
+                    <div className="p-3 text-sm text-gray-600">
+                      <div className="font-medium">No favorites yet</div>
+                      <div className="mt-1">Save your current search + layout to reuse it later.</div>
+                    </div>
+                  ) : (
+                    <div className="max-h-72 overflow-auto">
+                      {favorites.map((f) => {
+                        const active = f.id === selectedFavoriteId;
+                        return (
+                          <button
+                            key={f.id}
+                            className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between ${
+                              active ? "bg-blue-50" : "bg-white"
+                            }`}
+                            onClick={() => {
+                              setSelectedFavoriteId(f.id);
+                              applyFavorite(f);
+                              setFavoritesMenuOpen(false);
+                            }}
+                            title="Apply favorite"
+                          >
+                            <span className={`truncate ${active ? "text-blue-700 font-medium" : "text-gray-800"}`}>
+                              {f.name}
+                            </span>
+                            {active && <span className="text-xs text-blue-700">Active</span>}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <div className="p-3 border-t bg-white flex gap-2">
+                    <button
+                      onClick={() => {
+                        setFavoritesMenuOpen(false);
+                        handleOpenSaveFavoriteModal();
+                      }}
+                      className="flex-1 px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm flex items-center justify-center gap-2"
+                      title="Save current view to Favorites"
+                    >
+                      <FiStar size={16} />
+                      Save Current View
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <button
+              onClick={handleOpenSaveFavoriteModal}
+              className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2 text-sm"
+              title="Save current view to Favorites"
+            >
+              <FiStar size={16} />
+              Save
+            </button>
+          </div>
+
           {selectedOrganizations.length > 0 && (
             <button
               onClick={deleteSelectedOrganizations}
@@ -720,28 +932,44 @@ export default function OrganizationList() {
 
       {/* Search */}
       <div className="p-4 border-b border-gray-200">
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="Search organizations..."
-            className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          <div className="absolute left-3 top-2.5 text-gray-400">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                clipRule="evenodd"
-              />
-            </svg>
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              placeholder="Search organizations..."
+              className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <div className="absolute left-3 top-2.5 text-gray-400">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </div>
           </div>
+
+          <button
+            onClick={handleClearAllFilters}
+            className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50 text-sm"
+            title="Clear search, filters, and sorting"
+            disabled={
+              !searchTerm &&
+              Object.keys(columnFilters).length === 0 &&
+              Object.keys(columnSorts).length === 0 &&
+              !selectedFavoriteId
+            }
+          >
+            Clear All
+          </button>
         </div>
       </div>
 
@@ -1133,6 +1361,66 @@ export default function OrganizationList() {
                     Done
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSaveFavoriteModal && (
+        <div
+          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+          onMouseDown={() => setShowSaveFavoriteModal(false)}
+        >
+          <div
+            className="bg-white rounded shadow-xl w-full max-w-md mx-4"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Save to Favorites</h2>
+              <button
+                onClick={() => setShowSaveFavoriteModal(false)}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            <div className="p-4">
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Favorite name
+              </label>
+              <input
+                type="text"
+                value={favoriteName}
+                onChange={(e) => {
+                  setFavoriteName(e.target.value);
+                  if (favoriteNameError) setFavoriteNameError(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleConfirmSaveFavorite();
+                  if (e.key === "Escape") setShowSaveFavoriteModal(false);
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                autoFocus
+              />
+              {favoriteNameError && (
+                <div className="mt-2 text-sm text-red-600">{favoriteNameError}</div>
+              )}
+
+              <div className="mt-4 flex justify-end gap-2">
+                <button
+                  onClick={() => setShowSaveFavoriteModal(false)}
+                  className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmSaveFavorite}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                >
+                  Save
+                </button>
               </div>
             </div>
           </div>
