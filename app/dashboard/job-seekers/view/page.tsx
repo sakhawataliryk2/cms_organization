@@ -10,10 +10,17 @@ import { FaLinkedin, FaFacebookSquare } from "react-icons/fa";
 import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, sendCalendarInvite, type EmailMessage, type CalendarEvent } from "@/lib/office365";
 import { FiUsers, FiUpload, FiFile, FiX, FiLock, FiUnlock } from "react-icons/fi";
+import { BsFillPinAngleFill } from "react-icons/bs";
 import { TbGripVertical } from "react-icons/tb";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import OnboardingTab from "./onboarding/OnboardingTab";
+import {
+  buildPinnedKey,
+  isPinnedRecord,
+  PINNED_RECORDS_CHANGED_EVENT,
+  togglePinnedRecord,
+} from "@/lib/pinnedRecords";
 // Drag and drop imports
 import {
   DndContext,
@@ -96,10 +103,52 @@ export default function JobSeekerView() {
   const [activeTab, setActiveTab] = useState("summary");
   const [activeQuickTab, setActiveQuickTab] = useState("prescreen");
 
+  const [applications, setApplications] = useState<any[]>([]);
+  const [isLoadingApplications, setIsLoadingApplications] = useState(false);
+  const [applicationsError, setApplicationsError] = useState<string | null>(null);
+  const [applicationsView, setApplicationsView] = useState<
+    "web_submissions" | "submissions" | "client_submissions"
+  >("web_submissions");
+
+  const fetchApplications = async (id: string) => {
+    setIsLoadingApplications(true);
+    setApplicationsError(null);
+
+    try {
+      const response = await fetch(`/api/job-seekers/${id}/applications`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to fetch applications");
+      }
+
+      setApplications(Array.isArray(data.applications) ? data.applications : []);
+    } catch (err) {
+      setApplications([]);
+      setApplicationsError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while loading applications"
+      );
+    } finally {
+      setIsLoadingApplications(false);
+    }
+  };
+
   // Add states for job seeker data
   const [jobSeeker, setJobSeeker] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Pinned record (bookmarks bar) state
+  const [isRecordPinned, setIsRecordPinned] = useState(false);
 
   // Notes and history state
   const [notes, setNotes] = useState<Array<any>>([]);
@@ -375,6 +424,11 @@ export default function JobSeekerView() {
 
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
+
+  const [isResumeEditorOpen, setIsResumeEditorOpen] = useState(false);
+  const [resumeDraft, setResumeDraft] = useState("");
+  const [isSavingResume, setIsSavingResume] = useState(false);
+  const [resumeSaveError, setResumeSaveError] = useState<string | null>(null);
 
   // Documents state
   const [documents, setDocuments] = useState<any[]>([]);
@@ -859,6 +913,30 @@ Best regards`;
     if (isPinned === false) setIsCollapsed(false);
   };
 
+  const handleTogglePinnedRecord = () => {
+    if (!jobSeeker) return;
+    const key = buildPinnedKey("jobSeeker", jobSeeker.id);
+    const label = jobSeeker.fullName || `${formatRecordId(jobSeeker.id, "jobSeeker")}`;
+    const url = `/dashboard/job-seekers/view?id=${jobSeeker.id}`;
+
+    const res = togglePinnedRecord({ key, label, url });
+    if (res.action === "limit") {
+      window.alert("Maximum 10 pinned records reached");
+    }
+  };
+
+  useEffect(() => {
+    const syncPinned = () => {
+      if (!jobSeeker) return;
+      const key = buildPinnedKey("jobSeeker", jobSeeker.id);
+      setIsRecordPinned(isPinnedRecord(key));
+    };
+
+    syncPinned();
+    window.addEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+    return () => window.removeEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+  }, [jobSeeker]);
+
   // Fetch job seeker when component mounts
   useEffect(() => {
     if (jobSeekerId) {
@@ -1254,6 +1332,63 @@ Best regards`;
     setEditingPanel(null);
   };
 
+  const openResumeEditor = () => {
+    if (!jobSeeker) return;
+    setResumeSaveError(null);
+    setResumeDraft(jobSeeker.resumeText || jobSeeker?.resume?.profile || "");
+    setIsResumeEditorOpen(true);
+  };
+
+  const closeResumeEditor = () => {
+    setIsResumeEditorOpen(false);
+    setResumeSaveError(null);
+  };
+
+  const saveResumeText = async () => {
+    if (!jobSeeker?.id) return;
+    setIsSavingResume(true);
+    setResumeSaveError(null);
+
+    try {
+      const response = await fetch(`/api/job-seekers/${jobSeeker.id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+        body: JSON.stringify({ resumeText: resumeDraft }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(errorText || "Failed to save resume");
+      }
+
+      setJobSeeker((prev: any) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          resumeText: resumeDraft,
+          resume: {
+            ...(prev.resume || {}),
+            profile: resumeDraft,
+          },
+        };
+      });
+
+      setIsResumeEditorOpen(false);
+    } catch (err) {
+      setResumeSaveError(
+        err instanceof Error ? err.message : "An error occurred while saving the resume"
+      );
+    } finally {
+      setIsSavingResume(false);
+    }
+  };
+
   // Fetch documents for the job seeker
   const fetchDocuments = async (id: string) => {
     setIsLoadingDocuments(true);
@@ -1607,6 +1742,7 @@ Best regards`;
           : [],
         desiredSalary: jobSeekerData.desired_salary || "Not specified",
         resume: resume,
+        resumeText: jobSeekerData.resume_text || "",
         customFields: customFieldsObj,
       };
 
@@ -2337,13 +2473,61 @@ Best regards`;
     { id: "onboarding", label: "Onboarding" },
   ];
 
+  const getCustomFieldRecordCount = (value: any): number => {
+    if (value === null || value === undefined) return 0;
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+    if (Array.isArray(value)) return value.length;
+    if (typeof value === "object") {
+      const maybeArray =
+        (value as any).records ||
+        (value as any).items ||
+        (value as any).data ||
+        (value as any).rows;
+      if (Array.isArray(maybeArray)) return maybeArray.length;
+      const maybeCount = (value as any).count;
+      if (typeof maybeCount === "number" && Number.isFinite(maybeCount))
+        return maybeCount;
+    }
+    return 0;
+  };
+
+  const getQuickTabCount = (tabId: string): number => {
+    const cf = jobSeeker?.customFields || {};
+    if (tabId === "prescreen") {
+      return getCustomFieldRecordCount(
+        cf.prescreen ?? cf.prescreens ?? cf.preScreen ?? cf.preScreens
+      );
+    }
+    if (tabId === "submissions") {
+      return getCustomFieldRecordCount(
+        cf.submissions ?? cf.submission ?? cf.candidateSubmissions
+      );
+    }
+    if (tabId === "sendouts") {
+      return getCustomFieldRecordCount(
+        cf.sendouts ?? cf.sendOuts ?? cf.sendout ?? cf.sendOut
+      );
+    }
+    if (tabId === "interviews") {
+      return getCustomFieldRecordCount(
+        cf.interviews ?? cf.interview ?? cf.candidateInterviews
+      );
+    }
+    if (tabId === "placements") {
+      return getCustomFieldRecordCount(
+        cf.placements ?? cf.placement ?? cf.candidatePlacements
+      );
+    }
+    return 0;
+  };
+
   // Quick action tabs from the image
   const quickTabs = [
-    { id: "prescreen", label: "Prescreen" },
-    { id: "submissions", label: "Submissions" },
-    { id: "sendouts", label: "Sendouts" },
-    { id: "interviews", label: "Interviews" },
-    { id: "placements", label: "Placements" },
+    { id: "prescreen", label: "Prescreen", count: getQuickTabCount("prescreen") },
+    { id: "submissions", label: "Submissions", count: getQuickTabCount("submissions") },
+    { id: "sendouts", label: "Sendouts", count: getQuickTabCount("sendouts") },
+    { id: "interviews", label: "Interviews", count: getQuickTabCount("interviews") },
+    { id: "placements", label: "Placements", count: getQuickTabCount("placements") },
   ];
 
   // Render notes tab content
@@ -2658,7 +2842,12 @@ Best regards`;
   const renderResumePanel = () => {
     if (!jobSeeker) return null;
     return (
-      <PanelWithHeader title="Resume" onEdit={() => handleEditPanel("resume")}>
+      <PanelWithHeader
+        title="Resume"
+        onEdit={openResumeEditor}
+        editButtonTitle="Edit Resume Content"
+        editButtonAriaLabel="Edit Resume Content"
+      >
         <div className="space-y-0 border border-gray-200 rounded">
           {visibleFields.resume.includes("profile") && (
             <div className="flex border-b border-gray-200 last:border-b-0">
@@ -2901,6 +3090,16 @@ Best regards`;
             </button>
 
             <button
+              onClick={handleTogglePinnedRecord}
+              className={`p-1 hover:bg-gray-200 rounded ${isRecordPinned ? "text-yellow-600" : "text-gray-600"}`}
+              aria-label={isRecordPinned ? "Unpin" : "Pin"}
+              title={isRecordPinned ? "Unpin" : "Pin"}
+              disabled={!jobSeeker}
+            >
+              <BsFillPinAngleFill size={18} />
+            </button>
+
+            <button
               className="p-1 hover:bg-gray-200 rounded"
               aria-label="Reload"
               onClick={() => jobSeekerId && fetchJobSeeker(jobSeekerId)}
@@ -2931,6 +3130,9 @@ Best regards`;
             onClick={() => {
               if (tab.id === "modify") {
                 handleEdit();
+              } else if (tab.id === "applications") {
+                setActiveTab(tab.id);
+                if (jobSeekerId) fetchApplications(jobSeekerId);
               } else {
                 setActiveTab(tab.id);
               }
@@ -2952,7 +3154,7 @@ Best regards`;
               } px-4 py-1 rounded-full shadow`}
             onClick={() => setActiveQuickTab(action.id)}
           >
-            {action.label}
+            {action.label} ({action.count})
           </button>
         ))}
       </div>
@@ -3301,8 +3503,108 @@ Best regards`;
           {activeTab === "applications" && (
             <div className="col-span-7">
               <div className="bg-white p-4 rounded shadow-sm">
-                <h2 className="text-lg font-semibold mb-4">Applications</h2>
-                <p className="text-gray-500 italic">No applications found</p>
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-lg font-semibold">Applications</h2>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => jobSeekerId && fetchApplications(jobSeekerId)}
+                      className="px-3 py-1 bg-gray-100 border border-gray-300 rounded text-xs"
+                      disabled={!jobSeekerId || isLoadingApplications}
+                    >
+                      Reload
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2 mb-4">
+                  <button
+                    className={`px-3 py-1 rounded-full text-sm border ${applicationsView === "web_submissions"
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"}`}
+                    onClick={() => setApplicationsView("web_submissions")}
+                  >
+                    Web Submissions ({applications.filter((a) => a?.type === "web_submissions").length})
+                  </button>
+                  <button
+                    className={`px-3 py-1 rounded-full text-sm border ${applicationsView === "submissions"
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"}`}
+                    onClick={() => setApplicationsView("submissions")}
+                  >
+                    Submissions ({applications.filter((a) => a?.type === "submissions").length})
+                  </button>
+                  <button
+                    className={`px-3 py-1 rounded-full text-sm border ${applicationsView === "client_submissions"
+                      ? "bg-blue-600 text-white border-blue-600"
+                      : "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"}`}
+                    onClick={() => setApplicationsView("client_submissions")}
+                  >
+                    Client Submissions ({applications.filter((a) => a?.type === "client_submissions").length})
+                  </button>
+                </div>
+
+                {isLoadingApplications ? (
+                  <div className="flex justify-center py-6">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                  </div>
+                ) : applicationsError ? (
+                  <div className="text-red-600 text-sm">{applicationsError}</div>
+                ) : (
+                  (() => {
+                    const filtered = applications
+                      .filter((a) => a?.type === applicationsView)
+                      .sort(
+                        (a, b) =>
+                          new Date(b?.created_at || 0).getTime() -
+                          new Date(a?.created_at || 0).getTime()
+                      );
+
+                    if (filtered.length === 0) {
+                      return (
+                        <p className="text-gray-500 italic">No records found</p>
+                      );
+                    }
+
+                    return (
+                      <div className="overflow-x-auto border rounded">
+                        <table className="w-full border-collapse">
+                          <thead>
+                            <tr className="bg-gray-100 border-b">
+                              <th className="text-left p-3 font-medium">Job</th>
+                              <th className="text-left p-3 font-medium">Organization / Client</th>
+                              <th className="text-left p-3 font-medium">Status</th>
+                              <th className="text-left p-3 font-medium">Created At</th>
+                              <th className="text-left p-3 font-medium">Created By</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {filtered.map((app) => (
+                              <tr key={app.id} className="border-b hover:bg-gray-50">
+                                <td className="p-3 text-sm text-gray-900">
+                                  {app.job_title || app.job_id || "-"}
+                                </td>
+                                <td className="p-3 text-sm text-gray-700">
+                                  {app.organization_name || app.client_name || "-"}
+                                </td>
+                                <td className="p-3 text-sm text-gray-700">
+                                  {app.status || "-"}
+                                </td>
+                                <td className="p-3 text-sm text-gray-700">
+                                  {app.created_at
+                                    ? new Date(app.created_at).toLocaleString()
+                                    : "-"}
+                                </td>
+                                <td className="p-3 text-sm text-gray-700">
+                                  {app.created_by || "-"}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()
+                )}
               </div>
             </div>
           )}
@@ -4803,6 +5105,53 @@ Best regards`;
                     Done
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {isResumeEditorOpen && (
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Edit Resume Content</h2>
+              <button
+                onClick={closeResumeEditor}
+                className="p-1 rounded hover:bg-gray-200"
+                disabled={isSavingResume}
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            <div className="p-6 space-y-3">
+              <textarea
+                value={resumeDraft}
+                onChange={(e) => setResumeDraft(e.target.value)}
+                className="w-full min-h-[60vh] border border-gray-300 rounded p-3 text-sm font-mono leading-5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Resume content..."
+              />
+
+              {resumeSaveError && (
+                <div className="text-sm text-red-600">{resumeSaveError}</div>
+              )}
+
+              <div className="flex justify-end gap-2">
+                <button
+                  onClick={closeResumeEditor}
+                  className="px-4 py-2 bg-white border border-gray-300 rounded hover:bg-gray-50"
+                  disabled={isSavingResume}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveResumeText}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-60"
+                  disabled={isSavingResume}
+                >
+                  {isSavingResume ? "Saving..." : "Save"}
+                </button>
               </div>
             </div>
           </div>

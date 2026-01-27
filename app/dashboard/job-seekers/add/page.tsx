@@ -20,7 +20,7 @@ interface CustomFieldDefinition {
   field_type: string;
   is_required: boolean;
   is_hidden: boolean;
-  options?: string[];
+  options?: string[] | string | Record<string, unknown> | null;
   placeholder?: string;
   default_value?: string;
   sort_order: number;
@@ -1263,7 +1263,232 @@ export default function AddJobSeeker() {
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {(() => {
+              const renderCustomFieldRow = (field: any) => {
+                // Don't render hidden fields at all (neither label nor input)
+                if (field.is_hidden) return null;
+
+                // ✅ Render Address Group exactly where first address field exists
+                if (
+                  addressFields.length > 0 &&
+                  addressAnchorId &&
+                  field.id === addressAnchorId
+                ) {
+                  return (
+                    <div key="address-group" className="flex items-start mb-3">
+                      <label className="w-48 font-medium flex items-center mt-4">
+                        Address:
+                        {addressFields.some((f) => f.is_required) && (
+                          <span className="text-red-500 ml-1">*</span>
+                        )}
+                      </label>
+
+                      <div className="flex-1">
+                        <AddressGroupRenderer
+                          fields={addressFields}
+                          values={customFieldValues}
+                          onChange={handleCustomFieldChange}
+                          isEditMode={isEditMode}
+                        />
+                      </div>
+                    </div>
+                  );
+                }
+
+                // Skip address fields if they're being rendered in the grouped layout
+                const addressFieldIds = addressFields.map((f) => f.id);
+                if (addressFieldIds.includes(field.id)) {
+                  return null;
+                }
+
+                const fieldValue = customFieldValues[field.field_name] || "";
+
+                const isOwnerField =
+                  field.field_name === "Field_17" ||
+                  field.field_name === "field_17" ||
+                  field.field_name?.toLowerCase() === "field_17" ||
+                  (field.field_label === "Owner" &&
+                    (field.field_name?.includes("17") ||
+                      field.field_name?.toLowerCase().includes("field_17")));
+
+                const isSkillsField =
+                  field.field_name === "Field_32" ||
+                  field.field_name === "field_32" ||
+                  field.field_name?.toLowerCase() === "field_32" ||
+                  (field.field_label === "Skills" &&
+                    (field.field_name?.includes("32") ||
+                      field.field_name?.toLowerCase().includes("field_32")));
+
+                const isAdditionalSkillField =
+                  field.field_name === "Field_33" ||
+                  field.field_name === "field_33" ||
+                  field.field_name?.toLowerCase() === "field_33" ||
+                  (field.field_label === "Additional Skill" &&
+                    (field.field_name?.includes("33") ||
+                      field.field_name?.toLowerCase().includes("field_33")));
+
+                const isCertificationsField =
+                  field.field_name === "Field_34" ||
+                  field.field_name === "field_34" ||
+                  field.field_name?.toLowerCase() === "field_34" ||
+                  (field.field_label === "Certifications" &&
+                    (field.field_name?.includes("34") ||
+                      field.field_name?.toLowerCase().includes("field_34")));
+
+                const isSoftwaresField =
+                  field.field_name === "Field_35" ||
+                  field.field_name === "field_35" ||
+                  field.field_name?.toLowerCase() === "field_35" ||
+                  (field.field_label === "Softwares" &&
+                    (field.field_name?.includes("35") ||
+                      field.field_name?.toLowerCase().includes("field_35")));
+
+                const parseMultiValue = (val: any): string[] => {
+                  if (!val) return [];
+                  if (Array.isArray(val)) return val.filter((s) => s && s.trim());
+                  if (typeof val === "string") {
+                    return val
+                      .split(",")
+                      .map((s) => s.trim())
+                      .filter((s) => s);
+                  }
+                  return [];
+                };
+
+                const isMultiValueField =
+                  isSkillsField ||
+                  isAdditionalSkillField ||
+                  isCertificationsField ||
+                  isSoftwaresField;
+                const multiValueArray = isMultiValueField
+                  ? parseMultiValue(fieldValue)
+                  : [];
+
+                const hasValidValue = () => {
+                  if (fieldValue === null || fieldValue === undefined) return false;
+                  const trimmed = String(fieldValue).trim();
+
+                  if (field.field_type === "select") {
+                    if (trimmed === "") return false;
+                    if (
+                      trimmed.toLowerCase() === "select an option" ||
+                      trimmed.toLowerCase() === "select owner" ||
+                      trimmed.toLowerCase() === "select department" ||
+                      trimmed.toLowerCase() === "select status"
+                    ) {
+                      return false;
+                    }
+                    const normalizedOptions = Array.isArray(field.options)
+                      ? field.options.filter(
+                          (opt: unknown): opt is string => typeof opt === "string"
+                        )
+                      : [];
+                    if (
+                      normalizedOptions.length > 0 &&
+                      !normalizedOptions.includes(trimmed)
+                    ) {
+                      return false;
+                    }
+                    return true;
+                  }
+
+                  if (isMultiValueField) {
+                    return multiValueArray.length > 0;
+                  }
+
+                  if (trimmed === "") return false;
+                  return true;
+                };
+
+                return (
+                  <div key={field.id} className="flex items-center mb-3">
+                    <label className="w-48 font-medium flex items-center">
+                      {field.field_label}:
+                      {field.is_required &&
+                        (hasValidValue() ? (
+                          <span className="text-green-500 ml-1">✔</span>
+                        ) : (
+                          <span className="text-red-500 ml-1">*</span>
+                        ))}
+                    </label>
+
+                    <div className="flex-1 relative">
+                      {isOwnerField ? (
+                        <select
+                          value={fieldValue}
+                          onChange={(e) =>
+                            handleCustomFieldChange(field.field_name, e.target.value)
+                          }
+                          className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                        >
+                          <option value="">Select Owner</option>
+                          {activeUsers.map((user) => (
+                            <option key={user.id} value={user.name}>
+                              {user.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : isMultiValueField ? (
+                        <MultiValueTagInput
+                          values={multiValueArray}
+                          onChange={(newValues) => {
+                            handleCustomFieldChange(
+                              field.field_name,
+                              newValues.join(", ")
+                            );
+                          }}
+                          placeholder={
+                            isSkillsField
+                              ? "Type a skill and press Enter"
+                              : isAdditionalSkillField
+                              ? "Type an additional skill and press Enter"
+                              : isCertificationsField
+                              ? "Type a certification and press Enter"
+                              : isSoftwaresField
+                              ? "Type a software and press Enter"
+                              : "Type a value and press Enter"
+                          }
+                        />
+                      ) : (
+                        <CustomFieldRenderer
+                          field={field}
+                          value={fieldValue}
+                          onChange={handleCustomFieldChange}
+                        />
+                      )}
+                    </div>
+                  </div>
+                );
+              };
+
+              return (
+                <>
+                  <div>
+                    {/* Custom Fields Section */}
+                    {customFields.length > 0 && (
+                      <>{sortedCustomFields.map((field) => renderCustomFieldRow(field))}</>
+                    )}
+                  </div>
+
+                  <div>
+                    <div className="bg-white border border-gray-200 rounded p-4">
+                      <div className="font-semibold mb-3">Resume</div>
+
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Resume Text
+                      </label>
+                      <textarea
+                        value={formFields.find((f) => f.id === "resumeText")?.value || ""}
+                        onChange={(e) => handleChange("resumeText", e.target.value)}
+                        className="w-full min-h-[60vh] border border-gray-300 rounded p-3 text-sm font-mono leading-5 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        placeholder="Paste or type resume content here..."
+                      />
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
             {/* {formFields.map((field, index) => (
               <div key={field.id} className="flex items-center">
                 <label className="w-48 font-medium">
@@ -1394,230 +1619,6 @@ export default function AddJobSeeker() {
               </div>
             ))} */}
 
-            {/* Custom Fields Section */}
-            {customFields.length > 0 && (
-              <>
-                {/* <div className="mt-8 mb-4">
-                                    <h3 className="text-lg font-semibold text-gray-800 border-b pb-2">
-                                        Additional Information
-                                    </h3>
-                                </div> */}
-
-                {sortedCustomFields.map((field) => {
-                  // Don't render hidden fields at all (neither label nor input)
-                  if (field.is_hidden) return null;
-                  // ✅ Render Address Group exactly where first address field exists
-                  if (
-                    addressFields.length > 0 &&
-                    addressAnchorId &&
-                    field.id === addressAnchorId
-                  ) {
-                    return (
-                      <div
-                        key="address-group"
-                        className="flex items-start mb-3"
-                      >
-                        <label className="w-48 font-medium flex items-center mt-4">
-                          Address:
-                          {addressFields.some((f) => f.is_required) && (
-                            <span className="text-red-500 ml-1">*</span>
-                          )}
-                        </label>
-
-                        <div className="flex-1">
-                          <AddressGroupRenderer
-                            fields={addressFields}
-                            values={customFieldValues}
-                            onChange={handleCustomFieldChange}
-                            isEditMode={isEditMode}
-                          />
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  // Skip address fields if they're being rendered in the grouped layout
-                  // Compare by ID to ensure we filter correctly
-                  const addressFieldIds = addressFields.map((f) => f.id);
-                  if (addressFieldIds.includes(field.id)) {
-                    return null;
-                  }
-
-                  const fieldValue = customFieldValues[field.field_name] || "";
-
-                  // Special handling for Field_17 (Owner) - render as dropdown with active users
-                  const isOwnerField =
-                    field.field_name === "Field_17" ||
-                    field.field_name === "field_17" ||
-                    field.field_name?.toLowerCase() === "field_17" ||
-                    (field.field_label === "Owner" &&
-                      (field.field_name?.includes("17") ||
-                        field.field_name?.toLowerCase().includes("field_17")));
-
-                  // Special handling for Field_32 (Skills) - render as multi-value tag input
-                  const isSkillsField =
-                    field.field_name === "Field_32" ||
-                    field.field_name === "field_32" ||
-                    field.field_name?.toLowerCase() === "field_32" ||
-                    (field.field_label === "Skills" &&
-                      (field.field_name?.includes("32") ||
-                        field.field_name?.toLowerCase().includes("field_32")));
-
-                  // Special handling for Field_33 (Additional Skill) - render as multi-value tag input
-                  const isAdditionalSkillField =
-                    field.field_name === "Field_33" ||
-                    field.field_name === "field_33" ||
-                    field.field_name?.toLowerCase() === "field_33" ||
-                    (field.field_label === "Additional Skill" &&
-                      (field.field_name?.includes("33") ||
-                        field.field_name?.toLowerCase().includes("field_33")));
-
-                  // Special handling for Field_34 (Certifications) - render as multi-value tag input
-                  const isCertificationsField =
-                    field.field_name === "Field_34" ||
-                    field.field_name === "field_34" ||
-                    field.field_name?.toLowerCase() === "field_34" ||
-                    (field.field_label === "Certifications" &&
-                      (field.field_name?.includes("34") ||
-                        field.field_name?.toLowerCase().includes("field_34")));
-
-                  // Special handling for Field_35 (Softwares) - render as multi-value tag input
-                  const isSoftwaresField =
-                    field.field_name === "Field_35" ||
-                    field.field_name === "field_35" ||
-                    field.field_name?.toLowerCase() === "field_35" ||
-                    (field.field_label === "Softwares" &&
-                      (field.field_name?.includes("35") ||
-                        field.field_name?.toLowerCase().includes("field_35")));
-
-                  // Parse multi-value fields - handle both array and comma-separated string
-                  const parseMultiValue = (val: any): string[] => {
-                    if (!val) return [];
-                    if (Array.isArray(val))
-                      return val.filter((s) => s && s.trim());
-                    if (typeof val === "string") {
-                      return val
-                        .split(",")
-                        .map((s) => s.trim())
-                        .filter((s) => s);
-                    }
-                    return [];
-                  };
-
-                  const isMultiValueField =
-                    isSkillsField ||
-                    isAdditionalSkillField ||
-                    isCertificationsField ||
-                    isSoftwaresField;
-                  const multiValueArray = isMultiValueField
-                    ? parseMultiValue(fieldValue)
-                    : [];
-
-                  // Helper function to check if field has a valid value
-                  const hasValidValue = () => {
-                    // Handle null, undefined, or empty values
-                    if (fieldValue === null || fieldValue === undefined) return false;
-                    const trimmed = String(fieldValue).trim();
-                    
-                    // For select fields, check if a valid option is selected
-                    if (field.field_type === "select") {
-                      // Empty string means "Select an option" is selected
-                      if (trimmed === "") return false;
-                      // Also check if it matches the default option text (case-insensitive)
-                      if (trimmed.toLowerCase() === "select an option" || 
-                          trimmed.toLowerCase() === "select owner" ||
-                          trimmed.toLowerCase() === "select department" ||
-                          trimmed.toLowerCase() === "select status") {
-                        return false;
-                      }
-                      // Check if the value exists in the field options
-                      const normalizedOptions = Array.isArray(field.options)
-                        ? field.options.filter((opt): opt is string => typeof opt === "string")
-                        : [];
-                      // If options exist, verify the value is one of them
-                      if (normalizedOptions.length > 0 && !normalizedOptions.includes(trimmed)) {
-                        return false;
-                      }
-                      return true;
-                    }
-                    
-                    // For multi-value fields, check if at least one value is selected
-                    if (isMultiValueField) {
-                      return multiValueArray.length > 0;
-                    }
-                    
-                    // Empty string means no value selected
-                    if (trimmed === "") return false;
-                    
-                    return true;
-                  };
-
-                  return (
-                    <div key={field.id} className="flex items-center mb-3">
-                      <label className="w-48 font-medium flex items-center">
-                        {field.field_label}:
-                        {field.is_required &&
-                          (hasValidValue() ? (
-                            <span className="text-green-500 ml-1">✔</span>
-                          ) : (
-                            <span className="text-red-500 ml-1">*</span>
-                          ))}
-                      </label>
-
-                      <div className="flex-1 relative">
-                        {isOwnerField ? (
-                          <select
-                            value={fieldValue}
-                            onChange={(e) =>
-                              handleCustomFieldChange(
-                                field.field_name,
-                                e.target.value
-                              )
-                            }
-                            className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                          >
-                            <option value="">Select Owner</option>
-                            {activeUsers.map((user) => (
-                              <option key={user.id} value={user.name}>
-                                {user.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : isMultiValueField ? (
-                          <MultiValueTagInput
-                            values={multiValueArray}
-                            onChange={(newValues) => {
-                              // Store as comma-separated string
-                              handleCustomFieldChange(
-                                field.field_name,
-                                newValues.join(", ")
-                              );
-                            }}
-                            placeholder={
-                              isSkillsField
-                                ? "Type a skill and press Enter"
-                                : isAdditionalSkillField
-                                ? "Type an additional skill and press Enter"
-                                : isCertificationsField
-                                ? "Type a certification and press Enter"
-                                : isSoftwaresField
-                                ? "Type a software and press Enter"
-                                : "Type a value and press Enter"
-                            }
-                          />
-                        ) : (
-                          <CustomFieldRenderer
-                            field={field}
-                            value={fieldValue}
-                            onChange={handleCustomFieldChange}
-                          />
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </>
-            )}
           </div>
 
           {/* Email validation message */}

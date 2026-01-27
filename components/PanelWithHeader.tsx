@@ -10,6 +10,8 @@ interface PanelWithHeaderProps {
     onRefresh?: () => void;
     onClose?: () => void;
     onEdit?: () => void;
+    editButtonTitle?: string;
+    editButtonAriaLabel?: string;
     className?: string;
 }
 
@@ -19,6 +21,8 @@ export default function PanelWithHeader({
     onRefresh,
     onClose,
     onEdit,
+    editButtonTitle = 'Edit Fields',
+    editButtonAriaLabel = 'Edit Fields',
     className = ''
 }: PanelWithHeaderProps) {
     return (
@@ -30,8 +34,8 @@ export default function PanelWithHeader({
                         <button
                             onClick={onEdit}
                             className="no-print text-gray-500 hover:text-gray-700"
-                            aria-label="Edit Fields"
-                            title="Edit Fields"
+                            aria-label={editButtonAriaLabel}
+                            title={editButtonTitle}
                         >
                             <FiEdit2 size={16} />
                         </button>

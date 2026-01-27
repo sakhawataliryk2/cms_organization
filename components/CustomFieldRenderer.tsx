@@ -23,6 +23,7 @@ interface CustomFieldRendererProps {
   value: any;
   onChange: (fieldName: string, value: any) => void;
   className?: string;
+  textareaRows?: number;
 }
 
 export default function CustomFieldRenderer({
@@ -30,6 +31,7 @@ export default function CustomFieldRenderer({
   value,
   onChange,
   className = "w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500",
+  textareaRows = 3,
 }: CustomFieldRendererProps) {
   // Track if we've auto-populated the date to prevent infinite loops
   const hasAutoFilledRef = React.useRef(false);
@@ -216,7 +218,7 @@ export default function CustomFieldRenderer({
         <textarea
           {...fieldProps}
           className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-          rows={3}
+          rows={textareaRows}
         />
       );
     case "select":
