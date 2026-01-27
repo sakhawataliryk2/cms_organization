@@ -341,6 +341,8 @@ export default function OrganizationList() {
         const fields =
           data.fields ||
           data.data?.fields ||
+          data.customFields ||
+          data.data?.customFields ||
           data.organizationFields ||
           data.data ||
           [];
@@ -398,12 +400,16 @@ export default function OrganizationList() {
     });
 
     const custom = Array.from(customKeySet).map((k) => {
-      const fieldDef = availableFields.find(
-        (f) => f.field_name === k || f.field_label === k
-      );
+      const kNorm = String(k || "").toLowerCase();
+      const fieldDef = availableFields.find((f) => {
+        const nameNorm = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").toLowerCase();
+        const labelNorm = String((f as any)?.field_label ?? (f as any)?.fieldLabel ?? "").toLowerCase();
+        return nameNorm === kNorm || labelNorm === kNorm;
+      });
+      const fieldLabel = (fieldDef as any)?.field_label ?? (fieldDef as any)?.fieldLabel;
       return {
         key: `custom:${k}`,
-        label: fieldDef ? fieldDef.field_label : humanize(k),
+        label: fieldLabel ? String(fieldLabel) : humanize(k),
         sortable: false,
         filterType: "text" as const,
       };
