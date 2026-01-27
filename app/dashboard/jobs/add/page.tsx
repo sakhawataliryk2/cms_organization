@@ -199,10 +199,18 @@ export default function AddJob() {
   const [isEditMode, setIsEditMode] = useState(!!jobId);
   const [isLoadingJob, setIsLoadingJob] = useState(!!jobId);
   const [loadError, setLoadError] = useState<string | null>(null);
-  
+
+  const [jobStep, setJobStep] = useState<2 | 3>(jobId ? 3 : 2);
+  const [isHiringManagerModalOpen, setIsHiringManagerModalOpen] = useState(false);
+  const [hiringManagerSearch, setHiringManagerSearch] = useState("");
+  const [hiringManagerOptions, setHiringManagerOptions] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
+  const [isHiringManagerOptionsLoading, setIsHiringManagerOptionsLoading] = useState(false);
+
   // Show landing page if creating new job (no id, no type parameter)
   const showLandingPage = !jobId && !jobType;
-  
+
   // Handle job type selection and redirect
   const handleJobTypeSelect = (type: string) => {
     setSelectedJobType(type);
@@ -244,6 +252,91 @@ export default function AddJob() {
     validateCustomFields,
     getCustomFieldsForSubmission,
   } = useCustomFields("jobs");
+
+  const hiringManagerCustomField = useMemo(() => {
+    return customFields.find((f) => {
+      const label = String(f.field_label || "").trim().toLowerCase();
+      return label === "hiring manager" || label.includes("hiring manager");
+    });
+  }, [customFields]);
+
+  const hiringManagerValue =
+    (hiringManagerCustomField
+      ? (customFieldValues[hiringManagerCustomField.field_name] as string)
+      : "") || "";
+
+  const hiringManagerDisplayValue = useMemo(() => {
+    const raw = String(hiringManagerValue || "");
+    if (!raw) return "";
+    const found = hiringManagerOptions.find((opt) => String(opt.id) === raw);
+    return found?.name || raw;
+  }, [hiringManagerOptions, hiringManagerValue]);
+
+  useEffect(() => {
+    setJobStep(jobId ? 3 : 2);
+  }, [jobId]);
+
+  useEffect(() => {
+    if (isEditMode) {
+      setJobStep(3);
+      return;
+    }
+
+    if (hiringManagerValue && hiringManagerValue.trim() !== "") {
+      setJobStep(3);
+    }
+  }, [hiringManagerValue, isEditMode]);
+
+  useEffect(() => {
+    if (!isHiringManagerModalOpen) return;
+
+    const fetchHiringManagers = async () => {
+      setIsHiringManagerOptionsLoading(true);
+      try {
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        );
+
+        const orgId = currentOrganizationId || organizationIdFromUrl;
+        const query = orgId ? `?organization_id=${encodeURIComponent(orgId)}` : "";
+
+        const response = await fetch(`/api/hiring-managers${query}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (!response.ok) {
+          setHiringManagerOptions([]);
+          return;
+        }
+
+        const data = await response.json();
+        const options = (data.hiringManagers || []).map((hm: any) => {
+          const name =
+            hm.full_name || `${hm.first_name || ""} ${hm.last_name || ""}`.trim() || hm.name || "";
+          return {
+            id: String(hm.id),
+            name,
+          };
+        });
+
+        setHiringManagerOptions(options.filter((o: any) => o.name));
+      } catch (e) {
+        console.error("Error fetching hiring managers:", e);
+        setHiringManagerOptions([]);
+      } finally {
+        setIsHiringManagerOptionsLoading(false);
+      }
+    };
+
+    fetchHiringManagers();
+  }, [
+    isHiringManagerModalOpen,
+    currentOrganizationId,
+    organizationIdFromUrl,
+  ]);
 
   // Sort custom fields by sort_order
   const sortedCustomFields = useMemo(
@@ -1074,6 +1167,17 @@ useEffect(() => {
   
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    if (!isEditMode) {
+      if (!hiringManagerCustomField) {
+        setError("Hiring Manager field is not configured in Field Management.");
+        return;
+      }
+      if (!hiringManagerValue || String(hiringManagerValue).trim() === "") {
+        setError("Hiring Manager is required.");
+        return;
+      }
+    }
   
     // Validate required custom fields
     const customFieldValidation = validateCustomFields();
@@ -1370,9 +1474,76 @@ useEffect(() => {
           </div>
         )}
 
+        {!isEditMode && jobStep === 2 && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4">
+              <div className="flex items-center mb-3">
+                <label className="w-48 font-medium flex items-center">
+                  Hiring Manager:
+                </label>
+                <div className="flex-1 flex items-center gap-3">
+                  <div className="flex-1 p-2 border-b border-gray-300 text-gray-800">
+                    {hiringManagerDisplayValue && hiringManagerDisplayValue.trim() !== ""
+                      ? hiringManagerDisplayValue
+                      : "Select hiring manager to continue"}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsHiringManagerModalOpen(true)}
+                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                  >
+                    Choose
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="flex justify-end space-x-4 mt-8">
+              <button
+                type="button"
+                onClick={handleGoBack}
+                className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!hiringManagerValue || hiringManagerValue.trim() === ""}
+                onClick={() => setJobStep(3)}
+                className={`px-4 py-2 rounded text-white ${
+                  !hiringManagerValue || hiringManagerValue.trim() === ""
+                    ? "bg-gray-300 cursor-not-allowed"
+                    : "bg-blue-500 hover:bg-blue-600"
+                }`}
+              >
+                Continue
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {(isEditMode || jobStep === 3) && (
+          <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
+            {!isEditMode && (
+              <div className="flex items-center mb-3">
+                <label className="w-48 font-medium flex items-center">
+                  Hiring Manager:
+                </label>
+                <div className="flex-1 flex items-center gap-3">
+                  <div className="flex-1 p-2 border-b border-gray-300 text-gray-800">
+                    {hiringManagerDisplayValue}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsHiringManagerModalOpen(true)}
+                    className="px-4 py-2 bg-gray-200 text-gray-800 hover:bg-gray-300 rounded"
+                  >
+                    Change
+                  </button>
+                </div>
+              </div>
+            )}
             {/* Standard Job Fields */}
             {/* {formFields
                             .filter(field => field.visible)
@@ -1473,6 +1644,10 @@ useEffect(() => {
                 {sortedCustomFields.map((field) => {
                   // Don't render hidden fields at all (neither label nor input)
                   if (field.is_hidden) return null;
+
+                  if (field.field_label === "Hiring Manager" && !isEditMode) {
+                    return null;
+                  }
 
                   // ✅ Render Address Group exactly where first address field exists
                   if (
@@ -2017,8 +2192,80 @@ useEffect(() => {
               {isEditMode ? "Update" : "Save"}
             </button>
           </div>
-        </form>
+          </form>
+        )}
       </div>
+
+      {isHiringManagerModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="bg-white rounded-lg shadow-lg w-full max-w-xl">
+            <div className="flex items-center justify-between border-b p-4">
+              <h2 className="text-lg font-semibold">Select Hiring Manager</h2>
+              <button
+                type="button"
+                onClick={() => setIsHiringManagerModalOpen(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <span className="text-2xl font-bold">X</span>
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <input
+                type="text"
+                value={hiringManagerSearch}
+                onChange={(e) => setHiringManagerSearch(e.target.value)}
+                placeholder="Search hiring manager"
+                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+              />
+
+              <div className="max-h-80 overflow-auto border border-gray-200 rounded">
+                {isHiringManagerOptionsLoading ? (
+                  <div className="p-3 text-sm text-gray-600">Loading...</div>
+                ) : (
+                  hiringManagerOptions
+                    .filter((opt) => {
+                      const q = hiringManagerSearch.trim().toLowerCase();
+                      if (!q) return true;
+                      return opt.name.toLowerCase().includes(q);
+                    })
+                    .map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => {
+                          if (!hiringManagerCustomField) {
+                            setError("Hiring Manager field is not configured in Field Management.");
+                            return;
+                          }
+
+                          setCustomFieldValues((prev) => ({
+                            ...prev,
+                            [hiringManagerCustomField.field_name]: opt.id,
+                          }));
+                          setFormFields((prev) =>
+                            prev.map((f) =>
+                              f.name === "hiringManager" ? { ...f, value: opt.name } : f
+                            )
+                          );
+                          setIsHiringManagerModalOpen(false);
+                          setHiringManagerSearch("");
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm text-gray-800 border-b border-gray-100"
+                      >
+                        {opt.name}
+                      </button>
+                    ))
+                )}
+
+                {!isHiringManagerOptionsLoading && hiringManagerOptions.length === 0 && (
+                  <div className="p-3 text-sm text-gray-600">No hiring managers found</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -36,6 +36,13 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiLock, FiUnlock } from "react-icons/fi";
+import { BsFillPinAngleFill } from "react-icons/bs";
+import {
+  buildPinnedKey,
+  isPinnedRecord,
+  PINNED_RECORDS_CHANGED_EVENT,
+  togglePinnedRecord,
+} from "@/lib/pinnedRecords";
 
 // Default header fields for Hiring Managers module - defined outside component to ensure stable reference
 const HIRING_MANAGER_DEFAULT_HEADER_FIELDS = ["phone", "email"];
@@ -297,6 +304,9 @@ export default function HiringManagerView() {
   const [isPinned, setIsPinned] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
 
+  // Pinned record (bookmarks bar) state
+  const [isRecordPinned, setIsRecordPinned] = useState(false);
+
   // High-performance sensors configuration
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -428,6 +438,33 @@ export default function HiringManagerView() {
     setIsPinned((p) => !p);
     if (isPinned === false) setIsCollapsed(false);
   };
+
+  const handleTogglePinnedRecord = () => {
+    if (!hiringManager) return;
+    const key = buildPinnedKey("hiringManager", hiringManager.id);
+    const label =
+      hiringManager.fullName ||
+      hiringManager.name ||
+      `${formatRecordId(hiringManager.id, "hiringManager")}`;
+    const url = `/dashboard/hiring-managers/view?id=${hiringManager.id}`;
+
+    const res = togglePinnedRecord({ key, label, url });
+    if (res.action === "limit") {
+      window.alert("Maximum 10 pinned records reached");
+    }
+  };
+
+  useEffect(() => {
+    const syncPinned = () => {
+      if (!hiringManager) return;
+      const key = buildPinnedKey("hiringManager", hiringManager.id);
+      setIsRecordPinned(isPinnedRecord(key));
+    };
+
+    syncPinned();
+    window.addEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+    return () => window.removeEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+  }, [hiringManager]);
 
   // Basic renderPanel (placeholder content for now)
   // Render individual panels
@@ -777,9 +814,39 @@ export default function HiringManagerView() {
   const [transferForm, setTransferForm] = useState({
     targetOrganizationId: "", // Organization to transfer to
   });
+  const [transferSearchQuery, setTransferSearchQuery] = useState("");
+  const [showTransferDropdown, setShowTransferDropdown] = useState(false);
+  const transferSearchRef = useRef<HTMLDivElement>(null);
   const [availableOrganizations, setAvailableOrganizations] = useState<any[]>([]);
   const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(false);
   const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false);
+
+  // Click outside to close transfer search dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (transferSearchRef.current && !transferSearchRef.current.contains(event.target as Node)) {
+        setShowTransferDropdown(false);
+      }
+    };
+
+    if (showTransferDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+    } else {
+      document.removeEventListener('mousedown', handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showTransferDropdown]);
+
+  useEffect(() => {
+    if (showTransferModal) {
+      fetchAvailableOrganizations();
+      setTransferSearchQuery("");
+      setShowTransferDropdown(false);
+    }
+  }, [showTransferModal]);
 
   // Delete request modal state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -1178,6 +1245,7 @@ export default function HiringManagerView() {
         /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
         "$1"
       );
+
       const headers = {
         Authorization: `Bearer ${token}`,
       };
@@ -2037,6 +2105,18 @@ export default function HiringManagerView() {
     : existingTearsheets.filter((ts) =>
       ts.name.toLowerCase().includes(tearsheetSearchQuery.toLowerCase())
     );
+
+  const filteredTransferOrganizations = transferSearchQuery.trim() === ""
+    ? availableOrganizations
+    : availableOrganizations.filter((org: any) => {
+      const q = transferSearchQuery.trim().toLowerCase();
+      const name = String(org?.name || "").toLowerCase();
+      const idStr = org?.id !== undefined && org?.id !== null ? String(org.id) : "";
+      const recordId = org?.id !== undefined && org?.id !== null
+        ? String(formatRecordId(org.id, "organization")).toLowerCase()
+        : "";
+      return name.includes(q) || idStr.includes(q) || recordId.includes(q);
+    });
 
   const handleTearsheetSelect = (tearsheet: any) => {
     setTearsheetForm((prev) => ({
@@ -3390,6 +3470,15 @@ export default function HiringManagerView() {
               <Image src="/print.svg" alt="Print" width={20} height={20} />
             </button>
             <button
+              onClick={handleTogglePinnedRecord}
+              className={`p-1 hover:bg-gray-200 rounded ${isRecordPinned ? "text-yellow-600" : "text-gray-600"}`}
+              aria-label={isRecordPinned ? "Unpin" : "Pin"}
+              title={isRecordPinned ? "Unpin" : "Pin"}
+              disabled={!hiringManager}
+            >
+              <BsFillPinAngleFill size={18} />
+            </button>
+            <button
               className="p-1 hover:bg-gray-200 rounded"
               aria-label="Reload"
               onClick={() =>
@@ -4548,7 +4637,7 @@ export default function HiringManagerView() {
                 </button>
                 <button
                   onClick={handleTearsheetSubmit}
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
                   disabled={
                     isSavingTearsheet ||
                     (tearsheetForm.visibility === "New" && !tearsheetForm.name.trim()) ||
@@ -4624,24 +4713,50 @@ export default function HiringManagerView() {
                       No available organizations found
                     </div>
                   ) : (
-                    <select
-                      value={transferForm.targetOrganizationId}
-                      onChange={(e) =>
-                        setTransferForm((prev) => ({
-                          ...prev,
-                          targetOrganizationId: e.target.value,
-                        }))
-                      }
-                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    >
-                      <option value="">Select target organization...</option>
-                      {availableOrganizations.map((org) => (
-                        <option key={org.id} value={org.id}>
-                          {formatRecordId(org.id, "organization")} {org.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative" ref={transferSearchRef}>
+                      <input
+                        type="text"
+                        value={transferSearchQuery}
+                        onChange={(e) => {
+                          setTransferSearchQuery(e.target.value);
+                          setShowTransferDropdown(true);
+                        }}
+                        onFocus={() => setShowTransferDropdown(true)}
+                        onClick={() => setShowTransferDropdown(true)}
+                        placeholder="Search by organization name or Record ID..."
+                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required
+                      />
+                      {showTransferDropdown && (transferSearchQuery || availableOrganizations.length > 0) && (
+                        <div className="absolute z-[60] w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
+                          {filteredTransferOrganizations.length > 0 ? (
+                            filteredTransferOrganizations.map((org: any) => (
+                              <button
+                                key={org.id}
+                                type="button"
+                                onClick={() => {
+                                  setTransferForm((prev) => ({
+                                    ...prev,
+                                    targetOrganizationId: String(org.id),
+                                  }));
+                                  setTransferSearchQuery(`${formatRecordId(org.id, "organization")} ${org.name || ""}`.trim());
+                                  setShowTransferDropdown(false);
+                                }}
+                                className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex flex-col"
+                              >
+                                <span className="text-sm font-medium text-gray-900">
+                                  {formatRecordId(org.id, "organization")} {org.name}
+                                </span>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="p-3 text-center text-gray-500 text-sm">
+                              No matching organizations found
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
 

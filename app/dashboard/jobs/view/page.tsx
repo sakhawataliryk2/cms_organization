@@ -35,6 +35,13 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiLock, FiUnlock } from "react-icons/fi";
+import { BsFillPinAngleFill } from "react-icons/bs";
+import {
+  buildPinnedKey,
+  isPinnedRecord,
+  PINNED_RECORDS_CHANGED_EVENT,
+  togglePinnedRecord,
+} from "@/lib/pinnedRecords";
 
 // SortablePanel helper
 function SortablePanel({ id, children, isOverlay = false }: { id: string; children: React.ReactNode; isOverlay?: boolean }) {
@@ -154,6 +161,9 @@ export default function JobView() {
   const [job, setJob] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Pinned record (bookmarks bar) state
+  const [isRecordPinned, setIsRecordPinned] = useState(false);
 
   // Notes and history state
   const [notes, setNotes] = useState<Array<any>>([]);
@@ -709,6 +719,30 @@ export default function JobView() {
     if (isPinned === false) setIsCollapsed(false);
   };
 
+  const handleTogglePinnedRecord = () => {
+    if (!job) return;
+    const key = buildPinnedKey("job", job.id);
+    const label = job.title || `${formatRecordId(job.id, "job")}`;
+    const url = `/dashboard/jobs/view?id=${job.id}`;
+
+    const res = togglePinnedRecord({ key, label, url });
+    if (res.action === "limit") {
+      window.alert("Maximum 10 pinned records reached");
+    }
+  };
+
+  useEffect(() => {
+    const syncPinned = () => {
+      if (!job) return;
+      const key = buildPinnedKey("job", job.id);
+      setIsRecordPinned(isPinnedRecord(key));
+    };
+
+    syncPinned();
+    window.addEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+    return () => window.removeEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+  }, [job]);
+
   const renderJobDetailsPanel = () => {
     if (!job) return null;
     return (
@@ -722,7 +756,7 @@ export default function JobView() {
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
                 Title:
               </div>
-              <div className="flex-1 p-2 flex items-center justify-between">
+              <div className="flex-1 p-2">
                 <span className="text-blue-600 font-semibold">
                   {job.title}
                 </span>
@@ -3199,6 +3233,16 @@ export default function JobView() {
               aria-label="Print"
             >
               <Image src="/print.svg" alt="Print" width={20} height={20} />
+            </button>
+
+            <button
+              onClick={handleTogglePinnedRecord}
+              className={`p-1 hover:bg-gray-200 rounded ${isRecordPinned ? "text-yellow-600" : "text-gray-600"}`}
+              aria-label={isRecordPinned ? "Unpin" : "Pin"}
+              title={isRecordPinned ? "Unpin" : "Pin"}
+              disabled={!job}
+            >
+              <BsFillPinAngleFill size={18} />
             </button>
 
             <button

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { getUser, logout } from "@/lib/auth";
 import {
   type PinnedRecord,
@@ -346,11 +346,13 @@ export default function DashboardNav() {
       router.push("/dashboard");
     }
   };
+  const searchParams = useSearchParams();
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    setCurrentUrl(`${pathname}${window.location.search || ""}`);
-  }, [pathname]);
+    setCurrentUrl(
+      `${pathname}${searchParams.toString() ? `?${searchParams}` : ""}`
+    );
+  }, [pathname, searchParams]);
 
 
   const handleSearch = (e: React.FormEvent) => {
@@ -367,7 +369,7 @@ export default function DashboardNav() {
         ...(searchResults.hiringManagers || []).map(hm => ({ type: 'hiringManager', id: hm.id, name: hm.first_name && hm.last_name ? `${hm.first_name} ${hm.last_name}` : hm.name })),
         ...(searchResults.placements || []).map(p => ({ type: 'placement', id: p.id, name: p.job_title || `Placement ${p.id}` }))
       ];
-      
+
       if (allResults.length > 0) {
         navigateToResult(allResults[0].type, allResults[0].id);
       }
@@ -561,9 +563,9 @@ export default function DashboardNav() {
                       style={
                         isActive
                           ? ({
-                              ["--tabs-selected-bg-color" as any]: "#16a34a",
-                              ["--tabs-selected-text-color" as any]: "#ffffff",
-                            } as any)
+                            ["--tabs-selected-bg-color" as any]: "#16a34a",
+                            ["--tabs-selected-text-color" as any]: "#ffffff",
+                          } as any)
                           : undefined
                       }
                       onClick={openTbiQuickTab}
@@ -595,9 +597,9 @@ export default function DashboardNav() {
                       style={
                         isActive
                           ? ({
-                              ["--tabs-selected-bg-color" as any]: "rgb(233 233 233)",
-                              ["--tabs-selected-text-color" as any]: "rgb(0, 0, 0)",
-                            } as any)
+                            ["--tabs-selected-bg-color" as any]: "rgb(233 233 233)",
+                            ["--tabs-selected-text-color" as any]: "rgb(0, 0, 0)",
+                          } as any)
                           : undefined
                       }
                       onClick={() => goToPinned(rec.url)}
@@ -1020,11 +1022,10 @@ export default function DashboardNav() {
                 //   setIsSearchOpen(false);
                 // }
               }}
-              className={`flex items-center py-2 px-4 ${
-                isNavItemActive(item.path)
+              className={`flex items-center py-2 px-4 ${isNavItemActive(item.path)
                   ? "bg-blue-600 text-white"
                   : "text-gray-300 hover:bg-slate-700"
-              }`}
+                }`}
             >
               <div className="w-6 h-6 mr-3 shrink-0 flex items-center justify-center">
                 {item.icon}

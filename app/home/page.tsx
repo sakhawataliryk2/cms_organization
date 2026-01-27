@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import DashboardNav from "@/components/DashboardNav";
 import Link from "next/link";
 import { FiSettings } from "react-icons/fi";
@@ -7,7 +8,9 @@ import { FiSettings } from "react-icons/fi";
 export default function HomePage() {
   return (
     <div className="flex">
-      <DashboardNav />
+      <Suspense fallback={null}>
+        <DashboardNav />
+      </Suspense>
       <div
         className="flex-1 min-h-screen bg-white pl-60"
         style={{ paddingTop: "var(--dashboard-top-offset, 48px)" }}
