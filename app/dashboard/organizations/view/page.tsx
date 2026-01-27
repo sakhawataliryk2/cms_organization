@@ -10,7 +10,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
-import { DndContext, closestCenter, type DragEndEvent, type DragOverEvent, useDroppable } from "@dnd-kit/core";
+import { DndContext, DragOverlay, closestCenter, type DragEndEvent, type DragOverEvent, useDroppable } from "@dnd-kit/core";
 import { restrictToWindowEdges } from "@dnd-kit/modifiers";
 import {
   SortableContext,
@@ -24,6 +24,15 @@ import { FiLock, FiUnlock, FiEdit2 } from "react-icons/fi";
 
 // Default header fields for Organizations module - defined outside component to ensure stable reference
 const ORG_DEFAULT_HEADER_FIELDS = ["phone", "website"];
+
+const ORG_PANEL_TITLES: Record<string, string> = {
+  contactInfo: "Organization Contact Info:",
+  about: "About:",
+  recentNotes: "Recent Notes:",
+  websiteJobs: "Website Jobs:",
+  ourJobs: "Our Jobs:",
+  openTasks: "Open Tasks:",
+};
 
 // Sortable Panel Component with drag handle
 function SortablePanel({
@@ -1636,102 +1645,86 @@ export default function OrganizationView() {
   };
 
   const findContainer = (id: string) => {
-    if (id in columns) {
-      return id as keyof typeof columns;
+    if (id === "left" || id === "right") {
+      return id;
     }
-    return Object.keys(columns).find((key) =>
-      columns[key as keyof typeof columns].includes(id)
-    ) as keyof typeof columns | undefined;
+
+    if (columns.left.includes(id)) return "left";
+    if (columns.right.includes(id)) return "right";
+
+    return undefined;
   };
 
   const handlePanelDragStart = (event: any) => {
     setActiveId(event.active.id);
   }
 
+  const handlePanelDragCancel = () => {
+    setActiveId(null);
+  };
+
   const handlePanelDragOver = (event: DragOverEvent) => {
-    const { active, over } = event;
-    const overId = over?.id;
-
-    if (!overId || active.id === overId) {
-      return;
-    }
-
-    const activeContainer = findContainer(active.id as string);
-    const overContainer = findContainer(overId as string);
-
-    if (
-      !activeContainer ||
-      !overContainer ||
-      activeContainer === overContainer
-    ) {
-      return;
-    }
-
-    setColumns((prev) => {
-      const activeItems = prev[activeContainer];
-      const overItems = prev[overContainer];
-      const activeIndex = activeItems.indexOf(active.id as string);
-      const overIndex = overItems.indexOf(overId as string);
-
-      let newIndex;
-
-      if (overId in prev) {
-        newIndex = overItems.length + 1;
-      } else {
-        const isBelowOverItem =
-          over &&
-          active.rect.current.translated &&
-          active.rect.current.translated.top >
-          over.rect.top + over.rect.height;
-
-        const modifier = isBelowOverItem ? 1 : 0;
-
-        newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1;
-      }
-
-      return {
-        ...prev,
-        [activeContainer]: [
-          ...prev[activeContainer].filter((item) => item !== active.id),
-        ],
-        [overContainer]: [
-          ...prev[overContainer].slice(0, newIndex),
-          active.id as string,
-          ...prev[overContainer].slice(newIndex, prev[overContainer].length),
-        ],
-      };
-    });
+    return;
   };
 
   const handlePanelDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    const activeContainer = findContainer(active.id as string);
-    const overContainer = findContainer(over?.id as string);
 
-    if (
-      !activeContainer ||
-      !overContainer ||
-      activeContainer !== overContainer
-    ) {
+    if (!over) {
       setActiveId(null);
       return;
     }
 
-    const activeIndex = columns[activeContainer].indexOf(active.id as string);
-    const overIndex = columns[overContainer].indexOf(over?.id as string);
+    const activeId = String(active.id);
+    const overId = String(over.id);
 
-    if (activeIndex !== overIndex) {
-      setColumns((prev) => ({
+    setColumns((prev) => {
+      const findContainerInState = (id: string) => {
+        if (id === "left" || id === "right") return id as "left" | "right";
+        if (prev.left.includes(id)) return "left";
+        if (prev.right.includes(id)) return "right";
+        return undefined;
+      };
+
+      const source = findContainerInState(activeId);
+      const target = findContainerInState(overId);
+
+      if (!source || !target) return prev;
+
+      if (source === target) {
+        if (overId === source) return prev;
+        const oldIndex = prev[source].indexOf(activeId);
+        const newIndex = prev[source].indexOf(overId);
+        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return prev;
+        return {
+          ...prev,
+          [source]: arrayMove(prev[source], oldIndex, newIndex),
+        };
+      }
+
+      const sourceItems = prev[source].filter((id) => id !== activeId);
+      const targetItems = [activeId, ...prev[target].filter((id) => id !== activeId)];
+
+      return {
         ...prev,
-        [activeContainer]: arrayMove(
-          prev[activeContainer],
-          activeIndex,
-          overIndex
-        ),
-      }));
-    }
+        [source]: sourceItems,
+        [target]: targetItems,
+      };
+    });
 
     setActiveId(null);
+  };
+
+  const renderPanelPreview = (panelId: string) => {
+    const title = ORG_PANEL_TITLES[panelId] ?? panelId;
+    return (
+      <div className="bg-white border border-gray-200 rounded shadow-lg w-[340px] max-w-[90vw]">
+        <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 font-semibold text-sm">
+          {title}
+        </div>
+        <div className="px-3 py-3 text-sm text-gray-500">Moving panel...</div>
+      </div>
+    );
   };
 
   const renderPanel = (panelId: string) => {
@@ -3924,12 +3917,13 @@ export default function OrganizationView() {
                     </div>
                     {!isCollapsed && (
                       <div className="flex-1 overflow-y-auto p-4">
-                        <div id="printable-summary">
+                        <div id="printable-summary" className="overflow-hidden">
                           <DndContext modifiers={[restrictToWindowEdges]}
                             collisionDetection={closestCenter}
                             onDragStart={handlePanelDragStart}
                             onDragOver={handlePanelDragOver}
                             onDragEnd={handlePanelDragEnd}
+                            onDragCancel={handlePanelDragCancel}
                           >
                             <div className="flex flex-col gap-4">
                               <DroppableContainer id="left" items={columns.left}>
@@ -3939,6 +3933,9 @@ export default function OrganizationView() {
                                 {columns.right.map(renderPanel)}
                               </DroppableContainer>
                             </div>
+                            <DragOverlay>
+                              {activeId ? renderPanelPreview(activeId) : null}
+                            </DragOverlay>
                           </DndContext>
                         </div>
                       </div>
@@ -3950,12 +3947,13 @@ export default function OrganizationView() {
 
             {/* Regular Summary View (when not pinned) */}
             {!isPinned && (
-              <div id="printable-summary">
+              <div id="printable-summary" className="overflow-hidden">
                 <DndContext modifiers={[restrictToWindowEdges]}
                   collisionDetection={closestCenter}
                   onDragStart={handlePanelDragStart}
                   onDragOver={handlePanelDragOver}
                   onDragEnd={handlePanelDragEnd}
+                  onDragCancel={handlePanelDragCancel}
                 >
                   <div className="grid grid-cols-7 gap-4">
                     {/* Left Column - 4/7 width */}
@@ -3972,6 +3970,9 @@ export default function OrganizationView() {
                       </DroppableContainer>
                     </div>
                   </div>
+                  <DragOverlay>
+                    {activeId ? renderPanelPreview(activeId) : null}
+                  </DragOverlay>
                 </DndContext>
               </div>
             )}

@@ -354,107 +354,75 @@ export default function HiringManagerView() {
   }, [columns]);
 
   const findContainer = useCallback((id: string) => {
-    if (id in columns) {
-      return id as keyof typeof columns;
+    if (id === "left" || id === "right") {
+      return id;
     }
-    return Object.keys(columns).find((key) =>
-      columns[key as keyof typeof columns].includes(id)
-    ) as keyof typeof columns | undefined;
+
+    if (columns.left.includes(id)) return "left";
+    if (columns.right.includes(id)) return "right";
+
+    return undefined;
   }, [columns]);
 
   const handlePanelDragStart = useCallback((event: any) => {
     setActiveId(event.active.id);
   }, []);
 
-  const handlePanelDragOver = useCallback((event: DragOverEvent) => {
-    const { active, over } = event;
-    const overId = over?.id;
+  const handlePanelDragCancel = useCallback(() => {
+    setActiveId(null);
+  }, []);
 
-    if (!overId || active.id === overId) {
-      return;
-    }
-
-    const activeContainer = findContainer(active.id as string);
-    const overContainer = findContainer(overId as string);
-
-    if (
-      !activeContainer ||
-      !overContainer ||
-      activeContainer === overContainer
-    ) {
-      return;
-    }
-
-    setColumns((prev) => {
-      const activeItems = prev[activeContainer];
-      const overItems = prev[overContainer];
-      const activeIndex = activeItems.indexOf(active.id as string);
-      const overIndex = overItems.indexOf(overId as string);
-
-      let newIndex;
-
-      if (overId in prev) {
-        newIndex = overItems.length + 1;
-      } else {
-        const isBelowOverItem =
-          over &&
-          active.rect.current.translated &&
-          active.rect.current.translated.top >
-          over.rect.top + over.rect.height;
-
-        const modifier = isBelowOverItem ? 1 : 0;
-
-        newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1;
-      }
-
-      const activeFiltered = prev[activeContainer].filter((item) => item !== active.id);
-      const overUpdated = [
-        ...prev[overContainer].slice(0, newIndex),
-        active.id as string,
-        ...prev[overContainer].slice(newIndex, prev[overContainer].length),
-      ];
-
-      return {
-        ...prev,
-        [activeContainer]: activeFiltered,
-        [overContainer]: overUpdated,
-      };
-    });
-  }, [findContainer]);
+  const handlePanelDragOver = useCallback((_event: DragOverEvent) => {
+    return;
+  }, []);
 
   const handlePanelDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
-    const activeId = active.id as string;
-    const overId = over?.id as string;
 
-    const activeContainer = findContainer(activeId);
-    const overContainer = findContainer(overId);
-
-    if (
-      !activeContainer ||
-      !overContainer ||
-      activeContainer !== overContainer
-    ) {
+    if (!over) {
       setActiveId(null);
       return;
     }
 
-    const activeIndex = columns[activeContainer].indexOf(activeId);
-    const overIndex = columns[overContainer].indexOf(overId);
+    const activeId = String(active.id);
+    const overId = String(over.id);
 
-    if (activeIndex !== overIndex) {
-      setColumns((prev) => ({
+    setColumns((prev) => {
+      const findContainerInState = (id: string) => {
+        if (id === "left" || id === "right") return id as "left" | "right";
+        if (prev.left.includes(id)) return "left";
+        if (prev.right.includes(id)) return "right";
+        return undefined;
+      };
+
+      const source = findContainerInState(activeId);
+      const target = findContainerInState(overId);
+
+      if (!source || !target) return prev;
+
+      if (source === target) {
+        if (overId === source) return prev;
+        const oldIndex = prev[source].indexOf(activeId);
+        const newIndex = prev[source].indexOf(overId);
+        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return prev;
+        return {
+          ...prev,
+          [source]: arrayMove(prev[source], oldIndex, newIndex),
+        };
+      }
+
+      const sourceItems = prev[source].filter((id) => id !== activeId);
+      const targetItems = [activeId, ...prev[target].filter((id) => id !== activeId)];
+
+      return {
         ...prev,
-        [activeContainer]: arrayMove(
-          prev[activeContainer],
-          activeIndex,
-          overIndex
-        ),
-      }));
-    }
+        [source]: sourceItems,
+        [target]: targetItems,
+      };
+    });
 
     setActiveId(null);
-  }, [columns, findContainer]);
+  }, []);
 
   const togglePin = () => {
     setIsPinned((p) => !p);
@@ -2674,7 +2642,11 @@ export default function HiringManagerView() {
       }
     } else if (action === "add-note") {
       setShowAddNote(true);
-      setActiveTab("notes");
+      setActiveTab("notes");  
+    } else if (action === "add-job") {
+      router.push(
+        `/dashboard/jobs/add?relatedEntity=hiring_manager&relatedEntityId=${hiringManagerId}`
+      );
     } else if (action === "add-tearsheet") {
       setShowAddTearsheetModal(true);
     } else if (action === "send-email") {
@@ -2824,6 +2796,7 @@ export default function HiringManagerView() {
 
   const actionOptions = [
     { label: "Add Note", action: () => handleActionSelected("add-note") },
+    { label: "Add Job", action: () => handleActionSelected("add-job") },
     { label: "Send Email", action: () => handleActionSelected("send-email") },
     { label: "Add Task", action: () => handleActionSelected("add-task") },
     {
@@ -3020,13 +2993,13 @@ export default function HiringManagerView() {
             <div className="flex justify-end space-x-2 mt-3">
               <button
                 onClick={() => setShowAddDocument(false)}
-                className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
+                className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100"
               >
                 Cancel
               </button>
               <button
                 onClick={handleAddDocument}
-                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
                 disabled={!newDocumentName.trim()}
               >
                 Save Document
@@ -3345,28 +3318,45 @@ export default function HiringManagerView() {
                 No header fields selected
               </span>
             ) : (
-              headerFields.map((fk) => (
-                <div key={fk} className="min-w-[140px]">
-                  <div className="text-xs text-gray-500">
-                    {getHeaderFieldLabel(fk)}
+              headerFields.map((fk) => {
+                const value = getHeaderFieldValue(fk);
+                const label = getHeaderFieldLabel(fk);
+
+                const renderValue = () => {
+                  if (fk === "website") {
+                    return (
+                      <a
+                        href={value}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm font-medium text-blue-600 hover:underline"
+                      >
+                        {value}
+                      </a>
+                    );
+                  } else if (fk === "mobilePhone" || fk === "phone") {
+                    return (
+                      <a
+                        href={`tel:+${value}`}
+                        className="text-sm font-medium text-blue-600 hover:underline"
+                      >
+                        {value}
+                      </a>
+                    );
+                  } else {
+                    return <div className="text-sm font-medium text-gray-900">{value}</div>;
+                  }
+                };
+
+                return (
+                  <div key={fk} className="min-w-[140px]">
+                    <div className="text-xs text-gray-500">{label}</div>
+                    {renderValue()}
                   </div>
-                  {fk === "website" ? (
-                    <a
-                      href={getHeaderFieldValue(fk)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-sm font-medium text-blue-600 hover:underline"
-                    >
-                      {getHeaderFieldValue(fk)}
-                    </a>
-                  ) : (
-                    <div className="text-sm font-medium text-gray-900">
-                      {getHeaderFieldValue(fk)}
-                    </div>
-                  )}
-                </div>
-              ))
+                );
+              })
             )}
+
           </div>
 
           {/* Action Buttons */}
@@ -3529,6 +3519,7 @@ export default function HiringManagerView() {
                         onDragStart={handlePanelDragStart}
                         onDragOver={handlePanelDragOver}
                         onDragEnd={handlePanelDragEnd}
+                        onDragCancel={handlePanelDragCancel}
                       >
                         <div className="flex flex-col gap-4">
                           <DroppableContainer id="left" items={columns.left}>
@@ -3561,6 +3552,7 @@ export default function HiringManagerView() {
                 onDragStart={handlePanelDragStart}
                 onDragOver={handlePanelDragOver}
                 onDragEnd={handlePanelDragEnd}
+                onDragCancel={handlePanelDragCancel}
               >
                 <div className="grid grid-cols-2 gap-4">
                   <div>
@@ -3649,7 +3641,7 @@ export default function HiringManagerView() {
                       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
                         Mobile Phone:
                       </div>
-                      <a href='tel+123' className="flex-1 p-2">
+                      <a href={`tel:+${hiringManager.mobilePhone}`} className="flex-1 p-2">
                         {hiringManager.mobilePhone}
                       </a>
                     </div>
@@ -3659,9 +3651,9 @@ export default function HiringManagerView() {
                       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
                         Direct Line:
                       </div>
-                      <div className="flex-1 p-2">
+                      <a href={`tel:+${hiringManager.directLine}`} className="flex-1 p-2">
                         {hiringManager.directLine}
-                      </div>
+                      </a>
                     </div>
                   )}
                   {visibleFields.details.includes("reportsTo") && (

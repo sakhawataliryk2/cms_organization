@@ -781,107 +781,78 @@ Best regards`;
   }, [columns]);
 
   const findContainer = useCallback((id: string) => {
-    if (id in columns) {
-      return id as keyof typeof columns;
+    if (id === "left" || id === "right") {
+      return id;
     }
-    return Object.keys(columns).find((key) =>
-      columns[key as keyof typeof columns].includes(id)
-    ) as keyof typeof columns | undefined;
+
+    if (columns.left.includes(id)) return "left";
+    if (columns.right.includes(id)) return "right";
+
+    return undefined;
   }, [columns]);
 
   const handlePanelDragStart = useCallback((event: any) => {
     setActiveId(event.active.id);
   }, []);
 
-  const handlePanelDragOver = useCallback((event: DragOverEvent) => {
-    const { active, over } = event;
-    const overId = over?.id;
+  const handlePanelDragCancel = useCallback(() => {
+    setActiveId(null);
+  }, []);
 
-    if (!overId || active.id === overId) {
-      return;
-    }
-
-    const activeContainer = findContainer(active.id as string);
-    const overContainer = findContainer(overId as string);
-
-    if (
-      !activeContainer ||
-      !overContainer ||
-      activeContainer === overContainer
-    ) {
-      return;
-    }
-
-    setColumns((prev) => {
-      const activeItems = prev[activeContainer];
-      const overItems = prev[overContainer];
-      const activeIndex = activeItems.indexOf(active.id as string);
-      const overIndex = overItems.indexOf(overId as string);
-
-      let newIndex;
-
-      if (overId in prev) {
-        newIndex = overItems.length + 1;
-      } else {
-        const isBelowOverItem =
-          over &&
-          active.rect.current.translated &&
-          active.rect.current.translated.top >
-          over.rect.top + over.rect.height;
-
-        const modifier = isBelowOverItem ? 1 : 0;
-
-        newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1;
-      }
-
-      const activeFiltered = prev[activeContainer].filter((item) => item !== active.id);
-      const overUpdated = [
-        ...prev[overContainer].slice(0, newIndex),
-        active.id as string,
-        ...prev[overContainer].slice(newIndex, prev[overContainer].length),
-      ];
-
-      return {
-        ...prev,
-        [activeContainer]: activeFiltered,
-        [overContainer]: overUpdated,
-      };
-    });
-  }, [findContainer]);
+  const handlePanelDragOver = useCallback((_event: DragOverEvent) => {
+    return;
+  }, []);
 
   const handlePanelDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
-    const activeId = active.id as string;
-    const overId = over?.id as string;
 
-    const activeContainer = findContainer(activeId);
-    const overContainer = findContainer(overId);
-
-    if (
-      !activeContainer ||
-      !overContainer ||
-      activeContainer !== overContainer
-    ) {
+    if (!over) {
       setActiveId(null);
       return;
     }
 
-    const activeIndex = columns[activeContainer].indexOf(activeId);
-    const overIndex = columns[overContainer].indexOf(overId);
+    const activeId = String(active.id);
+    const overId = String(over.id);
 
-    if (activeIndex !== overIndex) {
-      setColumns((prev) => ({
+    setColumns((prev) => {
+      const findContainerInState = (id: string) => {
+        if (id === "left" || id === "right") return id as "left" | "right";
+        if (prev.left.includes(id)) return "left";
+        if (prev.right.includes(id)) return "right";
+        return undefined;
+      };
+
+      const source = findContainerInState(activeId);
+      const target = findContainerInState(overId);
+
+      if (!source || !target) return prev;
+
+      // Reorder within the same column
+      if (source === target) {
+        // Dropped on the container itself (not a panel)
+        if (overId === source) return prev;
+        const oldIndex = prev[source].indexOf(activeId);
+        const newIndex = prev[source].indexOf(overId);
+        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return prev;
+        return {
+          ...prev,
+          [source]: arrayMove(prev[source], oldIndex, newIndex),
+        };
+      }
+
+      // Move across columns
+      const sourceItems = prev[source].filter((id) => id !== activeId);
+      const targetItems = [activeId, ...prev[target].filter((id) => id !== activeId)];
+
+      return {
         ...prev,
-        [activeContainer]: arrayMove(
-          prev[activeContainer],
-          activeIndex,
-          overIndex
-        ),
-      }));
-    }
+        [source]: sourceItems,
+        [target]: targetItems,
+      };
+    });
 
     setActiveId(null);
-  }, [columns, findContainer]);
+  }, []);
 
   const togglePin = () => {
     setIsPinned((p) => !p);
@@ -3026,6 +2997,7 @@ Best regards`;
                             onDragStart={handlePanelDragStart}
                             onDragOver={handlePanelDragOver}
                             onDragEnd={handlePanelDragEnd}
+                            onDragCancel={handlePanelDragCancel}
                           >
                             <div className="flex flex-col gap-4">
                               <DroppableContainer id="left" items={columns.left}>
@@ -3058,6 +3030,7 @@ Best regards`;
                     onDragStart={handlePanelDragStart}
                     onDragOver={handlePanelDragOver}
                     onDragEnd={handlePanelDragEnd}
+                    onDragCancel={handlePanelDragCancel}
                   >
                     <div className="grid grid-cols-2 gap-4">
                       <div>

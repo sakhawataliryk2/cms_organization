@@ -631,104 +631,78 @@ export default function JobView() {
   }, [columns]);
 
   const findContainer = useCallback((id: string) => {
-    if (id in columns) {
-      return id as keyof typeof columns;
+    if (id === "left" || id === "right") {
+      return id;
     }
-    return Object.keys(columns).find((key) =>
-      columns[key as keyof typeof columns].includes(id)
-    ) as keyof typeof columns | undefined;
+
+    if (columns.left.includes(id)) return "left";
+    if (columns.right.includes(id)) return "right";
+
+    return undefined;
   }, [columns]);
 
   const handlePanelDragStart = useCallback((event: any) => {
     setActiveId(event.active.id);
   }, []);
 
-  const handlePanelDragOver = useCallback((event: DragOverEvent) => {
-    const { active, over } = event;
-    const overId = over?.id;
+  const handlePanelDragCancel = useCallback(() => {
+    setActiveId(null);
+  }, []);
 
-    if (!overId || active.id === overId) {
-      return;
-    }
-
-    const activeContainer = findContainer(active.id as string);
-    const overContainer = findContainer(overId as string);
-
-    if (
-      !activeContainer ||
-      !overContainer ||
-      activeContainer === overContainer
-    ) {
-      return;
-    }
-
-    setColumns((prev) => {
-      const activeItems = prev[activeContainer];
-      const overItems = prev[overContainer];
-      const activeIndex = activeItems.indexOf(active.id as string);
-      const overIndex = overItems.indexOf(overId as string);
-
-      let newIndex;
-
-      if (overId in prev) {
-        newIndex = overItems.length + 1;
-      } else {
-        const isBelowOverItem =
-          over &&
-          active.rect.current.translated &&
-          active.rect.current.translated.top >
-          over.rect.top + over.rect.height;
-
-        const modifier = isBelowOverItem ? 1 : 0;
-
-        newIndex = overIndex >= 0 ? overIndex + modifier : overItems.length + 1;
-      }
-
-      const activeFiltered = prev[activeContainer].filter((item) => item !== active.id);
-      const overUpdated = [
-        ...prev[overContainer].slice(0, newIndex),
-        active.id as string,
-        ...prev[overContainer].slice(newIndex, prev[overContainer].length),
-      ];
-
-      return {
-        ...prev,
-        [activeContainer]: activeFiltered,
-        [overContainer]: overUpdated,
-      };
-    });
-  }, [findContainer]);
+  const handlePanelDragOver = useCallback((_event: DragOverEvent) => {
+    return;
+  }, []);
 
   const handlePanelDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
-    const activeContainer = findContainer(active.id as string);
-    const overContainer = findContainer(over?.id as string);
 
-    if (
-      !activeContainer ||
-      !overContainer ||
-      activeContainer !== overContainer
-    ) {
+    if (!over) {
       setActiveId(null);
       return;
     }
 
-    const activeIndex = columns[activeContainer].indexOf(active.id as string);
-    const overIndex = columns[overContainer].indexOf(over?.id as string);
+    const activeId = String(active.id);
+    const overId = String(over.id);
 
-    if (activeIndex !== overIndex) {
-      setColumns((prev) => ({
+    setColumns((prev) => {
+      const findContainerInState = (id: string) => {
+        if (id === "left" || id === "right") return id as "left" | "right";
+        if (prev.left.includes(id)) return "left";
+        if (prev.right.includes(id)) return "right";
+        return undefined;
+      };
+
+      const source = findContainerInState(activeId);
+      const target = findContainerInState(overId);
+
+      if (!source || !target) return prev;
+
+      // Reorder within the same column
+      if (source === target) {
+        // Dropped on the container itself (not a panel)
+        if (overId === source) return prev;
+        const oldIndex = prev[source].indexOf(activeId);
+        const newIndex = prev[source].indexOf(overId);
+        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return prev;
+        return {
+          ...prev,
+          [source]: arrayMove(prev[source], oldIndex, newIndex),
+        };
+      }
+
+      // Move across columns
+      const sourceItems = prev[source].filter((id) => id !== activeId);
+      const targetItems = [activeId, ...prev[target].filter((id) => id !== activeId)];
+
+      return {
         ...prev,
-        [activeContainer]: arrayMove(
-          prev[activeContainer],
-          activeIndex,
-          overIndex
-        ),
-      }));
-    }
+        [source]: sourceItems,
+        [target]: targetItems,
+      };
+    });
 
     setActiveId(null);
-  }, [columns, findContainer]);
+  }, []);
 
   const togglePin = () => {
     setIsPinned((p) => !p);
@@ -1356,15 +1330,19 @@ export default function JobView() {
       ]);
 
       const suggestions: any[] = [];
+      console.log("Job", job)
 
       // Process jobs
       if (jobsRes.status === "fulfilled" && jobsRes.value.ok) {
         const data = await jobsRes.value.json();
-        const jobs = (data.jobs || []).filter(
-          (job: any) =>
-            job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            job.id?.toString().includes(searchTerm)
+        const term = searchTerm.toLowerCase();
+
+        const jobs = (data.jobs || []).filter((job: any) =>
+          job.job_title?.toLowerCase().includes(term) ||
+          job.id?.toString().includes(term) ||
+          ("j" + job.id?.toString()).toLowerCase().includes(term)
         );
+
         jobs.forEach((job: any) => {
           suggestions.push({
             id: job.id,
@@ -1379,11 +1357,13 @@ export default function JobView() {
       // Process organizations
       if (orgsRes.status === "fulfilled" && orgsRes.value.ok) {
         const data = await orgsRes.value.json();
-        const orgs = (data.organizations || []).filter(
-          (org: any) =>
-            org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            org.id?.toString().includes(searchTerm)
+        const term = searchTerm.toLowerCase();
+
+        const orgs = (data.organizations || []).filter((org: any) =>
+          org.name?.toLowerCase().includes(term) ||
+          org.id?.toString().includes(term)
         );
+
         orgs.forEach((org: any) => {
           suggestions.push({
             id: org.id,
@@ -1733,6 +1713,7 @@ export default function JobView() {
       const formattedJob = {
         id: data.job.id || "Unknown ID",
         title: data.job.job_title || "Untitled Job",
+        jobType: data.job.job_type || "Not specified",
         category: data.job.category || "Uncategorized",
         status: data.job.status || "Unknown",
         priority: data.job.priority || "-",
@@ -3135,8 +3116,8 @@ export default function JobView() {
             {/* Always show Job Type */}
             <div className="min-w-[140px]">
               <div className="text-xs text-gray-500">Job Type</div>
-              <div className="text-sm font-medium text-gray-900">
-                {job?.employmentType || "Not specified"}
+              <div className="capitalize text-sm font-medium text-gray-900">
+                {job?.jobType || "Not specified"}
               </div>
             </div>
 
@@ -3334,6 +3315,7 @@ export default function JobView() {
                             onDragStart={handlePanelDragStart}
                             onDragOver={handlePanelDragOver}
                             onDragEnd={handlePanelDragEnd}
+                            onDragCancel={handlePanelDragCancel}
                           >
                             <div className="flex flex-col gap-4">
                               <DroppableContainer id="left" items={columns.left}>
@@ -3366,6 +3348,7 @@ export default function JobView() {
                     onDragStart={handlePanelDragStart}
                     onDragOver={handlePanelDragOver}
                     onDragEnd={handlePanelDragEnd}
+                    onDragCancel={handlePanelDragCancel}
                   >
                     <div className="grid grid-cols-2 gap-4">
                       <div>
@@ -4232,6 +4215,9 @@ export default function JobView() {
                     className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={6}
                   />
+                  {noteForm.text.length < 1 &&
+                    <span className="text-green-500">Note Text is required</span>
+                  }
                 </div>
 
                 {/* Action Dropdown */}
@@ -4484,7 +4470,8 @@ export default function JobView() {
                 <button
                   onClick={handleAddNote}
                   className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  disabled={!noteForm.text.trim()}
+                  disabled={!noteForm.text.trim() || !noteForm.action}
+                  title="Save Note"
                 >
                   SAVE
                 </button>

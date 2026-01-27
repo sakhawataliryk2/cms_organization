@@ -1,7 +1,7 @@
 // app/dashboard/jobs-executive-search/add/page.tsx
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -30,6 +30,140 @@ interface FormField {
   options?: string[]; // For select fields
   placeholder?: string;
   value: string;
+}
+
+interface MultiValueSearchTagInputProps {
+  values: string[];
+  onChange: (values: string[]) => void;
+  options: string[];
+  onSearch?: (query: string) => void;
+  placeholder?: string;
+}
+
+function MultiValueSearchTagInput({
+  values,
+  onChange,
+  options,
+  onSearch,
+  placeholder = "Type to search and press Enter",
+}: MultiValueSearchTagInputProps) {
+  const [inputValue, setInputValue] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  const filteredOptions = useMemo(() => {
+    const q = inputValue.trim().toLowerCase();
+    if (!q) return [];
+    return (options || [])
+      .filter((opt) => {
+        const normalized = String(opt || "").trim();
+        if (!normalized) return false;
+        if (values.includes(normalized)) return false;
+        return normalized.toLowerCase().includes(q);
+      })
+      .slice(0, 10);
+  }, [inputValue, options, values]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (!wrapperRef.current) return;
+      if (!wrapperRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, []);
+
+  const addValue = (val: string) => {
+    const trimmed = String(val || "").trim();
+    if (!trimmed) return;
+    if (!values.includes(trimmed)) {
+      onChange([...values, trimmed]);
+    }
+    setInputValue("");
+    setIsOpen(false);
+  };
+
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (filteredOptions.length > 0) {
+        addValue(filteredOptions[0]);
+      } else {
+        addValue(inputValue);
+      }
+      return;
+    }
+
+    if (e.key === "Backspace" && inputValue === "" && values.length > 0) {
+      onChange(values.slice(0, -1));
+      return;
+    }
+
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      setIsOpen(true);
+      return;
+    }
+  };
+
+  const handleRemove = (index: number) => {
+    onChange(values.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      <div className="w-full min-h-[42px] p-2 border-b border-gray-300 focus-within:border-blue-500 flex flex-wrap gap-2 items-center">
+        {values.map((v, idx) => (
+          <span
+            key={`${v}-${idx}`}
+            className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800"
+          >
+            {v}
+            <button
+              type="button"
+              onClick={() => handleRemove(idx)}
+              className="ml-2 text-blue-600 hover:text-blue-800 focus:outline-none"
+              aria-label={`Remove ${v}`}
+            >
+              ×
+            </button>
+          </span>
+        ))}
+        <input
+          type="text"
+          value={inputValue}
+          onChange={(e) => {
+            const next = e.target.value;
+            setInputValue(next);
+            setIsOpen(true);
+            onSearch?.(next);
+          }}
+          onFocus={() => setIsOpen(true)}
+          onKeyDown={handleKeyDown}
+          placeholder={values.length === 0 ? placeholder : ""}
+          className="flex-1 min-w-[140px] outline-none border-none bg-transparent"
+        />
+      </div>
+
+      {isOpen && filteredOptions.length > 0 && (
+        <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded shadow max-h-56 overflow-auto">
+          {filteredOptions.map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => addValue(opt)}
+              className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm text-gray-800"
+            >
+              {opt}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function AddExecutiveSearchJob() {
@@ -64,6 +198,9 @@ export default function AddExecutiveSearchJob() {
   const [jobDescFile, setJobDescFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [additionalSkillSuggestions, setAdditionalSkillSuggestions] = useState<string[]>([]);
+  const additionalSkillSearchTimeoutRef = useRef<any>(null);
 
   // Use the custom fields hook with jobs-executive-search entity type
   const {
@@ -696,6 +833,7 @@ export default function AddExecutiveSearchJob() {
       const finalPayload: Record<string, any> = {
         ...payload,
         jobTitle: mappedJobTitle,
+        jobType: "executive-search",
         hiringManager: mappedHiringManager,
         jobDescription: mappedJobDescription,
         status: mappedStatus,
@@ -893,6 +1031,101 @@ export default function AddExecutiveSearchJob() {
                               </option>
                             ))}
                           </select>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const fieldLabelLower = String(field.field_label || "").toLowerCase();
+                  const isAdditionalSkillsField =
+                    fieldLabelLower.includes("additional") && fieldLabelLower.includes("skill");
+
+                  if (isAdditionalSkillsField) {
+                    const parseMultiValue = (val: any): string[] => {
+                      if (!val) return [];
+                      if (Array.isArray(val)) return val.filter((s) => s && String(s).trim());
+                      if (typeof val === "string") {
+                        return val
+                          .split(",")
+                          .map((s) => s.trim())
+                          .filter((s) => s);
+                      }
+                      return [];
+                    };
+
+                    const selected = parseMultiValue(fieldValue);
+
+                    let optionList: string[] = [];
+                    if (Array.isArray((field as any).options)) {
+                      optionList = (field as any).options.filter(
+                        (opt: any): opt is string => typeof opt === "string"
+                      );
+                    } else if (typeof (field as any).options === "string") {
+                      try {
+                        const parsed = JSON.parse((field as any).options);
+                        if (Array.isArray(parsed)) {
+                          optionList = parsed
+                            .map((x) => (typeof x === "string" ? x : x?.label || x?.value))
+                            .filter((x): x is string => typeof x === "string");
+                        }
+                      } catch {
+                        optionList = [];
+                      }
+                    }
+
+                    const mergedOptions = Array.from(
+                      new Set([...(optionList || []), ...(additionalSkillSuggestions || [])])
+                    );
+
+                    const fetchSkillSuggestions = (query: string) => {
+                      const q = String(query || "").trim();
+                      if (additionalSkillSearchTimeoutRef.current) {
+                        clearTimeout(additionalSkillSearchTimeoutRef.current);
+                      }
+                      additionalSkillSearchTimeoutRef.current = setTimeout(async () => {
+                        try {
+                          if (!q) {
+                            setAdditionalSkillSuggestions([]);
+                            return;
+                          }
+
+                          const response = await fetch(
+                            `/api/jobs/skills-suggestions?q=${encodeURIComponent(q)}&limit=20`
+                          );
+                          const data = await response.json();
+                          if (response.ok) {
+                            setAdditionalSkillSuggestions(data.suggestions || []);
+                          }
+                        } catch (e) {
+                          console.error("Error fetching skill suggestions:", e);
+                        }
+                      }, 250);
+                    };
+
+                    const handleAdditionalSkillsChange = (skills: string[]) => {
+                      const valueToSave = skills.length > 0 ? skills.join(", ") : "";
+                      handleCustomFieldChange(field.field_name, valueToSave);
+                    };
+
+                    return (
+                      <div key={field.id} className="flex items-start mb-3">
+                        <label className="w-48 font-medium flex items-center pt-2">
+                          {field.field_label}:
+                          {field.is_required &&
+                            (selected.length > 0 ? (
+                              <span className="text-green-500 ml-1">✔</span>
+                            ) : (
+                              <span className="text-red-500 ml-1">*</span>
+                            ))}
+                        </label>
+                        <div className="flex-1 relative">
+                          <MultiValueSearchTagInput
+                            values={selected}
+                            onChange={handleAdditionalSkillsChange}
+                            options={mergedOptions}
+                            onSearch={fetchSkillSuggestions}
+                            placeholder="Type to search skills and press Enter"
+                          />
                         </div>
                       </div>
                     );

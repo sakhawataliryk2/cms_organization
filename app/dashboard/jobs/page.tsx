@@ -15,6 +15,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
+import Link from "next/link";
 
 interface Job {
   id: string;
