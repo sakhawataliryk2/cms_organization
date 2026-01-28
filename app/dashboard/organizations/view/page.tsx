@@ -189,7 +189,7 @@ function SortableColumnHeader({
             <FiArrowDown size={14} />
           )}
         </button>
-        
+
         {/* Filter Toggle */}
         <button
           data-filter-toggle={id}
@@ -784,15 +784,14 @@ export default function OrganizationView() {
             data = JSON.parse(raw);
           } catch { }
 
-          const fields =
-            data.fields || data.data?.fields || data.organizationFields || [];
+          const fields = data.customFields || data.fields || data.data?.fields || data.organizationFields || [];
 
           // Find Field_500 (note action field)
-          const field500 = fields.find(
-            (f: any) =>
-              f.field_name === "Field_500" ||
-              f.field_key === "Field_500" ||
-              (f.field_label && f.field_label.toLowerCase().includes("action"))
+          const fieldNamesToCheck = ['field_500', 'actions', 'action'];
+
+          const field500 = (fields as any[]).find((f: any) =>
+            fieldNamesToCheck.includes(f.field_name?.toLowerCase()) ||
+            fieldNamesToCheck.includes(f.field_label?.toLowerCase())
           );
 
           if (field500 && field500.options) {
@@ -1150,8 +1149,6 @@ export default function OrganizationView() {
         headers: { Authorization: `Bearer ${token}` },
       });
 
-      console.log("field-management status:", response.status);
-
       const data = await response.json().catch(() => ({}));
       const fields =
         (data as any).customFields ||
@@ -1223,14 +1220,7 @@ export default function OrganizationView() {
     setError(null);
 
     try {
-      console.log(`Fetching organization data for ID: ${id}`);
       const response = await fetch(`/api/organizations/${id}`);
-
-      // Log the raw response for debugging
-      console.log(
-        `API Response status: ${response.status} ${response.statusText}`
-      );
-
       if (!response.ok) {
         let errorMessage = `Failed to fetch organization: ${response.status} ${response.statusText}`;
         try {
@@ -1245,7 +1235,6 @@ export default function OrganizationView() {
 
       // Parse the successful response
       const data = await response.json();
-      console.log("Organization data received:", data);
 
       // Parse custom fields
       let customFieldsObj = {};
@@ -1290,7 +1279,6 @@ export default function OrganizationView() {
         customFields: customFieldsObj,
       };
 
-      console.log("Formatted organization:", formattedOrg);
       setOrganization(formattedOrg);
 
       // After loading organization data, fetch notes, history, documents, hiring managers, and tasks
@@ -2012,8 +2000,14 @@ export default function OrganizationView() {
   const handleDownloadDocument = (doc: any) => {
     // If the document has a stored file path, open it in a new tab
     if (doc.file_path) {
-      // Prepend leading slash if missing
-      const url = doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`;
+      // Check if it's an absolute URL (e.g. from Vercel Blob)
+      const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
+
+      // Prepend leading slash if missing and not absolute URL
+      const url = isAbsoluteUrl
+        ? doc.file_path
+        : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
+
       window.open(url, "_blank");
       return;
     }
@@ -2243,10 +2237,10 @@ export default function OrganizationView() {
                         (f: any) =>
                           String(
                             f.field_key ||
-                              f.api_name ||
-                              f.field_name ||
-                              f.field_label ||
-                              f.id
+                            f.api_name ||
+                            f.field_name ||
+                            f.field_label ||
+                            f.id
                           ) === String(fieldKey) ||
                           String(f.field_label || "") === String(fieldKey) ||
                           String(f.field_name || "") === String(fieldKey)
@@ -3883,7 +3877,7 @@ export default function OrganizationView() {
           {history.map((item) => {
             // Format the history entry based on action type
             let actionDisplay = "";
-            let detailsDisplay = "";
+            let detailsDisplay: React.ReactNode = "";
 
             try {
               const details =
@@ -3901,20 +3895,87 @@ export default function OrganizationView() {
                   actionDisplay = "Organization Updated";
                   if (details && details.before && details.after) {
                     // Create a list of changes
-                    const changes = [];
+                    const changes: React.ReactNode[] = [];
+
+                    // Helper function to format values
+                    const formatValue = (val: any): string => {
+                      if (val === null || val === undefined) return "Empty";
+                      if (typeof val === "object") return JSON.stringify(val);
+                      return String(val);
+                    };
+
                     for (const key in details.after) {
-                      if (details.before[key] !== details.after[key]) {
+                      // Skip internal fields that might not be relevant to users
+                      if (key === "updated_at") continue;
+
+                      const beforeVal = details.before[key];
+                      const afterVal = details.after[key];
+
+                      if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                        // Special handling for custom_fields
+                        if (key === "custom_fields") {
+                          let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
+                          let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
+
+                          // Handle case where custom_fields might be null/undefined
+                          beforeObj = beforeObj || {};
+                          afterObj = afterObj || {};
+
+                          if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
+                            const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
+
+                            allKeys.forEach(cfKey => {
+                              const beforeCfVal = beforeObj[cfKey];
+                              const afterCfVal = afterObj[cfKey];
+
+                              if (beforeCfVal !== afterCfVal) {
+                                changes.push(
+                                  <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                                    <span className="font-semibold text-gray-700 min-w-[120px]">Custom Field ({cfKey}):</span>
+                                    <div className="flex flex-wrap gap-2 items-center">
+                                      <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                        {formatValue(beforeCfVal)}
+                                      </span>
+                                      <span className="text-gray-400">→</span>
+                                      <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                        {formatValue(afterCfVal)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              }
+                            });
+                            continue; // Skip the standard field handling for custom_fields
+                          }
+                        }
+
+                        // Standard fields
                         const fieldName = key.replace(/_/g, " ");
                         changes.push(
-                          `${fieldName}: "${details.before[key] || ""}" → "${details.after[key] || ""
-                          }"`
+                          <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                            <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
+                            <div className="flex flex-wrap gap-2 items-center">
+                              <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                {formatValue(beforeVal)}
+                              </span>
+                              <span className="text-gray-400">→</span>
+                              <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                {formatValue(afterVal)}
+                              </span>
+                            </div>
+                          </div>
                         );
                       }
                     }
+
                     if (changes.length > 0) {
-                      detailsDisplay = `Changes: ${changes.join(", ")}`;
+                      detailsDisplay = (
+                        <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
+                          {changes}
+                        </div>
+                      );
                     } else {
-                      detailsDisplay = "No changes detected";
+                      detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
                     }
                   }
                   break;
@@ -4857,11 +4918,11 @@ export default function OrganizationView() {
                                   key === "document_type"
                                     ? documentTypeOptions
                                     : key === "is_auto_generated"
-                                    ? [
+                                      ? [
                                         { label: "Yes", value: "Yes" },
                                         { label: "No", value: "No" },
                                       ]
-                                    : undefined
+                                      : undefined
                                 }
                               />
                             );

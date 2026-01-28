@@ -353,8 +353,8 @@ const FieldMapping = () => {
           type === "checkbox"
             ? checked
             : type === "number"
-            ? parseInt(value) || 0
-            : value,
+              ? parseInt(value) || 0
+              : value,
       };
 
       // Critical: Enforce Hidden & Required mutual exclusivity
@@ -369,14 +369,14 @@ const FieldMapping = () => {
   };
 
   const handleOptionsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const options = e.target.value
-      .split("\n")
-      .filter((option) => option.trim() !== "");
+    const value = e.target.value.replace(/\r\n/g, "\n"); // normalize
+    const options = value.split("\n"); // preserve blank lines
     setEditFormData((prev) => ({
       ...prev,
       options,
     }));
   };
+
 
   const handleSaveField = async () => {
     try {
@@ -507,7 +507,7 @@ const FieldMapping = () => {
       // If setting Required to true, ensure Hidden is false
       const newRequiredValue = !field.is_required;
       const updateData: any = { isRequired: newRequiredValue };
-      
+
       // Critical: If Required is being set to true, also set Hidden to false
       if (newRequiredValue === true) {
         updateData.isHidden = false;
@@ -545,7 +545,7 @@ const FieldMapping = () => {
       if (!response.ok) {
         throw new Error(
           data?.message ||
-            `Server error: ${response.status} ${response.statusText}`
+          `Server error: ${response.status} ${response.statusText}`
         );
       }
 
@@ -566,7 +566,7 @@ const FieldMapping = () => {
       // If setting Hidden to true, ensure Required is false
       const newHiddenValue = !field.is_hidden;
       const updateData: any = { isHidden: newHiddenValue };
-      
+
       // Critical: If Hidden is being set to true, also set Required to false
       if (newHiddenValue === true) {
         updateData.isRequired = false;
@@ -604,7 +604,7 @@ const FieldMapping = () => {
       if (!response.ok) {
         throw new Error(
           data?.message ||
-            `Server error: ${response.status} ${response.statusText}`
+          `Server error: ${response.status} ${response.statusText}`
         );
       }
 
@@ -794,13 +794,12 @@ const FieldMapping = () => {
                     <div className="flex justify-between items-start mb-2">
                       <div className="flex items-center">
                         <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
-                            entry.action === "CREATE"
-                              ? "bg-green-100 text-green-800"
-                              : entry.action === "UPDATE"
+                          className={`px-2 py-1 rounded text-xs font-medium ${entry.action === "CREATE"
+                            ? "bg-green-100 text-green-800"
+                            : entry.action === "UPDATE"
                               ? "bg-blue-100 text-blue-800"
                               : "bg-red-100 text-red-800"
-                          }`}
+                            }`}
                         >
                           {entry.action}
                         </span>
@@ -1251,19 +1250,18 @@ const FieldMapping = () => {
                           toggleFieldHidden(field);
                         }}
                         disabled={field.is_required}
-                        className={`h-4 w-4 rounded flex items-center justify-center ${
-                          field.is_required
-                            ? "bg-gray-200 cursor-not-allowed opacity-50"
-                            : field.is_hidden
+                        className={`h-4 w-4 rounded flex items-center justify-center ${field.is_required
+                          ? "bg-gray-200 cursor-not-allowed opacity-50"
+                          : field.is_hidden
                             ? "bg-red-500 hover:bg-red-600 text-white"
                             : "bg-gray-300 hover:bg-gray-400"
-                        }`}
+                          }`}
                         title={
                           field.is_required
                             ? "Cannot hide a required field - Uncheck Required first"
                             : field.is_hidden
-                            ? "Hidden - Click to show"
-                            : "Visible - Click to hide"
+                              ? "Hidden - Click to show"
+                              : "Visible - Click to hide"
                         }
                       >
                         {field.is_hidden && !field.is_required && (
@@ -1279,19 +1277,18 @@ const FieldMapping = () => {
                           toggleFieldRequired(field);
                         }}
                         disabled={field.is_hidden}
-                        className={`h-4 w-4 rounded flex items-center justify-center ${
-                          field.is_hidden
-                            ? "bg-gray-200 cursor-not-allowed opacity-50"
-                            : field.is_required
+                        className={`h-4 w-4 rounded flex items-center justify-center ${field.is_hidden
+                          ? "bg-gray-200 cursor-not-allowed opacity-50"
+                          : field.is_required
                             ? "bg-blue-500 hover:bg-blue-600 text-white"
                             : "bg-gray-300 hover:bg-gray-400"
-                        }`}
+                          }`}
                         title={
                           field.is_hidden
                             ? "Cannot require a hidden field - Uncheck Hidden first"
                             : field.is_required
-                            ? "Required - Click to make optional"
-                            : "Optional - Click to make required"
+                              ? "Required - Click to make optional"
+                              : "Optional - Click to make required"
                         }
                       >
                         {field.is_required && !field.is_hidden && (
@@ -1395,9 +1392,8 @@ const FieldMapping = () => {
                     name="fieldName"
                     value={editFormData.fieldName}
                     onChange={handleEditFormChange}
-                    className={`w-full px-3 py-2 border rounded ${
-                      !selectedField ? "bg-gray-100 cursor-not-allowed" : ""
-                    }`}
+                    className={`w-full px-3 py-2 border rounded ${!selectedField ? "bg-gray-100 cursor-not-allowed" : ""
+                      }`}
                     placeholder="e.g., company_size"
                     pattern="^[a-zA-Z][a-zA-Z0-9_]*$"
                     title={
@@ -1496,19 +1492,19 @@ const FieldMapping = () => {
 
                 {(editFormData.fieldType === "select" ||
                   editFormData.fieldType === "radio") && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Options (one per line):
-                    </label>
-                    <textarea
-                      value={editFormData.options.join("\n")}
-                      onChange={handleOptionsChange}
-                      className="w-full px-3 py-2 border rounded"
-                      rows={5}
-                      placeholder="Option 1&#10;Option 2&#10;Option 3"
-                    />
-                  </div>
-                )}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Options (one per line):
+                      </label>
+                      <textarea
+                        value={editFormData.options.join("\n")}
+                        onChange={handleOptionsChange}
+                        className="w-full px-3 py-2 border rounded"
+                        rows={5}
+                        placeholder="Option 1&#10;Option 2&#10;Option 3"
+                      />
+                    </div>
+                  )}
 
                 {editFormData.fieldType === "lookup" && (
                   <div>
@@ -1541,9 +1537,8 @@ const FieldMapping = () => {
                       checked={editFormData.isRequired}
                       onChange={handleEditFormChange}
                       disabled={editFormData.isHidden}
-                      className={`h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${
-                        editFormData.isHidden ? "opacity-50 cursor-not-allowed" : ""
-                      }`}
+                      className={`h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${editFormData.isHidden ? "opacity-50 cursor-not-allowed" : ""
+                        }`}
                     />
                     <span className={`ml-2 text-sm ${editFormData.isHidden ? "text-gray-500" : ""}`}>
                       Required
@@ -1562,9 +1557,8 @@ const FieldMapping = () => {
                       checked={editFormData.isHidden}
                       onChange={handleEditFormChange}
                       disabled={editFormData.isRequired}
-                      className={`h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${
-                        editFormData.isRequired ? "opacity-50 cursor-not-allowed" : ""
-                      }`}
+                      className={`h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${editFormData.isRequired ? "opacity-50 cursor-not-allowed" : ""
+                        }`}
                     />
                     <span className={`ml-2 text-sm ${editFormData.isRequired ? "text-gray-500" : ""}`}>
                       Hidden

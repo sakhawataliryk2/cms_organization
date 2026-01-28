@@ -180,17 +180,18 @@ export default function HiringManagerView() {
           } catch { }
 
           const fields =
+            data.customFields ||
             data.fields ||
             data.data?.fields ||
             data.hiringManagerFields ||
             data.data?.data?.fields ||
             [];
 
-          const field500 = (fields as any[]).find(
-            (f: any) =>
-              f.field_name === 'Field_500' ||
-              f.field_key === 'Field_500' ||
-              (f.field_label && String(f.field_label).toLowerCase().includes('action'))
+          const fieldNamesToCheck = ['field_500', 'actions', 'action'];
+
+          const field500 = (fields as any[]).find((f: any) =>
+            fieldNamesToCheck.includes(f.field_name?.toLowerCase()) ||
+            fieldNamesToCheck.includes(f.field_label?.toLowerCase())
           );
 
           if (field500 && field500.options) {
@@ -2739,7 +2740,7 @@ export default function HiringManagerView() {
       }
     } else if (action === "add-note") {
       setShowAddNote(true);
-      setActiveTab("notes");  
+      setActiveTab("notes");
     } else if (action === "add-job") {
       router.push(
         `/dashboard/jobs/add?relatedEntity=hiring_manager&relatedEntityId=${hiringManagerId}`
@@ -5054,6 +5055,7 @@ export default function HiringManagerView() {
                     </label>
                     <textarea
                       value={noteForm.text}
+                      autoFocus
                       onChange={(e) => {
                         setNoteForm((prev) => ({ ...prev, text: e.target.value }));
                         // Clear error when user starts typing

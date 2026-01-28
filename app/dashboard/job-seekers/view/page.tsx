@@ -156,7 +156,7 @@ function SortableColumnHeader({
             <FiArrowDown size={14} />
           )}
         </button>
-        
+
         {/* Filter Toggle */}
         <button
           data-filter-toggle={id}
@@ -764,19 +764,19 @@ export default function JobSeekerView() {
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Document editing state
   const [editingDocument, setEditingDocument] = useState<any | null>(null);
   const [showEditDocumentModal, setShowEditDocumentModal] = useState(false);
   const [editDocumentName, setEditDocumentName] = useState("");
   const [editDocumentType, setEditDocumentType] = useState("General");
-  
+
   // Add text document state
   const [showAddDocument, setShowAddDocument] = useState(false);
   const [newDocumentName, setNewDocumentName] = useState("");
   const [newDocumentType, setNewDocumentType] = useState("General");
   const [newDocumentContent, setNewDocumentContent] = useState("");
-  
+
   // Document viewer state
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
 
@@ -1574,7 +1574,7 @@ Best regards`;
       let data: any = {};
       try {
         data = JSON.parse(raw);
-      } catch {}
+      } catch { }
 
       const fields =
         data.customFields ||
@@ -1626,6 +1626,49 @@ Best regards`;
         const data = await response.json();
         // Get custom fields from the response - handle both response structures
         const fields = data.customFields || data.fields || [];
+
+        const fieldNamesToCheck = ['field_500', 'actions', 'action'];
+
+        const field500 = (fields as any[]).find((f: any) =>
+          fieldNamesToCheck.includes(f.field_name?.toLowerCase()) ||
+          fieldNamesToCheck.includes(f.field_label?.toLowerCase())
+        );
+
+        if (field500 && field500.options) {
+          let options = field500.options;
+          if (typeof options === 'string') {
+            try {
+              options = JSON.parse(options);
+            } catch { }
+          }
+          if (Array.isArray(options)) {
+            setActionFields(
+              options.map((opt: any) => ({
+                id: opt.value || opt,
+                field_label: opt.label || opt.value || opt,
+                field_name: opt.value || opt,
+              }))
+            );
+          } else if (typeof options === 'object') {
+            setActionFields(
+              Object.entries(options).map(([key, value]) => ({
+                id: key,
+                field_label: String(value),
+                field_name: key,
+              }))
+            );
+          }
+        } else {
+          // Fallback default actions
+          setActionFields([
+            { id: 'Outbound Call', field_label: 'Outbound Call', field_name: 'Outbound Call' },
+            { id: 'Inbound Call', field_label: 'Inbound Call', field_name: 'Inbound Call' },
+            { id: 'Left Message', field_label: 'Left Message', field_name: 'Left Message' },
+            { id: 'Email', field_label: 'Email', field_name: 'Email' },
+            { id: 'Appointment', field_label: 'Appointment', field_name: 'Appointment' },
+            { id: 'Client Visit', field_label: 'Client Visit', field_name: 'Client Visit' },
+          ]);
+        }
         // Sort by sort_order if available
         const sortedFields = fields.sort((a: any, b: any) =>
           (a.sort_order || 0) - (b.sort_order || 0)
@@ -4483,7 +4526,7 @@ Best regards`;
                   Onboarding references:
                 </label>
                 {Array.isArray(jobSeeker?.customFields?.onboardingReferences) &&
-                jobSeeker.customFields.onboardingReferences.length > 0 ? (
+                  jobSeeker.customFields.onboardingReferences.length > 0 ? (
                   <select
                     className="w-full p-2 border border-gray-300 rounded"
                     value={selectedOnboardingReferenceIndex}
@@ -5344,6 +5387,7 @@ Best regards`;
                   </label>
                   <textarea
                     value={noteForm.text}
+                    autoFocus
                     onChange={(e) =>
                       setNoteForm((prev) => ({ ...prev, text: e.target.value }))
                     }
