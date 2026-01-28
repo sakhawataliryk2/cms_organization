@@ -1234,7 +1234,7 @@ export default function AddDirectHireJob() {
                         <label className="w-48 font-medium flex items-center">
                           {field.field_label}:
                           {field.is_required &&
-                            (fieldValue.trim() !== "" ? (
+                            (fieldValue !== "" ? (
                               <span className="text-green-500 ml-1">✔</span>
                             ) : (
                               <span className="text-red-500 ml-1">*</span>
@@ -1276,7 +1276,7 @@ export default function AddDirectHireJob() {
                         <label className="w-48 font-medium flex items-center">
                           {field.field_label}:
                           {field.is_required &&
-                            (fieldValue.trim() !== "" ? (
+                            (fieldValue !== "" ? (
                               <span className="text-green-500 ml-1">✔</span>
                             ) : (
                               <span className="text-red-500 ml-1">*</span>
@@ -1307,7 +1307,7 @@ export default function AddDirectHireJob() {
                     // Parse existing value (comma-separated string or array)
                     const selectedContactIds = Array.isArray(fieldValue)
                       ? fieldValue
-                      : typeof fieldValue === "string" && fieldValue.trim()
+                      : typeof fieldValue === "string" && fieldValue
                       ? fieldValue.split(",").map((id) => id.trim()).filter(Boolean)
                       : [];
 
@@ -1436,7 +1436,7 @@ export default function AddDirectHireJob() {
                         <label className="w-48 font-medium flex items-center">
                           {field.field_label}:
                           {field.is_required &&
-                            (fieldValue.trim() !== "" ? (
+                            (fieldValue !== "" ? (
                               <span className="text-green-500 ml-1">✔</span>
                             ) : (
                               <span className="text-red-500 ml-1">*</span>
@@ -1474,7 +1474,7 @@ export default function AddDirectHireJob() {
                       <label className="w-48 font-medium flex items-center">
                         {field.field_label}:
                         {field.is_required &&
-                          (fieldValue.trim() !== "" ? (
+                          (fieldValue !== "" ? (
                             <span className="text-green-500 ml-1">✔</span>
                           ) : (
                             <span className="text-red-500 ml-1">*</span>

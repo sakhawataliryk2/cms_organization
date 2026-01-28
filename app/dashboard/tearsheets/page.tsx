@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import ActionDropdown from "@/components/ActionDropdown";
-import { FiX, FiPrinter, FiLock, FiUnlock } from "react-icons/fi";
+import { FiX, FiPrinter } from "react-icons/fi";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import {
   buildPinnedKey,
@@ -417,13 +417,6 @@ const TearsheetsPage = () => {
                 className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded border border-gray-200"
               >
                 Refresh
-              </button>
-              <button
-                onClick={handlePinToggle}
-                className="p-2 text-gray-600 hover:text-gray-800"
-                title={isPinned ? 'Unpin' : 'Pin'}
-              >
-                {isPinned ? <FiLock size={20} /> : <FiUnlock size={20} />}
               </button>
               <button
                 onClick={handlePrint}

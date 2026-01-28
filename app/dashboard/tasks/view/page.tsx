@@ -43,7 +43,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
-import { FiLock, FiUnlock } from "react-icons/fi";
+// import { FiLock, FiUnlock } from "react-icons/fi";
 
 // Default header fields for Tasks module - defined outside component to ensure stable reference
 const TASK_DEFAULT_HEADER_FIELDS = ["dueDate", "assignedTo"];
@@ -1564,20 +1564,6 @@ export default function TaskView() {
                         >
                             <Image src="/x.svg" alt="Close" width={20} height={20} />
                         </button>
-
-                        {activeTab === "summary" && (
-                            <button
-                                onClick={togglePin}
-                                className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
-                                title={isPinned ? "Unpin panel" : "Pin panel"}
-                            >
-                                {isPinned ? (
-                                    <FiLock className="w-5 h-5 text-blue-600" />
-                                ) : (
-                                    <FiUnlock className="w-5 h-5 text-gray-600" />
-                                )}
-                            </button>
-                        )}
                     </div>
                 </div>
             </div>
@@ -1609,64 +1595,7 @@ export default function TaskView() {
             <div className="p-4">
                 {activeTab === "summary" && (
                     <div className="relative w-full">
-                        {isPinned && (
-                            <div
-                                className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${
-                                    isCollapsed ? "w-12" : "w-1/3"
-                                } border-l border-gray-300`}
-                            >
-                                <div className="flex flex-col h-full">
-                                    <div className="flex items-center justify-between p-2 border-b bg-gray-50">
-                                        <h3 className="font-semibold text-sm">Task Summary</h3>
-                                        <div className="flex items-center gap-1">
-                                            <button
-                                                onClick={() => setIsCollapsed(!isCollapsed)}
-                                                className="p-1 hover:bg-gray-200 rounded"
-                                                title={isCollapsed ? "Expand" : "Collapse"}
-                                            >
-                                                {isCollapsed ? "▶" : "◀"}
-                                            </button>
-                                            <button
-                                                onClick={togglePin}
-                                                className="p-1 hover:bg-gray-200 rounded"
-                                                title="Unpin panel"
-                                            >
-                                                <FiUnlock className="w-4 h-4 text-blue-600" />
-                                            </button>
-                                        </div>
-                                    </div>
-                                    {!isCollapsed && (
-                                        <div className="flex-1 overflow-y-auto p-4">
-                                            <div id="printable-summary">
-                                                <DndContext
-                                                    id="pinned-summary-dnd"
-                                                    sensors={sensors}
-                                                    collisionDetection={closestCorners}
-                                                    measuring={measuringConfig}
-                                                    modifiers={[restrictToWindowEdges]}
-                                                    onDragStart={handlePanelDragStart}
-                                                    onDragOver={handlePanelDragOver}
-                                                    onDragEnd={handlePanelDragEnd}
-                                                >
-                                                    <div className="flex flex-col gap-4">
-                                                        <DroppableContainer id="left" items={columns.left}>
-                                                            {columns.left.map((id) => renderPanel(id))}
-                                                        </DroppableContainer>
-                                                        <DroppableContainer id="right" items={columns.right}>
-                                                            {columns.right.map((id) => renderPanel(id))}
-                                                        </DroppableContainer>
-                                                    </div>
-                                                    <DragOverlay dropAnimation={dropAnimationConfig}>
-                                                        {activeId ? renderPanel(activeId, true) : null}
-                                                    </DragOverlay>
-                                                </DndContext>
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
+                        
                         {!isPinned && (
                             <div id="printable-summary" className="p-4">
                                 <DndContext

@@ -1139,7 +1139,7 @@ export default function AddExecutiveSearchJob() {
                         <label className="w-48 font-medium flex items-center">
                           {field.field_label}:
                           {field.is_required &&
-                            (fieldValue.trim() !== "" ? (
+                            (fieldValue !== "" ? (
                               <span className="text-green-500 ml-1">✔</span>
                             ) : (
                               <span className="text-red-500 ml-1">*</span>
@@ -1160,7 +1160,7 @@ export default function AddExecutiveSearchJob() {
                               }
                             }}
                             className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
-                            required={field.is_required}
+                            required={field.is_required}      
                           >
                             <option value="">Select {field.field_label}</option>
                             {organizations.map((org) => (
@@ -1181,7 +1181,7 @@ export default function AddExecutiveSearchJob() {
                         <label className="w-48 font-medium flex items-center">
                           {field.field_label}:
                           {field.is_required &&
-                            (fieldValue.trim() !== "" ? (
+                            (fieldValue !== "" ? (
                               <span className="text-green-500 ml-1">✔</span>
                             ) : (
                               <span className="text-red-500 ml-1">*</span>
@@ -1307,7 +1307,7 @@ export default function AddExecutiveSearchJob() {
                     // Parse existing value (comma-separated string or array)
                     const selectedContactIds = Array.isArray(fieldValue)
                       ? fieldValue
-                      : typeof fieldValue === "string" && fieldValue.trim()
+                      : typeof fieldValue === "string" && fieldValue
                       ? fieldValue.split(",").map((id) => id.trim()).filter(Boolean)
                       : [];
 
@@ -1436,7 +1436,7 @@ export default function AddExecutiveSearchJob() {
                         <label className="w-48 font-medium flex items-center">
                           {field.field_label}:
                           {field.is_required &&
-                            (fieldValue.trim() !== "" ? (
+                            (fieldValue !== "" ? (
                               <span className="text-green-500 ml-1">✔</span>
                             ) : (
                               <span className="text-red-500 ml-1">*</span>
@@ -1474,7 +1474,7 @@ export default function AddExecutiveSearchJob() {
                       <label className="w-48 font-medium flex items-center">
                         {field.field_label}:
                         {field.is_required &&
-                          (fieldValue.trim() !== "" ? (
+                          (fieldValue !== "" ? (
                             <span className="text-green-500 ml-1">✔</span>
                           ) : (
                             <span className="text-red-500 ml-1">*</span>
