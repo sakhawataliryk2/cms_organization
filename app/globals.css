@@ -61,10 +61,20 @@ body {
   margin-right: -12px; 
 }
 
+.sd-tab-label.is-pinned {
+  background-color: #16a34a;
+  color: #ffffff;
+}
+
 .sd-tab-label:hover {
   background-color: rgb(29 41 61);
   color: #fff;
   z-index: 3;
+}
+
+.sd-tab-label.is-pinned:hover {
+  background-color: #15803d;
+  color: #ffffff;
 }
 
 

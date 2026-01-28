@@ -9,7 +9,14 @@ import ActionDropdown from "@/components/ActionDropdown";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import LoadingScreen from "@/components/LoadingScreen";
 import { FiBriefcase, FiLock, FiUnlock } from "react-icons/fi";
+import { BsFillPinAngleFill } from "react-icons/bs";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import {
+  buildPinnedKey,
+  isPinnedRecord,
+  PINNED_RECORDS_CHANGED_EVENT,
+  togglePinnedRecord,
+} from "@/lib/pinnedRecords";
 
 import {
   DndContext,
@@ -117,6 +124,9 @@ export default function PlacementView() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // Pinned record (bookmarks bar) state
+  const [isRecordPinned, setIsRecordPinned] = useState(false);
 
   // Notes and history state
   const [notes, setNotes] = useState<
@@ -327,10 +337,34 @@ export default function PlacementView() {
     [columns, findContainer]
   );
 
-  const togglePin = () => {
-    setIsPinned((p) => !p);
-    if (isPinned === false) setIsCollapsed(false);
+  // const togglePin = () => {
+  //   setIsPinned((p) => !p);
+  //   if (isPinned === false) setIsCollapsed(false);
+  // };
+
+  const handleTogglePinnedRecord = () => {
+    if (!placement) return;
+    const key = buildPinnedKey("placement", placement.id);
+    const label = String(placement.jobSeekerName || placement.jobTitle || placement.id);
+    const url = `/dashboard/placements/view?id=${placement.id}`;
+
+    const res = togglePinnedRecord({ key, label, url });
+    if (res.action === "limit") {
+      window.alert("Maximum 10 pinned records reached");
+    }
   };
+
+  useEffect(() => {
+    const syncPinned = () => {
+      if (!placement) return;
+      const key = buildPinnedKey("placement", placement.id);
+      setIsRecordPinned(isPinnedRecord(key));
+    };
+
+    syncPinned();
+    window.addEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+    return () => window.removeEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+  }, [placement]);
 
   // Current active tab
   const [activeTab, setActiveTab] = useState("summary");
@@ -2343,6 +2377,17 @@ export default function PlacementView() {
             >
               <Image src="/print.svg" alt="Print" width={20} height={20} />
             </button>
+
+            <button
+              onClick={handleTogglePinnedRecord}
+              className={`p-1 hover:bg-gray-200 rounded ${isRecordPinned ? "text-yellow-600" : "text-gray-600"}`}
+              aria-label={isRecordPinned ? "Unpin" : "Pin"}
+              title={isRecordPinned ? "Unpin" : "Pin"}
+              disabled={!placement}
+              type="button"
+            >
+              <BsFillPinAngleFill size={18} />
+            </button>
             <button
               className="p-1 hover:bg-gray-200 rounded"
               aria-label="Reload"
@@ -2380,31 +2425,12 @@ export default function PlacementView() {
         ))}
       </div>
 
-      {/* Quick Action Buttons (match Hiring Manager layout) */}
-      <div className="flex bg-gray-300 p-2 space-x-2">
-        <div className="flex-1 space-x-2"></div>
-        {activeTab === "summary" && (
-          <button
-            onClick={togglePin}
-            className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
-            title={isPinned ? "Unpin panel" : "Pin panel"}
-            type="button"
-          >
-            {isPinned ? (
-              <FiLock className="w-5 h-5 text-blue-600" />
-            ) : (
-              <FiUnlock className="w-5 h-5 text-gray-600" />
-            )}
-          </button>
-        )}
-      </div>
-
       {/* Main Content Area */}
 
       {activeTab === "summary" && (
         <div className="relative w-full">
           {/* Pinned side drawer */}
-          {isPinned && (
+          {/* {isPinned && (
             <div
               className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"} border-l border-gray-300`}
             >
@@ -2460,7 +2486,7 @@ export default function PlacementView() {
                 )}
               </div>
             </div>
-          )}
+          )} */}
 
           {/* Regular summary (not pinned) */}
           {!isPinned && (

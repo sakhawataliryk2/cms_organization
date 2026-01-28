@@ -35,7 +35,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
-import { FiLock, FiUnlock } from "react-icons/fi";
+// import { FiLock, FiUnlock } from "react-icons/fi";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import {
   buildPinnedKey,
@@ -1072,6 +1072,7 @@ export default function HiringManagerView() {
         email: hm.email || "(Not provided)",
         email2: hm.email2 || "",
         organization: {
+          id: hm.organization_id,
           name:
             hm.organization_name ||
             hm.organization_name_from_org ||
@@ -2269,6 +2270,8 @@ export default function HiringManagerView() {
     }
   };
 
+  console.log("Hiring", hiringManager)
+
   // Handle transfer submission
   const handleTransferSubmit = async () => {
     if (!transferForm.targetOrganizationId) {
@@ -2278,6 +2281,23 @@ export default function HiringManagerView() {
 
     if (!hiringManagerId) {
       alert("Hiring Manager ID is missing");
+      return;
+    }
+
+    const sourceOrganizationId = hiringManager?.organization?.id;
+    if (!sourceOrganizationId) {
+      alert("Source organization is missing");
+      return;
+    }
+
+    const targetOrganizationId = Number(transferForm.targetOrganizationId);
+    if (!Number.isFinite(targetOrganizationId) || targetOrganizationId <= 0) {
+      alert("Invalid target organization");
+      return;
+    }
+
+    if (Number(sourceOrganizationId) === targetOrganizationId) {
+      alert("Cannot transfer to the same organization");
       return;
     }
 
@@ -2317,7 +2337,7 @@ export default function HiringManagerView() {
       });
 
       // Create transfer request
-      const transferResponse = await fetch("/api/hiring-managers/transfer", {
+      const transferResponse = await fetch("/api/organizations/transfer", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -2327,15 +2347,12 @@ export default function HiringManagerView() {
           )}`,
         },
         body: JSON.stringify({
-          source_hiring_manager_id: hiringManagerId,
-          target_organization_id: transferForm.targetOrganizationId,
-          requested_by: currentUser?.id || currentUser?.name || "Unknown",
+          source_organization_id: sourceOrganizationId,
+          target_organization_id: targetOrganizationId,
+          requested_by: currentUser?.name || currentUser?.id || "Unknown",
           requested_by_email: currentUser?.email || "",
-          source_record_number: formatRecordId(hiringManager.id, "hiringManager"),
-          target_record_number: formatRecordId(
-            parseInt(transferForm.targetOrganizationId),
-            "organization"
-          ),
+          source_record_number: formatRecordId(Number(sourceOrganizationId), "organization"),
+          target_record_number: formatRecordId(targetOrganizationId, "organization"),
         }),
       });
 
@@ -2350,7 +2367,7 @@ export default function HiringManagerView() {
       setShowTransferModal(false);
       setTransferForm({ targetOrganizationId: "" });
     } catch (err) {
-      console.error("Error submitting transfer:", err);
+      console.warn("Transfer request failed:", err);
       alert(
         err instanceof Error
           ? err.message
@@ -3550,22 +3567,6 @@ export default function HiringManagerView() {
             );
           })}
         </div>
-
-
-        {
-          activeTab === "summary" &&
-          <button
-            onClick={togglePin}
-            className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
-            title={isPinned ? "Unpin panel" : "Pin panel"}
-          >
-            {isPinned ? (
-              <FiLock className="w-5 h-5 text-blue-600" />
-            ) : (
-              <FiUnlock className="w-5 h-5 text-gray-600" />
-            )}
-          </button>
-        }
       </div>
 
       {/* Main Content Area */}
@@ -3574,7 +3575,7 @@ export default function HiringManagerView() {
       {activeTab === "summary" && (
         <div className="relative w-full">
           {/* Pinned side drawer */}
-          {isPinned && (
+          {/* {isPinned && (
             <div className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"} border-l border-gray-300`}>
               <div className="flex flex-col h-full">
                 <div className="flex items-center justify-between p-2 border-b bg-gray-50">
@@ -3627,7 +3628,7 @@ export default function HiringManagerView() {
                 )}
               </div>
             </div>
-          )}
+          )} */}
 
           {/* Regular summary (not pinned) */}
           {!isPinned && (

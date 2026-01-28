@@ -29,12 +29,13 @@ import {
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
+  horizontalListSortingStrategy,
   sortableKeyboardCoordinates,
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
-import { FiLock, FiUnlock } from "react-icons/fi";
+import { FiLock, FiUnlock, FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import {
   buildPinnedKey,
@@ -89,6 +90,178 @@ function DroppableContainer({ id, children, items }: { id: string, children: Rea
         {children}
       </div>
     </SortableContext>
+  );
+}
+
+type ColumnSortState = "asc" | "desc" | null;
+type ColumnFilterState = string | null;
+
+// Sortable Column Header Component for Documents
+function SortableColumnHeader({
+  id,
+  columnKey,
+  label,
+  sortState,
+  filterValue,
+  onSort,
+  onFilterChange,
+  filterType,
+  filterOptions,
+}: {
+  id: string;
+  columnKey: string;
+  label: string;
+  sortState: ColumnSortState;
+  filterValue: ColumnFilterState;
+  onSort: () => void;
+  onFilterChange: (value: string) => void;
+  filterType: "text" | "select" | "number";
+  filterOptions?: { label: string; value: string }[];
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const [showFilter, setShowFilter] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  // Close filter on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        filterRef.current &&
+        !filterRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
+      ) {
+        setShowFilter(false);
+      }
+    };
+
+    if (showFilter) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showFilter, id]);
+
+  return (
+    <th
+      ref={setNodeRef}
+      style={style}
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
+    >
+      <div className="flex items-center gap-2">
+        {/* Drag Handle */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Drag to reorder column"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={16} />
+        </button>
+
+        {/* Column Label */}
+        <span className="flex-1">{label}</span>
+
+        {/* Sort Control */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSort();
+          }}
+          className="text-gray-400 hover:text-gray-600 transition-colors"
+          title={sortState === "asc" ? "Sort descending" : "Sort ascending"}
+        >
+          {sortState === "asc" ? (
+            <FiArrowUp size={14} />
+          ) : (
+            <FiArrowDown size={14} />
+          )}
+        </button>
+        
+        {/* Filter Toggle */}
+        <button
+          data-filter-toggle={id}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowFilter(!showFilter);
+          }}
+          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
+            }`}
+          title="Filter column"
+        >
+          <FiFilter size={14} />
+        </button>
+      </div>
+
+      {/* Filter Dropdown */}
+      {showFilter && (
+        <div
+          ref={filterRef}
+          className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-300 shadow-lg p-2 mt-1 min-w-[150px]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {filterType === "text" && (
+            <input
+              type="text"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "number" && (
+            <input
+              type="number"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "select" && filterOptions && (
+            <select
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            >
+              <option value="">All</option>
+              {filterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {filterValue && (
+            <button
+              onClick={() => {
+                onFilterChange("");
+                setShowFilter(false);
+              }}
+              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+            >
+              Clear Filter
+            </button>
+          )}
+        </div>
+      )}
+    </th>
   );
 }
 
@@ -182,6 +355,12 @@ export default function JobView() {
   const [documents, setDocuments] = useState<Array<any>>([]);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [documentError, setDocumentError] = useState<string | null>(null);
+
+  // Document table columns state
+  const DOCUMENT_DEFAULT_COLUMNS = ["document_name", "document_type", "created_by_name", "created_at"];
+  const [documentColumnFields, setDocumentColumnFields] = useState<string[]>(DOCUMENT_DEFAULT_COLUMNS);
+  const [documentColumnSorts, setDocumentColumnSorts] = useState<Record<string, ColumnSortState>>({});
+  const [documentColumnFilters, setDocumentColumnFilters] = useState<Record<string, ColumnFilterState>>({});
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
@@ -195,6 +374,12 @@ export default function JobView() {
   const [fileDetailsName, setFileDetailsName] = useState("");
   const [fileDetailsType, setFileDetailsType] = useState("General");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Document editing state
+  const [editingDocument, setEditingDocument] = useState<any | null>(null);
+  const [showEditDocumentModal, setShowEditDocumentModal] = useState(false);
+  const [editDocumentName, setEditDocumentName] = useState("");
+  const [editDocumentType, setEditDocumentType] = useState("General");
 
   // Note sorting & filtering state
   const [noteActionFilter, setNoteActionFilter] = useState<string>("");
@@ -604,6 +789,58 @@ export default function JobView() {
       document.body.removeChild(link);
     } else {
       alert("This document has no file or content to download.");
+    }
+  };
+
+  const handleEditDocument = (doc: any) => {
+    setEditingDocument(doc);
+    setEditDocumentName(doc?.document_name || "");
+    setEditDocumentType(doc?.document_type || "General");
+    setShowEditDocumentModal(true);
+  };
+
+  const handleUpdateDocument = async () => {
+    if (!editingDocument?.id || !jobId || !editDocumentName.trim()) return;
+
+    try {
+      const response = await fetch(
+        `/api/jobs/${jobId}/documents/${editingDocument.id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            document_name: editDocumentName,
+            document_type: editDocumentType,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to update document");
+      }
+
+      const data = await response.json();
+
+      setDocuments((prev) =>
+        prev.map((doc) => (doc.id === editingDocument.id ? data.document : doc))
+      );
+
+      setEditingDocument(null);
+      setShowEditDocumentModal(false);
+      setEditDocumentName("");
+      setEditDocumentType("General");
+
+      alert("Document updated successfully");
+    } catch (err) {
+      console.error("Error updating document:", err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while updating the document"
+      );
     }
   };
 
@@ -2956,6 +3193,147 @@ export default function JobView() {
     </div>
   );
 
+  // Document columns catalog
+  const documentColumnsCatalog = useMemo(() => {
+    return [
+      { key: "document_name", label: "Document Name", sortable: true, filterType: "text" as const },
+      { key: "document_type", label: "Type", sortable: true, filterType: "select" as const },
+      { key: "created_by_name", label: "Created By", sortable: true, filterType: "text" as const },
+      { key: "created_at", label: "Created At", sortable: true, filterType: "text" as const },
+    ];
+  }, []);
+
+  const getDocumentColumnLabel = (key: string) =>
+    documentColumnsCatalog.find((c) => c.key === key)?.label || key;
+
+  const getDocumentColumnInfo = (key: string) =>
+    documentColumnsCatalog.find((c) => c.key === key);
+
+  const getDocumentColumnValue = (doc: any, key: string) => {
+    switch (key) {
+      case "document_name":
+        return doc.document_name || "N/A";
+      case "document_type":
+        return doc.document_type || "N/A";
+      case "created_by_name":
+        return doc.created_by_name || "System";
+      case "created_at":
+        return doc.created_at ? new Date(doc.created_at).toLocaleString() : "N/A";
+      default:
+        return "—";
+    }
+  };
+
+  // Get unique document types for filter dropdown
+  const documentTypeOptions = useMemo(() => {
+    const types = new Set<string>();
+    documents.forEach((doc) => {
+      if (doc.document_type) types.add(doc.document_type);
+    });
+    return Array.from(types).map((t) => ({ label: t, value: t }));
+  }, [documents]);
+
+  // Filtered and sorted documents
+  const filteredAndSortedDocuments = useMemo(() => {
+    let result = [...documents];
+
+    // Apply filters
+    Object.entries(documentColumnFilters).forEach(([columnKey, filterValue]) => {
+      if (!filterValue || filterValue.trim() === "") return;
+
+      result = result.filter((doc) => {
+        let value = getDocumentColumnValue(doc, columnKey);
+        const valueStr = String(value).toLowerCase();
+        const filterStr = String(filterValue).toLowerCase();
+
+        // For select filters, do exact match
+        const columnInfo = getDocumentColumnInfo(columnKey);
+        if (columnInfo?.filterType === "select") {
+          return valueStr === filterStr;
+        }
+
+        // For text columns, do contains match
+        return valueStr.includes(filterStr);
+      });
+    });
+
+    // Apply sorting
+    const activeSorts = Object.entries(documentColumnSorts).filter(([_, dir]) => dir !== null);
+    if (activeSorts.length > 0) {
+      const [sortKey, sortDir] = activeSorts[0];
+      result.sort((a, b) => {
+        let aValue: any = getDocumentColumnValue(a, sortKey);
+        let bValue: any = getDocumentColumnValue(b, sortKey);
+
+        // Handle dates properly
+        if (sortKey === "created_at") {
+          aValue = new Date(a.created_at).getTime();
+          bValue = new Date(b.created_at).getTime();
+        }
+
+        // Handle numeric values
+        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
+        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
+
+        let cmp = 0;
+        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+          cmp = aNum - bNum;
+        } else {
+          cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+        }
+
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [documents, documentColumnFilters, documentColumnSorts]);
+
+  // Handle document column sort toggle
+  const handleDocumentColumnSort = (columnKey: string) => {
+    setDocumentColumnSorts((prev) => {
+      const current = prev[columnKey];
+      if (current === "asc") {
+        return { ...prev, [columnKey]: "desc" };
+      } else if (current === "desc") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      } else {
+        return { ...prev, [columnKey]: "asc" };
+      }
+    });
+  };
+
+  // Handle document column filter change
+  const handleDocumentColumnFilter = (columnKey: string, value: string) => {
+    setDocumentColumnFilters((prev) => {
+      if (!value || value.trim() === "") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      }
+      return { ...prev, [columnKey]: value };
+    });
+  };
+
+  // Handle document column drag end
+  const handleDocumentColumnDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = documentColumnFields.indexOf(active.id as string);
+    const newIndex = documentColumnFields.indexOf(over.id as string);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newOrder = arrayMove(documentColumnFields, oldIndex, newIndex);
+      setDocumentColumnFields(newOrder);
+    }
+  };
+
   const renderDocsTab = () => {
     return (
       <div className="bg-white p-4 rounded shadow-sm">
@@ -3119,49 +3497,135 @@ export default function JobView() {
           </div>
         ) : documentError ? (
           <div className="text-red-500 py-2">{documentError}</div>
-        ) : documents.length > 0 ? (
+        ) : filteredAndSortedDocuments.length > 0 ? (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-gray-100 border-b">
-                  <th className="text-left p-3 font-medium">Actions</th>
-                  <th className="text-left p-3 font-medium">Document Name</th>
-                  <th className="text-left p-3 font-medium">Type</th>
-                  <th className="text-left p-3 font-medium">Created By</th>
-                  <th className="text-left p-3 font-medium">Created At</th>
-                </tr>
-              </thead>
-              <tbody>
-                {documents.map((doc) => (
-                  <tr key={doc.id} className="border-b hover:bg-gray-50">
-                    <td className="p-3">
-                      <ActionDropdown
-                        label="Actions"
-                        options={[
-                          { label: "View", action: () => setSelectedDocument(doc) },
-                          { label: "Download", action: () => handleDownloadDocument(doc) },
-                          { label: "Delete", action: () => handleDeleteDocument(doc.id) },
-                        ]}
-                      />
-                    </td>
-                    <td className="p-3">
-                      <button
-                        onClick={() => setSelectedDocument(doc)}
-                        className="text-blue-600 hover:underline font-medium"
-                      >
-                        {doc.document_name}
-                      </button>
-                    </td>
-                    <td className="p-3">{doc.document_type}</td>
-                    <td className="p-3">{doc.created_by_name || "System"}</td>
-                    <td className="p-3">{new Date(doc.created_at).toLocaleString()}</td>
+            <DndContext collisionDetection={closestCorners} onDragEnd={handleDocumentColumnDragEnd}>
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-gray-100 border-b">
+                    <th className="text-left p-3 font-medium">Actions</th>
+                    <SortableContext
+                      items={documentColumnFields}
+                      strategy={horizontalListSortingStrategy}
+                    >
+                      {documentColumnFields.map((key) => {
+                        const columnInfo = getDocumentColumnInfo(key);
+                        if (!columnInfo) return null;
+
+                        return (
+                          <SortableColumnHeader
+                            key={key}
+                            id={key}
+                            columnKey={key}
+                            label={getDocumentColumnLabel(key)}
+                            sortState={documentColumnSorts[key] || null}
+                            filterValue={documentColumnFilters[key] || null}
+                            onSort={() => handleDocumentColumnSort(key)}
+                            onFilterChange={(value) => handleDocumentColumnFilter(key, value)}
+                            filterType={columnInfo.filterType}
+                            filterOptions={
+                              key === "document_type" ? documentTypeOptions : undefined
+                            }
+                          />
+                        );
+                      })}
+                    </SortableContext>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filteredAndSortedDocuments.map((doc) => (
+                    <tr key={doc.id} className="border-b hover:bg-gray-50">
+                      <td className="p-3">
+                        <ActionDropdown
+                          label="Actions"
+                          options={[
+                            { label: "View", action: () => setSelectedDocument(doc) },
+                            { label: "Edit", action: () => handleEditDocument(doc) },
+                            { label: "Download", action: () => handleDownloadDocument(doc) },
+                            { label: "Delete", action: () => handleDeleteDocument(doc.id) },
+                          ]}
+                        />
+                      </td>
+                      {documentColumnFields.map((key) => (
+                        <td key={key} className="p-3">
+                          {key === "document_name" ? (
+                            <button
+                              onClick={() => setSelectedDocument(doc)}
+                              className="text-blue-600 hover:underline font-medium"
+                            >
+                              {getDocumentColumnValue(doc, key)}
+                            </button>
+                          ) : (
+                            getDocumentColumnValue(doc, key)
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </DndContext>
           </div>
         ) : (
-          <p className="text-gray-500 italic">No documents available</p>
+          <p className="text-gray-500 italic">
+            {documents.length === 0
+              ? "No documents available"
+              : "No documents match the current filters"}
+          </p>
+        )}
+
+        {/* Edit Document Modal (Name + Type only) */}
+        {showEditDocumentModal && editingDocument && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 bg-opacity-50">
+            <div className="bg-white rounded shadow-lg p-6 w-full max-w-md">
+              <h3 className="text-lg font-semibold mb-4">Edit Document</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Document Name *</label>
+                  <input
+                    type="text"
+                    value={editDocumentName}
+                    onChange={(e) => setEditDocumentName(e.target.value)}
+                    className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Document Type *</label>
+                  <select
+                    value={editDocumentType}
+                    onChange={(e) => setEditDocumentType(e.target.value)}
+                    className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="Contract">Contract</option>
+                    <option value="Invoice">Invoice</option>
+                    <option value="Report">Report</option>
+                    <option value="ID">ID</option>
+                    <option value="General">General</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex justify-end space-x-2 mt-5">
+                <button
+                  onClick={() => {
+                    setShowEditDocumentModal(false);
+                    setEditingDocument(null);
+                    setEditDocumentName("");
+                    setEditDocumentType("General");
+                  }}
+                  className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUpdateDocument}
+                  className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm disabled:opacity-50"
+                  disabled={!editDocumentName.trim()}
+                >
+                  Update
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {selectedDocument && (
@@ -3410,7 +3874,7 @@ export default function JobView() {
           ))}
         </div>
 
-        {activeTab === "summary" && (
+        {/* {activeTab === "summary" && (
           <button
             onClick={togglePin}
             className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
@@ -3422,7 +3886,7 @@ export default function JobView() {
               <FiUnlock className="w-5 h-5 text-gray-600" />
             )}
           </button>
-        )}
+        )} */}
       </div>
 
       {/* Main Content Area */}
@@ -3432,7 +3896,7 @@ export default function JobView() {
           {activeTab === "summary" && (
             <div className="col-span-7 relative w-full">
               {/* Pinned side drawer */}
-              {isPinned && (
+              {/* {isPinned && (
                 <div className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"} border-l border-gray-300`}>
                   <div className="flex flex-col h-full">
                     <div className="flex items-center justify-between p-2 border-b bg-gray-50">
@@ -3485,7 +3949,7 @@ export default function JobView() {
                     )}
                   </div>
                 </div>
-              )}
+              )} */}
 
               {/* Regular summary (not pinned) */}
               {!isPinned && (

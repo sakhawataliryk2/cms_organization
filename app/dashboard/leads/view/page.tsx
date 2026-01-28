@@ -8,7 +8,14 @@ import ActionDropdown from "@/components/ActionDropdown";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import LoadingScreen from "@/components/LoadingScreen";
 import { FiTarget } from "react-icons/fi";
+import { BsFillPinAngleFill } from "react-icons/bs";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import {
+  buildPinnedKey,
+  isPinnedRecord,
+  PINNED_RECORDS_CHANGED_EVENT,
+  togglePinnedRecord,
+} from "@/lib/pinnedRecords";
 
 // Default header fields for Leads module - defined outside component to ensure stable reference
 const LEAD_DEFAULT_HEADER_FIELDS = ["phone", "email"];
@@ -21,6 +28,9 @@ export default function LeadView() {
   const [lead, setLead] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Pinned record (bookmarks bar) state
+  const [isRecordPinned, setIsRecordPinned] = useState(false);
 
   // Notes and history state
   const [notes, setNotes] = useState<
@@ -61,6 +71,30 @@ export default function LeadView() {
 
   // Current active tab
   const [activeTab, setActiveTab] = useState("summary");
+
+  const handleTogglePinnedRecord = () => {
+    if (!lead) return;
+    const key = buildPinnedKey("lead", lead.id);
+    const label = lead.fullName || String(lead.id);
+    const url = `/dashboard/leads/view?id=${lead.id}`;
+
+    const res = togglePinnedRecord({ key, label, url });
+    if (res.action === "limit") {
+      window.alert("Maximum 10 pinned records reached");
+    }
+  };
+
+  useEffect(() => {
+    const syncPinned = () => {
+      if (!lead) return;
+      const key = buildPinnedKey("lead", lead.id);
+      setIsRecordPinned(isPinnedRecord(key));
+    };
+
+    syncPinned();
+    window.addEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+    return () => window.removeEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+  }, [lead]);
 
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
@@ -1110,6 +1144,16 @@ export default function LeadView() {
               aria-label="Print"
             >
               <Image src="/print.svg" alt="Print" width={20} height={20} />
+            </button>
+
+            <button
+              onClick={handleTogglePinnedRecord}
+              className={`p-1 hover:bg-gray-200 rounded ${isRecordPinned ? "text-yellow-600" : "text-gray-600"}`}
+              aria-label={isRecordPinned ? "Unpin" : "Pin"}
+              title={isRecordPinned ? "Unpin" : "Pin"}
+              disabled={!lead}
+            >
+              <BsFillPinAngleFill size={18} />
             </button>
 
             <button

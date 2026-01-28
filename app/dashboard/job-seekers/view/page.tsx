@@ -9,7 +9,7 @@ import PanelWithHeader from "@/components/PanelWithHeader";
 import { FaLinkedin, FaFacebookSquare } from "react-icons/fa";
 import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, sendCalendarInvite, type EmailMessage, type CalendarEvent } from "@/lib/office365";
-import { FiUsers, FiUpload, FiFile, FiX, FiLock, FiUnlock } from "react-icons/fi";
+import { FiUsers, FiUpload, FiFile, FiX, FiLock, FiUnlock, FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { TbGripVertical } from "react-icons/tb";
 import { formatRecordId } from '@/lib/recordIdFormatter';
@@ -41,6 +41,7 @@ import {
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
+  horizontalListSortingStrategy,
   sortableKeyboardCoordinates,
   arrayMove,
 } from "@dnd-kit/sortable";
@@ -55,6 +56,178 @@ function DroppableContainer({ id, children, items }: { id: string, children: Rea
         {children}
       </div>
     </SortableContext>
+  );
+}
+
+type ColumnSortState = "asc" | "desc" | null;
+type ColumnFilterState = string | null;
+
+// Sortable Column Header Component for Documents
+function SortableColumnHeader({
+  id,
+  columnKey,
+  label,
+  sortState,
+  filterValue,
+  onSort,
+  onFilterChange,
+  filterType,
+  filterOptions,
+}: {
+  id: string;
+  columnKey: string;
+  label: string;
+  sortState: ColumnSortState;
+  filterValue: ColumnFilterState;
+  onSort: () => void;
+  onFilterChange: (value: string) => void;
+  filterType: "text" | "select" | "number";
+  filterOptions?: { label: string; value: string }[];
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const [showFilter, setShowFilter] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  // Close filter on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        filterRef.current &&
+        !filterRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
+      ) {
+        setShowFilter(false);
+      }
+    };
+
+    if (showFilter) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showFilter, id]);
+
+  return (
+    <th
+      ref={setNodeRef}
+      style={style}
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
+    >
+      <div className="flex items-center gap-2">
+        {/* Drag Handle */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Drag to reorder column"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={16} />
+        </button>
+
+        {/* Column Label */}
+        <span className="flex-1">{label}</span>
+
+        {/* Sort Control */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSort();
+          }}
+          className="text-gray-400 hover:text-gray-600 transition-colors"
+          title={sortState === "asc" ? "Sort descending" : "Sort ascending"}
+        >
+          {sortState === "asc" ? (
+            <FiArrowUp size={14} />
+          ) : (
+            <FiArrowDown size={14} />
+          )}
+        </button>
+        
+        {/* Filter Toggle */}
+        <button
+          data-filter-toggle={id}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowFilter(!showFilter);
+          }}
+          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
+            }`}
+          title="Filter column"
+        >
+          <FiFilter size={14} />
+        </button>
+      </div>
+
+      {/* Filter Dropdown */}
+      {showFilter && (
+        <div
+          ref={filterRef}
+          className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-300 shadow-lg p-2 mt-1 min-w-[150px]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {filterType === "text" && (
+            <input
+              type="text"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "number" && (
+            <input
+              type="number"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "select" && filterOptions && (
+            <select
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            >
+              <option value="">All</option>
+              {filterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {filterValue && (
+            <button
+              onClick={() => {
+                onFilterChange("");
+                setShowFilter(false);
+              }}
+              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+            >
+              Clear Filter
+            </button>
+          )}
+        </div>
+      )}
+    </th>
   );
 }
 
@@ -434,6 +607,153 @@ export default function JobSeekerView() {
   const [documents, setDocuments] = useState<any[]>([]);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
   const [documentError, setDocumentError] = useState<string | null>(null);
+
+  // Document table columns state
+  const DOCUMENT_DEFAULT_COLUMNS = ["document_name", "document_type", "created_by_name", "created_at"];
+  const [documentColumnFields, setDocumentColumnFields] = useState<string[]>(DOCUMENT_DEFAULT_COLUMNS);
+  const [documentColumnSorts, setDocumentColumnSorts] = useState<Record<string, ColumnSortState>>({});
+  const [documentColumnFilters, setDocumentColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+
+  // Document columns catalog (Docs tab table)
+  const documentColumnsCatalog = useMemo(() => {
+    return [
+      { key: "document_name", label: "Document Name", sortable: true, filterType: "text" as const },
+      { key: "document_type", label: "Type", sortable: true, filterType: "select" as const },
+      { key: "created_by_name", label: "Created By", sortable: true, filterType: "text" as const },
+      { key: "created_at", label: "Created At", sortable: true, filterType: "text" as const },
+    ];
+  }, []);
+
+  const getDocumentColumnLabel = (key: string) =>
+    documentColumnsCatalog.find((c) => c.key === key)?.label || key;
+
+  const getDocumentColumnInfo = (key: string) =>
+    documentColumnsCatalog.find((c) => c.key === key);
+
+  const getDocumentColumnValue = (doc: any, key: string) => {
+    switch (key) {
+      case "document_name":
+        return doc.document_name || doc.name || "Untitled Document";
+      case "document_type":
+        return doc.document_type || doc.type || "General";
+      case "created_by_name":
+        return doc.created_by_name || "System";
+      case "created_at":
+        return doc.created_at ? new Date(doc.created_at).toLocaleString() : "N/A";
+      default:
+        return "—";
+    }
+  };
+
+  // Get unique document types for filter dropdown
+  const documentTypeOptions = useMemo(() => {
+    const types = new Set<string>();
+    documents.forEach((doc) => {
+      const type = doc.document_type || doc.type;
+      if (type) types.add(type);
+    });
+    return Array.from(types).map((t) => ({ label: t, value: t }));
+  }, [documents]);
+
+  // Filtered and sorted documents
+  const filteredAndSortedDocuments = useMemo(() => {
+    let result = [...documents];
+
+    // Apply filters
+    Object.entries(documentColumnFilters).forEach(([columnKey, filterValue]) => {
+      if (!filterValue || filterValue.trim() === "") return;
+
+      result = result.filter((doc) => {
+        const value = getDocumentColumnValue(doc, columnKey);
+        const valueStr = String(value).toLowerCase();
+        const filterStr = String(filterValue).toLowerCase();
+
+        // For select filters, do exact match
+        const columnInfo = getDocumentColumnInfo(columnKey);
+        if (columnInfo?.filterType === "select") {
+          return valueStr === filterStr;
+        }
+
+        // For text columns, do contains match
+        return valueStr.includes(filterStr);
+      });
+    });
+
+    // Apply sorting
+    const activeSorts = Object.entries(documentColumnSorts).filter(([_, dir]) => dir !== null);
+    if (activeSorts.length > 0) {
+      const [sortKey, sortDir] = activeSorts[0];
+      result.sort((a, b) => {
+        let aValue: any = getDocumentColumnValue(a, sortKey);
+        let bValue: any = getDocumentColumnValue(b, sortKey);
+
+        // Handle dates properly
+        if (sortKey === "created_at") {
+          aValue = new Date(a.created_at).getTime();
+          bValue = new Date(b.created_at).getTime();
+        }
+
+        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
+        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
+
+        let cmp = 0;
+        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+          cmp = aNum - bNum;
+        } else {
+          cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
+            numeric: true,
+            sensitivity: "base",
+          });
+        }
+
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [documents, documentColumnFilters, documentColumnSorts]);
+
+  // Handle document column sort toggle
+  const handleDocumentColumnSort = (columnKey: string) => {
+    setDocumentColumnSorts((prev) => {
+      const current = prev[columnKey];
+      if (current === "asc") {
+        return { ...prev, [columnKey]: "desc" };
+      } else if (current === "desc") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      } else {
+        return { ...prev, [columnKey]: "asc" };
+      }
+    });
+  };
+
+  // Handle document column filter change
+  const handleDocumentColumnFilter = (columnKey: string, value: string) => {
+    setDocumentColumnFilters((prev) => {
+      if (!value || value.trim() === "") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      }
+      return { ...prev, [columnKey]: value };
+    });
+  };
+
+  // Handle document column drag end
+  const handleDocumentColumnDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = documentColumnFields.indexOf(active.id as string);
+    const newIndex = documentColumnFields.indexOf(over.id as string);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      const newOrder = arrayMove(documentColumnFields, oldIndex, newIndex);
+      setDocumentColumnFields(newOrder);
+    }
+  };
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -444,6 +764,21 @@ export default function JobSeekerView() {
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Document editing state
+  const [editingDocument, setEditingDocument] = useState<any | null>(null);
+  const [showEditDocumentModal, setShowEditDocumentModal] = useState(false);
+  const [editDocumentName, setEditDocumentName] = useState("");
+  const [editDocumentType, setEditDocumentType] = useState("General");
+  
+  // Add text document state
+  const [showAddDocument, setShowAddDocument] = useState(false);
+  const [newDocumentName, setNewDocumentName] = useState("");
+  const [newDocumentType, setNewDocumentType] = useState("General");
+  const [newDocumentContent, setNewDocumentContent] = useState("");
+  
+  // Document viewer state
+  const [selectedDocument, setSelectedDocument] = useState<any>(null);
 
   // Tearsheet modal state
   const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
@@ -1628,6 +1963,109 @@ Best regards`;
   // Trigger file input
   const triggerFileInput = () => {
     fileInputRef.current?.click();
+  };
+
+  // Handle edit document
+  const handleEditDocument = (doc: any) => {
+    setEditingDocument(doc);
+    setEditDocumentName(doc?.document_name || "");
+    setEditDocumentType(doc?.document_type || "General");
+    setShowEditDocumentModal(true);
+  };
+
+  // Handle update document
+  const handleUpdateDocument = async () => {
+    if (!editingDocument?.id || !jobSeekerId || !editDocumentName.trim()) return;
+
+    try {
+      const response = await fetch(
+        `/api/job-seekers/${jobSeekerId}/documents/${editingDocument.id}`,
+        {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+          body: JSON.stringify({
+            document_name: editDocumentName,
+            document_type: editDocumentType,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to update document");
+      }
+
+      const data = await response.json();
+
+      setDocuments((prev) =>
+        prev.map((doc) => (doc.id === editingDocument.id ? data.document : doc))
+      );
+
+      setEditingDocument(null);
+      setShowEditDocumentModal(false);
+      setEditDocumentName("");
+      setEditDocumentType("General");
+
+      alert("Document updated successfully");
+    } catch (err) {
+      console.error("Error updating document:", err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while updating the document"
+      );
+    }
+  };
+
+  // Handle add text document
+  const handleAddDocument = async () => {
+    if (!jobSeekerId || !newDocumentName.trim()) return;
+
+    try {
+      const response = await fetch(
+        `/api/job-seekers/${jobSeekerId}/documents`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+          body: JSON.stringify({
+            document_name: newDocumentName,
+            document_type: newDocumentType,
+            content: newDocumentContent,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to add document");
+      }
+
+      setShowAddDocument(false);
+      setNewDocumentName("");
+      setNewDocumentType("General");
+      setNewDocumentContent("");
+      fetchDocuments(jobSeekerId);
+      alert("Document added successfully");
+    } catch (err) {
+      console.error("Error adding document:", err);
+      alert(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while adding the document"
+      );
+    }
   };
 
   // Function to fetch job seeker data with better error handling
@@ -3165,7 +3603,7 @@ Best regards`;
           {activeTab === "summary" && (
             <div className="col-span-7 relative w-full">
               {/* Pinned side drawer */}
-              {isPinned && (
+              {/* {isPinned && (
                 <div className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"} border-l border-gray-300`}>
                   <div className="flex flex-col h-full">
                     <div className="flex items-center justify-between p-2 border-b bg-gray-50">
@@ -3218,7 +3656,7 @@ Best regards`;
                     )}
                   </div>
                 </div>
-              )}
+              )} */}
 
               {/* Regular summary (not pinned) */}
               {!isPinned && (
@@ -3275,150 +3713,320 @@ Best regards`;
             <div className="col-span-7">
               <div className="bg-white p-4 rounded shadow-sm">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-lg font-semibold">Documents</h2>
-                  <button
-                    onClick={triggerFileInput}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center space-x-2"
-                  >
-                    <FiUpload size={16} />
-                    <span>Add Docs</span>
-                  </button>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    onChange={handleFileSelect}
-                    className="hidden"
-                    accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png"
-                  />
+                  <h2 className="text-lg font-semibold">Job Seeker Documents</h2>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={triggerFileInput}
+                      className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
+                    >
+                      Upload Files
+                    </button>
+                    <button
+                      onClick={() => setShowAddDocument(true)}
+                      className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                    >
+                      Add Text Document
+                    </button>
+                  </div>
                 </div>
 
-                {/* Drag and Drop Area */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  onChange={handleFileSelect}
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
+                />
+
                 <div
                   onDragOver={handleDragOver}
                   onDragLeave={handleDragLeave}
                   onDrop={handleDrop}
-                  className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${isDragging
+                  className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 transition-colors ${isDragging
                     ? "border-blue-500 bg-blue-50"
                     : "border-gray-300 bg-gray-50 hover:border-gray-400"
                     }`}
                 >
-                  {isUploading ? (
-                    <div className="flex flex-col items-center">
-                      <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500 mb-2"></div>
-                      <p className="text-gray-600">Uploading document...</p>
-                    </div>
-                  ) : (
-                    <>
-                      <FiUpload className="mx-auto text-4xl text-gray-400 mb-4" />
-                      <p className="text-gray-600 mb-2">
-                        Drag and drop files here, or click "Add Docs" button
-                        above
-                      </p>
-                      <p className="text-sm text-gray-500">
-                        Supported formats: PDF, DOC, DOCX, TXT, JPG, PNG (Max
-                        10MB)
-                      </p>
-                      {uploadError && (
-                        <p className="text-red-500 text-sm mt-2">
-                          {uploadError}
-                        </p>
-                      )}
-                    </>
-                  )}
+                  <div className="flex flex-col items-center">
+                    <svg
+                      className="w-12 h-12 text-gray-400 mb-4"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                      />
+                    </svg>
+                    <p className="text-gray-600 mb-2">
+                      Drag and drop files here, or{" "}
+                      <button
+                        onClick={triggerFileInput}
+                        className="text-blue-500 hover:underline"
+                      >
+                        browse
+                      </button>
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      Supported formats: PDF, DOC, DOCX, TXT, JPG, PNG, GIF (Max 10MB per file)
+                    </p>
+                  </div>
                 </div>
 
-                {/* Documents List */}
+                {Object.keys(uploadProgress).length > 0 && (
+                  <div className="mb-4 space-y-2">
+                    {Object.entries(uploadProgress).map(([fileName, progress]) => (
+                      <div key={fileName} className="bg-gray-100 rounded p-2">
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="text-sm font-medium">{fileName}</span>
+                          <span className="text-sm text-gray-600">{Math.round(progress)}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 rounded-full h-2">
+                          <div
+                            className="bg-blue-500 h-2 rounded-full transition-all"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {Object.keys(uploadErrors).length > 0 && (
+                  <div className="mb-4 space-y-2">
+                    {Object.entries(uploadErrors).map(([fileName, err]) => (
+                      <div key={fileName} className="bg-red-50 border border-red-200 rounded p-2">
+                        <p className="text-sm text-red-800">
+                          <strong>{fileName}:</strong> {err}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {showAddDocument && (
+                  <div className="mb-6 p-4 bg-gray-50 rounded border">
+                    <h3 className="font-medium mb-2">Add New Document</h3>
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Document Name *</label>
+                        <input
+                          type="text"
+                          value={newDocumentName}
+                          onChange={(e) => setNewDocumentName(e.target.value)}
+                          placeholder="Enter document name"
+                          className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Document Type</label>
+                        <select
+                          value={newDocumentType}
+                          onChange={(e) => setNewDocumentType(e.target.value)}
+                          className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                        >
+                          <option value="General">General</option>
+                          <option value="Contract">Contract</option>
+                          <option value="Agreement">Agreement</option>
+                          <option value="Policy">Policy</option>
+                          <option value="Welcome">Welcome</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Content</label>
+                        <textarea
+                          value={newDocumentContent}
+                          onChange={(e) => setNewDocumentContent(e.target.value)}
+                          placeholder="Enter document content..."
+                          className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          rows={6}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end space-x-2 mt-3">
+                      <button
+                        onClick={() => setShowAddDocument(false)}
+                        className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleAddDocument}
+                        className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                        disabled={!newDocumentName.trim()}
+                      >
+                        Save Document
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {isLoadingDocuments ? (
-                  <div className="flex justify-center py-4 mt-4">
+                  <div className="flex justify-center py-4">
                     <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
                   </div>
                 ) : documentError ? (
-                  <div className="text-red-500 py-4 mt-4">{documentError}</div>
-                ) : documents.length > 0 ? (
-                  <div className="mt-6">
-                    <div className="overflow-x-auto">
+                  <div className="text-red-500 py-2">{documentError}</div>
+                ) : filteredAndSortedDocuments.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <DndContext collisionDetection={closestCorners} onDragEnd={handleDocumentColumnDragEnd}>
                       <table className="w-full border-collapse">
                         <thead>
                           <tr className="bg-gray-100 border-b">
-                            <th className="text-left p-3 font-medium">
-                              Document Name
-                            </th>
-                            <th className="text-left p-3 font-medium">Type</th>
-                            <th className="text-left p-3 font-medium">Size</th>
-                            <th className="text-left p-3 font-medium">
-                              Created By
-                            </th>
-                            <th className="text-left p-3 font-medium">
-                              Created At
-                            </th>
-                            <th className="text-left p-3 font-medium">
-                              Actions
-                            </th>
+                            <th className="text-left p-3 font-medium">Actions</th>
+                            <SortableContext
+                              items={documentColumnFields}
+                              strategy={horizontalListSortingStrategy}
+                            >
+                              {documentColumnFields.map((key) => {
+                                const columnInfo = getDocumentColumnInfo(key);
+                                if (!columnInfo) return null;
+
+                                return (
+                                  <SortableColumnHeader
+                                    key={key}
+                                    id={key}
+                                    columnKey={key}
+                                    label={getDocumentColumnLabel(key)}
+                                    sortState={documentColumnSorts[key] || null}
+                                    filterValue={documentColumnFilters[key] || null}
+                                    onSort={() => handleDocumentColumnSort(key)}
+                                    onFilterChange={(value) => handleDocumentColumnFilter(key, value)}
+                                    filterType={columnInfo.filterType}
+                                    filterOptions={
+                                      key === "document_type" ? documentTypeOptions : undefined
+                                    }
+                                  />
+                                );
+                              })}
+                            </SortableContext>
                           </tr>
                         </thead>
                         <tbody>
-                          {documents.map((doc) => (
-                            <tr
-                              key={doc.id}
-                              className="border-b hover:bg-gray-50"
-                            >
+                          {filteredAndSortedDocuments.map((doc) => (
+                            <tr key={doc.id} className="border-b hover:bg-gray-50">
                               <td className="p-3">
-                                <div className="flex items-center space-x-2">
-                                  <FiFile className="text-gray-400" />
-                                  <span className="text-blue-600 hover:underline cursor-pointer">
-                                    {doc.document_name ||
-                                      doc.name ||
-                                      "Untitled Document"}
-                                  </span>
-                                </div>
+                                <ActionDropdown
+                                  label="Actions"
+                                  options={[
+                                    { label: "View", action: () => setSelectedDocument(doc) },
+                                    { label: "Edit", action: () => handleEditDocument(doc) },
+                                    { label: "Download", action: () => handleDownloadDocument(doc) },
+                                    { label: "Delete", action: () => handleDeleteDocument(doc.id) },
+                                  ]}
+                                />
                               </td>
-                              <td className="p-3 text-gray-600">
-                                {doc.document_type || doc.type || "General"}
-                              </td>
-                              <td className="p-3 text-gray-600">
-                                {doc.file_size
-                                  ? `${(doc.file_size / 1024).toFixed(2)} KB`
-                                  : "-"}
-                              </td>
-                              <td className="p-3 text-gray-600">
-                                {doc.created_by_name || "Unknown"}
-                              </td>
-                              <td className="p-3 text-gray-600">
-                                {doc.created_at
-                                  ? new Date(
-                                    doc.created_at
-                                  ).toLocaleDateString()
-                                  : "-"}
-                              </td>
-                              <td className="p-3">
-                                <div className="flex items-center gap-2">
-                                  <button
-                                    onClick={() => handleDownloadDocument(doc)}
-                                    className="text-blue-600 hover:text-blue-800 p-1 rounded hover:bg-blue-50"
-                                    title="View / Download"
-                                  >
-                                    <FiFile size={18} />
-                                  </button>
-                                  <button
-                                    onClick={() => handleDeleteDocument(doc.id)}
-                                    className="text-red-600 hover:text-red-800 p-1 rounded hover:bg-red-50"
-                                    title="Delete document"
-                                  >
-                                    <FiX size={18} />
-                                  </button>
-                                </div>
-                              </td>
+                              {documentColumnFields.map((key) => (
+                                <td key={key} className="p-3">
+                                  {key === "document_name" ? (
+                                    <button
+                                      onClick={() => setSelectedDocument(doc)}
+                                      className="text-blue-600 hover:underline font-medium"
+                                    >
+                                      {getDocumentColumnValue(doc, key)}
+                                    </button>
+                                  ) : (
+                                    getDocumentColumnValue(doc, key)
+                                  )}
+                                </td>
+                              ))}
                             </tr>
                           ))}
                         </tbody>
                       </table>
-                    </div>
+                    </DndContext>
                   </div>
                 ) : (
-                  <div className="text-center py-8 mt-4">
-                    <p className="text-gray-500 italic">
-                      No documents have been uploaded yet.
-                    </p>
+                  <p className="text-gray-500 italic">
+                    {documents.length === 0
+                      ? "No documents available"
+                      : "No documents match the current filters"}
+                  </p>
+                )}
+
+                {/* Edit Document Modal (Name + Type only) */}
+                {showEditDocumentModal && editingDocument && (
+                  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 bg-opacity-50">
+                    <div className="bg-white rounded shadow-lg p-6 w-full max-w-md">
+                      <h3 className="text-lg font-semibold mb-4">Edit Document</h3>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Document Name *</label>
+                          <input
+                            type="text"
+                            value={editDocumentName}
+                            onChange={(e) => setEditDocumentName(e.target.value)}
+                            className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium mb-1">Document Type *</label>
+                          <select
+                            value={editDocumentType}
+                            onChange={(e) => setEditDocumentType(e.target.value)}
+                            className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          >
+                            <option value="Contract">Contract</option>
+                            <option value="Invoice">Invoice</option>
+                            <option value="Report">Report</option>
+                            <option value="ID">ID</option>
+                            <option value="General">General</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="flex justify-end space-x-2 mt-5">
+                        <button
+                          onClick={() => {
+                            setShowEditDocumentModal(false);
+                            setEditingDocument(null);
+                            setEditDocumentName("");
+                            setEditDocumentType("General");
+                          }}
+                          className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleUpdateDocument}
+                          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm disabled:opacity-50"
+                          disabled={!editDocumentName.trim()}
+                        >
+                          Update
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Document Viewer Modal */}
+                {selectedDocument && (
+                  <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+                      <div className="bg-gray-100 p-4 border-b flex justify-between items-center sticky top-0 z-10">
+                        <h2 className="text-lg font-semibold">{selectedDocument.document_name || selectedDocument.name || "Untitled Document"}</h2>
+                        <button
+                          onClick={() => setSelectedDocument(null)}
+                          className="p-1 rounded hover:bg-gray-200"
+                        >
+                          <span className="text-2xl font-bold">×</span>
+                        </button>
+                      </div>
+                      <div className="p-6">
+                        <div className="mb-4">
+                          <p className="text-sm text-gray-600">
+                            Created by {selectedDocument.created_by_name || "System"} on{" "}
+                            {new Date(selectedDocument.created_at).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="bg-gray-50 p-4 rounded border whitespace-pre-wrap">
+                          {selectedDocument.content || "No content available"}
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
               </div>

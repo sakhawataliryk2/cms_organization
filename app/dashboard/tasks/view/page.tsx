@@ -8,8 +8,16 @@ import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
 import { FiCheckSquare } from 'react-icons/fi';
+import { BsFillPinAngleFill } from "react-icons/bs";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+
+import {
+    buildPinnedKey,
+    isPinnedRecord,
+    PINNED_RECORDS_CHANGED_EVENT,
+    togglePinnedRecord,
+} from "@/lib/pinnedRecords";
 
 import {
     DndContext,
@@ -110,6 +118,9 @@ export default function TaskView() {
     const [task, setTask] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+
+    // Pinned record (bookmarks bar) state
+    const [isRecordPinned, setIsRecordPinned] = useState(false);
 
     // Notes and history state
     const [notes, setNotes] = useState<Array<any>>([]);
@@ -1135,6 +1146,30 @@ export default function TaskView() {
         if (isPinned === false) setIsCollapsed(false);
     };
 
+    const handleTogglePinnedRecord = () => {
+        if (!task) return;
+        const key = buildPinnedKey("task", task.id);
+        const label = task.title || `${formatRecordId(task.id, "task")}`;
+        const url = `/dashboard/tasks/view?id=${task.id}`;
+
+        const res = togglePinnedRecord({ key, label, url });
+        if (res.action === "limit") {
+            window.alert("Maximum 10 pinned records reached");
+        }
+    };
+
+    useEffect(() => {
+        const syncPinned = () => {
+            if (!task) return;
+            const key = buildPinnedKey("task", task.id);
+            setIsRecordPinned(isPinnedRecord(key));
+        };
+
+        syncPinned();
+        window.addEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+        return () => window.removeEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+    }, [task]);
+
     const findContainer = useCallback(
         (id: string) => {
             if (id in columns) {
@@ -1504,6 +1539,17 @@ export default function TaskView() {
                         >
                             <Image src="/print.svg" alt="Print" width={20} height={20} />
                         </button>
+
+                        <button
+                            onClick={handleTogglePinnedRecord}
+                            className={`p-1 hover:bg-gray-200 rounded ${isRecordPinned ? "text-yellow-600" : "text-gray-600"}`}
+                            aria-label={isRecordPinned ? "Unpin" : "Pin"}
+                            title={isRecordPinned ? "Unpin" : "Pin"}
+                            disabled={!task}
+                        >
+                            <BsFillPinAngleFill size={18} />
+                        </button>
+
                         <button
                             className="p-1 hover:bg-gray-200 rounded"
                             aria-label="Reload"

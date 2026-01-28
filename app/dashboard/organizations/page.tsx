@@ -988,15 +988,15 @@ export default function OrganizationList() {
                   />
                 </th>
 
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Id
-                </th>
 
                 {/* Fixed Actions header */}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
 
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Id
+                </th>
                 {/* Draggable Dynamic headers */}
                 <SortableContext
                   items={columnFields}
@@ -1054,7 +1054,7 @@ export default function OrganizationList() {
                     />
                   </td>
 
-                  <td className="px-6 py-4 text-black whitespace-nowrap">O {org?.id}</td>
+                  
                   {/* Fixed Actions */}
                   <td
                     className="px-6 py-4 whitespace-nowrap text-sm"
@@ -1136,6 +1136,8 @@ export default function OrganizationList() {
                       )}
                     </div>
                   </td>
+
+                  <td className="px-6 py-4 text-black whitespace-nowrap">O {org?.id}</td>
 
                   {/* Dynamic cells */}
                   {columnFields.map((key) => (

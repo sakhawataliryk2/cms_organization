@@ -126,20 +126,12 @@ function SortableColumnHeader({
             onSort();
           }}
           className="text-gray-400 hover:text-gray-600 transition-colors"
-          title={
-            sortState === "asc"
-              ? "Sort descending"
-              : sortState === "desc"
-                ? "Clear sort"
-                : "Sort ascending"
-          }
+          title={sortState === "asc" ? "Sort descending" : "Sort ascending"}
         >
           {sortState === "asc" ? (
             <FiArrowUp size={14} />
-          ) : sortState === "desc" ? (
-            <FiArrowDown size={14} />
           ) : (
-            <div className="w-3.5 h-3.5 border border-gray-300 rounded" />
+            <FiArrowDown size={14} />
           )}
         </button>
 
@@ -750,14 +742,15 @@ export default function PlacementList() {
                   />
                 </th>
 
-                {/* Fixed ID */}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Id
-                </th>
 
                 {/* Fixed Actions */}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
+                </th>
+
+                {/* Fixed ID */}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  ID
                 </th>
 
                 {/* Draggable Dynamic headers */}
@@ -810,12 +803,7 @@ export default function PlacementList() {
                       />
                     </td>
 
-                    {/* Fixed ID */}
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        P {placement.id}
-                      </div>
-                    </td>
+
 
                     {/* Fixed Actions dropdown (View only) */}
                     <td
@@ -855,6 +843,13 @@ export default function PlacementList() {
                             </div>
                           </div>
                         )}
+                      </div>
+                    </td>
+
+                    {/* Fixed ID */}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">
+                        P {placement.id}
                       </div>
                     </td>
 

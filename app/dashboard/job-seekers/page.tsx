@@ -795,13 +795,15 @@ export default function JobSeekerList() {
                   />
                 </th>
 
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Id
-                </th>
+                
 
                 {/* Fixed Actions header (LOCKED) */}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
+                </th>
+
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  ID
                 </th>
 
                 {/* Draggable Dynamic headers */}

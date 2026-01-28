@@ -129,20 +129,12 @@ function SortableColumnHeader({
             onSort();
           }}
           className="text-gray-400 hover:text-gray-600 transition-colors"
-          title={
-            sortState === "asc"
-              ? "Sort descending"
-              : sortState === "desc"
-                ? "Clear sort"
-                : "Sort ascending"
-          }
+          title={sortState === "asc" ? "Sort descending" : "Sort ascending"}
         >
           {sortState === "asc" ? (
             <FiArrowUp size={14} />
-          ) : sortState === "desc" ? (
-            <FiArrowDown size={14} />
           ) : (
-            <div className="w-3.5 h-3.5 border border-gray-300 rounded" />
+            <FiArrowDown size={14} />
           )}
         </button>
 
@@ -294,8 +286,8 @@ export default function TaskList() {
     const standard = [
       { key: "completed", label: "Completed?", sortable: true, filterType: "select" as const },
       { key: "due", label: "Due Date & Time", sortable: true, filterType: "text" as const },
-      { key: "jobSeeker", label: "Job Seeker", sortable: true, filterType: "text" as const },
-      { key: "hiringManager", label: "Hiring Manager", sortable: true, filterType: "text" as const },
+      { key: "job_seeker", label: "Job Seeker", sortable: true, filterType: "text" as const },
+      { key: "hiring_manager", label: "Hiring Manager", sortable: true, filterType: "text" as const },
       { key: "job", label: "Job", sortable: true, filterType: "text" as const },
       { key: "lead", label: "Lead", sortable: true, filterType: "text" as const },
       { key: "placement", label: "Placement", sortable: true, filterType: "text" as const },
@@ -307,9 +299,12 @@ export default function TaskList() {
 
     const custom = (availableFields || []).map((f: any) => {
       const key = f?.field_key || f?.field_name || f?.api_name || f?.id;
+      const rawKey = String(key ?? "").startsWith("custom:")
+        ? String(key).slice("custom:".length)
+        : String(key);
 
       return {
-        key: `custom:${String(key)}`,
+        key: `custom:${rawKey}`,
         label: f?.field_label || f?.field_name || String(key),
         sortable: false,
         filterType: "text" as const,
@@ -386,7 +381,6 @@ export default function TaskList() {
     "owner",
   ];
 
-
   const getColumnLabel = (key: string) =>
     taskColumnsCatalog.find((c) => c.key === key)?.label ?? key;
 
@@ -405,10 +399,10 @@ export default function TaskList() {
       case "due":
         return formatDateTime(task.due_date, task.due_time) || "Not set";
 
-      case "jobSeeker":
+      case "job_seeker":
         return task.job_seeker_name || "—";
 
-      case "hiringManager":
+      case "hiring_manager":
         return task.hiring_manager_name || "—";
 
       case "job":
@@ -888,14 +882,14 @@ export default function TaskList() {
                   />
                 </th>
 
-                {/* Fixed ID */}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Id
-                </th>
-
                 {/* Fixed Actions */}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
+                </th>
+
+                {/* Fixed ID */}
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  ID
                 </th>
 
                 {/* Draggable Dynamic headers */}
@@ -954,13 +948,6 @@ export default function TaskList() {
                         onChange={() => { }}
                         onClick={(e) => handleSelectTask(task.id, e)}
                       />
-                    </td>
-
-                    {/* Fixed ID */}
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        T {task.id}
-                      </div>
                     </td>
 
                     {/* Fixed Actions dropdown */}
@@ -1048,6 +1035,13 @@ export default function TaskList() {
                             </div>
                           </div>
                         )}
+                      </div>
+                    </td>
+
+                    {/* Fixed ID */}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">
+                        T {task.id}
                       </div>
                     </td>
 

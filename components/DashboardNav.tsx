@@ -593,12 +593,12 @@ export default function DashboardNav() {
                     <button
                       key={rec.key}
                       type="button"
-                      className={`sd-tab-label ${isActive ? "is-active" : ""} transition-colors hover:bg-slate-200`}
+                      className={`sd-tab-label is-pinned ${isActive ? "is-active" : ""} transition-colors`}
                       style={
                         isActive
                           ? ({
-                            ["--tabs-selected-bg-color" as any]: "rgb(233 233 233)",
-                            ["--tabs-selected-text-color" as any]: "rgb(0, 0, 0)",
+                            ["--tabs-selected-bg-color" as any]: "#16a34a",
+                            ["--tabs-selected-text-color" as any]: "#ffffff",
                           } as any)
                           : undefined
                       }

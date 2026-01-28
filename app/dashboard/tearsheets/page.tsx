@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import ActionDropdown from "@/components/ActionDropdown";
 import { FiX, FiPrinter, FiLock, FiUnlock } from "react-icons/fi";
+import { BsFillPinAngleFill } from "react-icons/bs";
+import {
+  buildPinnedKey,
+  isPinnedRecord,
+  PINNED_RECORDS_CHANGED_EVENT,
+  togglePinnedRecord,
+} from "@/lib/pinnedRecords";
 
 type TearsheetRow = {
   id: number;
@@ -76,6 +83,8 @@ const TearsheetsPage = () => {
 
   const hasRows = useMemo(() => rows.length > 0, [rows.length]);
 
+  const [pinnedKeySet, setPinnedKeySet] = useState<Set<string>>(new Set());
+
   // Load pinned state from localStorage
   useEffect(() => {
     const pinned = localStorage.getItem('tearsheetsPinned');
@@ -83,6 +92,32 @@ const TearsheetsPage = () => {
       setIsPinned(true);
     }
   }, []);
+
+  useEffect(() => {
+    const syncPinned = () => {
+      const next = new Set<string>();
+      rows.forEach((r) => {
+        const key = buildPinnedKey("tearsheet", r.id);
+        if (isPinnedRecord(key)) next.add(key);
+      });
+      setPinnedKeySet(next);
+    };
+
+    syncPinned();
+    window.addEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+    return () => window.removeEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+  }, [rows]);
+
+  const handleTogglePinnedTearsheet = (r: TearsheetRow) => {
+    const key = buildPinnedKey("tearsheet", r.id);
+    const label = r.name || `TE ${r.id}`;
+    const url = `/dashboard/tearsheets?id=${r.id}`;
+
+    const res = togglePinnedRecord({ key, label, url });
+    if (res.action === "limit") {
+      window.alert("Maximum 10 pinned records reached");
+    }
+  };
 
   const fetchTearsheets = async () => {
     setIsLoading(true);
@@ -427,6 +462,13 @@ const TearsheetsPage = () => {
                     scope="col"
                     className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
                   >
+                    ID
+                  </th>
+
+                  <th
+                    scope="col"
+                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
+                  >
                     Name
                   </th>
                   <th
@@ -485,6 +527,15 @@ const TearsheetsPage = () => {
                     <tr key={r.id} className="hover:bg-gray-50">
                       <td className="px-6 py-3 text-sm">
                         <div className="min-w-[120px]">
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePinnedTearsheet(r)}
+                            className={`mr-2 p-1 hover:bg-gray-200 rounded ${pinnedKeySet.has(buildPinnedKey("tearsheet", r.id)) ? "text-yellow-600" : "text-gray-600"}`}
+                            aria-label={pinnedKeySet.has(buildPinnedKey("tearsheet", r.id)) ? "Unpin" : "Pin"}
+                            title={pinnedKeySet.has(buildPinnedKey("tearsheet", r.id)) ? "Unpin" : "Pin"}
+                          >
+                            <BsFillPinAngleFill size={16} />
+                          </button>
                           <ActionDropdown
                             label="Actions"
                             options={[
@@ -507,6 +558,14 @@ const TearsheetsPage = () => {
                             menuClassName="absolute z-100 mt-1 w-56 bg-white border border-gray-300 shadow-lg text-black rounded z-50"
                           />
                         </div>
+                      </td>
+                      <td className="px-6 py-3 text-sm font-medium text-gray-900">
+                        <button
+                          onClick={() => handleTearsheetNameClick(r)}
+                          className=""
+                        >
+                          TE {r.id || "-"}
+                        </button>
                       </td>
                       <td className="px-6 py-3 text-sm font-medium text-gray-900">
                         <button
