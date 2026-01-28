@@ -1789,12 +1789,12 @@ export default function AddOrganization() {
                       <label className="w-48 font-medium flex items-center">
                         {field.field_label}:
                         {/* Show indicator for required fields OR conditionally required fields */}
-                        {/* {(field.is_required || isContractSignedByRequired) &&
+                        {(field.is_required || isContractSignedByRequired) &&
                           (hasValidValue() ? (
                             <span className="text-green-500 ml-1">✔</span>
                           ) : (
                             <span className="text-red-500 ml-1">*</span>
-                          ))} */}
+                          ))}
                       </label>
 
                       <div className="flex-1 relative">
