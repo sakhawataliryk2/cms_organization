@@ -1628,161 +1628,262 @@ export default function AddOrganization() {
                     isContractSignedByField &&
                     String(contractSignedOnFileValue).trim() === "Yes";
 
+                  // // Helper function to check if field has a valid value
+                  // const hasValidValue = () => {
+                  //   // Handle null, undefined, or empty values
+                  //   if (fieldValue === null || fieldValue === undefined) return false;
+                  //   const trimmed = String(fieldValue).trim();
+                  //   // Empty string means no value selected (especially for select fields)
+                  //   if (trimmed === "") return false;
+                    
+                  //   // Special validation for date fields
+                  //   if (field.field_type === "date") {
+                  //     // Accept both YYYY-MM-DD (storage format) and mm/dd/yyyy (display format)
+                  //     let dateToValidate = trimmed;
+                      
+                  //     // If it's in mm/dd/yyyy format, convert to YYYY-MM-DD
+                  //     if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+                  //       const [month, day, year] = trimmed.split("/");
+                  //       dateToValidate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+                  //     }
+                      
+                  //     // Check if it's a valid date format (YYYY-MM-DD)
+                  //     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+                  //     if (!dateRegex.test(dateToValidate)) return false;
+                      
+                  //     const date = new Date(dateToValidate);
+                  //     if (isNaN(date.getTime())) return false;
+                      
+                  //     // Additional validation: check if the date components match
+                  //     const [year, month, day] = dateToValidate.split("-");
+                  //     if (date.getFullYear() !== parseInt(year) ||
+                  //         date.getMonth() + 1 !== parseInt(month) ||
+                  //         date.getDate() !== parseInt(day)) {
+                  //       return false; // Invalid date (e.g., 02/30/2024)
+                  //     }
+                      
+                  //     return true;
+                  //   }
+                    
+                  //   // Special validation for ZIP code (must be exactly 5 digits)
+                  //   // Check by both label and field_name (Field_24)
+                  //   const isZipCodeField =
+                  //     field.field_label?.toLowerCase().includes("zip") ||
+                  //     field.field_label?.toLowerCase().includes("postal code") ||
+                  //     field.field_name?.toLowerCase().includes("zip") ||
+                  //     field.field_name === "Field_24" || // ZIP Code
+                  //     field.field_name === "field_24";
+                  //   if (isZipCodeField) {
+                  //     return /^\d{5}$/.test(trimmed);
+                  //   }
+                    
+                  //   // Special validation for numeric fields that allow values >= 0
+                  //   // Check by both label and field_name (Field_32, Field_25, Field_31)
+                  //   const isNonNegativeField =
+                  //     field.field_label?.toLowerCase().includes("employees") ||
+                  //     field.field_label?.toLowerCase().includes("offices") ||
+                  //     field.field_label?.toLowerCase().includes("oasis key") ||
+                  //     field.field_name?.toLowerCase().includes("employees") ||
+                  //     field.field_name?.toLowerCase().includes("offices") ||
+                  //     field.field_name?.toLowerCase().includes("oasis") ||
+                  //     field.field_name === "Field_32" || // # of employees
+                  //     field.field_name === "field_32" ||
+                  //     field.field_name === "Field_25" || // # of offices
+                  //     field.field_name === "field_25" ||
+                  //     field.field_name === "Field_31" || // Oasis Key
+                  //     field.field_name === "field_31";
+                  //   if (isNonNegativeField && field.field_type === "number") {
+                  //     const numValue = parseFloat(trimmed);
+                  //     // Allow values >= 0 (0, 1, 2, etc.)
+                  //     return !isNaN(numValue) && numValue >= 0;
+                  //   }
+                    
+                  //   // Special validation for phone fields (Main Phone, etc.)
+                  //   // Check by both field_type and field_name (Field_5)
+                  //   const isPhoneField =
+                  //     field.field_type === "phone" ||
+                  //     field.field_label?.toLowerCase().includes("phone") ||
+                  //     field.field_name === "Field_5" || // Main Phone
+                  //     field.field_name === "field_5";
+                  //   if (isPhoneField && trimmed !== "") {
+                  //     // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
+                  //     // Remove all non-numeric characters to check digit count
+                  //     const digitsOnly = trimmed.replace(/\D/g, "");
+                  //     // Must have exactly 10 digits
+                  //     if (digitsOnly.length !== 10) {
+                  //       return false;
+                  //     }
+                  //     // Check if formatted correctly as (000) 000-0000
+                  //     const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+                  //     return phoneRegex.test(trimmed);
+                  //   }
+                    
+                  //   // Special validation for URL fields (Organization Website, etc.)
+                  //   // Check by both field_type and field_name (Field_4)
+                  //   const isUrlField =
+                  //     field.field_type === "url" ||
+                  //     field.field_label?.toLowerCase().includes("website") ||
+                  //     field.field_label?.toLowerCase().includes("url") ||
+                  //     field.field_name === "Field_4" || // Organization Website
+                  //     field.field_name === "field_4";
+                  //   if (isUrlField && trimmed !== "") {
+                  //     // URL must start with http://, https://, or www.
+                  //     const urlPattern = /^(https?:\/\/|www\.).+/i;
+                  //     if (!urlPattern.test(trimmed)) {
+                  //       return false;
+                  //     }
+                      
+                  //     // Stricter validation: Check for complete domain structure
+                  //     // For www. URLs: must have www.domain.tld format (at least www. + domain + . + tld)
+                  //     // For http:// URLs: must have http://domain.tld format
+                  //     let urlToValidate = trimmed;
+                  //     if (trimmed.toLowerCase().startsWith('www.')) {
+                  //       // Check if www. URL has complete domain (at least www.domain.tld)
+                  //       // Remove www. and check if remaining has at least one dot (domain.tld)
+                  //       const domainPart = trimmed.substring(4); // Remove "www."
+                  //       if (!domainPart.includes('.') || domainPart.split('.').length < 2) {
+                  //         return false; // Incomplete domain like "www.al"
+                  //       }
+                  //       // Check if domain part has valid structure (at least domain.tld)
+                  //       const domainParts = domainPart.split('.');
+                  //       if (domainParts.length < 2 || domainParts[0].length === 0 || domainParts[domainParts.length - 1].length < 2) {
+                  //         return false; // Invalid domain structure
+                  //       }
+                  //       urlToValidate = `https://${trimmed}`;
+                  //     } else {
+                  //       // For http:// or https:// URLs, check if domain part is complete
+                  //       const urlWithoutProtocol = trimmed.replace(/^https?:\/\//i, '');
+                  //       if (!urlWithoutProtocol.includes('.') || urlWithoutProtocol.split('.').length < 2) {
+                  //         return false; // Incomplete domain
+                  //       }
+                  //       const domainParts = urlWithoutProtocol.split('/')[0].split('.');
+                  //       if (domainParts.length < 2 || domainParts[0].length === 0 || domainParts[domainParts.length - 1].length < 2) {
+                  //         return false; // Invalid domain structure
+                  //       }
+                  //       urlToValidate = trimmed;
+                  //     }
+                      
+                  //     // Final validation: try to create a URL object to check if it's valid
+                  //     try {
+                  //       const urlObj = new URL(urlToValidate);
+                  //       // Additional check: ensure hostname has at least one dot (domain.tld)
+                  //       if (!urlObj.hostname || !urlObj.hostname.includes('.') || urlObj.hostname.split('.').length < 2) {
+                  //         return false;
+                  //       }
+                  //       // Ensure TLD is at least 2 characters
+                  //       const hostnameParts = urlObj.hostname.split('.');
+                  //       if (hostnameParts[hostnameParts.length - 1].length < 2) {
+                  //         return false;
+                  //       }
+                  //       return true;
+                  //     } catch {
+                  //       return false;
+                  //     }
+                  //   }
+                    
+                  //   return true;
+                  // };
                   // Helper function to check if field has a valid value
-                  const hasValidValue = () => {
-                    // Handle null, undefined, or empty values
-                    if (fieldValue === null || fieldValue === undefined) return false;
-                    const trimmed = String(fieldValue).trim();
-                    // Empty string means no value selected (especially for select fields)
-                    if (trimmed === "") return false;
-                    
-                    // Special validation for date fields
-                    if (field.field_type === "date") {
-                      // Accept both YYYY-MM-DD (storage format) and mm/dd/yyyy (display format)
-                      let dateToValidate = trimmed;
-                      
-                      // If it's in mm/dd/yyyy format, convert to YYYY-MM-DD
-                      if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
-                        const [month, day, year] = trimmed.split("/");
-                        dateToValidate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-                      }
-                      
-                      // Check if it's a valid date format (YYYY-MM-DD)
-                      const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-                      if (!dateRegex.test(dateToValidate)) return false;
-                      
-                      const date = new Date(dateToValidate);
-                      if (isNaN(date.getTime())) return false;
-                      
-                      // Additional validation: check if the date components match
-                      const [year, month, day] = dateToValidate.split("-");
-                      if (date.getFullYear() !== parseInt(year) ||
-                          date.getMonth() + 1 !== parseInt(month) ||
-                          date.getDate() !== parseInt(day)) {
-                        return false; // Invalid date (e.g., 02/30/2024)
-                      }
-                      
-                      return true;
-                    }
-                    
-                    // Special validation for ZIP code (must be exactly 5 digits)
-                    // Check by both label and field_name (Field_24)
-                    const isZipCodeField =
-                      field.field_label?.toLowerCase().includes("zip") ||
-                      field.field_label?.toLowerCase().includes("postal code") ||
-                      field.field_name?.toLowerCase().includes("zip") ||
-                      field.field_name === "Field_24" || // ZIP Code
-                      field.field_name === "field_24";
-                    if (isZipCodeField) {
-                      return /^\d{5}$/.test(trimmed);
-                    }
-                    
-                    // Special validation for numeric fields that allow values >= 0
-                    // Check by both label and field_name (Field_32, Field_25, Field_31)
-                    const isNonNegativeField =
-                      field.field_label?.toLowerCase().includes("employees") ||
-                      field.field_label?.toLowerCase().includes("offices") ||
-                      field.field_label?.toLowerCase().includes("oasis key") ||
-                      field.field_name?.toLowerCase().includes("employees") ||
-                      field.field_name?.toLowerCase().includes("offices") ||
-                      field.field_name?.toLowerCase().includes("oasis") ||
-                      field.field_name === "Field_32" || // # of employees
-                      field.field_name === "field_32" ||
-                      field.field_name === "Field_25" || // # of offices
-                      field.field_name === "field_25" ||
-                      field.field_name === "Field_31" || // Oasis Key
-                      field.field_name === "field_31";
-                    if (isNonNegativeField && field.field_type === "number") {
-                      const numValue = parseFloat(trimmed);
-                      // Allow values >= 0 (0, 1, 2, etc.)
-                      return !isNaN(numValue) && numValue >= 0;
-                    }
-                    
-                    // Special validation for phone fields (Main Phone, etc.)
-                    // Check by both field_type and field_name (Field_5)
-                    const isPhoneField =
-                      field.field_type === "phone" ||
-                      field.field_label?.toLowerCase().includes("phone") ||
-                      field.field_name === "Field_5" || // Main Phone
-                      field.field_name === "field_5";
-                    if (isPhoneField && trimmed !== "") {
-                      // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
-                      // Remove all non-numeric characters to check digit count
-                      const digitsOnly = trimmed.replace(/\D/g, "");
-                      // Must have exactly 10 digits
-                      if (digitsOnly.length !== 10) {
-                        return false;
-                      }
-                      // Check if formatted correctly as (000) 000-0000
-                      const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
-                      return phoneRegex.test(trimmed);
-                    }
-                    
-                    // Special validation for URL fields (Organization Website, etc.)
-                    // Check by both field_type and field_name (Field_4)
-                    const isUrlField =
-                      field.field_type === "url" ||
-                      field.field_label?.toLowerCase().includes("website") ||
-                      field.field_label?.toLowerCase().includes("url") ||
-                      field.field_name === "Field_4" || // Organization Website
-                      field.field_name === "field_4";
-                    if (isUrlField && trimmed !== "") {
-                      // URL must start with http://, https://, or www.
-                      const urlPattern = /^(https?:\/\/|www\.).+/i;
-                      if (!urlPattern.test(trimmed)) {
-                        return false;
-                      }
-                      
-                      // Stricter validation: Check for complete domain structure
-                      // For www. URLs: must have www.domain.tld format (at least www. + domain + . + tld)
-                      // For http:// URLs: must have http://domain.tld format
-                      let urlToValidate = trimmed;
-                      if (trimmed.toLowerCase().startsWith('www.')) {
-                        // Check if www. URL has complete domain (at least www.domain.tld)
-                        // Remove www. and check if remaining has at least one dot (domain.tld)
-                        const domainPart = trimmed.substring(4); // Remove "www."
-                        if (!domainPart.includes('.') || domainPart.split('.').length < 2) {
-                          return false; // Incomplete domain like "www.al"
-                        }
-                        // Check if domain part has valid structure (at least domain.tld)
-                        const domainParts = domainPart.split('.');
-                        if (domainParts.length < 2 || domainParts[0].length === 0 || domainParts[domainParts.length - 1].length < 2) {
-                          return false; // Invalid domain structure
-                        }
-                        urlToValidate = `https://${trimmed}`;
-                      } else {
-                        // For http:// or https:// URLs, check if domain part is complete
-                        const urlWithoutProtocol = trimmed.replace(/^https?:\/\//i, '');
-                        if (!urlWithoutProtocol.includes('.') || urlWithoutProtocol.split('.').length < 2) {
-                          return false; // Incomplete domain
-                        }
-                        const domainParts = urlWithoutProtocol.split('/')[0].split('.');
-                        if (domainParts.length < 2 || domainParts[0].length === 0 || domainParts[domainParts.length - 1].length < 2) {
-                          return false; // Invalid domain structure
-                        }
-                        urlToValidate = trimmed;
-                      }
-                      
-                      // Final validation: try to create a URL object to check if it's valid
-                      try {
-                        const urlObj = new URL(urlToValidate);
-                        // Additional check: ensure hostname has at least one dot (domain.tld)
-                        if (!urlObj.hostname || !urlObj.hostname.includes('.') || urlObj.hostname.split('.').length < 2) {
-                          return false;
-                        }
-                        // Ensure TLD is at least 2 characters
-                        const hostnameParts = urlObj.hostname.split('.');
-                        if (hostnameParts[hostnameParts.length - 1].length < 2) {
-                          return false;
-                        }
-                        return true;
-                      } catch {
-                        return false;
-                      }
-                    }
-                    
-                    return true;
-                  };
+const hasValidValue = () => {
+  if (fieldValue === null || fieldValue === undefined) return false;
+
+  const trimmed = String(fieldValue).trim();
+  if (trimmed === "") return false;
+
+  /* ================= DATE FIELD (TIMEZONE SAFE) ================= */
+  if (field.field_type === "date") {
+    let normalizedDate = trimmed;
+
+    // Convert MM/DD/YYYY → YYYY-MM-DD
+    if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+      const [mm, dd, yyyy] = trimmed.split("/");
+      normalizedDate = `${yyyy}-${mm}-${dd}`;
+    }
+
+    // Strict YYYY-MM-DD format
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+      return false;
+    }
+
+    const [year, month, day] = normalizedDate.split("-").map(Number);
+
+    // Manual date validation (NO timezone usage)
+    if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
+      return false;
+    }
+
+    const daysInMonth = new Date(year, month, 0).getDate();
+    if (day > daysInMonth) {
+      return false;
+    }
+
+    return true;
+  }
+  /* =============================================================== */
+
+  // ZIP code
+  const isZipCodeField =
+    field.field_label?.toLowerCase().includes("zip") ||
+    field.field_label?.toLowerCase().includes("postal code") ||
+    field.field_name?.toLowerCase().includes("zip") ||
+    field.field_name === "Field_24" ||
+    field.field_name === "field_24";
+
+  if (isZipCodeField) {
+    return /^\d{5}$/.test(trimmed);
+  }
+
+  // Non-negative number fields
+  const isNonNegativeField =
+    field.field_label?.toLowerCase().includes("employees") ||
+    field.field_label?.toLowerCase().includes("offices") ||
+    field.field_label?.toLowerCase().includes("oasis key") ||
+    field.field_name === "Field_32" ||
+    field.field_name === "field_32" ||
+    field.field_name === "Field_25" ||
+    field.field_name === "field_25" ||
+    field.field_name === "Field_31" ||
+    field.field_name === "field_31";
+
+  if (isNonNegativeField && field.field_type === "number") {
+    const num = Number(trimmed);
+    return !isNaN(num) && num >= 0;
+  }
+
+  // Phone field
+  const isPhoneField =
+    field.field_type === "phone" ||
+    field.field_label?.toLowerCase().includes("phone") ||
+    field.field_name === "Field_5" ||
+    field.field_name === "field_5";
+
+  if (isPhoneField) {
+    const digits = trimmed.replace(/\D/g, "");
+    return digits.length === 10;
+  }
+
+  // URL field
+  const isUrlField =
+    field.field_type === "url" ||
+    field.field_label?.toLowerCase().includes("website") ||
+    field.field_label?.toLowerCase().includes("url") ||
+    field.field_name === "Field_4" ||
+    field.field_name === "field_4";
+
+  if (isUrlField) {
+    try {
+      const url = trimmed.startsWith("http")
+        ? new URL(trimmed)
+        : new URL(`https://${trimmed}`);
+      return url.hostname.includes(".");
+    } catch {
+      return false;
+    }
+  }
+
+  return true;
+};
+
 
                   return (
                     <div key={field.id} className="flex items-center mb-3">
