@@ -3228,7 +3228,7 @@ Best regards`;
             {filteredHistory.map((item) => {
               // Format the history entry based on action type
               let actionDisplay = "";
-              let detailsDisplay = "";
+              let detailsDisplay: React.ReactNode = "";
 
               try {
                 const details =
@@ -3246,20 +3246,86 @@ Best regards`;
                     actionDisplay = "Job Seeker Updated";
                     if (details && details.before && details.after) {
                       // Create a list of changes
-                      const changes = [];
+                      const changes: React.ReactNode[] = [];
+
+                      // Helper function to format values
+                      const formatValue = (val: any): string => {
+                        if (val === null || val === undefined) return "Empty";
+                        if (typeof val === "object") return JSON.stringify(val);
+                        return String(val);
+                      };
+
                       for (const key in details.after) {
-                        if (details.before[key] !== details.after[key]) {
+                        // Skip internal fields that might not be relevant to users
+                        if (key === "updated_at") continue;
+
+                        const beforeVal = details.before[key];
+                        const afterVal = details.after[key];
+
+                        if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                          // Special handling for custom_fields
+                          if (key === "custom_fields") {
+                            let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
+                            let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
+
+                            // Handle case where custom_fields might be null/undefined
+                            beforeObj = beforeObj || {};
+                            afterObj = afterObj || {};
+
+                            if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
+                              const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
+
+                              allKeys.forEach(cfKey => {
+                                const beforeCfVal = beforeObj[cfKey];
+                                const afterCfVal = afterObj[cfKey];
+
+                                if (beforeCfVal !== afterCfVal) {
+                                  changes.push(
+                                    <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                                      <span className="font-semibold text-gray-700 min-w-[120px]">Custom Field ({cfKey}):</span>
+                                      <div className="flex flex-wrap gap-2 items-center">
+                                        <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                          {formatValue(beforeCfVal)}
+                                        </span>
+                                        <span className="text-gray-400">→</span>
+                                        <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                          {formatValue(afterCfVal)}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                }
+                              });
+                              continue; // Skip the standard field handling for custom_fields
+                            }
+                          }
+
+                          // Standard fields
                           const fieldName = key.replace(/_/g, " ");
                           changes.push(
-                            `${fieldName}: "${details.before[key] || ""}" → "${details.after[key] || ""
-                            }"`
+                            <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                              <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
+                              <div className="flex flex-wrap gap-2 items-center">
+                                <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                  {formatValue(beforeVal)}
+                                </span>
+                                <span className="text-gray-400">→</span>
+                                <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                  {formatValue(afterVal)}
+                                </span>
+                              </div>
+                            </div>
                           );
                         }
                       }
                       if (changes.length > 0) {
-                        detailsDisplay = `Changes: ${changes.join(", ")}`;
+                        detailsDisplay = (
+                          <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
+                            {changes}
+                          </div>
+                        );
                       } else {
-                        detailsDisplay = "No changes detected";
+                        detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
                       }
                     }
                     break;
