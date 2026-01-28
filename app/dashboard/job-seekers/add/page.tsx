@@ -1466,6 +1466,20 @@ export default function AddJobSeeker() {
                 <>
                   <div>
                     {/* Custom Fields Section */}
+                    <div className="flex items-center mb-3">
+                      <label className="w-48 font-medium flex items-center">
+                        Static Test:
+                      </label>
+                      <div className="flex-1 relative">
+                        <input
+                          type="text"
+                          value="this is a test"
+                          readOnly
+                          className="w-full p-2 border-b border-gray-300 bg-gray-50 text-gray-600"
+                          placeholder="This is a Static Test for assurance"
+                        />
+                      </div>
+                    </div>
                     {customFields.length > 0 && (
                       <>{sortedCustomFields.map((field) => renderCustomFieldRow(field))}</>
                     )}
