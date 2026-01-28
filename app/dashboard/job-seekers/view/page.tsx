@@ -545,13 +545,14 @@ export default function JobSeekerView() {
   const getHeaderValue = (key: string): string => {
     if (!jobSeeker) return "-";
 
+
     // standard keys live on jobSeeker directly
     const std = (jobSeeker as any)[key];
     if (std !== undefined && std !== null && String(std).trim() !== "")
       return String(std);
 
     // custom keys live in jobSeeker.customFields
-    const custom = jobSeeker.customFields?.[key];
+    const custom = jobSeeker.customFields?.[labelForHeaderKey(key)];
     if (custom !== undefined && custom !== null && String(custom).trim() !== "")
       return String(custom);
 
