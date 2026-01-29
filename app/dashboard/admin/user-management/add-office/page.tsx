@@ -307,7 +307,7 @@ function AddOfficeModal({ onClose, onOfficeAdded }: { onClose: () => void, onOff
     ];
 
     return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded-md shadow-lg w-full max-w-3xl overflow-hidden">
                 <div className="flex justify-between items-center bg-gray-100 p-4 border-b">
                     <h2 className="text-lg font-semibold">Add Office</h2>

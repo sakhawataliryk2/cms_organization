@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
@@ -92,8 +93,24 @@ function SortableColumnHeader({
 
   const [showFilter, setShowFilter] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
+  const filterToggleRef = useRef<HTMLButtonElement>(null);
+  const thRef = useRef<HTMLTableCellElement | null>(null);
+  const [filterPosition, setFilterPosition] = useState<{ top: number; left: number; width: number } | null>(null);
 
-  // Close filter on outside click
+  useLayoutEffect(() => {
+    if (!showFilter || !filterToggleRef.current || !thRef.current) {
+      setFilterPosition(null);
+      return;
+    }
+    const btnRect = filterToggleRef.current.getBoundingClientRect();
+    const thRect = thRef.current.getBoundingClientRect();
+    setFilterPosition({
+      top: btnRect.bottom + 4,
+      left: thRect.left,
+      width: Math.max(150, Math.min(250, thRect.width)),
+    });
+  }, [showFilter]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -113,7 +130,10 @@ function SortableColumnHeader({
 
   return (
     <th
-      ref={setNodeRef}
+      ref={(node) => {
+        thRef.current = node;
+        setNodeRef(node);
+      }}
       style={style}
       className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
     >
@@ -151,6 +171,7 @@ function SortableColumnHeader({
 
         {/* Filter Toggle */}
         <button
+          ref={filterToggleRef}
           data-filter-toggle={id}
           onClick={(e) => {
             e.stopPropagation();
@@ -164,11 +185,17 @@ function SortableColumnHeader({
         </button>
       </div>
 
-      {/* Filter Dropdown */}
-      {showFilter && (
+      {/* Filter Dropdown (portal so it stays on top) */}
+      {showFilter && filterPosition && typeof document !== "undefined" && createPortal(
         <div
           ref={filterRef}
-          className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-300 shadow-lg p-2 mt-1"
+          className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
+          style={{
+            position: "fixed",
+            top: filterPosition.top,
+            left: filterPosition.left,
+            width: filterPosition.width,
+          }}
           onClick={(e) => e.stopPropagation()}
         >
           {filterType === "text" && (
@@ -217,7 +244,8 @@ function SortableColumnHeader({
               Clear Filter
             </button>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </th>
   );
@@ -998,94 +1026,100 @@ export default function OrganizationList() {
             </thead>
 
             <tbody className="bg-white divide-y divide-gray-200">
-              {/* {filteredAndSortedOrganizations.map((org) => (
-                <tr key={org?.id}>
-                  <td className="px-6 py-4 whitespace-nowrap">{org?.id}</td>
-                </tr>
-              ))}  */}
-              {filteredAndSortedOrganizations.map((org) => (
-
-                <tr
-                  key={org.id}
-                  className="hover:bg-gray-50 cursor-pointer"
-                  onClick={() => handleViewOrganization(org.id)}
-                >
-                  {/* Fixed checkbox */}
-                  <td
-                    className="px-6 py-4 whitespace-nowrap"
-                    onClick={(e) => e.stopPropagation()}
+              {filteredAndSortedOrganizations.length > 0 ? (
+                filteredAndSortedOrganizations.map((org) => (
+                  <tr
+                    key={org.id}
+                    className="hover:bg-gray-50 cursor-pointer"
+                    onClick={() => handleViewOrganization(org.id)}
                   >
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                      checked={selectedOrganizations.includes(org.id)}
-                      onChange={() => { }}
-                      onClick={(e) => handleSelectOrganization(org.id, e)}
-                    />
-                  </td>
-
-                  
-                  {/* Fixed Actions */}
-                  <td
-                    className="px-6 py-4 whitespace-nowrap text-sm"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <ActionDropdown
-                      label="Actions"
-                      options={[
-                        { label: "View", action: () => handleViewOrganization(org.id) },
-                        {
-                          label: "Delete",
-                          action: async () => {
-                            if (
-                              !window.confirm(
-                                "Are you sure you want to delete this organization?"
-                              )
-                            )
-                              return;
-                            setIsDeleting(true);
-                            try {
-                              const response = await fetch(
-                                `/api/organizations/${org.id}`,
-                                { method: "DELETE" }
-                              );
-                              if (!response.ok)
-                                throw new Error("Failed to delete organization");
-                              await fetchOrganizations();
-                            } catch (err) {
-                              setDeleteError(
-                                err instanceof Error
-                                  ? err.message
-                                  : "An error occurred"
-                              );
-                            } finally {
-                              setIsDeleting(false);
-                            }
-                          },
-                        },
-                      ]}
-                    />
-                  </td>
-
-                  <td className="px-6 py-4 text-black whitespace-nowrap">O {org?.id}</td>
-
-                  {/* Dynamic cells */}
-                  {columnFields.map((key) => (
+                    {/* Fixed checkbox */}
                     <td
-                      key={key}
-                      className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                      className="px-6 py-4 whitespace-nowrap"
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      {key === "status" ? (
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                          {getColumnValue(org, key)}
-                        </span>
-                      ) : (
-                        getColumnValue(org, key)
-                      )}
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                        checked={selectedOrganizations.includes(org.id)}
+                        onChange={() => { }}
+                        onClick={(e) => handleSelectOrganization(org.id, e)}
+                      />
                     </td>
-                  ))}
+
+                    {/* Fixed Actions */}
+                    <td
+                      className="px-6 py-4 whitespace-nowrap text-sm"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <ActionDropdown
+                        label="Actions"
+                        options={[
+                          { label: "View", action: () => handleViewOrganization(org.id) },
+                          {
+                            label: "Delete",
+                            action: async () => {
+                              if (
+                                !window.confirm(
+                                  "Are you sure you want to delete this organization?"
+                                )
+                              )
+                                return;
+                              setIsDeleting(true);
+                              try {
+                                const response = await fetch(
+                                  `/api/organizations/${org.id}`,
+                                  { method: "DELETE" }
+                                );
+                                if (!response.ok)
+                                  throw new Error("Failed to delete organization");
+                                await fetchOrganizations();
+                              } catch (err) {
+                                setDeleteError(
+                                  err instanceof Error
+                                    ? err.message
+                                    : "An error occurred"
+                                );
+                              } finally {
+                                setIsDeleting(false);
+                              }
+                            },
+                          },
+                        ]}
+                      />
+                    </td>
+
+                    <td className="px-6 py-4 text-black whitespace-nowrap">O {org?.id}</td>
+
+                    {/* Dynamic cells */}
+                    {columnFields.map((key) => (
+                      <td
+                        key={key}
+                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                      >
+                        {key === "status" ? (
+                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                            {getColumnValue(org, key)}
+                          </span>
+                        ) : (
+                          getColumnValue(org, key)
+                        )}
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td
+                    colSpan={3 + columnFields.length}
+                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
+                  >
+                    {searchTerm
+                      ? "No organizations found matching your search."
+                      : 'No organizations found. Click "Add Organization" to create one.'}
+                  </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </DndContext>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
+import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import ActionDropdown from "@/components/ActionDropdown";
@@ -150,6 +151,19 @@ function SortableColumnHeader({
 
   const [showFilter, setShowFilter] = useState(false);
   const filterRef = useRef<HTMLDivElement>(null);
+  const filterToggleRef = useRef<HTMLButtonElement>(null);
+  const thRef = useRef<HTMLTableCellElement | null>(null);
+  const [filterPosition, setFilterPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!showFilter || !filterToggleRef.current || !thRef.current) {
+      setFilterPosition(null);
+      return;
+    }
+    const btnRect = filterToggleRef.current.getBoundingClientRect();
+    const thRect = thRef.current.getBoundingClientRect();
+    setFilterPosition({ top: btnRect.bottom + 4, left: thRect.left, width: Math.max(150, Math.min(250, thRect.width)) });
+  }, [showFilter]);
 
   // Close filter on outside click
   useEffect(() => {
@@ -171,7 +185,7 @@ function SortableColumnHeader({
 
   return (
     <th
-      ref={setNodeRef}
+      ref={(node) => { thRef.current = node; setNodeRef(node); }}
       style={style}
       className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
     >
@@ -208,6 +222,7 @@ function SortableColumnHeader({
 
         {/* Filter Toggle */}
         <button
+          ref={filterToggleRef}
           data-filter-toggle={id}
           onClick={(e) => {
             e.stopPropagation();
@@ -221,11 +236,12 @@ function SortableColumnHeader({
         </button>
       </div>
 
-      {/* Filter Dropdown */}
-      {showFilter && (
+      {/* Filter Dropdown (portal) */}
+      {showFilter && filterPosition && typeof document !== "undefined" && createPortal(
         <div
           ref={filterRef}
-          className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-300 shadow-lg p-2 mt-1 min-w-[150px]"
+          className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
+          style={{ position: "fixed", top: filterPosition.top, left: filterPosition.left, width: filterPosition.width }}
           onClick={(e) => e.stopPropagation()}
         >
           {filterType === "text" && (
@@ -274,7 +290,8 @@ function SortableColumnHeader({
               Clear Filter
             </button>
           )}
-        </div>
+        </div>,
+        document.body
       )}
     </th>
   );
