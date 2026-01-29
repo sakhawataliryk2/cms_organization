@@ -665,95 +665,108 @@ export default function JobView() {
     }
   };
 
+  // Confirm details and upload the first file in the queue (same pattern as organization)
   const handleConfirmFileDetails = async () => {
     if (pendingFiles.length === 0 || !jobId) return;
 
-    setShowFileDetailsModal(false);
-    const filesToUpload = [...pendingFiles];
-    setPendingFiles([]);
+    const currentFile = pendingFiles[0];
+    await uploadFile(currentFile, fileDetailsName.trim(), fileDetailsType);
 
-    setUploadErrors({});
-    const newUploadProgress = { ...uploadProgress };
+    // Move to next file or close modal
+    const remaining = pendingFiles.slice(1);
+    if (remaining.length > 0) {
+      setPendingFiles(remaining);
+      setFileDetailsName(remaining[0].name);
+      setFileDetailsType("General");
+    } else {
+      setShowFileDetailsModal(false);
+      setPendingFiles([]);
+    }
+  };
 
-    for (const file of filesToUpload) {
-      if (file.size > 10 * 1024 * 1024) {
-        setUploadErrors((prev) => ({
-          ...prev,
-          [file.name]: "File size exceeds 10MB limit",
-        }));
-        continue;
-      }
+  const uploadFile = async (
+    file: File,
+    documentName: string,
+    documentType: string
+  ) => {
+    if (!jobId) return;
 
-      newUploadProgress[file.name] = 0;
-      setUploadProgress({ ...newUploadProgress });
+    const fileName = file.name;
+    setUploadProgress((prev) => ({ ...prev, [fileName]: 0 }));
+    setUploadErrors((prev) => {
+      const newErrors = { ...prev };
+      delete newErrors[fileName];
+      return newErrors;
+    });
 
-      try {
-        const formData = new FormData();
-        formData.append("file", file);
-        formData.append(
-          "document_name",
-          filesToUpload.length === 1 ? fileDetailsName : file.name.split(".")[0]
-        );
-        formData.append(
-          "document_type",
-          filesToUpload.length === 1 ? fileDetailsType : "General"
-        );
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("document_name", documentName);
+      formData.append("document_type", documentType);
 
-        const progressInterval = setInterval(() => {
+      const xhr = new XMLHttpRequest();
+
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) {
+          const percentComplete = (e.loaded / e.total) * 100;
+          setUploadProgress((prev) => ({ ...prev, [fileName]: percentComplete }));
+        }
+      });
+
+      xhr.addEventListener("load", () => {
+        if (xhr.status === 200 || xhr.status === 201) {
+          const data = JSON.parse(xhr.responseText);
+          setDocuments((prev) => [data.document, ...prev]);
           setUploadProgress((prev) => {
-            const current = prev[file.name] || 0;
-            if (current >= 90) {
-              clearInterval(progressInterval);
-              return prev;
-            }
-            return { ...prev, [file.name]: current + 10 };
+            const newProgress = { ...prev };
+            delete newProgress[fileName];
+            return newProgress;
           });
-        }, 200);
-
-        const response = await fetch(`/api/jobs/${jobId}/documents/upload`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${document.cookie.replace(
-              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-              "$1"
-            )}`,
-          },
-          body: formData,
-        });
-
-        clearInterval(progressInterval);
-
-        if (response.ok) {
-          setUploadProgress((prev) => {
-            const next = { ...prev };
-            delete next[file.name];
-            return next;
-          });
-          fetchDocuments(jobId);
         } else {
-          const data = await response.json();
+          const errorData = JSON.parse(xhr.responseText);
           setUploadErrors((prev) => ({
             ...prev,
-            [file.name]: data.message || "Upload failed",
+            [fileName]: errorData.message || "Upload failed",
           }));
           setUploadProgress((prev) => {
-            const next = { ...prev };
-            delete next[file.name];
-            return next;
+            const newProgress = { ...prev };
+            delete newProgress[fileName];
+            return newProgress;
           });
         }
-      } catch (err) {
-        console.error(`Error uploading ${file.name}:`, err);
+      });
+
+      xhr.addEventListener("error", () => {
         setUploadErrors((prev) => ({
           ...prev,
-          [file.name]: "An error occurred during upload",
+          [fileName]: "Network error during upload",
         }));
         setUploadProgress((prev) => {
-          const next = { ...prev };
-          delete next[file.name];
-          return next;
+          const newProgress = { ...prev };
+          delete newProgress[fileName];
+          return newProgress;
         });
-      }
+      });
+
+      xhr.open("POST", `/api/jobs/${jobId}/documents/upload`);
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.send(formData);
+    } catch (err) {
+      console.error("Error uploading file:", err);
+      setUploadErrors((prev) => ({
+        ...prev,
+        [fileName]: err instanceof Error ? err.message : "Upload failed",
+      }));
+      setUploadProgress((prev) => {
+        const newProgress = { ...prev };
+        delete newProgress[fileName];
+        return newProgress;
+      });
     }
   };
 
@@ -3746,26 +3759,34 @@ export default function JobView() {
 
         {selectedDocument && (
           <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-              <div className="bg-gray-100 p-4 border-b flex justify-between items-center sticky top-0 z-10">
+            <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] flex flex-col">
+              <div className="bg-gray-100 p-4 border-b flex justify-between items-center shrink-0">
                 <h2 className="text-lg font-semibold">{selectedDocument.document_name}</h2>
-                <button
-                  onClick={() => setSelectedDocument(null)}
-                  className="p-1 rounded hover:bg-gray-200"
-                >
+                <button onClick={() => setSelectedDocument(null)} className="p-1 rounded hover:bg-gray-200">
                   <span className="text-2xl font-bold">×</span>
                 </button>
               </div>
-              <div className="p-6">
-                <div className="mb-4">
+              <div className="p-4 flex-1 min-h-0 flex flex-col">
+                <div className="mb-2">
                   <p className="text-sm text-gray-600">
                     Created by {selectedDocument.created_by_name || "System"} on{" "}
                     {new Date(selectedDocument.created_at).toLocaleString()}
                   </p>
                 </div>
-                <div className="bg-gray-50 p-4 rounded border whitespace-pre-wrap">
-                  {selectedDocument.content || "No content available"}
-                </div>
+                {selectedDocument.file_path ? (
+                  <div className="flex-1 min-h-[60vh] rounded border overflow-hidden bg-gray-100">
+                    <iframe
+                      src={selectedDocument.file_path}
+                      title={selectedDocument.document_name}
+                      className="w-full h-full min-h-[60vh] border-0"
+                      sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                    />
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 p-4 rounded border whitespace-pre-wrap overflow-y-auto">
+                    {selectedDocument.content || "No content available"}
+                  </div>
+                )}
               </div>
             </div>
           </div>

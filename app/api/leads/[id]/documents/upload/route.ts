@@ -22,7 +22,7 @@ export async function POST(
 
     const formData = await request.formData();
     const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
-    const response = await fetch(`${apiUrl}/api/hiring-managers/${id}/documents/upload`, {
+    const response = await fetch(`${apiUrl}/api/leads/${id}/documents/upload`, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}` },
       body: formData,

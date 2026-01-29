@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
-import { writeFile, mkdir } from "fs/promises";
-import { join } from "path";
-import { existsSync } from "fs";
+
+export const dynamic = "force-dynamic";
 
 export async function POST(
   request: NextRequest,
@@ -11,7 +10,6 @@ export async function POST(
   try {
     const { id } = await params;
 
-    // Get the token from cookies
     const cookieStore = await cookies();
     const token = cookieStore.get("token")?.value;
 
@@ -22,108 +20,32 @@ export async function POST(
       );
     }
 
-    // Parse form data
     const formData = await request.formData();
-    const file = formData.get("file") as File;
-    const documentName = (formData.get("document_name") as string) || "";
-    const documentType = (formData.get("document_type") as string) || "General";
-
-    if (!file) {
-      return NextResponse.json(
-        { success: false, message: "File is required" },
-        { status: 400 }
-      );
-    }
-
-    // Validate file type
-    const allowedTypes = [
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-      "text/plain",
-      "image/jpeg",
-      "image/png",
-      "image/gif",
-    ];
-    const isValidType =
-      allowedTypes.includes(file.type) ||
-      file.name.match(/\.(pdf|doc|docx|txt|jpg|jpeg|png|gif)$/i);
-
-    if (!isValidType) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "Invalid file type. Allowed: PDF, DOC, DOCX, TXT, JPG, PNG, GIF",
-        },
-        { status: 400 }
-      );
-    }
-
-    // Validate file size (max 10MB)
-    const maxSize = 10 * 1024 * 1024;
-    if (file.size > maxSize) {
-      return NextResponse.json(
-        { success: false, message: "File size exceeds 10MB limit" },
-        { status: 400 }
-      );
-    }
-
-    // Create uploads directory if it doesn't exist
-    const uploadsDir = join(process.cwd(), "uploads", "job-seekers", id);
-    if (!existsSync(uploadsDir)) {
-      await mkdir(uploadsDir, { recursive: true });
-    }
-
-    // Generate unique filename
-    const timestamp = Date.now();
-    const sanitizedName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-    const fileName = `${timestamp}_${sanitizedName}`;
-    const filePath = join(uploadsDir, fileName);
-
-    // Save file to disk
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    await writeFile(filePath, buffer);
-
-    // Create relative path for database storage
-    const relativePath = `uploads/job-seekers/${id}/${fileName}`;
-
-    // Save metadata to backend
     const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
-    const response = await fetch(`${apiUrl}/api/job-seekers/${id}/documents`, {
+    const response = await fetch(`${apiUrl}/api/job-seekers/${id}/documents/upload`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        document_name: documentName || file.name,
-        document_type: documentType,
-        file_path: relativePath,
-        file_size: file.size,
-        mime_type: file.type,
-      }),
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
     });
 
-    const data = await response.json();
-
-    if (!response.ok) {
-      // Delete uploaded file if database save failed
-      try {
-        const fs = require("fs");
-        if (existsSync(filePath)) {
-          fs.unlinkSync(filePath);
-        }
-      } catch (deleteError) {
-        console.error("Error deleting file after failed save:", deleteError);
-      }
-
+    let data: { success?: boolean; message?: string; document?: unknown };
+    try {
+      data = await response.json();
+    } catch {
       return NextResponse.json(
         {
           success: false,
-          message: data.message || "Failed to save document metadata",
+          message: response.status === 404
+            ? "Documents upload endpoint not found. Ensure the backend is running and has the upload route registered."
+            : "Invalid response from server",
         },
+        { status: response.status >= 400 ? response.status : 500 }
+      );
+    }
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { success: false, message: data.message || "Failed to upload document" },
         { status: response.status }
       );
     }

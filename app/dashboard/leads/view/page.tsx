@@ -240,6 +240,18 @@ export default function LeadView() {
   const [newDocumentType, setNewDocumentType] = useState("General");
   const [newDocumentContent, setNewDocumentContent] = useState("");
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showFileDetailsModal, setShowFileDetailsModal] = useState(false);
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [fileDetailsName, setFileDetailsName] = useState("");
+  const [fileDetailsType, setFileDetailsType] = useState("General");
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
+  const [showEditDocumentModal, setShowEditDocumentModal] = useState(false);
+  const [editingDocument, setEditingDocument] = useState<any>(null);
+  const [editDocumentName, setEditDocumentName] = useState("");
+  const [editDocumentType, setEditDocumentType] = useState("General");
+  const [isDragging, setIsDragging] = useState(false);
 
   // Tearsheet modal state
   const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
@@ -1433,6 +1445,193 @@ export default function LeadView() {
     }
   };
 
+  const handleDownloadDocument = (doc: any) => {
+    if (doc.file_path) {
+      const isAbsoluteUrl = doc.file_path.startsWith("http://") || doc.file_path.startsWith("https://");
+      const url = isAbsoluteUrl ? doc.file_path : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
+      window.open(url, "_blank");
+      return;
+    }
+    if (doc.content) {
+      const blob = new Blob([doc.content], { type: "text/plain;charset=utf-8" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${doc.document_name || "document"}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      alert("This document has no file or content to download.");
+    }
+  };
+
+  const handleEditDocument = (doc: any) => {
+    setEditingDocument(doc);
+    setEditDocumentName(doc.document_name || "");
+    setEditDocumentType(doc.document_type || "General");
+    setShowEditDocumentModal(true);
+  };
+
+  const handleUpdateDocument = async () => {
+    if (!editingDocument || !leadId || !editDocumentName.trim()) return;
+    try {
+      const token = getCookie("token");
+      const response = await fetch(`/api/leads/${leadId}/documents/${editingDocument.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ document_name: editDocumentName, document_type: editDocumentType }),
+      });
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || "Failed to update document");
+      }
+      const data = await response.json();
+      setDocuments((prev) => prev.map((d) => (d.id === editingDocument.id ? { ...d, ...data.document } : d)));
+      setShowEditDocumentModal(false);
+      setEditingDocument(null);
+      setEditDocumentName("");
+      setEditDocumentType("General");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to update document");
+    }
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      handleFileUploads(files);
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      handleFileUploads(Array.from(files));
+    }
+    e.target.value = "";
+  };
+
+  const handleFileUploads = (files: File[]) => {
+    if (!leadId) return;
+    const validFiles = files.filter((file) => {
+      const allowedTypes = [
+        "application/pdf",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "text/plain",
+        "image/jpeg",
+        "image/png",
+        "image/gif",
+      ];
+      const isValidType = allowedTypes.includes(file.type) || file.name.match(/\.(pdf|doc|docx|txt|jpg|jpeg|png|gif)$/i);
+      const isValidSize = file.size <= 10 * 1024 * 1024;
+      if (!isValidType) setUploadErrors((prev) => ({ ...prev, [file.name]: "Invalid file type. Allowed: PDF, DOC, DOCX, TXT, JPG, PNG, GIF" }));
+      if (!isValidSize) setUploadErrors((prev) => ({ ...prev, [file.name]: "File size exceeds 10MB limit" }));
+      return isValidType && isValidSize;
+    });
+    if (validFiles.length === 0) return;
+    setPendingFiles(validFiles);
+    setFileDetailsName(validFiles[0].name);
+    setFileDetailsType("General");
+    setShowFileDetailsModal(true);
+  };
+
+  const handleConfirmFileDetails = async () => {
+    if (pendingFiles.length === 0) return;
+    const currentFile = pendingFiles[0];
+    await uploadFile(currentFile, fileDetailsName.trim(), fileDetailsType);
+    const remaining = pendingFiles.slice(1);
+    if (remaining.length > 0) {
+      setPendingFiles(remaining);
+      setFileDetailsName(remaining[0].name);
+      setFileDetailsType("General");
+    } else {
+      setShowFileDetailsModal(false);
+      setPendingFiles([]);
+    }
+  };
+
+  const uploadFile = async (file: File, documentName: string, documentType: string) => {
+    if (!leadId) return;
+    const fileName = file.name;
+    setUploadProgress((prev) => ({ ...prev, [fileName]: 0 }));
+    setUploadErrors((prev) => {
+      const next = { ...prev };
+      delete next[fileName];
+      return next;
+    });
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("document_name", documentName);
+      formData.append("document_type", documentType);
+      const xhr = new XMLHttpRequest();
+      xhr.upload.addEventListener("progress", (e) => {
+        if (e.lengthComputable) setUploadProgress((prev) => ({ ...prev, [fileName]: (e.loaded / e.total) * 100 }));
+      });
+      xhr.addEventListener("load", () => {
+        setUploadProgress((prev) => {
+          const next = { ...prev };
+          delete next[fileName];
+          return next;
+        });
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            if (data.document) setDocuments((prev) => [data.document, ...prev]);
+          } catch (_) {}
+        } else {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            setUploadErrors((prev) => ({ ...prev, [fileName]: data.message || "Upload failed" }));
+          } catch (_) {
+            setUploadErrors((prev) => ({ ...prev, [fileName]: "Upload failed" }));
+          }
+        }
+      });
+      xhr.addEventListener("error", () => {
+        setUploadProgress((prev) => {
+          const next = { ...prev };
+          delete next[fileName];
+          return next;
+        });
+        setUploadErrors((prev) => ({ ...prev, [fileName]: "Network error" }));
+      });
+      const token = getCookie("token");
+      xhr.open("POST", `/api/leads/${leadId}/documents/upload`);
+      if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+      xhr.send(formData);
+    } catch (err) {
+      setUploadProgress((prev) => {
+        const next = { ...prev };
+        delete next[fileName];
+        return next;
+      });
+      setUploadErrors((prev) => ({ ...prev, [fileName]: "Upload failed" }));
+    }
+  };
+
   const handleGoBack = () => {
     router.push("/dashboard/leads");
   };
@@ -2163,13 +2362,146 @@ export default function LeadView() {
           <div className="bg-white p-4 rounded shadow-sm">
             <div className="flex justify-between items-center mb-4">
               <h2 className="text-lg font-semibold">Documents</h2>
-              <button
-                onClick={() => setShowAddDocument(true)}
-                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-              >
-                Add Document
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600 text-sm"
+                >
+                  Upload Files
+                </button>
+                <button
+                  onClick={() => setShowAddDocument(true)}
+                  className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                >
+                  Add Text Document
+                </button>
+              </div>
             </div>
+
+            {/* Hidden file input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={handleFileSelect}
+              className="hidden"
+              accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.gif"
+            />
+
+            {/* Drag and Drop Zone */}
+            <div
+              onDragEnter={handleDragEnter}
+              onDragOver={handleDragOver}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
+              className={`border-2 border-dashed rounded-lg p-8 text-center mb-6 transition-colors ${isDragging
+                ? "border-blue-500 bg-blue-50"
+                : "border-gray-300 bg-gray-50 hover:border-gray-400"
+                }`}
+            >
+              <div className="flex flex-col items-center">
+                <svg
+                  className="w-12 h-12 text-gray-400 mb-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
+                  />
+                </svg>
+                <p className="text-gray-600 mb-2">
+                  Drag and drop files here, or{" "}
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="text-blue-500 hover:underline"
+                  >
+                    browse
+                  </button>
+                </p>
+                <p className="text-sm text-gray-500">
+                  Supported formats: PDF, DOC, DOCX, TXT, JPG, PNG, GIF (Max 10MB per file)
+                </p>
+              </div>
+            </div>
+
+            {/* Upload Progress */}
+            {Object.keys(uploadProgress).length > 0 && (
+              <div className="mb-4 space-y-2">
+                {Object.entries(uploadProgress).map(([fileName, progress]) => (
+                  <div key={fileName} className="bg-gray-100 rounded p-2">
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="text-sm font-medium">{fileName}</span>
+                      <span className="text-sm text-gray-600">{Math.round(progress)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="bg-blue-500 h-2 rounded-full transition-all" style={{ width: `${progress}%` }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {showFileDetailsModal && pendingFiles.length > 0 && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                <div className="bg-white rounded shadow-lg p-6 w-full max-w-md">
+                  <h3 className="text-lg font-semibold mb-4">Confirm File Details</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">File Name *</label>
+                      <input
+                        type="text"
+                        value={fileDetailsName}
+                        onChange={(e) => setFileDetailsName(e.target.value)}
+                        className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Document Type *</label>
+                      <select
+                        value={fileDetailsType}
+                        onChange={(e) => setFileDetailsType(e.target.value)}
+                        className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="Contract">Contract</option>
+                        <option value="Invoice">Invoice</option>
+                        <option value="Report">Report</option>
+                        <option value="ID">ID</option>
+                        <option value="General">General</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex justify-end space-x-2 mt-5">
+                    <button
+                      onClick={() => { setShowFileDetailsModal(false); setPendingFiles([]); }}
+                      className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleConfirmFileDetails}
+                      className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm disabled:opacity-50"
+                      disabled={!fileDetailsName.trim()}
+                    >
+                      Save & Upload
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {Object.keys(uploadErrors).length > 0 && (
+              <div className="mb-4 space-y-2">
+                {Object.entries(uploadErrors).map(([fileName, error]) => (
+                  <div key={fileName} className="bg-red-50 border border-red-200 rounded p-2">
+                    <p className="text-sm text-red-800"><strong>{fileName}:</strong> {error}</p>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Add Document Form */}
             {showAddDocument && (
@@ -2247,21 +2579,28 @@ export default function LeadView() {
                 <table className="w-full border-collapse">
                   <thead>
                     <tr className="bg-gray-100 border-b">
-                      <th className="text-left p-3 font-medium">
-                        Document Name
-                      </th>
+                      <th className="text-left p-3 font-medium">Actions</th>
+                      <th className="text-left p-3 font-medium">Document Name</th>
                       <th className="text-left p-3 font-medium">Type</th>
-                      <th className="text-left p-3 font-medium">
-                        Auto-Generated
-                      </th>
+                      <th className="text-left p-3 font-medium">Auto-Generated</th>
                       <th className="text-left p-3 font-medium">Created By</th>
                       <th className="text-left p-3 font-medium">Created At</th>
-                      <th className="text-left p-3 font-medium">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {documents.map((doc) => (
                       <tr key={doc.id} className="border-b hover:bg-gray-50">
+                        <td className="p-3">
+                          <ActionDropdown
+                            label="Actions"
+                            options={[
+                              { label: "View", action: () => setSelectedDocument(doc) },
+                              { label: "Edit", action: () => handleEditDocument(doc) },
+                              { label: "Download", action: () => handleDownloadDocument(doc) },
+                              { label: "Delete", action: () => handleDeleteDocument(doc.id) },
+                            ]}
+                          />
+                        </td>
                         <td className="p-3">
                           <button
                             onClick={() => setSelectedDocument(doc)}
@@ -2274,28 +2613,14 @@ export default function LeadView() {
                         <td className="p-3">
                           <span
                             className={`px-2 py-1 rounded text-xs ${
-                              doc.is_auto_generated
-                                ? "bg-green-100 text-green-800"
-                                : "bg-gray-100 text-gray-800"
+                              doc.is_auto_generated ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
                             }`}
                           >
                             {doc.is_auto_generated ? "Yes" : "No"}
                           </span>
                         </td>
-                        <td className="p-3">
-                          {doc.created_by_name || "System"}
-                        </td>
-                        <td className="p-3">
-                          {new Date(doc.created_at).toLocaleString()}
-                        </td>
-                        <td className="p-3">
-                          <button
-                            onClick={() => handleDeleteDocument(doc.id)}
-                            className="text-red-500 hover:text-red-700 text-sm"
-                          >
-                            Delete
-                          </button>
-                        </td>
+                        <td className="p-3">{doc.created_by_name || "System"}</td>
+                        <td className="p-3">{new Date(doc.created_at).toLocaleString()}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -2305,37 +2630,94 @@ export default function LeadView() {
               <p className="text-gray-500 italic">No documents available</p>
             )}
 
+            {/* Edit Document Modal */}
+            {showEditDocumentModal && editingDocument && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+                <div className="bg-white rounded shadow-lg p-6 w-full max-w-md">
+                  <h3 className="text-lg font-semibold mb-4">Edit Document</h3>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Document Name *</label>
+                      <input
+                        type="text"
+                        value={editDocumentName}
+                        onChange={(e) => setEditDocumentName(e.target.value)}
+                        className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium mb-1">Document Type *</label>
+                      <select
+                        value={editDocumentType}
+                        onChange={(e) => setEditDocumentType(e.target.value)}
+                        className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="General">General</option>
+                        <option value="Contract">Contract</option>
+                        <option value="Agreement">Agreement</option>
+                        <option value="Policy">Policy</option>
+                        <option value="Welcome">Welcome</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="flex justify-end space-x-2 mt-5">
+                    <button
+                      onClick={() => {
+                        setShowEditDocumentModal(false);
+                        setEditingDocument(null);
+                        setEditDocumentName("");
+                        setEditDocumentType("General");
+                      }}
+                      className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleUpdateDocument}
+                      className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm disabled:opacity-50"
+                      disabled={!editDocumentName.trim()}
+                    >
+                      Update
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Document Viewer Modal */}
             {selectedDocument && (
-              <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-                  <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] flex flex-col">
+                  <div className="bg-gray-100 p-4 border-b flex justify-between items-center shrink-0">
                     <div>
-                      <h2 className="text-lg font-semibold">
-                        {selectedDocument.document_name}
-                      </h2>
-                      <p className="text-sm text-gray-600">
-                        Type: {selectedDocument.document_type}
-                      </p>
+                      <h2 className="text-lg font-semibold">{selectedDocument.document_name}</h2>
+                      <p className="text-sm text-gray-600">Type: {selectedDocument.document_type}</p>
                     </div>
-                    <button
-                      onClick={() => setSelectedDocument(null)}
-                      className="p-1 rounded hover:bg-gray-200"
-                    >
+                    <button onClick={() => setSelectedDocument(null)} className="p-1 rounded hover:bg-gray-200">
                       <span className="text-2xl font-bold">×</span>
                     </button>
                   </div>
-                  <div className="p-6">
-                    <div className="mb-4">
+                  <div className="p-4 flex-1 min-h-0 flex flex-col">
+                    <div className="mb-2">
                       <p className="text-sm text-gray-600">
-                        Created by{" "}
-                        {selectedDocument.created_by_name || "System"} on{" "}
+                        Created by {selectedDocument.created_by_name || "System"} on{" "}
                         {new Date(selectedDocument.created_at).toLocaleString()}
                       </p>
                     </div>
-                    <div className="bg-gray-50 p-4 rounded border whitespace-pre-wrap">
-                      {selectedDocument.content || "No content available"}
-                    </div>
+                    {selectedDocument.file_path ? (
+                      <div className="flex-1 min-h-[60vh] rounded border overflow-hidden bg-gray-100">
+                        <iframe
+                          src={selectedDocument.file_path}
+                          title={selectedDocument.document_name}
+                          className="w-full h-full min-h-[60vh] border-0"
+                          sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                        />
+                      </div>
+                    ) : (
+                      <div className="bg-gray-50 p-4 rounded border whitespace-pre-wrap overflow-y-auto">
+                        {selectedDocument.content || "No content available"}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

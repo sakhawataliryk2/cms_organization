@@ -3603,34 +3603,37 @@ export default function HiringManagerView() {
         {/* Document Viewer Modal */}
         {selectedDocument && (
           <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-              <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+            <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] flex flex-col">
+              <div className="bg-gray-100 p-4 border-b flex justify-between items-center shrink-0">
                 <div>
-                  <h2 className="text-lg font-semibold">
-                    {selectedDocument.document_name}
-                  </h2>
-                  <p className="text-sm text-gray-600">
-                    Type: {selectedDocument.document_type}
-                  </p>
+                  <h2 className="text-lg font-semibold">{selectedDocument.document_name}</h2>
+                  <p className="text-sm text-gray-600">Type: {selectedDocument.document_type}</p>
                 </div>
-                <button
-                  onClick={() => setSelectedDocument(null)}
-                  className="p-1 rounded hover:bg-gray-200"
-                >
+                <button onClick={() => setSelectedDocument(null)} className="p-1 rounded hover:bg-gray-200">
                   <span className="text-2xl font-bold">×</span>
                 </button>
               </div>
-              <div className="p-6">
-                <div className="mb-4">
+              <div className="p-4 flex-1 min-h-0 flex flex-col">
+                <div className="mb-2">
                   <p className="text-sm text-gray-600">
-                    Created by{" "}
-                    {selectedDocument.created_by_name || "System"} on{" "}
+                    Created by {selectedDocument.created_by_name || "System"} on{" "}
                     {new Date(selectedDocument.created_at).toLocaleString()}
                   </p>
                 </div>
-                <div className="bg-gray-50 p-4 rounded border whitespace-pre-wrap">
-                  {selectedDocument.content || "No content available"}
-                </div>
+                {selectedDocument.file_path ? (
+                  <div className="flex-1 min-h-[60vh] rounded border overflow-hidden bg-gray-100">
+                    <iframe
+                      src={selectedDocument.file_path}
+                      title={selectedDocument.document_name}
+                      className="w-full h-full min-h-[60vh] border-0"
+                      sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                    />
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 p-4 rounded border whitespace-pre-wrap overflow-y-auto">
+                    {selectedDocument.content || "No content available"}
+                  </div>
+                )}
               </div>
             </div>
           </div>
