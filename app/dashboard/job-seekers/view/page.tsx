@@ -332,6 +332,15 @@ const JOB_SEEKER_DETAILS_DEFAULT_FIELDS = [
 ];
 const JOB_SEEKER_DETAILS_STORAGE_KEY = "jobSeekersJobSeekerDetailsFields";
 
+const OVERVIEW_DEFAULT_FIELDS = [
+  "status",
+  "currentOrganization",
+  "title",
+  "email",
+  "mobilePhone",
+];
+const OVERVIEW_STORAGE_KEY = "jobSeekersOverviewFields";
+
 export default function JobSeekerView() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -466,13 +475,7 @@ export default function JobSeekerView() {
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
     resume: ["profile", "skills", "experience"],
-    overview: [
-      "status",
-      "currentOrganization",
-      "title",
-      "email",
-      "mobilePhone",
-    ],
+    overview: OVERVIEW_DEFAULT_FIELDS,
     jobSeekerDetails: JOB_SEEKER_DETAILS_DEFAULT_FIELDS,
   });
 
@@ -654,6 +657,11 @@ export default function JobSeekerView() {
   const [modalJobSeekerDetailsOrder, setModalJobSeekerDetailsOrder] = useState<string[]>([]);
   const [modalJobSeekerDetailsVisible, setModalJobSeekerDetailsVisible] = useState<Record<string, boolean>>({});
   const [jobSeekerDetailsDragActiveId, setJobSeekerDetailsDragActiveId] = useState<string | null>(null);
+
+  // Overview edit modal: order and visibility (synced when modal opens)
+  const [modalOverviewOrder, setModalOverviewOrder] = useState<string[]>([]);
+  const [modalOverviewVisible, setModalOverviewVisible] = useState<Record<string, boolean>>({});
+  const [overviewDragActiveId, setOverviewDragActiveId] = useState<string | null>(null);
 
   const [isResumeEditorOpen, setIsResumeEditorOpen] = useState(false);
   const [resumeDraft, setResumeDraft] = useState("");
@@ -1230,6 +1238,21 @@ Best regards`;
     }
   }, []);
 
+  // Initialize Overview field order/visibility from localStorage (persists across all job seeker records)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem(OVERVIEW_STORAGE_KEY);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setVisibleFields((prev) => ({ ...prev, overview: parsed }));
+      }
+    } catch (_) {
+      /* keep default */
+    }
+  }, []);
+
   const prevColumnsRef = useRef<string>("");
 
   // Save columns to localStorage
@@ -1799,6 +1822,28 @@ Best regards`;
     return [...standard, ...customFromDefs, ...customFromJobSeeker];
   }, [availableFields, jobSeeker?.customFields]);
 
+  // Overview panel field catalog: standard (5) + custom (for edit modal and display order)
+  const overviewFieldCatalog = useMemo(() => {
+    const standard: { key: string; label: string }[] = [
+      { key: "status", label: "Status" },
+      { key: "currentOrganization", label: "Current Organization" },
+      { key: "title", label: "Title" },
+      { key: "email", label: "Email" },
+      { key: "mobilePhone", label: "Mobile Phone" },
+    ];
+    const customFromDefs = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
+    const customFromJobSeeker = Object.keys(jobSeeker?.customFields || {})
+      .filter((k) => !keysFromDefs.has(k))
+      .map((k) => ({ key: k, label: k }));
+    return [...standard, ...customFromDefs, ...customFromJobSeeker];
+  }, [availableFields, jobSeeker?.customFields]);
+
   // Sync Job Seeker Details modal state when opening edit for jobSeekerDetails
   useEffect(() => {
     if (editingPanel !== "jobSeekerDetails") return;
@@ -1813,6 +1858,21 @@ Best regards`;
       catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
     );
   }, [editingPanel, visibleFields.jobSeekerDetails, jobSeekerDetailsFieldCatalog]);
+
+  // Sync Overview modal state when opening edit for overview
+  useEffect(() => {
+    if (editingPanel !== "overview") return;
+    const current = visibleFields.overview || [];
+    const catalogKeys = overviewFieldCatalog.map((f) => f.key);
+    const order = [...current.filter((k) => catalogKeys.includes(k))];
+    catalogKeys.forEach((k) => {
+      if (!order.includes(k)) order.push(k);
+    });
+    setModalOverviewOrder(order);
+    setModalOverviewVisible(
+      catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
+    );
+  }, [editingPanel, visibleFields.overview, overviewFieldCatalog]);
 
   // Handle edit panel click
   const handleEditPanel = (panelId: string) => {
@@ -1846,6 +1906,29 @@ Best regards`;
     setVisibleFields((prev) => ({ ...prev, jobSeekerDetails: newOrder }));
     setEditingPanel(null);
   }, [modalJobSeekerDetailsOrder, modalJobSeekerDetailsVisible]);
+
+  // Overview modal: drag end (reorder)
+  const handleOverviewDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setOverviewDragActiveId(null);
+    if (!over || active.id === over.id) return;
+    setModalOverviewOrder((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, []);
+
+  // Overview modal: save order/visibility and persist for all job seeker records
+  const handleSaveOverviewFields = useCallback(() => {
+    const newOrder = modalOverviewOrder.filter((k) => modalOverviewVisible[k]);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(OVERVIEW_STORAGE_KEY, JSON.stringify(newOrder));
+    }
+    setVisibleFields((prev) => ({ ...prev, overview: newOrder }));
+    setEditingPanel(null);
+  }, [modalOverviewOrder, modalOverviewVisible]);
 
   const openResumeEditor = () => {
     if (!jobSeeker) return;
@@ -5040,99 +5123,73 @@ Best regards`;
                   </div>
                 </div>
               ) : editingPanel === "overview" ? (
-                // Overview panel: Show available fields
+                // Overview panel: drag to reorder, checkbox to toggle visibility (persists for all job seeker records)
                 <>
-                  <div className="mb-4">
-                    <h3 className="font-medium mb-3">
-                      Available Fields from Modify Page:
-                    </h3>
-                    <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
-                      {isLoadingFields ? (
-                        <div className="text-center py-4 text-gray-500">
-                          Loading fields...
-                        </div>
-                      ) : availableFields.length > 0 ? (
-                        availableFields.map((field) => {
-                          const fieldKey =
-                            field.field_name || field.field_label || field.id;
-                          const isVisible =
-                            visibleFields[editingPanel]?.includes(fieldKey) ||
-                            false;
+                  <p className="text-sm text-gray-600 mb-3">
+                    Drag to reorder. Toggle visibility with the checkbox. Changes apply to all job seeker records.
+                  </p>
+                  <DndContext
+                    collisionDetection={closestCorners}
+                    onDragStart={(e) => setOverviewDragActiveId(e.active.id as string)}
+                    onDragEnd={handleOverviewDragEnd}
+                    onDragCancel={() => setOverviewDragActiveId(null)}
+                    sensors={sensors}
+                    modifiers={[restrictToVerticalAxis]}
+                  >
+                    <SortableContext
+                      items={modalOverviewOrder}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
+                        {modalOverviewOrder.map((key) => {
+                          const entry = overviewFieldCatalog.find((f) => f.key === key);
+                          if (!entry) return null;
                           return (
-                            <div
-                              key={field.id || fieldKey}
-                              className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                            >
-                              <div className="flex items-center space-x-2">
-                                <input
-                                  type="checkbox"
-                                  checked={isVisible}
-                                  onChange={() =>
-                                    toggleFieldVisibility(editingPanel, fieldKey)
-                                  }
-                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                />
-                                <label className="text-sm text-gray-700">
-                                  {field.field_label ||
-                                    field.field_name ||
-                                    fieldKey}
-                                </label>
-                              </div>
-                              <span className="text-xs text-gray-500">
-                                {field.field_type || "text"}
-                              </span>
-                            </div>
+                            <SortableJobSeekerDetailsFieldRow
+                              key={entry.key}
+                              id={entry.key}
+                              label={entry.label}
+                              checked={!!modalOverviewVisible[entry.key]}
+                              onToggle={() =>
+                                setModalOverviewVisible((prev) => ({
+                                  ...prev,
+                                  [entry.key]: !prev[entry.key],
+                                }))
+                              }
+                            />
                           );
-                        })
-                      ) : (
-                        <div className="text-center py-4 text-gray-500">
-                          <p>No custom fields available</p>
-                          <p className="text-xs mt-1">
-                            Fields from the modify page will appear here
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="mb-4">
-                    <h3 className="font-medium mb-3">Standard Fields:</h3>
-                    <div className="space-y-2 border border-gray-200 rounded p-3">
-                      {[
-                        { key: "status", label: "Status" },
-                        { key: "currentOrganization", label: "Current Organization" },
-                        { key: "title", label: "Title" },
-                        { key: "email", label: "Email" },
-                        { key: "mobilePhone", label: "Mobile Phone" },
-                      ].map((field) => {
-                        const isVisible =
-                          visibleFields[editingPanel]?.includes(field.key) ||
-                          false;
+                        })}
+                      </div>
+                    </SortableContext>
+                    <DragOverlay dropAnimation={dropAnimationConfig}>
+                      {overviewDragActiveId ? (() => {
+                        const entry = overviewFieldCatalog.find((f) => f.key === overviewDragActiveId);
+                        if (!entry) return null;
                         return (
-                          <div
-                            key={field.key}
-                            className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                          >
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="checkbox"
-                                checked={isVisible}
-                                onChange={() =>
-                                  toggleFieldVisibility(editingPanel, field.key)
-                                }
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                              />
-                              <label className="text-sm text-gray-700">
-                                {field.label}
-                              </label>
-                            </div>
-                            <span className="text-xs text-gray-500">
-                              standard
-                            </span>
-                          </div>
+                          <SortableJobSeekerDetailsFieldRow
+                            id={entry.key}
+                            label={entry.label}
+                            checked={!!modalOverviewVisible[entry.key]}
+                            onToggle={() => {}}
+                            isOverlay
+                          />
                         );
-                      })}
-                    </div>
+                      })() : null}
+                    </DragOverlay>
+                  </DndContext>
+                  <div className="flex justify-end gap-2 pt-4 mt-4 border-t">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveOverviewFields}
+                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Save
+                    </button>
                   </div>
                 </>
               ) : (

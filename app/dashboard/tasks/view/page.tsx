@@ -273,8 +273,8 @@ export default function TaskView() {
         defaultFields: TASK_DEFAULT_HEADER_FIELDS,
     });
 
-    // Build field list: Standard + Custom
-    const buildHeaderFieldCatalog = () => {
+    // Build field list: Standard + Custom (memoized so Task Overview sync effect doesn't re-run every render and overwrite toggles)
+    const headerFieldCatalog = useMemo(() => {
         const standard = [
             { key: "dueDate", label: "Due Date" },
             { key: "assignedTo", label: "Assigned To" },
@@ -301,9 +301,7 @@ export default function TaskView() {
             seen.add(x.key);
             return true;
         });
-    };
-
-    const headerFieldCatalog = buildHeaderFieldCatalog();
+    }, [task?.customFields]);
 
     const getHeaderFieldValue = (key: string) => {
         if (!task) return "-";

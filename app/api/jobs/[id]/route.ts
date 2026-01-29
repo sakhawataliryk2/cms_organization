@@ -151,11 +151,15 @@ export async function PUT(
         }
 
         if (!response.ok) {
+            // Forward backend's actual error message when present (e.g. from catch block in dev)
+            const message = (data.error && typeof data.error === 'string')
+                ? data.error
+                : (data.message || 'Failed to update job');
             return NextResponse.json(
                 {
                     success: false,
-                    message: data.message || 'Failed to update job',
-                    error: data
+                    message,
+                    error: data.error ?? data.message
                 },
                 { status: response.status }
             );
