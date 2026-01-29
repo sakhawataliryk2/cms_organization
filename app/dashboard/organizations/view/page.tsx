@@ -10,13 +10,26 @@ import LoadingScreen from "@/components/LoadingScreen";
 import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
-import { DndContext, DragOverlay, closestCenter, type DragEndEvent, type DragOverEvent, useDroppable } from "@dnd-kit/core";
+import {
+  DndContext,
+  DragOverlay,
+  closestCenter,
+  closestCorners,
+  type DragEndEvent,
+  type DragOverEvent,
+  useDroppable,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
 import { restrictToWindowEdges } from "@dnd-kit/modifiers";
 import {
   SortableContext,
   useSortable,
   verticalListSortingStrategy,
   horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
   arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -93,6 +106,55 @@ function DroppableContainer({ id, children, items }: { id: string, children: Rea
         {children}
       </div>
     </SortableContext>
+  );
+}
+
+// Sortable row for Organization Contact Info edit modal (vertical drag + checkbox + label)
+function SortableContactInfoFieldRow({
+  id,
+  label,
+  checked,
+  onToggle,
+  isOverlay,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+  isOverlay?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging && !isOverlay ? 0.5 : 1,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
+    >
+      {!isOverlay && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
+          title="Drag to reorder"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={18} />
+        </button>
+      )}
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        onClick={(e) => e.stopPropagation()}
+        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 shrink-0"
+      />
+      <span className="text-sm text-gray-700 flex-1 truncate">{label}</span>
+    </div>
   );
 }
 
@@ -536,6 +598,12 @@ export default function OrganizationView() {
     configType: "header",
   });
 
+  // Sensors for Contact Info modal drag-and-drop
+  const contactInfoSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
   // Build field list: Standard + Custom(from Modify page)
   const buildHeaderFieldCatalog = () => {
     const standard = [
@@ -698,6 +766,7 @@ export default function OrganizationView() {
   // Modal-local state for Contact Info edit: order and visibility (only applied on Save)
   const [modalContactInfoOrder, setModalContactInfoOrder] = useState<string[]>([]);
   const [modalContactInfoVisible, setModalContactInfoVisible] = useState<Record<string, boolean>>({});
+  const [contactInfoDragActiveId, setContactInfoDragActiveId] = useState<string | null>(null);
 
   // Fetch organization data when component mounts
   useEffect(() => {
@@ -1272,7 +1341,7 @@ export default function OrganizationView() {
     setModalContactInfoVisible((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  // Contact Info modal: move field up/down in order
+  // Contact Info modal: move field up/down in order (kept for fallback; primary reorder is drag)
   const moveContactInfoField = (index: number, direction: "up" | "down") => {
     setModalContactInfoOrder((prev) => {
       const next = [...prev];
@@ -1280,6 +1349,19 @@ export default function OrganizationView() {
       if (target < 0 || target >= next.length) return prev;
       [next[index], next[target]] = [next[target], next[index]];
       return next;
+    });
+  };
+
+  // Contact Info modal: drag end handler for reordering
+  const handleContactInfoDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setContactInfoDragActiveId(null);
+    if (!over || active.id === over.id) return;
+    setModalContactInfoOrder((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
     });
   };
 
@@ -5163,61 +5245,58 @@ export default function OrganizationView() {
             </div>
             <div className="p-6">
               {editingPanel === "contactInfo" ? (
-                <>
+                <DndContext
+                  sensors={contactInfoSensors}
+                  collisionDetection={closestCorners}
+                  onDragStart={(e) => setContactInfoDragActiveId(e.active.id as string)}
+                  onDragEnd={handleContactInfoDragEnd}
+                  onDragCancel={() => setContactInfoDragActiveId(null)}
+                >
                   <p className="text-sm text-gray-600 mb-4">
-                    Choose which fields to show and drag order. Changes apply to all organization contact cards.
+                    Drag to reorder, check/uncheck to show/hide. Changes apply to all organization contact cards.
                   </p>
-                  <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
-                    {isLoadingFields && contactInfoFieldCatalog.length === 0 ? (
-                      <div className="text-center py-4 text-gray-500">
-                        Loading fields...
-                      </div>
-                    ) : (
-                      modalContactInfoOrder.map((key, index) => {
-                        const entry = contactInfoFieldCatalog.find((f) => f.key === key);
-                        const label = entry?.label ?? key;
-                        const isVisible = modalContactInfoVisible[key] ?? false;
-                        return (
-                          <div
-                            key={key}
-                            className="flex items-center justify-between p-2 hover:bg-gray-50 rounded border border-gray-100"
-                          >
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <input
-                                type="checkbox"
-                                checked={isVisible}
-                                onChange={() => toggleModalContactInfoVisible(key)}
-                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 shrink-0"
-                              />
-                              <label className="text-sm text-gray-700 truncate">
-                                {label}
-                              </label>
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => moveContactInfoField(index, "up")}
-                                disabled={index === 0}
-                                className="p-1.5 border rounded text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                                title="Move up"
-                              >
-                                <FiArrowUp size={14} />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => moveContactInfoField(index, "down")}
-                                disabled={index === modalContactInfoOrder.length - 1}
-                                className="p-1.5 border rounded text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
-                                title="Move down"
-                              >
-                                <FiArrowDown size={14} />
-                              </button>
-                            </div>
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
+                  <SortableContext
+                    items={modalContactInfoOrder}
+                    strategy={verticalListSortingStrategy}
+                  >
+                    <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
+                      {isLoadingFields && contactInfoFieldCatalog.length === 0 ? (
+                        <div className="text-center py-4 text-gray-500">
+                          Loading fields...
+                        </div>
+                      ) : (
+                        modalContactInfoOrder.map((key, index) => {
+                          const entry = contactInfoFieldCatalog.find((f) => f.key === key);
+                          const label = entry?.label ?? key;
+                          const isVisible = modalContactInfoVisible[key] ?? false;
+                          return (
+                            <SortableContactInfoFieldRow
+                              key={`contactInfo-${key}-${index}`}
+                              id={key}
+                              label={label}
+                              checked={isVisible}
+                              onToggle={() => toggleModalContactInfoVisible(key)}
+                            />
+                          );
+                        })
+                      )}
+                    </div>
+                  </SortableContext>
+                  <DragOverlay>
+                    {contactInfoDragActiveId ? (() => {
+                      const entry = contactInfoFieldCatalog.find((f) => f.key === contactInfoDragActiveId);
+                      const label = entry?.label ?? contactInfoDragActiveId;
+                      return (
+                        <SortableContactInfoFieldRow
+                          id={contactInfoDragActiveId}
+                          label={label}
+                          checked={modalContactInfoVisible[contactInfoDragActiveId] ?? false}
+                          onToggle={() => {}}
+                          isOverlay
+                        />
+                      );
+                    })() : null}
+                  </DragOverlay>
                   <div className="flex justify-end gap-2 pt-4 border-t mt-4">
                     <button
                       onClick={handleCloseEditModal}
@@ -5233,7 +5312,7 @@ export default function OrganizationView() {
                       Save (applies to all organizations)
                     </button>
                   </div>
-                </>
+                </DndContext>
               ) : (
                 <>
                   <div className="mb-4">
