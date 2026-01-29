@@ -327,8 +327,6 @@ export default function JobSeekerView() {
   const [notes, setNotes] = useState<Array<any>>([]);
   const [history, setHistory] = useState<Array<any>>([]);
 
-  const [historySearchTerm, setHistorySearchTerm] = useState("");
-
   // Note filtering/sorting state
   const [noteActionFilter, setNoteActionFilter] = useState("");
   const [noteAuthorFilter, setNoteAuthorFilter] = useState("");
@@ -337,6 +335,7 @@ export default function JobSeekerView() {
 
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [showAddNote, setShowAddNote] = useState(false);
 
   // Tasks state
@@ -2311,6 +2310,7 @@ Best regards`;
   // Fetch history for the job seeker
   const fetchHistory = async (id: string) => {
     setIsLoadingHistory(true);
+    setHistoryError(null);
 
     try {
       const response = await fetch(`/api/job-seekers/${id}/history`, {
@@ -2323,13 +2323,19 @@ Best regards`;
       });
 
       if (!response.ok) {
-        throw new Error("Failed to fetch history");
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to fetch history");
       }
 
       const data = await response.json();
       setHistory(data.history || []);
     } catch (err) {
       console.error("Error fetching history:", err);
+      setHistoryError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while fetching history"
+      );
     } finally {
       setIsLoadingHistory(false);
     }
@@ -3181,128 +3187,162 @@ Best regards`;
   };
 
   // Render history tab content
-  const renderHistoryTab = () => {
-    // Filter history based on search term
-    const filteredHistory = history.filter((item) => {
-      if (!historySearchTerm) return true;
-      const term = historySearchTerm.toLowerCase();
-      const personName = (item.performed_by_name || "").toLowerCase();
-      const dateStr = new Date(item.performed_at).toLocaleString().toLowerCase();
-      return personName.includes(term) || dateStr.includes(term);
-    });
+  const renderHistoryTab = () => (
+    <div className="bg-white p-4 rounded shadow-sm">
+      <h2 className="text-lg font-semibold mb-4">Job Seeker History</h2>
 
-    return (
-      <div className="bg-white p-4 rounded shadow-sm">
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-lg font-semibold">Job Seeker History</h2>
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search by name or date..."
-              value={historySearchTerm}
-              onChange={(e) => setHistorySearchTerm(e.target.value)}
-              className="pl-8 pr-4 py-1 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <svg
-              className="w-4 h-4 text-gray-400 absolute left-2.5 top-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-              />
-            </svg>
-          </div>
+      {isLoadingHistory ? (
+        <div className="flex justify-center py-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
         </div>
+      ) : historyError ? (
+        <div className="text-red-500 py-2">{historyError}</div>
+      ) : history.length > 0 ? (
+        <div className="space-y-4">
+          {history.map((item) => {
+            // Format the history entry based on action type
+            let actionDisplay = "";
+            let detailsDisplay: React.ReactNode = "";
 
-        {isLoadingHistory ? (
-          <div className="flex justify-center py-4">
-            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
-          </div>
-        ) : filteredHistory.length > 0 ? (
-          <div className="space-y-4">
-            {filteredHistory.map((item) => {
-              // Format the history entry based on action type
-              let actionDisplay = "";
-              let detailsDisplay = "";
+            try {
+              const details =
+                typeof item.details === "string"
+                  ? JSON.parse(item.details)
+                  : item.details;
 
-              try {
-                const details =
-                  typeof item.details === "string"
-                    ? JSON.parse(item.details)
-                    : item.details;
+              switch (item.action) {
+                case "CREATE":
+                  actionDisplay = "Job Seeker Created";
+                  detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
+                    }`;
+                  break;
+                case "UPDATE":
+                  actionDisplay = "Job Seeker Updated";
+                  if (details && details.before && details.after) {
+                    // Create a list of changes
+                    const changes: React.ReactNode[] = [];
 
-                switch (item.action) {
-                  case "CREATE":
-                    actionDisplay = "Job Seeker Created";
-                    detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
-                      }`;
-                    break;
-                  case "UPDATE":
-                    actionDisplay = "Job Seeker Updated";
-                    if (details && details.before && details.after) {
-                      // Create a list of changes
-                      const changes = [];
-                      for (const key in details.after) {
-                        if (details.before[key] !== details.after[key]) {
-                          const fieldName = key.replace(/_/g, " ");
-                          changes.push(
-                            `${fieldName}: "${details.before[key] || ""}" → "${details.after[key] || ""
-                            }"`
-                          );
+                    // Helper function to format values
+                    const formatValue = (val: any): string => {
+                      if (val === null || val === undefined) return "Empty";
+                      if (typeof val === "object") return JSON.stringify(val);
+                      return String(val);
+                    };
+
+                    for (const key in details.after) {
+                      // Skip internal fields that might not be relevant to users
+                      if (key === "updated_at") continue;
+
+                      const beforeVal = details.before[key];
+                      const afterVal = details.after[key];
+
+                      if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                        // Special handling for custom_fields
+                        if (key === "custom_fields") {
+                          let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
+                          let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
+
+                          // Handle case where custom_fields might be null/undefined
+                          beforeObj = beforeObj || {};
+                          afterObj = afterObj || {};
+
+                          if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
+                            const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
+
+                            allKeys.forEach(cfKey => {
+                              const beforeCfVal = beforeObj[cfKey];
+                              const afterCfVal = afterObj[cfKey];
+
+                              if (beforeCfVal !== afterCfVal) {
+                                changes.push(
+                                  <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                                    <span className="font-semibold text-gray-700 min-w-[120px]">Custom Field ({cfKey}):</span>
+                                    <div className="flex flex-wrap gap-2 items-center">
+                                      <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                        {formatValue(beforeCfVal)}
+                                      </span>
+                                      <span className="text-gray-400">→</span>
+                                      <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                        {formatValue(afterCfVal)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              }
+                            });
+                            continue; // Skip the standard field handling for custom_fields
+                          }
                         }
-                      }
-                      if (changes.length > 0) {
-                        detailsDisplay = `Changes: ${changes.join(", ")}`;
-                      } else {
-                        detailsDisplay = "No changes detected";
+
+                        // Standard fields
+                        const fieldName = key.replace(/_/g, " ");
+                        changes.push(
+                          <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                            <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
+                            <div className="flex flex-wrap gap-2 items-center">
+                              <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                {formatValue(beforeVal)}
+                              </span>
+                              <span className="text-gray-400">→</span>
+                              <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                {formatValue(afterVal)}
+                              </span>
+                            </div>
+                          </div>
+                        );
                       }
                     }
-                    break;
-                  case "ADD_NOTE":
-                    actionDisplay = "Note Added";
-                    detailsDisplay = details.text || "";
-                    break;
-                  default:
-                    actionDisplay = item.action;
-                    detailsDisplay = JSON.stringify(details);
-                }
-              } catch (e) {
-                console.error("Error parsing history details:", e);
-                detailsDisplay = "Error displaying details";
-              }
 
-              return (
-                <div
-                  key={item.id}
-                  className="p-3 border rounded hover:bg-gray-50"
-                >
-                  <div className="flex justify-between items-start mb-2">
-                    <span className="font-medium text-blue-600">
-                      {actionDisplay}
-                    </span>
-                    <span className="text-sm text-gray-500">
-                      {new Date(item.performed_at).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="mb-2">{detailsDisplay}</div>
-                  <div className="text-sm text-gray-600">
-                    By: {item.performed_by_name || "Unknown"}
-                  </div>
+                    if (changes.length > 0) {
+                      detailsDisplay = (
+                        <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
+                          {changes}
+                        </div>
+                      );
+                    } else {
+                      detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
+                    }
+                  }
+                  break;
+                case "ADD_NOTE":
+                  actionDisplay = "Note Added";
+                  detailsDisplay = details.text || "";
+                  break;
+                default:
+                  actionDisplay = item.action;
+                  detailsDisplay = JSON.stringify(details);
+              }
+            } catch (e) {
+              console.error("Error parsing history details:", e);
+              detailsDisplay = "Error displaying details";
+            }
+
+            return (
+              <div
+                key={item.id}
+                className="p-3 border rounded hover:bg-gray-50"
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="font-medium text-blue-600">
+                    {actionDisplay}
+                  </span>
+                  <span className="text-sm text-gray-500">
+                    {new Date(item.performed_at).toLocaleString()}
+                  </span>
                 </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-gray-500 italic">No history records match your search</p>
-        )}
-      </div>
-    );
-  };
+                <div className="mb-2">{detailsDisplay}</div>
+                <div className="text-sm text-gray-600">
+                  By: {item.performed_by_name || "Unknown"}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <p className="text-gray-500 italic">No history records available</p>
+      )}
+    </div>
+  );
 
   // Render modify tab to direct to edit form
   const renderModifyTab = () => (

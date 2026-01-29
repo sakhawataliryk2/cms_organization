@@ -22,6 +22,19 @@ import {
   PINNED_RECORDS_CHANGED_EVENT,
   togglePinnedRecord,
 } from "@/lib/pinnedRecords";
+import { FiStar, FiChevronDown } from "react-icons/fi";
+
+type TearsheetFavorite = {
+  id: string;
+  name: string;
+  searchTerm: string;
+  columnFilters: Record<string, ColumnFilterState>;
+  columnSorts: Record<string, ColumnSortState>;
+  columnFields: string[];
+  createdAt: number;
+};
+
+const FAVORITES_STORAGE_KEY = "tearsheetsFavorites";
 
 type TearsheetRow = {
   id: number;
@@ -282,11 +295,97 @@ const TearsheetsPage = () => {
 
   const [pinnedKeySet, setPinnedKeySet] = useState<Set<string>>(new Set());
 
+  // Main search (global filter across key fields)
+  const [searchTerm, setSearchTerm] = useState("");
+
   // Per-column sorting state
   const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
 
   // Per-column filtering state
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+
+  // Favorites State
+  const [favorites, setFavorites] = useState<TearsheetFavorite[]>([]);
+  const [selectedFavoriteId, setSelectedFavoriteId] = useState<string | null>(null);
+  const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
+  const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
+  const [favoriteName, setFavoriteName] = useState("");
+  const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
+
+  // Load favorites from local storage
+  useEffect(() => {
+    const saved = localStorage.getItem(FAVORITES_STORAGE_KEY);
+    if (saved) {
+      try {
+        setFavorites(JSON.parse(saved));
+      } catch (e) {
+        console.error("Failed to parse favorites", e);
+      }
+    }
+  }, []);
+
+  const persistFavorites = (updated: TearsheetFavorite[]) => {
+    setFavorites(updated);
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updated));
+  };
+
+  const applyFavorite = (fav: TearsheetFavorite) => {
+    setSearchTerm(fav.searchTerm || "");
+    setColumnFilters(fav.columnFilters || {});
+    setColumnSorts(fav.columnSorts || {});
+    if (fav.columnFields && fav.columnFields.length > 0) {
+      setColumnFields(fav.columnFields);
+    }
+    setSelectedFavoriteId(fav.id);
+    setFavoritesMenuOpen(false);
+  };
+
+  const handleOpenSaveFavoriteModal = () => {
+    setFavoriteName("");
+    setFavoriteNameError(null);
+    setShowSaveFavoriteModal(true);
+    setFavoritesMenuOpen(false);
+  };
+
+  const handleConfirmSaveFavorite = () => {
+    const trimmed = favoriteName.trim();
+    if (!trimmed) {
+      setFavoriteNameError("Please enter a name for this favorite.");
+      return;
+    }
+
+    const newFav: TearsheetFavorite = {
+      id: crypto.randomUUID(),
+      name: trimmed,
+      searchTerm,
+      columnFilters,
+      columnSorts,
+      columnFields,
+      createdAt: Date.now(),
+    };
+
+    const updated = [...favorites, newFav];
+    persistFavorites(updated);
+    setSelectedFavoriteId(newFav.id);
+    setShowSaveFavoriteModal(false);
+  };
+
+  const handleDeleteFavorite = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = favorites.filter((f) => f.id !== id);
+    persistFavorites(updated);
+    if (selectedFavoriteId === id) {
+      setSelectedFavoriteId(null);
+    }
+  };
+
+  const handleClearAllFilters = () => {
+    setSearchTerm("");
+    setColumnFilters({});
+    setColumnSorts({});
+    setSelectedFavoriteId(null);
+  };
+
 
   const {
     columnFields,
@@ -463,7 +562,26 @@ const TearsheetsPage = () => {
   const processedRows = useMemo(() => {
     let result = [...rows];
 
-    // 1. Filter
+    // 1. Main search (global filter across key fields)
+    if (searchTerm.trim() !== "") {
+      const term = searchTerm.toLowerCase();
+      result = result.filter((row) => {
+        const idStr = String(row.id ?? "").toLowerCase();
+        const nameStr = (row.name ?? "").toLowerCase();
+        const ownerStr = (row.owner_name ?? "").toLowerCase();
+        const createdStr = row.created_at ? formatDateTime(row.created_at).toLowerCase() : "";
+        const lastOpenedStr = row.last_opened_at ? formatDate(row.last_opened_at).toLowerCase() : "";
+        return (
+          idStr.includes(term) ||
+          nameStr.includes(term) ||
+          ownerStr.includes(term) ||
+          createdStr.includes(term) ||
+          lastOpenedStr.includes(term)
+        );
+      });
+    }
+
+    // 2. Per-column filters
     Object.entries(columnFilters).forEach(([key, value]) => {
       if (value) {
         result = result.filter((row) => {
@@ -477,7 +595,7 @@ const TearsheetsPage = () => {
       }
     });
 
-    // 2. Sort
+    // 3. Sort
     const activeSortColumn = Object.keys(columnSorts).find((key) => columnSorts[key] !== null);
     if (activeSortColumn) {
       const direction = columnSorts[activeSortColumn];
@@ -509,7 +627,7 @@ const TearsheetsPage = () => {
     }
 
     return result;
-  }, [rows, columnSorts, columnFilters]);
+  }, [rows, columnSorts, columnFilters, searchTerm]);
 
   // Load pinned state from localStorage
   useEffect(() => {
@@ -870,6 +988,73 @@ const TearsheetsPage = () => {
               {isLoading ? "Loading..." : `${rows.length} tearsheet(s)`}
             </div>
             <div className="flex items-center space-x-2">
+              {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
+                <button
+                  onClick={handleClearAllFilters}
+                  className="px-3 py-1.5 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-1"
+                >
+                  <FiX size={14} />
+                  Clear
+                </button>
+              )}
+              {/* Favorites Dropdown */}
+              <div className="relative">
+                <button
+                  onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)}
+                  className="px-3 py-1.5 border border-gray-200 rounded hover:bg-gray-50 flex items-center gap-2 bg-white text-sm"
+                >
+                  <FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} />
+                  <span className="max-w-[100px] truncate">
+                    {selectedFavoriteId
+                      ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites"
+                      : "Favorites"}
+                  </span>
+                  <FiChevronDown />
+                </button>
+
+                {favoritesMenuOpen && (
+                  <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                    <div className="p-2 border-b border-gray-100">
+                      <button
+                        onClick={handleOpenSaveFavoriteModal}
+                        className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors font-medium flex items-center gap-2"
+                      >
+                        <FiStar className="text-blue-500" />
+                        Save Current View
+                      </button>
+                    </div>
+
+                    <div className="max-h-60 overflow-y-auto py-1">
+                      {favorites.length === 0 ? (
+                        <p className="text-xs text-gray-400 text-center py-4">
+                          No saved favorites yet
+                        </p>
+                      ) : (
+                        favorites.map((fav) => (
+                          <div
+                            key={fav.id}
+                            className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""
+                              }`}
+                            onClick={() => applyFavorite(fav)}
+                          >
+                            <span className="text-sm text-gray-700 truncate flex-1">
+                              {fav.name}
+                            </span>
+                            <button
+                              onClick={(e) => handleDeleteFavorite(fav.id, e)}
+                              className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                              title="Delete favorite"
+                            >
+                              <FiX size={14} />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <button
                 type="button"
                 onClick={() => setShowColumnModal(true)}
@@ -906,6 +1091,45 @@ const TearsheetsPage = () => {
               {error}
             </div>
           )}
+
+          {/* Main Search */}
+          <div className="p-4 border-b border-gray-200">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  placeholder="Search tearsheets..."
+                  className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                <div className="absolute left-3 top-2.5 text-gray-400">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
+              </div>
+
+              {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
+                <button
+                  onClick={handleClearAllFilters}
+                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                >
+                  <FiX />
+                  Clear All
+                </button>
+              )}
+            </div>
+          </div>
 
           <div className="overflow-x-auto">
             <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -1311,6 +1535,77 @@ const TearsheetsPage = () => {
                   className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isDeleting ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {/* Save Favorite Modal */}
+        {showSaveFavoriteModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] p-4">
+            <div className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden">
+              <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <h3 className="font-semibold text-gray-800">Save Search as Favorite</h3>
+                <button
+                  onClick={() => setShowSaveFavoriteModal(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <FiX size={20} />
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Favorite Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={favoriteName}
+                    onChange={(e) => {
+                      setFavoriteName(e.target.value);
+                      if (e.target.value.trim()) setFavoriteNameError(null);
+                    }}
+                    placeholder="e.g. My Tearsheets"
+                    className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${
+                      favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
+                    }`}
+                    autoFocus
+                  />
+                  {favoriteNameError && (
+                    <p className="text-xs text-red-500 mt-1">{favoriteNameError}</p>
+                  )}
+                </div>
+                
+                <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-800 space-y-1">
+                  <p className="font-medium flex items-center gap-2">
+                    <FiStar className="text-blue-600" size={14} />
+                    What will be saved:
+                  </p>
+                  <ul className="list-disc list-inside pl-1 opacity-80 space-y-0.5 text-xs">
+                    {Object.keys(columnFilters).length > 0 && (
+                      <li>{Object.keys(columnFilters).length} active filters</li>
+                    )}
+                    {Object.keys(columnSorts).length > 0 && (
+                      <li>{Object.keys(columnSorts).length} active sorts</li>
+                    )}
+                    <li>Column visibility and order settings</li>
+                  </ul>
+                </div>
+              </div>
+              
+              <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
+                <button
+                  onClick={() => setShowSaveFavoriteModal(false)}
+                  className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-200 rounded-md transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleConfirmSaveFavorite}
+                  className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm transition-colors font-medium"
+                >
+                  Save Favorite
                 </button>
               </div>
             </div>

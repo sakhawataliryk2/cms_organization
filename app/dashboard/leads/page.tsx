@@ -14,7 +14,8 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
-import { FiArrowDown, FiArrowUp, FiFilter } from "react-icons/fi";
+import { FiArrowDown, FiArrowUp, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
+
 interface Lead {
   id: string;
   first_name: string;
@@ -36,6 +37,18 @@ interface Lead {
 
 type ColumnSortState = "asc" | "desc" | null;
 type ColumnFilterState = string | null;
+
+type LeadsFavorite = {
+  id: string;
+  name: string;
+  searchTerm: string;
+  columnFilters: Record<string, ColumnFilterState>;
+  columnSorts: Record<string, ColumnSortState>;
+  columnFields: string[];
+  createdAt: number;
+};
+
+const FAVORITES_STORAGE_KEY = "leadsFavorites";
 
 // Sortable Column Header Component
 function SortableColumnHeader({
@@ -226,6 +239,30 @@ export default function LeadList() {
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // Favorites State
+  const [favorites, setFavorites] = useState<LeadsFavorite[]>([]);
+  const [selectedFavoriteId, setSelectedFavoriteId] = useState<string | null>(null);
+  const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
+  const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
+  const [favoriteName, setFavoriteName] = useState("");
+  const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
+
+  // Load favorites from local storage
+  useEffect(() => {
+    const saved = localStorage.getItem(FAVORITES_STORAGE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setFavorites(parsed);
+        }
+      } catch (e) {
+        console.error("Failed to parse favorites", e);
+      }
+    }
+  }, []);
+
 const DEFAULT_LEAD_COLUMNS: string[] = [
   "name",
   "status",
@@ -338,6 +375,93 @@ const {
 
   // Per-column filtering state
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+
+  // Favorites Logic
+  const persistFavorites = (updated: LeadsFavorite[]) => {
+    setFavorites(updated);
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updated));
+  };
+
+  const applyFavorite = (fav: LeadsFavorite) => {
+    // 1. Validate columns against current catalog
+    const catalogKeys = new Set(columnsCatalog.map((c) => c.key));
+    const validColumnFields = (fav.columnFields || []).filter((k) =>
+      catalogKeys.has(k)
+    );
+
+    // 2. Restore filters (only valid ones)
+    const nextFilters: Record<string, ColumnFilterState> = {};
+    for (const [k, v] of Object.entries(fav.columnFilters || {})) {
+      if (!catalogKeys.has(k)) continue;
+      if (!v || !v.trim()) continue;
+      nextFilters[k] = v;
+    }
+
+    // 3. Restore sorts (only valid ones)
+    const nextSorts: Record<string, ColumnSortState> = {};
+    for (const [k, v] of Object.entries(fav.columnSorts || {})) {
+      if (!catalogKeys.has(k)) continue;
+      if (v !== "asc" && v !== "desc") continue;
+      nextSorts[k] = v;
+    }
+
+    // 4. Apply everything
+    setSearchTerm(fav.searchTerm || "");
+    setColumnFilters(nextFilters);
+    setColumnSorts(nextSorts);
+    if (validColumnFields.length > 0) {
+      setColumnFields(validColumnFields);
+    }
+
+    setSelectedFavoriteId(fav.id);
+    setFavoritesMenuOpen(false);
+  };
+
+  const handleOpenSaveFavoriteModal = () => {
+    setFavoriteName("");
+    setFavoriteNameError(null);
+    setShowSaveFavoriteModal(true);
+    setFavoritesMenuOpen(false);
+  };
+
+  const handleConfirmSaveFavorite = () => {
+    const trimmed = favoriteName.trim();
+    if (!trimmed) {
+      setFavoriteNameError("Please enter a name for this favorite.");
+      return;
+    }
+
+    const newFav: LeadsFavorite = {
+      id: crypto.randomUUID(),
+      name: trimmed,
+      searchTerm,
+      columnFilters,
+      columnSorts,
+      columnFields,
+      createdAt: Date.now(),
+    };
+
+    const updated = [...favorites, newFav];
+    persistFavorites(updated);
+    setSelectedFavoriteId(newFav.id);
+    setShowSaveFavoriteModal(false);
+  };
+
+  const handleDeleteFavorite = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = favorites.filter((f) => f.id !== id);
+    persistFavorites(updated);
+    if (selectedFavoriteId === id) {
+      setSelectedFavoriteId(null);
+    }
+  };
+
+  const handleClearAllFilters = () => {
+    setSearchTerm("");
+    setColumnFilters({});
+    setColumnSorts({});
+    setSelectedFavoriteId(null);
+  };
 
   // Load column order from localStorage on mount
   useEffect(() => {
@@ -654,6 +778,65 @@ const {
               Delete Selected ({selectedLeads.length})
             </button>
           )}
+          {/* Favorites Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)}
+              className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
+            >
+              <FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} />
+              <span className="max-w-[100px] truncate">
+                {selectedFavoriteId
+                  ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites"
+                  : "Favorites"}
+              </span>
+              <FiChevronDown />
+            </button>
+
+            {favoritesMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                <div className="p-2 border-b border-gray-100">
+                  <button
+                    onClick={handleOpenSaveFavoriteModal}
+                    className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors font-medium flex items-center gap-2"
+                  >
+                    <FiStar className="text-blue-500" />
+                    Save Current Search
+                  </button>
+                </div>
+
+                <div className="max-h-60 overflow-y-auto py-1">
+                  {favorites.length === 0 ? (
+                    <p className="text-xs text-gray-400 text-center py-4">
+                      No saved favorites yet
+                    </p>
+                  ) : (
+                    favorites.map((fav) => (
+                      <div
+                        key={fav.id}
+                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${
+                          selectedFavoriteId === fav.id ? "bg-blue-50" : ""
+                        }`}
+                        onClick={() => applyFavorite(fav)}
+                      >
+                        <span className="text-sm text-gray-700 truncate flex-1">
+                          {fav.name}
+                        </span>
+                        <button
+                          onClick={(e) => handleDeleteFavorite(fav.id, e)}
+                          className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                          title="Delete favorite"
+                        >
+                          <FiX size={14} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             onClick={() => setShowColumnModal(true)}
             className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
@@ -698,28 +881,39 @@ const {
 
       {/* Search and Filter */}
       <div className="p-4 border-b border-gray-200">
-        <div className="relative">
-          <input
-            type="text"
-            placeholder="Search leads..."
-            className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-          <div className="absolute left-3 top-2.5 text-gray-400">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                clipRule="evenodd"
-              />
-            </svg>
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="relative flex-1">
+            <input
+              type="text"
+              placeholder="Search leads..."
+              className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+            <div className="absolute left-3 top-2.5 text-gray-400">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            </div>
           </div>
+          {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
+            <button
+              onClick={handleClearAllFilters}
+              className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+            >
+              <FiX />
+              Clear All
+            </button>
+          )}
         </div>
       </div>
 
@@ -1144,6 +1338,79 @@ const {
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Save Favorite Modal */}
+      {showSaveFavoriteModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden">
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <h3 className="font-semibold text-gray-800">Save Search as Favorite</h3>
+              <button
+                onClick={() => setShowSaveFavoriteModal(false)}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Favorite Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={favoriteName}
+                  onChange={(e) => {
+                    setFavoriteName(e.target.value);
+                    if (e.target.value.trim()) setFavoriteNameError(null);
+                  }}
+                  placeholder="e.g. Active Leads"
+                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${
+                    favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
+                  }`}
+                  autoFocus
+                />
+                {favoriteNameError && (
+                  <p className="text-xs text-red-500 mt-1">{favoriteNameError}</p>
+                )}
+              </div>
+              
+              <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-800 space-y-1">
+                <p className="font-medium flex items-center gap-2">
+                  <FiStar className="text-blue-600" size={14} />
+                  What will be saved:
+                </p>
+                <ul className="list-disc list-inside pl-1 opacity-80 space-y-0.5 text-xs">
+                  {searchTerm && <li>Search term: "{searchTerm}"</li>}
+                  {Object.keys(columnFilters).length > 0 && (
+                    <li>{Object.keys(columnFilters).length} active filters</li>
+                  )}
+                  {Object.keys(columnSorts).length > 0 && (
+                    <li>{Object.keys(columnSorts).length} active sorts</li>
+                  )}
+                  <li>Column visibility and order settings</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
+              <button
+                onClick={() => setShowSaveFavoriteModal(false)}
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-200 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmSaveFavorite}
+                className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm transition-colors font-medium"
+              >
+                Save Favorite
+              </button>
             </div>
           </div>
         </div>

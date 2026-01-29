@@ -349,6 +349,7 @@ export default function JobView() {
   const [history, setHistory] = useState<Array<any>>([]);
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
   const [showAddNote, setShowAddNote] = useState(false);
   const [noteTypeFilter, setNoteTypeFilter] = useState<string>("");
 
@@ -2201,6 +2202,7 @@ export default function JobView() {
   // Fetch history for the job
   const fetchHistory = async (id: string) => {
     setIsLoadingHistory(true);
+    setHistoryError(null);
 
     try {
       const response = await fetch(`/api/jobs/${id}/history`, {
@@ -2213,13 +2215,19 @@ export default function JobView() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to fetch history");
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to fetch history");
       }
 
       const data = await response.json();
       setHistory(data.history || []);
     } catch (err) {
       console.error("Error fetching history:", err);
+      setHistoryError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while fetching history"
+      );
     } finally {
       setIsLoadingHistory(false);
     }
@@ -3091,18 +3099,20 @@ export default function JobView() {
   // Render history tab content
   const renderHistoryTab = () => (
     <div className="bg-white p-4 rounded shadow-sm">
-      <h2 className="text-lg font-semibold">Job History</h2>
+      <h2 className="text-lg font-semibold mb-4">Job History</h2>
 
       {isLoadingHistory ? (
         <div className="flex justify-center py-4">
           <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
         </div>
+      ) : historyError ? (
+        <div className="text-red-500 py-2">{historyError}</div>
       ) : history.length > 0 ? (
         <div className="space-y-4">
           {history.map((item) => {
             // Format the history entry based on action type
             let actionDisplay = "";
-            let detailsDisplay = "";
+            let detailsDisplay: React.ReactNode = "";
 
             try {
               const details =
@@ -3120,20 +3130,87 @@ export default function JobView() {
                   actionDisplay = "Job Updated";
                   if (details && details.before && details.after) {
                     // Create a list of changes
-                    const changes = [];
+                    const changes: React.ReactNode[] = [];
+
+                    // Helper function to format values
+                    const formatValue = (val: any): string => {
+                      if (val === null || val === undefined) return "Empty";
+                      if (typeof val === "object") return JSON.stringify(val);
+                      return String(val);
+                    };
+
                     for (const key in details.after) {
-                      if (details.before[key] !== details.after[key]) {
+                      // Skip internal fields that might not be relevant to users
+                      if (key === "updated_at") continue;
+
+                      const beforeVal = details.before[key];
+                      const afterVal = details.after[key];
+
+                      if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                        // Special handling for custom_fields
+                        if (key === "custom_fields") {
+                          let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
+                          let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
+
+                          // Handle case where custom_fields might be null/undefined
+                          beforeObj = beforeObj || {};
+                          afterObj = afterObj || {};
+
+                          if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
+                            const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
+
+                            allKeys.forEach(cfKey => {
+                              const beforeCfVal = beforeObj[cfKey];
+                              const afterCfVal = afterObj[cfKey];
+
+                              if (beforeCfVal !== afterCfVal) {
+                                changes.push(
+                                  <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                                    <span className="font-semibold text-gray-700 min-w-[120px]">Custom Field ({cfKey}):</span>
+                                    <div className="flex flex-wrap gap-2 items-center">
+                                      <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                        {formatValue(beforeCfVal)}
+                                      </span>
+                                      <span className="text-gray-400">→</span>
+                                      <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                        {formatValue(afterCfVal)}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              }
+                            });
+                            continue; // Skip the standard field handling for custom_fields
+                          }
+                        }
+
+                        // Standard fields
                         const fieldName = key.replace(/_/g, " ");
                         changes.push(
-                          `${fieldName}: "${details.before[key] || ""}" → "${details.after[key] || ""
-                          }"`
+                          <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                            <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
+                            <div className="flex flex-wrap gap-2 items-center">
+                              <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                {formatValue(beforeVal)}
+                              </span>
+                              <span className="text-gray-400">→</span>
+                              <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                {formatValue(afterVal)}
+                              </span>
+                            </div>
+                          </div>
                         );
                       }
                     }
+
                     if (changes.length > 0) {
-                      detailsDisplay = `Changes: ${changes.join(", ")}`;
+                      detailsDisplay = (
+                        <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
+                          {changes}
+                        </div>
+                      );
                     } else {
-                      detailsDisplay = "No changes detected";
+                      detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
                     }
                   }
                   break;

@@ -779,93 +779,73 @@ export default function OrganizationList() {
       <div className="flex justify-between items-center p-4 border-b border-gray-200">
         <h1 className="text-xl font-bold">Organizations</h1>
         <div className="flex items-center space-x-4">
-          <div className="flex items-center gap-2" ref={favoritesMenuRef}>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setFavoritesMenuOpen((v) => !v)}
-                className="px-3 py-2 border border-gray-300 rounded bg-white hover:bg-gray-50 flex items-center gap-2 text-sm"
-                title="Favorites"
-              >
-                <FiStar size={16} className={selectedFavoriteId ? "text-yellow-500" : "text-gray-500"} />
-                <span className="max-w-[180px] truncate">
-                  {selectedFavoriteId
-                    ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites"
-                    : "Favorites"}
-                </span>
-                <FiChevronDown size={16} className="text-gray-500" />
-              </button>
-
-              {favoritesMenuOpen && (
-                <div className="absolute right-0 mt-2 w-72 rounded border bg-white shadow-lg z-9999 overflow-hidden">
-                  <div className="px-3 py-2 border-b bg-gray-50 flex items-center justify-between">
-                    <div className="text-sm font-semibold text-gray-700">Favorites</div>
-                    <button
-                      className="p-1 rounded hover:bg-gray-200"
-                      onClick={() => setFavoritesMenuOpen(false)}
-                      title="Close"
-                    >
-                      <FiX size={16} />
-                    </button>
-                  </div>
-
-                  {favorites.length === 0 ? (
-                    <div className="p-3 text-sm text-gray-600">
-                      <div className="font-medium">No favorites yet</div>
-                      <div className="mt-1">Save your current search + layout to reuse it later.</div>
-                    </div>
-                  ) : (
-                    <div className="max-h-72 overflow-auto">
-                      {favorites.map((f) => {
-                        const active = f.id === selectedFavoriteId;
-                        return (
-                          <button
-                            key={f.id}
-                            className={`w-full text-left px-3 py-2 text-sm hover:bg-gray-50 flex items-center justify-between ${
-                              active ? "bg-blue-50" : "bg-white"
-                            }`}
-                            onClick={() => {
-                              setSelectedFavoriteId(f.id);
-                              applyFavorite(f);
-                              setFavoritesMenuOpen(false);
-                            }}
-                            title="Apply favorite"
-                          >
-                            <span className={`truncate ${active ? "text-blue-700 font-medium" : "text-gray-800"}`}>
-                              {f.name}
-                            </span>
-                            {active && <span className="text-xs text-blue-700">Active</span>}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  <div className="p-3 border-t bg-white flex gap-2">
-                    <button
-                      onClick={() => {
-                        setFavoritesMenuOpen(false);
-                        handleOpenSaveFavoriteModal();
-                      }}
-                      className="flex-1 px-3 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm flex items-center justify-center gap-2"
-                      title="Save current view to Favorites"
-                    >
-                      <FiStar size={16} />
-                      Save Current View
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-
+          {/* Favorites Dropdown */}
+          <div className="relative" ref={favoritesMenuRef}>
             <button
-              onClick={handleOpenSaveFavoriteModal}
-              className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2 text-sm"
-              title="Save current view to Favorites"
+              onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)}
+              className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
             >
-              <FiStar size={16} />
-              Save
+              <FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} />
+              <span className="max-w-[100px] truncate">
+                {selectedFavoriteId
+                  ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites"
+                  : "Favorites"}
+              </span>
+              <FiChevronDown />
             </button>
+
+            {favoritesMenuOpen && (
+              <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                <div className="p-2 border-b border-gray-100">
+                  <button
+                    onClick={handleOpenSaveFavoriteModal}
+                    className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors font-medium flex items-center gap-2"
+                  >
+                    <FiStar className="text-blue-500" />
+                    Save Current Search
+                  </button>
+                </div>
+
+                <div className="max-h-60 overflow-y-auto py-1">
+                  {favorites.length === 0 ? (
+                    <p className="text-xs text-gray-400 text-center py-4">
+                      No saved favorites yet
+                    </p>
+                  ) : (
+                    favorites.map((fav) => (
+                      <div
+                        key={fav.id}
+                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""
+                          }`}
+                        onClick={() => {
+                          setSelectedFavoriteId(fav.id);
+                          applyFavorite(fav);
+                          setFavoritesMenuOpen(false);
+                        }}
+                      >
+                        <span className="text-sm text-gray-700 truncate flex-1">
+                          {fav.name}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const updated = favorites.filter((f) => f.id !== fav.id);
+                            persistFavorites(updated);
+                            if (selectedFavoriteId === fav.id) {
+                              setSelectedFavoriteId("");
+                            }
+                          }}
+                          className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                          title="Delete favorite"
+                        >
+                          <FiX size={14} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
           </div>
 
           {selectedOrganizations.length > 0 && (
@@ -957,19 +937,15 @@ export default function OrganizationList() {
             </div>
           </div>
 
-          <button
-            onClick={handleClearAllFilters}
-            className="px-3 py-2 border border-gray-300 rounded hover:bg-gray-50 text-sm"
-            title="Clear search, filters, and sorting"
-            disabled={
-              !searchTerm &&
-              Object.keys(columnFilters).length === 0 &&
-              Object.keys(columnSorts).length === 0 &&
-              !selectedFavoriteId
-            }
-          >
-            Clear All
-          </button>
+          {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
+            <button
+              onClick={handleClearAllFilters}
+              className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+            >
+              <FiX />
+              Clear All
+            </button>
+          )}
         </div>
       </div>
 
@@ -1369,61 +1345,74 @@ export default function OrganizationList() {
         </div>
       )}
 
+      {/* Save Favorite Modal */}
       {showSaveFavoriteModal && (
-        <div
-          className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-          onMouseDown={() => setShowSaveFavoriteModal(false)}
-        >
-          <div
-            className="bg-white rounded shadow-xl w-full max-w-md mx-4"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Save to Favorites</h2>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full overflow-hidden">
+            <div className="p-4 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+              <h3 className="font-semibold text-gray-800">Save Search as Favorite</h3>
               <button
                 onClick={() => setShowSaveFavoriteModal(false)}
-                className="p-1 rounded hover:bg-gray-200"
+                className="text-gray-400 hover:text-gray-600"
               >
-                <span className="text-2xl font-bold">×</span>
+                <FiX size={20} />
               </button>
             </div>
-
-            <div className="p-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Favorite name
-              </label>
-              <input
-                type="text"
-                value={favoriteName}
-                onChange={(e) => {
-                  setFavoriteName(e.target.value);
-                  if (favoriteNameError) setFavoriteNameError(null);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") handleConfirmSaveFavorite();
-                  if (e.key === "Escape") setShowSaveFavoriteModal(false);
-                }}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                autoFocus
-              />
-              {favoriteNameError && (
-                <div className="mt-2 text-sm text-red-600">{favoriteNameError}</div>
-              )}
-
-              <div className="mt-4 flex justify-end gap-2">
-                <button
-                  onClick={() => setShowSaveFavoriteModal(false)}
-                  className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleConfirmSaveFavorite}
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                >
-                  Save
-                </button>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Favorite Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={favoriteName}
+                  onChange={(e) => {
+                    setFavoriteName(e.target.value);
+                    if (e.target.value.trim()) setFavoriteNameError(null);
+                  }}
+                  placeholder="e.g. Active Organizations"
+                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${
+                    favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
+                  }`}
+                  autoFocus
+                />
+                {favoriteNameError && (
+                  <p className="text-xs text-red-500 mt-1">{favoriteNameError}</p>
+                )}
               </div>
+              
+              <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-800 space-y-1">
+                <p className="font-medium flex items-center gap-2">
+                  <FiStar className="text-blue-600" size={14} />
+                  What will be saved:
+                </p>
+                <ul className="list-disc list-inside pl-1 opacity-80 space-y-0.5 text-xs">
+                  {searchTerm && <li>Search term: "{searchTerm}"</li>}
+                  {Object.keys(columnFilters).length > 0 && (
+                    <li>{Object.keys(columnFilters).length} active filters</li>
+                  )}
+                  {Object.keys(columnSorts).length > 0 && (
+                    <li>{Object.keys(columnSorts).length} active sorts</li>
+                  )}
+                  <li>Column visibility and order settings</li>
+                </ul>
+              </div>
+            </div>
+            
+            <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
+              <button
+                onClick={() => setShowSaveFavoriteModal(false)}
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-200 rounded-md transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmSaveFavorite}
+                className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm transition-colors font-medium"
+              >
+                Save Favorite
+              </button>
             </div>
           </div>
         </div>
