@@ -24,7 +24,7 @@ import {
   defaultDropAnimationSideEffects,
   MeasuringStrategy,
 } from "@dnd-kit/core";
-import { restrictToWindowEdges } from "@dnd-kit/modifiers";
+import { restrictToWindowEdges, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
   SortableContext,
   useSortable,
@@ -90,6 +90,55 @@ function DroppableContainer({ id, children, items }: { id: string, children: Rea
         {children}
       </div>
     </SortableContext>
+  );
+}
+
+// Sortable row for Job Details edit modal (vertical drag + checkbox + label)
+function SortableJobDetailsFieldRow({
+  id,
+  label,
+  checked,
+  onToggle,
+  isOverlay,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+  isOverlay?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging && !isOverlay ? 0.5 : 1,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
+    >
+      {!isOverlay && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
+          title="Drag to reorder"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={18} />
+        </button>
+      )}
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        onClick={(e) => e.stopPropagation()}
+        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+      />
+      <span className="text-sm text-gray-700 flex-1">{label}</span>
+    </div>
   );
 }
 
@@ -267,6 +316,9 @@ function SortableColumnHeader({
 
 // Move DEFAULT_HEADER_FIELDS outside component to ensure stable reference
 const DEFAULT_HEADER_FIELDS = ["phone", "website"];
+
+const JOB_DETAILS_DEFAULT_FIELDS = ["title", "description", "benefits", "requiredSkills", "salaryRange"];
+const JOB_DETAILS_STORAGE_KEY = "jobsJobDetailsFields";
 
 export default function JobView() {
   const router = useRouter();
@@ -888,14 +940,7 @@ export default function JobView() {
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
-    jobDetails: [
-      "title",
-      "description",
-      "benefits",
-      "requiredSkills",
-      "salaryRange",
-      "customFields",
-    ],
+    jobDetails: JOB_DETAILS_DEFAULT_FIELDS,
     details: [
       "status",
       "priority",
@@ -965,6 +1010,21 @@ export default function JobView() {
           console.error("Error loading panel order:", e);
         }
       }
+    }
+  }, []);
+
+  // Initialize Job Details field order/visibility from localStorage (persists across all job records)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem(JOB_DETAILS_STORAGE_KEY);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setVisibleFields((prev) => ({ ...prev, jobDetails: parsed }));
+      }
+    } catch (_) {
+      /* keep default */
     }
   }, []);
 
@@ -1084,179 +1144,93 @@ export default function JobView() {
 
   const renderJobDetailsPanel = () => {
     if (!job) return null;
+    const customObj = job.customFields || {};
+    const customFieldDefs = (availableFields || []).filter((f: any) => {
+      const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
+      return !isHidden;
+    });
+
+    const renderJobDetailsRow = (key: string) => {
+      if (key === "title") {
+        return (
+          <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Title:</div>
+            <div className="flex-1 p-2">
+              <span className="text-blue-600 font-semibold">{job.title}</span>
+              <div className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">{job.employmentType}</div>
+            </div>
+          </div>
+        );
+      }
+      if (key === "description") {
+        return (
+          <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Description:</div>
+            <div className="flex-1 p-2 whitespace-pre-line text-gray-700">{job.description}</div>
+          </div>
+        );
+      }
+      if (key === "benefits") {
+        return (
+          <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Benefits:</div>
+            <div className="flex-1 p-2">
+              {job.benefits?.length > 0 ? (
+                <ul className="list-disc pl-5">
+                  {job.benefits.map((benefit: string, index: number) => (
+                    <li key={index} className="text-gray-700 mb-1">{benefit}</li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-gray-500 italic">No benefits listed</p>
+              )}
+            </div>
+          </div>
+        );
+      }
+      if (key === "requiredSkills") {
+        return (
+          <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Required Skills:</div>
+            <div className="flex-1 p-2 text-gray-700">{job.requiredSkills || "-"}</div>
+          </div>
+        );
+      }
+      if (key === "salaryRange") {
+        return (
+          <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Salary Range:</div>
+            <div className="flex-1 p-2 text-gray-700">{job.salaryRange}</div>
+          </div>
+        );
+      }
+      // Custom field
+      const field = customFieldDefs.find(
+        (f: any) =>
+          String(f.field_key || f.api_name || f.field_name || f.id) === String(key) ||
+          String(f.field_label || "") === String(key) ||
+          String(f.field_name || "") === String(key)
+      );
+      const value =
+        (customObj as any)?.[key] ??
+        (field?.field_label ? (customObj as any)?.[field.field_label] : undefined) ??
+        (field?.field_name ? (customObj as any)?.[field.field_name] : undefined);
+      const label = field?.field_label || field?.field_name || key;
+      return (
+        <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+          <div className="flex-1 p-2">{value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-"}</div>
+        </div>
+      );
+    };
+
     return (
       <PanelWithHeader
         title="Job Details"
         onEdit={() => handleEditPanel("jobDetails")}
       >
         <div className="space-y-0 border border-gray-200 rounded">
-          {visibleFields.jobDetails.includes("title") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                Title:
-              </div>
-              <div className="flex-1 p-2">
-                <span className="text-blue-600 font-semibold">
-                  {job.title}
-                </span>
-                <div className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">
-                  {job.employmentType}
-                </div>
-              </div>
-            </div>
-          )}
-          {visibleFields.jobDetails.includes("description") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                Description:
-              </div>
-              <div className="flex-1 p-2 whitespace-pre-line text-gray-700">
-                {job.description}
-              </div>
-            </div>
-          )}
-          {visibleFields.jobDetails.includes("benefits") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                Benefits:
-              </div>
-              <div className="flex-1 p-2">
-                {job.benefits.length > 0 ? (
-                  <ul className="list-disc pl-5">
-                    {job.benefits.map(
-                      (benefit: string, index: number) => (
-                        <li
-                          key={index}
-                          className="text-gray-700 mb-1"
-                        >
-                          {benefit}
-                        </li>
-                      )
-                    )}
-                  </ul>
-                ) : (
-                  <p className="text-gray-500 italic">
-                    No benefits listed
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
-          {visibleFields.jobDetails.includes("requiredSkills") &&
-            job.requiredSkills && (
-              <div className="flex border-b border-gray-200 last:border-b-0">
-                <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                  Required Skills:
-                </div>
-                <div className="flex-1 p-2 text-gray-700">
-                  {job.requiredSkills}
-                </div>
-              </div>
-            )}
-          {visibleFields.jobDetails.includes("salaryRange") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                Salary Range:
-              </div>
-              <div className="flex-1 p-2 text-gray-700">
-                {job.salaryRange}
-              </div>
-            </div>
-          )}
-          {/* Display custom fields */}
-          {job.customFields &&
-            (() => {
-              const customObj = job.customFields || {};
-
-              const customFieldDefs = (availableFields || []).filter((f: any) => {
-                const isHidden =
-                  f?.is_hidden === true ||
-                  f?.hidden === true ||
-                  f?.isHidden === true;
-                return !isHidden;
-              });
-
-              const renderedStableKeys = new Set<string>();
-
-              const rowsFromDefs = customFieldDefs
-                .map((f: any) => {
-                  const stableKey = String(
-                    f.field_key || f.api_name || f.field_name || f.id
-                  );
-
-                  const value =
-                    (customObj as any)?.[stableKey] ??
-                    (f.field_label ? (customObj as any)?.[f.field_label] : undefined) ??
-                    (f.field_name ? (customObj as any)?.[f.field_name] : undefined);
-
-                  const hasAnyValue =
-                    value !== undefined &&
-                    value !== null &&
-                    String(value).trim() !== "";
-
-                  if (!hasAnyValue) return null;
-                  if (!visibleFields.jobDetails.includes(stableKey)) return null;
-
-                  renderedStableKeys.add(stableKey);
-                  const label = f.field_label || f.field_name || stableKey;
-
-                  return (
-                    <div
-                      key={stableKey}
-                      className="flex border-b border-gray-200 last:border-b-0"
-                    >
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        {label}:
-                      </div>
-                      <div className="flex-1 p-2">{String(value || "-")}</div>
-                    </div>
-                  );
-                })
-                .filter(Boolean);
-
-              const rowsFromUnknownKeys = Object.keys(customObj)
-                .filter((k) => !renderedStableKeys.has(String(k)))
-                .map((fieldKey) => {
-                  if (!visibleFields.jobDetails.includes(fieldKey)) return null;
-
-                  const field = (availableFields || []).find(
-                    (f: any) =>
-                      String(
-                        f.field_key ||
-                        f.api_name ||
-                        f.field_name ||
-                        f.field_label ||
-                        f.id
-                      ) === String(fieldKey) ||
-                      String(f.field_label || "") === String(fieldKey) ||
-                      String(f.field_name || "") === String(fieldKey)
-                  );
-
-                  const fieldLabel =
-                    field?.field_label || field?.field_name || String(fieldKey);
-                  const fieldValue = (customObj as any)[fieldKey];
-
-                  return (
-                    <div
-                      key={fieldKey}
-                      className="flex border-b border-gray-200 last:border-b-0"
-                    >
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        {fieldLabel}:
-                      </div>
-                      <div className="flex-1 p-2">{String(fieldValue || "-")}</div>
-                    </div>
-                  );
-                })
-                .filter(Boolean);
-
-              return (
-                <>
-                  {rowsFromDefs}
-                  {rowsFromUnknownKeys}
-                </>
-              );
-            })()}
+          {(visibleFields.jobDetails || []).map((key) => renderJobDetailsRow(key))}
         </div>
       </PanelWithHeader>
     );
@@ -1514,6 +1488,10 @@ export default function JobView() {
 
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
+  // Job Details edit modal: order and visibility (synced when modal opens)
+  const [modalJobDetailsOrder, setModalJobDetailsOrder] = useState<string[]>([]);
+  const [modalJobDetailsVisible, setModalJobDetailsVisible] = useState<Record<string, boolean>>({});
+  const [jobDetailsDragActiveId, setJobDetailsDragActiveId] = useState<string | null>(null);
 
   // Add Placement modal state
   const [showAddPlacementModal, setShowAddPlacementModal] = useState(false);
@@ -1953,6 +1931,44 @@ export default function JobView() {
       }
     });
   };
+
+  // Job Details field catalog: standard + all custom (for edit modal and display order)
+  const jobDetailsFieldCatalog = useMemo(() => {
+    const standard: { key: string; label: string }[] = [
+      { key: "title", label: "Title" },
+      { key: "description", label: "Description" },
+      { key: "benefits", label: "Benefits" },
+      { key: "requiredSkills", label: "Required Skills" },
+      { key: "salaryRange", label: "Salary Range" },
+    ];
+    const customFromDefs = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
+    const customFromJob = Object.keys(job?.customFields || {})
+      .filter((k) => !keysFromDefs.has(k))
+      .map((k) => ({ key: k, label: k }));
+    return [...standard, ...customFromDefs, ...customFromJob];
+  }, [availableFields, job?.customFields]);
+
+  // Sync Job Details modal state when opening edit for jobDetails
+  useEffect(() => {
+    if (editingPanel !== "jobDetails") return;
+    const current = visibleFields.jobDetails || [];
+    const catalogKeys = jobDetailsFieldCatalog.map((f) => f.key);
+    const order = [...current.filter((k) => catalogKeys.includes(k))];
+    catalogKeys.forEach((k) => {
+      if (!order.includes(k)) order.push(k);
+    });
+    setModalJobDetailsOrder(order);
+    setModalJobDetailsVisible(
+      catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
+    );
+  }, [editingPanel, visibleFields.jobDetails, jobDetailsFieldCatalog]);
+
   // Header fields list builder (standard + custom)
   const getHeaderFieldOptions = () => {
     const standard = [
@@ -2020,6 +2036,29 @@ export default function JobView() {
   const handleCloseEditModal = () => {
     setEditingPanel(null);
   };
+
+  // Job Details modal: drag end (reorder)
+  const handleJobDetailsDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setJobDetailsDragActiveId(null);
+    if (!over || active.id === over.id) return;
+    setModalJobDetailsOrder((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, []);
+
+  // Job Details modal: save order/visibility and persist for all job records
+  const handleSaveJobDetailsFields = useCallback(() => {
+    const newOrder = modalJobDetailsOrder.filter((k) => modalJobDetailsVisible[k]);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(JOB_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
+    }
+    setVisibleFields((prev) => ({ ...prev, jobDetails: newOrder }));
+    setEditingPanel(null);
+  }, [modalJobDetailsOrder, modalJobDetailsVisible]);
 
   // Function to fetch job data with better error handling
   const fetchJob = async (id: string) => {
@@ -4087,11 +4126,11 @@ export default function JobView() {
 
       {/* Edit Fields Modal */}
       {editingPanel && (
-        <div className="fixed inset-0 bg-black/50   bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">
-                Edit Fields - {editingPanel}
+                Edit Fields - {editingPanel === "jobDetails" ? "Job Details" : editingPanel}
               </h2>
               <button
                 onClick={handleCloseEditModal}
@@ -4101,134 +4140,199 @@ export default function JobView() {
               </button>
             </div>
             <div className="p-6">
-              <div className="mb-4">
-                <h3 className="font-medium mb-3">
-                  Available Fields from Modify Page:
-                </h3>
-                <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
-                  {isLoadingFields ? (
-                    <div className="text-center py-4 text-gray-500">
-                      Loading fields...
-                    </div>
-                  ) : availableFields.length > 0 ? (
-                    availableFields.map((field) => {
-                      const fieldKey =
-                        field.field_name || field.field_label || field.id;
-                      const isVisible =
-                        visibleFields[editingPanel]?.includes(fieldKey) ||
-                        false;
-                      return (
-                        <div
-                          key={field.id || fieldKey}
-                          className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={isVisible}
-                              onChange={() =>
-                                toggleFieldVisibility(editingPanel, fieldKey)
+              {editingPanel === "jobDetails" ? (
+                <>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Drag to reorder. Toggle visibility with the checkbox. Changes apply to all job records.
+                  </p>
+                  <DndContext
+                    collisionDetection={closestCorners}
+                    onDragStart={(e) => setJobDetailsDragActiveId(e.active.id as string)}
+                    onDragEnd={handleJobDetailsDragEnd}
+                    onDragCancel={() => setJobDetailsDragActiveId(null)}
+                    sensors={sensors}
+                    modifiers={[restrictToVerticalAxis]}
+                  >
+                    <SortableContext
+                      items={modalJobDetailsOrder}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
+                        {modalJobDetailsOrder.map((key) => {
+                          const entry = jobDetailsFieldCatalog.find((f) => f.key === key);
+                          if (!entry) return null;
+                          return (
+                            <SortableJobDetailsFieldRow
+                              key={entry.key}
+                              id={entry.key}
+                              label={entry.label}
+                              checked={!!modalJobDetailsVisible[entry.key]}
+                              onToggle={() =>
+                                setModalJobDetailsVisible((prev) => ({
+                                  ...prev,
+                                  [entry.key]: !prev[entry.key],
+                                }))
                               }
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                             />
-                            <label className="text-sm text-gray-700">
-                              {field.field_label ||
-                                field.field_name ||
-                                fieldKey}
-                            </label>
-                          </div>
-                          <span className="text-xs text-gray-500">
-                            {field.field_type || "text"}
-                          </span>
+                          );
+                        })}
+                      </div>
+                    </SortableContext>
+                    <DragOverlay dropAnimation={dropAnimationConfig}>
+                      {jobDetailsDragActiveId ? (() => {
+                        const entry = jobDetailsFieldCatalog.find((f) => f.key === jobDetailsDragActiveId);
+                        if (!entry) return null;
+                        return (
+                          <SortableJobDetailsFieldRow
+                            id={entry.key}
+                            label={entry.label}
+                            checked={!!modalJobDetailsVisible[entry.key]}
+                            onToggle={() => {}}
+                            isOverlay
+                          />
+                        );
+                      })() : null}
+                    </DragOverlay>
+                  </DndContext>
+                  <div className="flex justify-end gap-2 pt-4 mt-4 border-t">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveJobDetailsFields}
+                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="mb-4">
+                    <h3 className="font-medium mb-3">
+                      Available Fields from Modify Page:
+                    </h3>
+                    <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                      {isLoadingFields ? (
+                        <div className="text-center py-4 text-gray-500">
+                          Loading fields...
                         </div>
-                      );
-                    })
-                  ) : (
-                    <div className="text-center py-4 text-gray-500">
-                      <p>No custom fields available</p>
-                      <p className="text-xs mt-1">
-                        Fields from the modify page will appear here
-                      </p>
+                      ) : availableFields.length > 0 ? (
+                        availableFields.map((field) => {
+                          const fieldKey =
+                            field.field_name || field.field_label || field.id;
+                          const isVisible =
+                            visibleFields[editingPanel]?.includes(fieldKey) ||
+                            false;
+                          return (
+                            <div
+                              key={field.id || fieldKey}
+                              className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                            >
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isVisible}
+                                  onChange={() =>
+                                    toggleFieldVisibility(editingPanel, fieldKey)
+                                  }
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <label className="text-sm text-gray-700">
+                                  {field.field_label ||
+                                    field.field_name ||
+                                    fieldKey}
+                                </label>
+                              </div>
+                              <span className="text-xs text-gray-500">
+                                {field.field_type || "text"}
+                              </span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="text-center py-4 text-gray-500">
+                          <p>No custom fields available</p>
+                          <p className="text-xs mt-1">
+                            Fields from the modify page will appear here
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              </div>
+                  </div>
 
-              <div className="mb-4">
-                <h3 className="font-medium mb-3">Standard Fields:</h3>
-                <div className="space-y-2 border border-gray-200 rounded p-3">
-                  {(() => {
-                    const standardFieldsMap: Record<
-                      string,
-                      Array<{ key: string; label: string }>
-                    > = {
-                      jobDetails: [
-                        { key: "title", label: "Title" },
-                        { key: "description", label: "Description" },
-                        { key: "benefits", label: "Benefits" },
-                        { key: "requiredSkills", label: "Required Skills" },
-                        { key: "salaryRange", label: "Salary Range" },
-                        { key: "customFields", label: "Custom Fields" },
-                      ],
-                      details: [
-                        { key: "status", label: "Status" },
-                        { key: "priority", label: "Priority" },
-                        { key: "employmentType", label: "Employment Type" },
-                        { key: "startDate", label: "Start Date" },
-                        { key: "worksite", label: "Worksite Location" },
-                        { key: "dateAdded", label: "Date Added" },
-                        { key: "jobBoardStatus", label: "Job Board Status" },
-                        { key: "owner", label: "User Owner" },
-                      ],
-                      hiringManager: [
-                        { key: "name", label: "Name" },
-                        { key: "phone", label: "Phone" },
-                        { key: "email", label: "Email" },
-                      ],
-                      recentNotes: [{ key: "notes", label: "Notes" }],
-                    };
+                  <div className="mb-4">
+                    <h3 className="font-medium mb-3">Standard Fields:</h3>
+                    <div className="space-y-2 border border-gray-200 rounded p-3">
+                      {(() => {
+                        const standardFieldsMap: Record<
+                          string,
+                          Array<{ key: string; label: string }>
+                        > = {
+                          details: [
+                            { key: "status", label: "Status" },
+                            { key: "priority", label: "Priority" },
+                            { key: "employmentType", label: "Employment Type" },
+                            { key: "startDate", label: "Start Date" },
+                            { key: "worksite", label: "Worksite Location" },
+                            { key: "dateAdded", label: "Date Added" },
+                            { key: "jobBoardStatus", label: "Job Board Status" },
+                            { key: "owner", label: "User Owner" },
+                          ],
+                          hiringManager: [
+                            { key: "name", label: "Name" },
+                            { key: "phone", label: "Phone" },
+                            { key: "email", label: "Email" },
+                          ],
+                          recentNotes: [{ key: "notes", label: "Notes" }],
+                        };
 
-                    const fields = standardFieldsMap[editingPanel] || [];
-                    return fields.map((field) => {
-                      const isVisible =
-                        visibleFields[editingPanel]?.includes(field.key) ||
-                        false;
-                      return (
-                        <div
-                          key={field.key}
-                          className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={isVisible}
-                              onChange={() =>
-                                toggleFieldVisibility(editingPanel, field.key)
-                              }
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            />
-                            <label className="text-sm text-gray-700">
-                              {field.label}
-                            </label>
-                          </div>
-                          <span className="text-xs text-gray-500">
-                            standard
-                          </span>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
+                        const fields = standardFieldsMap[editingPanel] || [];
+                        return fields.map((field) => {
+                          const isVisible =
+                            visibleFields[editingPanel]?.includes(field.key) ||
+                            false;
+                          return (
+                            <div
+                              key={field.key}
+                              className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                            >
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isVisible}
+                                  onChange={() =>
+                                    toggleFieldVisibility(editingPanel, field.key)
+                                  }
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <label className="text-sm text-gray-700">
+                                  {field.label}
+                                </label>
+                              </div>
+                              <span className="text-xs text-gray-500">
+                                standard
+                              </span>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
 
-              <div className="flex justify-end space-x-2 pt-4 border-t">
-                <button
-                  onClick={handleCloseEditModal}
-                  className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-                >
-                  Close
-                </button>
-              </div>
+                  <div className="flex justify-end space-x-2 pt-4 border-t">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

@@ -62,8 +62,9 @@ body {
 }
 
 .sd-tab-label.is-pinned {
-  background-color: #16a34a;
-  color: #ffffff;
+  /* Default background for pinned tabs - same as regular tabs */
+  background-color: rgb(29 41 61);
+  color: rgb(255, 255, 255);
 }
 
 .sd-tab-label:hover {
@@ -73,6 +74,17 @@ body {
 }
 
 .sd-tab-label.is-pinned:hover {
+  background-color: rgb(29 41 61);
+  color: #ffffff;
+}
+
+/* Only active pinned tabs should be green */
+.sd-tab-label.is-pinned.is-active {
+  background-color: #16a34a;
+  color: #ffffff;
+}
+
+.sd-tab-label.is-pinned.is-active:hover {
   background-color: #15803d;
   color: #ffffff;
 }

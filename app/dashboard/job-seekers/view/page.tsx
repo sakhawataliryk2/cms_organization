@@ -36,7 +36,7 @@ import {
   defaultDropAnimationSideEffects,
   MeasuringStrategy,
 } from "@dnd-kit/core";
-import { restrictToWindowEdges } from "@dnd-kit/modifiers";
+import { restrictToWindowEdges, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
   SortableContext,
   useSortable,
@@ -56,6 +56,55 @@ function DroppableContainer({ id, children, items }: { id: string, children: Rea
         {children}
       </div>
     </SortableContext>
+  );
+}
+
+// Sortable row for Job Seeker Details edit modal (vertical drag + checkbox + label)
+function SortableJobSeekerDetailsFieldRow({
+  id,
+  label,
+  checked,
+  onToggle,
+  isOverlay,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+  isOverlay?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging && !isOverlay ? 0.5 : 1,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
+    >
+      {!isOverlay && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
+          title="Drag to reorder"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={18} />
+        </button>
+      )}
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        onClick={(e) => e.stopPropagation()}
+        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+      />
+      <span className="text-sm text-gray-700 flex-1">{label}</span>
+    </div>
   );
 }
 
@@ -268,6 +317,21 @@ function SortablePanel({ id, children, isOverlay = false }: { id: string; childr
   );
 }
 
+// Move constants outside component to ensure stable reference
+const JOB_SEEKER_DETAILS_DEFAULT_FIELDS = [
+  "status",
+  "currentOrganization",
+  "title",
+  "email",
+  "mobilePhone",
+  "address",
+  "desiredSalary",
+  "dateAdded",
+  "lastContactDate",
+  "owner",
+];
+const JOB_SEEKER_DETAILS_STORAGE_KEY = "jobSeekersJobSeekerDetailsFields";
+
 export default function JobSeekerView() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -409,18 +473,7 @@ export default function JobSeekerView() {
       "email",
       "mobilePhone",
     ],
-    jobSeekerDetails: [
-      "status",
-      "currentOrganization",
-      "title",
-      "email",
-      "mobilePhone",
-      "address",
-      "desiredSalary",
-      "dateAdded",
-      "lastContactDate",
-      "owner",
-    ],
+    jobSeekerDetails: JOB_SEEKER_DETAILS_DEFAULT_FIELDS,
   });
 
   // ===== Summary layout state =====
@@ -597,6 +650,10 @@ export default function JobSeekerView() {
 
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
+  // Job Seeker Details edit modal: order and visibility (synced when modal opens)
+  const [modalJobSeekerDetailsOrder, setModalJobSeekerDetailsOrder] = useState<string[]>([]);
+  const [modalJobSeekerDetailsVisible, setModalJobSeekerDetailsVisible] = useState<Record<string, boolean>>({});
+  const [jobSeekerDetailsDragActiveId, setJobSeekerDetailsDragActiveId] = useState<string | null>(null);
 
   const [isResumeEditorOpen, setIsResumeEditorOpen] = useState(false);
   const [resumeDraft, setResumeDraft] = useState("");
@@ -1158,6 +1215,21 @@ Best regards`;
     }
   }, []);
 
+  // Initialize Job Seeker Details field order/visibility from localStorage (persists across all job seeker records)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem(JOB_SEEKER_DETAILS_STORAGE_KEY);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setVisibleFields((prev) => ({ ...prev, jobSeekerDetails: parsed }));
+      }
+    } catch (_) {
+      /* keep default */
+    }
+  }, []);
+
   const prevColumnsRef = useRef<string>("");
 
   // Save columns to localStorage
@@ -1700,6 +1772,48 @@ Best regards`;
     });
   };
 
+  // Job Seeker Details field catalog: standard + all custom (for edit modal and display order)
+  const jobSeekerDetailsFieldCatalog = useMemo(() => {
+    const standard: { key: string; label: string }[] = [
+      { key: "status", label: "Status" },
+      { key: "currentOrganization", label: "Current Organization" },
+      { key: "title", label: "Title" },
+      { key: "email", label: "Email" },
+      { key: "mobilePhone", label: "Mobile Phone" },
+      { key: "address", label: "Address" },
+      { key: "desiredSalary", label: "Desired Salary" },
+      { key: "dateAdded", label: "Date Added" },
+      { key: "lastContactDate", label: "Last Contact" },
+      { key: "owner", label: "User Owner" },
+    ];
+    const customFromDefs = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
+    const customFromJobSeeker = Object.keys(jobSeeker?.customFields || {})
+      .filter((k) => !keysFromDefs.has(k))
+      .map((k) => ({ key: k, label: k }));
+    return [...standard, ...customFromDefs, ...customFromJobSeeker];
+  }, [availableFields, jobSeeker?.customFields]);
+
+  // Sync Job Seeker Details modal state when opening edit for jobSeekerDetails
+  useEffect(() => {
+    if (editingPanel !== "jobSeekerDetails") return;
+    const current = visibleFields.jobSeekerDetails || [];
+    const catalogKeys = jobSeekerDetailsFieldCatalog.map((f) => f.key);
+    const order = [...current.filter((k) => catalogKeys.includes(k))];
+    catalogKeys.forEach((k) => {
+      if (!order.includes(k)) order.push(k);
+    });
+    setModalJobSeekerDetailsOrder(order);
+    setModalJobSeekerDetailsVisible(
+      catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
+    );
+  }, [editingPanel, visibleFields.jobSeekerDetails, jobSeekerDetailsFieldCatalog]);
+
   // Handle edit panel click
   const handleEditPanel = (panelId: string) => {
     setEditingPanel(panelId);
@@ -1709,6 +1823,29 @@ Best regards`;
   const handleCloseEditModal = () => {
     setEditingPanel(null);
   };
+
+  // Job Seeker Details modal: drag end (reorder)
+  const handleJobSeekerDetailsDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setJobSeekerDetailsDragActiveId(null);
+    if (!over || active.id === over.id) return;
+    setModalJobSeekerDetailsOrder((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, []);
+
+  // Job Seeker Details modal: save order/visibility and persist for all job seeker records
+  const handleSaveJobSeekerDetailsFields = useCallback(() => {
+    const newOrder = modalJobSeekerDetailsOrder.filter((k) => modalJobSeekerDetailsVisible[k]);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(JOB_SEEKER_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
+    }
+    setVisibleFields((prev) => ({ ...prev, jobSeekerDetails: newOrder }));
+    setEditingPanel(null);
+  }, [modalJobSeekerDetailsOrder, modalJobSeekerDetailsVisible]);
 
   const openResumeEditor = () => {
     if (!jobSeeker) return;
@@ -3420,18 +3557,55 @@ Best regards`;
 
   const renderJobSeekerDetailsPanel = () => {
     if (!jobSeeker) return null;
+    const customObj = jobSeeker.customFields || {};
+    const customFieldDefs = (availableFields || []).filter((f: any) => {
+      const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
+      return !isHidden;
+    });
+
+    const renderJobSeekerDetailsRow = (key: string) => {
+      // Standard fields - use existing getHeaderValue which handles them correctly
+      const standardKeys = ["status", "currentOrganization", "title", "email", "mobilePhone", "address", "desiredSalary", "dateAdded", "lastContactDate", "owner"];
+      if (standardKeys.includes(key)) {
+        return (
+          <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{labelForHeaderKey(key)}:</div>
+            <div className="flex-1 p-2 text-sm">
+              {key === "status" ? (
+                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{getHeaderValue(key)}</span>
+              ) : key === "email" && getHeaderValue(key) !== "-" ? (
+                <a href={`mailto:${getHeaderValue(key)}`} className="text-blue-600 hover:underline">{getHeaderValue(key)}</a>
+              ) : (
+                getHeaderValue(key)
+              )}
+            </div>
+          </div>
+        );
+      }
+      // Custom field
+      const field = customFieldDefs.find(
+        (f: any) =>
+          String(f.field_name || f.field_key || f.api_name || f.id) === String(key) ||
+          String(f.field_label || "") === String(key) ||
+          String(f.field_name || "") === String(key)
+      );
+      const value =
+        (customObj as any)?.[key] ??
+        (field?.field_label ? (customObj as any)?.[field.field_label] : undefined) ??
+        (field?.field_name ? (customObj as any)?.[field.field_name] : undefined);
+      const label = field?.field_label || field?.field_name || key;
+      return (
+        <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+          <div className="flex-1 p-2 text-sm">{value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-"}</div>
+        </div>
+      );
+    };
+
     return (
       <PanelWithHeader title="Job Seeker Details" onEdit={() => handleEditPanel("jobSeekerDetails")}>
         <div className="space-y-0 border border-gray-200 rounded">
-          {visibleFields.jobSeekerDetails.map((key) => (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{labelForHeaderKey(key)}:</div>
-              <div className="flex-1 p-2 text-sm">{getHeaderValue(key)}</div>
-            </div>
-          ))}
-
-          {/* Custom Fields that are not explicitly in visibleFields but exist on jobSeeker */}
-          {null}
+          {(visibleFields.jobSeekerDetails || []).map((key) => renderJobSeekerDetailsRow(key))}
         </div>
       </PanelWithHeader>
     );
@@ -4694,7 +4868,7 @@ Best regards`;
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">
-                Edit Fields - {editingPanel}
+                Edit Fields - {editingPanel === "jobSeekerDetails" ? "Job Seeker Details" : editingPanel}
               </h2>
               <button
                 onClick={handleCloseEditModal}
@@ -4704,7 +4878,76 @@ Best regards`;
               </button>
             </div>
             <div className="p-6">
-              {editingPanel === "resume" ? (
+              {editingPanel === "jobSeekerDetails" ? (
+                <>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Drag to reorder. Toggle visibility with the checkbox. Changes apply to all job seeker records.
+                  </p>
+                  <DndContext
+                    collisionDetection={closestCorners}
+                    onDragStart={(e) => setJobSeekerDetailsDragActiveId(e.active.id as string)}
+                    onDragEnd={handleJobSeekerDetailsDragEnd}
+                    onDragCancel={() => setJobSeekerDetailsDragActiveId(null)}
+                    sensors={sensors}
+                    modifiers={[restrictToVerticalAxis]}
+                  >
+                    <SortableContext
+                      items={modalJobSeekerDetailsOrder}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
+                        {modalJobSeekerDetailsOrder.map((key) => {
+                          const entry = jobSeekerDetailsFieldCatalog.find((f) => f.key === key);
+                          if (!entry) return null;
+                          return (
+                            <SortableJobSeekerDetailsFieldRow
+                              key={entry.key}
+                              id={entry.key}
+                              label={entry.label}
+                              checked={!!modalJobSeekerDetailsVisible[entry.key]}
+                              onToggle={() =>
+                                setModalJobSeekerDetailsVisible((prev) => ({
+                                  ...prev,
+                                  [entry.key]: !prev[entry.key],
+                                }))
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                    </SortableContext>
+                    <DragOverlay dropAnimation={dropAnimationConfig}>
+                      {jobSeekerDetailsDragActiveId ? (() => {
+                        const entry = jobSeekerDetailsFieldCatalog.find((f) => f.key === jobSeekerDetailsDragActiveId);
+                        if (!entry) return null;
+                        return (
+                          <SortableJobSeekerDetailsFieldRow
+                            id={entry.key}
+                            label={entry.label}
+                            checked={!!modalJobSeekerDetailsVisible[entry.key]}
+                            onToggle={() => {}}
+                            isOverlay
+                          />
+                        );
+                      })() : null}
+                    </DragOverlay>
+                  </DndContext>
+                  <div className="flex justify-end gap-2 pt-4 mt-4 border-t">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveJobSeekerDetailsFields}
+                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </>
+              ) : editingPanel === "resume" ? (
                 // Resume panel: Show ALL fields (standard + custom) from Field Management
                 <div className="mb-4">
                   <h3 className="font-medium mb-3">All Available Fields:</h3>
@@ -4999,15 +5242,6 @@ Best regards`;
                   </div>
                 </>
               )}
-
-              <div className="flex justify-end space-x-2 pt-4 border-t">
-                <button
-                  onClick={handleCloseEditModal}
-                  className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-                >
-                  Close
-                </button>
-              </div>
             </div>
           </div>
         </div>

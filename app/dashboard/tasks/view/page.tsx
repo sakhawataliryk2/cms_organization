@@ -33,7 +33,7 @@ import {
     defaultDropAnimationSideEffects,
     MeasuringStrategy,
 } from "@dnd-kit/core";
-import { restrictToWindowEdges } from "@dnd-kit/modifiers";
+import { restrictToWindowEdges, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
     SortableContext,
     useSortable,
@@ -47,6 +47,12 @@ import { TbGripVertical } from "react-icons/tb";
 
 // Default header fields for Tasks module - defined outside component to ensure stable reference
 const TASK_DEFAULT_HEADER_FIELDS = ["dueDate", "assignedTo"];
+
+// Constants for Task Details and Task Overview persistence
+const TASK_DETAILS_DEFAULT_FIELDS = ["status", "priority", "dueDate", "dueTime", "owner", "assignedTo", "dateCreated", "createdBy"];
+const TASK_DETAILS_STORAGE_KEY = "taskDetailsFields";
+const TASK_OVERVIEW_DEFAULT_FIELDS: string[] = [];
+const TASK_OVERVIEW_STORAGE_KEY = "taskOverviewFields";
 
 function DroppableContainer({
     id,
@@ -105,6 +111,104 @@ function SortablePanel({
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+// Sortable row for Task Details edit modal (vertical drag + checkbox + label)
+function SortableTaskDetailsFieldRow({
+    id,
+    label,
+    checked,
+    onToggle,
+    isOverlay,
+}: {
+    id: string;
+    label: string;
+    checked: boolean;
+    onToggle: () => void;
+    isOverlay?: boolean;
+}) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+    const style: React.CSSProperties = {
+        transform: CSS.Translate.toString(transform),
+        transition,
+        opacity: isDragging && !isOverlay ? 0.5 : 1,
+    };
+    return (
+        <div
+            ref={setNodeRef}
+            style={style}
+            className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
+        >
+            {!isOverlay && (
+                <button
+                    {...attributes}
+                    {...listeners}
+                    className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
+                    title="Drag to reorder"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <TbGripVertical size={18} />
+                </button>
+            )}
+            <input
+                type="checkbox"
+                checked={checked}
+                onChange={onToggle}
+                onClick={(e) => e.stopPropagation()}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-700 flex-1">{label}</span>
+        </div>
+    );
+}
+
+// Sortable row for Task Overview edit modal (vertical drag + checkbox + label)
+function SortableTaskOverviewFieldRow({
+    id,
+    label,
+    checked,
+    onToggle,
+    isOverlay,
+}: {
+    id: string;
+    label: string;
+    checked: boolean;
+    onToggle: () => void;
+    isOverlay?: boolean;
+}) {
+    const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+    const style: React.CSSProperties = {
+        transform: CSS.Translate.toString(transform),
+        transition,
+        opacity: isDragging && !isOverlay ? 0.5 : 1,
+    };
+    return (
+        <div
+            ref={setNodeRef}
+            style={style}
+            className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
+        >
+            {!isOverlay && (
+                <button
+                    {...attributes}
+                    {...listeners}
+                    className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
+                    title="Drag to reorder"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <TbGripVertical size={18} />
+                </button>
+            )}
+            <input
+                type="checkbox"
+                checked={checked}
+                onChange={onToggle}
+                onClick={(e) => e.stopPropagation()}
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+            />
+            <span className="text-sm text-gray-700 flex-1">{label}</span>
         </div>
     );
 }
@@ -401,21 +505,22 @@ export default function TaskView() {
     // Field management (Hiring Manager style)
     const [availableFields, setAvailableFields] = useState<any[]>([]);
     const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
-        taskOverview: [],
-        details: [
-            "status",
-            "priority",
-            "dueDate",
-            "dueTime",
-            "owner",
-            "assignedTo",
-            "dateCreated",
-            "createdBy",
-        ],
+        taskOverview: Array.from(new Set(TASK_OVERVIEW_DEFAULT_FIELDS)),
+        details: Array.from(new Set(TASK_DETAILS_DEFAULT_FIELDS)),
         recentNotes: ["notes"],
     });
     const [editingPanel, setEditingPanel] = useState<string | null>(null);
     const [isLoadingFields, setIsLoadingFields] = useState(false);
+
+    // Modal-local state for Task Details edit
+    const [modalDetailsOrder, setModalDetailsOrder] = useState<string[]>([]);
+    const [modalDetailsVisible, setModalDetailsVisible] = useState<Record<string, boolean>>({});
+    const [detailsDragActiveId, setDetailsDragActiveId] = useState<string | null>(null);
+
+    // Modal-local state for Task Overview edit
+    const [modalTaskOverviewOrder, setModalTaskOverviewOrder] = useState<string[]>([]);
+    const [modalTaskOverviewVisible, setModalTaskOverviewVisible] = useState<Record<string, boolean>>({});
+    const [taskOverviewDragActiveId, setTaskOverviewDragActiveId] = useState<string | null>(null);
 
     const fetchAvailableFields = useCallback(async () => {
         setIsLoadingFields(true);
@@ -453,12 +558,152 @@ export default function TaskView() {
     const toggleFieldVisibility = (panelId: string, fieldKey: string) => {
         setVisibleFields((prev) => {
             const panelFields = prev[panelId] || [];
-            if (panelFields.includes(fieldKey)) {
-                return { ...prev, [panelId]: panelFields.filter((x) => x !== fieldKey) };
+            const uniqueFields = Array.from(new Set(panelFields));
+            if (uniqueFields.includes(fieldKey)) {
+                return { ...prev, [panelId]: uniqueFields.filter((x) => x !== fieldKey) };
             }
-            return { ...prev, [panelId]: [...panelFields, fieldKey] };
+            return { ...prev, [panelId]: Array.from(new Set([...uniqueFields, fieldKey])) };
         });
     };
+
+    // Task Details field catalog: standard + all custom (for edit modal and display order)
+    const taskDetailsFieldCatalog = useMemo(() => {
+        const standard: { key: string; label: string }[] = [
+            { key: "status", label: "Status" },
+            { key: "priority", label: "Priority" },
+            { key: "dueDate", label: "Due Date" },
+            { key: "dueTime", label: "Due Time" },
+            { key: "owner", label: "Owner" },
+            { key: "assignedTo", label: "Assigned To" },
+            { key: "dateCreated", label: "Date Created" },
+            { key: "createdBy", label: "Created By" },
+        ];
+        const customFromDefs = (availableFields || [])
+            .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+            .map((f: any) => ({
+                key: String(f.field_key || f.api_name || f.field_name || f.id),
+                label: String(f.field_label || f.field_name || f.field_key || f.id),
+            }));
+        const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
+        const standardKeys = new Set(standard.map((s) => s.key));
+        const customFromTask = Object.keys(task?.customFields || {})
+            .filter((k) => !keysFromDefs.has(k) && !standardKeys.has(k))
+            .map((k) => ({ key: k, label: k }));
+        
+        // Deduplicate by key property
+        const allFields = [...standard, ...customFromDefs, ...customFromTask];
+        const seenKeys = new Set<string>();
+        return allFields.filter((f) => {
+            if (seenKeys.has(f.key)) return false;
+            seenKeys.add(f.key);
+            return true;
+        });
+    }, [availableFields, task?.customFields]);
+
+    // Task Overview field catalog: standard + all custom (for edit modal and display order)
+    const taskOverviewFieldCatalog = useMemo(() => {
+        const standard: { key: string; label: string }[] = headerFieldCatalog.filter((f) => !String(f.key).startsWith("custom:"));
+        const customFromDefs = (availableFields || [])
+            .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+            .map((f: any) => ({
+                key: String(f.field_key || f.api_name || f.field_name || f.id),
+                label: String(f.field_label || f.field_name || f.field_key || f.id),
+            }));
+        const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
+        const standardKeys = new Set(standard.map((s) => s.key));
+        const customFromTask = Object.keys(task?.customFields || {})
+            .filter((k) => !keysFromDefs.has(k) && !standardKeys.has(k))
+            .map((k) => ({ key: k, label: k }));
+        
+        // Deduplicate by key property
+        const allFields = [...standard, ...customFromDefs, ...customFromTask];
+        const seenKeys = new Set<string>();
+        return allFields.filter((f) => {
+            if (seenKeys.has(f.key)) return false;
+            seenKeys.add(f.key);
+            return true;
+        });
+    }, [availableFields, task?.customFields, headerFieldCatalog]);
+
+    // Sync Task Details modal state when opening edit for details
+    useEffect(() => {
+        if (editingPanel !== "details") return;
+        const current = visibleFields.details || [];
+        const catalogKeys = taskDetailsFieldCatalog.map((f) => f.key);
+        const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
+        const order = [...current.filter((k) => uniqueCatalogKeys.includes(k))];
+        uniqueCatalogKeys.forEach((k) => {
+            if (!order.includes(k)) order.push(k);
+        });
+        const uniqueOrder = Array.from(new Set(order));
+        setModalDetailsOrder(uniqueOrder);
+        setModalDetailsVisible(
+            uniqueCatalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
+        );
+    }, [editingPanel, visibleFields.details, taskDetailsFieldCatalog]);
+
+    // Sync Task Overview modal state when opening edit for taskOverview
+    useEffect(() => {
+        if (editingPanel !== "taskOverview") return;
+        const current = visibleFields.taskOverview || [];
+        const catalogKeys = taskOverviewFieldCatalog.map((f) => f.key);
+        const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
+        const order = [...current.filter((k) => uniqueCatalogKeys.includes(k))];
+        uniqueCatalogKeys.forEach((k) => {
+            if (!order.includes(k)) order.push(k);
+        });
+        const uniqueOrder = Array.from(new Set(order));
+        setModalTaskOverviewOrder(uniqueOrder);
+        setModalTaskOverviewVisible(
+            uniqueCatalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
+        );
+    }, [editingPanel, visibleFields.taskOverview, taskOverviewFieldCatalog]);
+
+    // Task Details modal: drag end (reorder)
+    const handleTaskDetailsDragEnd = useCallback((event: DragEndEvent) => {
+        const { active, over } = event;
+        setDetailsDragActiveId(null);
+        if (!over || active.id === over.id) return;
+        setModalDetailsOrder((prev) => {
+            const oldIndex = prev.indexOf(active.id as string);
+            const newIndex = prev.indexOf(over.id as string);
+            if (oldIndex === -1 || newIndex === -1) return prev;
+            return arrayMove(prev, oldIndex, newIndex);
+        });
+    }, []);
+
+    // Task Details modal: save order/visibility and persist for all records
+    const handleSaveTaskDetailsFields = useCallback(() => {
+        const newOrder = Array.from(new Set(modalDetailsOrder.filter((k) => modalDetailsVisible[k])));
+        if (typeof window !== "undefined") {
+            localStorage.setItem(TASK_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
+        }
+        setVisibleFields((prev) => ({ ...prev, details: newOrder }));
+        setEditingPanel(null);
+    }, [modalDetailsOrder, modalDetailsVisible]);
+
+    // Task Overview modal: drag end (reorder)
+    const handleTaskOverviewDragEnd = useCallback((event: DragEndEvent) => {
+        const { active, over } = event;
+        setTaskOverviewDragActiveId(null);
+        if (!over || active.id === over.id) return;
+        setModalTaskOverviewOrder((prev) => {
+            const oldIndex = prev.indexOf(active.id as string);
+            const newIndex = prev.indexOf(over.id as string);
+            if (oldIndex === -1 || newIndex === -1) return prev;
+            return arrayMove(prev, oldIndex, newIndex);
+        });
+    }, []);
+
+    // Task Overview modal: save order/visibility and persist for all records
+    const handleSaveTaskOverviewFields = useCallback(() => {
+        const newOrder = Array.from(new Set(modalTaskOverviewOrder.filter((k) => modalTaskOverviewVisible[k])));
+        if (typeof window !== "undefined") {
+            localStorage.setItem(TASK_OVERVIEW_STORAGE_KEY, JSON.stringify(newOrder));
+        }
+        setVisibleFields((prev) => ({ ...prev, taskOverview: newOrder }));
+        setEditingPanel(null);
+    }, [modalTaskOverviewOrder, modalTaskOverviewVisible]);
 
     const handleEditPanel = (panelId: string) => {
         setEditingPanel(panelId);
@@ -1211,6 +1456,38 @@ export default function TaskView() {
         }
     }, []);
 
+    // Initialize Task Details field order/visibility from localStorage (persists across all records)
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const saved = localStorage.getItem(TASK_DETAILS_STORAGE_KEY);
+        if (!saved) return;
+        try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                const unique = Array.from(new Set(parsed));
+                setVisibleFields((prev) => ({ ...prev, details: unique }));
+            }
+        } catch (_) {
+            /* keep default */
+        }
+    }, []);
+
+    // Initialize Task Overview field order/visibility from localStorage (persists across all records)
+    useEffect(() => {
+        if (typeof window === "undefined") return;
+        const saved = localStorage.getItem(TASK_OVERVIEW_STORAGE_KEY);
+        if (!saved) return;
+        try {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                const unique = Array.from(new Set(parsed));
+                setVisibleFields((prev) => ({ ...prev, taskOverview: unique }));
+            }
+        } catch (_) {
+            /* keep default */
+        }
+    }, []);
+
     const prevColumnsRef = useRef<string>("");
     useEffect(() => {
         if (typeof window === "undefined") return;
@@ -1377,12 +1654,12 @@ export default function TaskView() {
                                 <div className="whitespace-pre-line text-gray-700">{task.description}</div>
                             </div>
 
-                            {visibleFields.taskOverview.length > 0 && (
+                            {Array.from(new Set(visibleFields.taskOverview || [])).length > 0 && (
                                 <div className="mb-6">
                                     <h3 className="font-bold text-lg mb-2">Additional Information</h3>
                                     <div className="space-y-0 border border-gray-200 rounded">
-                                        {visibleFields.taskOverview.map((k) => (
-                                            <div key={k} className="flex border-b border-gray-200 last:border-b-0">
+                                        {Array.from(new Set(visibleFields.taskOverview || [])).map((k, index) => (
+                                            <div key={`taskOverview-${k}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
                                                 <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">
                                                     {getTaskFieldLabel(k)}:
                                                 </div>
@@ -1446,8 +1723,8 @@ export default function TaskView() {
                     <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
                         <PanelWithHeader title="Details" onEdit={() => handleEditPanel("details")}>
                             <div className="space-y-0 border border-gray-200 rounded">
-                                {visibleFields.details.map((key) => (
-                                    <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                                {Array.from(new Set(visibleFields.details || [])).map((key, index) => (
+                                    <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
                                         <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">
                                             {getTaskFieldLabel(key)}:
                                         </div>
@@ -1935,7 +2212,9 @@ export default function TaskView() {
                 <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
                     <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
                         <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-                            <h2 className="text-lg font-semibold">Edit Fields - {editingPanel}</h2>
+                            <h2 className="text-lg font-semibold">
+                                Edit Fields - {editingPanel === "details" ? "Task Details" : editingPanel === "taskOverview" ? "Task Overview" : editingPanel}
+                            </h2>
                             <button
                                 onClick={handleCloseEditModal}
                                 className="p-1 rounded hover:bg-gray-200"
@@ -1945,110 +2224,248 @@ export default function TaskView() {
                         </div>
 
                         <div className="p-6">
-                            <div className="mb-4">
-                                <h3 className="font-medium mb-3">Available Fields from Modify Page:</h3>
-                                <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
-                                    {isLoadingFields ? (
-                                        <div className="text-center py-4 text-gray-500">Loading fields...</div>
-                                    ) : (() => {
-                                        const visibleAvailableFields = (availableFields || []).filter((field: any) => {
-                                            const isHidden =
-                                                field?.is_hidden === true ||
-                                                field?.hidden === true ||
-                                                field?.isHidden === true;
-                                            return !isHidden;
-                                        });
+                            {editingPanel === "details" && (
+                                <DndContext
+                                    sensors={sensors}
+                                    collisionDetection={closestCorners}
+                                    onDragStart={(e) => setDetailsDragActiveId(e.active.id as string)}
+                                    onDragEnd={handleTaskDetailsDragEnd}
+                                    onDragCancel={() => setDetailsDragActiveId(null)}
+                                >
+                                    <div className="mb-4">
+                                        <h3 className="font-medium mb-3">Drag to reorder, check/uncheck to show/hide:</h3>
+                                        <SortableContext
+                                            items={modalDetailsOrder}
+                                            strategy={verticalListSortingStrategy}
+                                        >
+                                            <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                                                {modalDetailsOrder.map((key, index) => {
+                                                    const field = taskDetailsFieldCatalog.find((f) => f.key === key);
+                                                    if (!field) return null;
+                                                    return (
+                                                        <SortableTaskDetailsFieldRow
+                                                            key={`details-${key}-${index}`}
+                                                            id={key}
+                                                            label={field.label}
+                                                            checked={modalDetailsVisible[key] || false}
+                                                            onToggle={() =>
+                                                                setModalDetailsVisible((prev) => ({
+                                                                    ...prev,
+                                                                    [key]: !prev[key],
+                                                                }))
+                                                            }
+                                                        />
+                                                    );
+                                                })}
+                                            </div>
+                                        </SortableContext>
+                                        <DragOverlay>
+                                            {detailsDragActiveId ? (
+                                                (() => {
+                                                    const field = taskDetailsFieldCatalog.find((f) => f.key === detailsDragActiveId);
+                                                    return field ? (
+                                                        <SortableTaskDetailsFieldRow
+                                                            id={detailsDragActiveId}
+                                                            label={field.label}
+                                                            checked={modalDetailsVisible[detailsDragActiveId] || false}
+                                                            onToggle={() => {}}
+                                                            isOverlay
+                                                        />
+                                                    ) : null;
+                                                })()
+                                            ) : null}
+                                        </DragOverlay>
+                                    </div>
+                                    <div className="flex justify-end space-x-2 pt-4 border-t">
+                                        <button
+                                            onClick={handleCloseEditModal}
+                                            className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleSaveTaskDetailsFields}
+                                            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                                        >
+                                            Save
+                                        </button>
+                                    </div>
+                                </DndContext>
+                            )}
+                            {editingPanel === "taskOverview" && (
+                                <DndContext
+                                    sensors={sensors}
+                                    collisionDetection={closestCorners}
+                                    onDragStart={(e) => setTaskOverviewDragActiveId(e.active.id as string)}
+                                    onDragEnd={handleTaskOverviewDragEnd}
+                                    onDragCancel={() => setTaskOverviewDragActiveId(null)}
+                                >
+                                    <div className="mb-4">
+                                        <h3 className="font-medium mb-3">Drag to reorder, check/uncheck to show/hide:</h3>
+                                        <SortableContext
+                                            items={modalTaskOverviewOrder}
+                                            strategy={verticalListSortingStrategy}
+                                        >
+                                            <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                                                {modalTaskOverviewOrder.map((key, index) => {
+                                                    const field = taskOverviewFieldCatalog.find((f) => f.key === key);
+                                                    if (!field) return null;
+                                                    return (
+                                                        <SortableTaskOverviewFieldRow
+                                                            key={`taskOverview-${key}-${index}`}
+                                                            id={key}
+                                                            label={field.label}
+                                                            checked={modalTaskOverviewVisible[key] || false}
+                                                            onToggle={() =>
+                                                                setModalTaskOverviewVisible((prev) => ({
+                                                                    ...prev,
+                                                                    [key]: !prev[key],
+                                                                }))
+                                                            }
+                                                        />
+                                                    );
+                                                })}
+                                            </div>
+                                        </SortableContext>
+                                        <DragOverlay>
+                                            {taskOverviewDragActiveId ? (
+                                                (() => {
+                                                    const field = taskOverviewFieldCatalog.find((f) => f.key === taskOverviewDragActiveId);
+                                                    return field ? (
+                                                        <SortableTaskOverviewFieldRow
+                                                            id={taskOverviewDragActiveId}
+                                                            label={field.label}
+                                                            checked={modalTaskOverviewVisible[taskOverviewDragActiveId] || false}
+                                                            onToggle={() => {}}
+                                                            isOverlay
+                                                        />
+                                                    ) : null;
+                                                })()
+                                            ) : null}
+                                        </DragOverlay>
+                                    </div>
+                                    <div className="flex justify-end space-x-2 pt-4 border-t">
+                                        <button
+                                            onClick={handleCloseEditModal}
+                                            className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleSaveTaskOverviewFields}
+                                            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                                        >
+                                            Save
+                                        </button>
+                                    </div>
+                                </DndContext>
+                            )}
+                            {editingPanel !== "details" && editingPanel !== "taskOverview" && (
+                                <>
+                                    <div className="mb-4">
+                                        <h3 className="font-medium mb-3">Available Fields from Modify Page:</h3>
+                                        <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                                            {isLoadingFields ? (
+                                                <div className="text-center py-4 text-gray-500">Loading fields...</div>
+                                            ) : (() => {
+                                                const visibleAvailableFields = (availableFields || []).filter((field: any) => {
+                                                    const isHidden =
+                                                        field?.is_hidden === true ||
+                                                        field?.hidden === true ||
+                                                        field?.isHidden === true;
+                                                    return !isHidden;
+                                                });
 
-                                        return visibleAvailableFields.length > 0 ? (
-                                            visibleAvailableFields.map((field: any) => {
-                                                const stableKey =
-                                                    field.field_key || field.api_name || field.field_name || field.id;
-                                                const prefixedKey = `custom:${String(stableKey)}`;
-                                                const isVisible =
-                                                    visibleFields[editingPanel]?.includes(prefixedKey) || false;
+                                                return visibleAvailableFields.length > 0 ? (
+                                                    visibleAvailableFields.map((field: any) => {
+                                                        const stableKey =
+                                                            field.field_key || field.api_name || field.field_name || field.id;
+                                                        const prefixedKey = `custom:${String(stableKey)}`;
+                                                        const isVisible =
+                                                            visibleFields[editingPanel]?.includes(prefixedKey) || false;
 
-                                                return (
-                                                    <div
-                                                        key={String(field.id || stableKey)}
-                                                        className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                                                    >
-                                                        <div className="flex items-center space-x-2">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={isVisible}
-                                                                onChange={() =>
-                                                                    toggleFieldVisibility(editingPanel, prefixedKey)
-                                                                }
-                                                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                                            />
-                                                            <label className="text-sm text-gray-700">
-                                                                {field.field_label || field.field_name || String(stableKey)}
-                                                            </label>
-                                                        </div>
-                                                        <span className="text-xs text-gray-500">
-                                                            {field.field_type || "text"}
-                                                        </span>
+                                                        return (
+                                                            <div
+                                                                key={String(field.id || stableKey)}
+                                                                className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                                                            >
+                                                                <div className="flex items-center space-x-2">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={isVisible}
+                                                                        onChange={() =>
+                                                                            toggleFieldVisibility(editingPanel, prefixedKey)
+                                                                        }
+                                                                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                                    />
+                                                                    <label className="text-sm text-gray-700">
+                                                                        {field.field_label || field.field_name || String(stableKey)}
+                                                                    </label>
+                                                                </div>
+                                                                <span className="text-xs text-gray-500">
+                                                                    {field.field_type || "text"}
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <div className="text-center py-4 text-gray-500">
+                                                        <p>No visible fields available</p>
+                                                        <p className="text-xs mt-1">
+                                                            Only non-hidden fields from the modify page will appear here
+                                                        </p>
                                                     </div>
                                                 );
-                                            })
-                                        ) : (
-                                            <div className="text-center py-4 text-gray-500">
-                                                <p>No visible fields available</p>
-                                                <p className="text-xs mt-1">
-                                                    Only non-hidden fields from the modify page will appear here
-                                                </p>
-                                            </div>
-                                        );
-                                    })()}
-                                </div>
-                            </div>
+                                            })()}
+                                        </div>
+                                    </div>
 
-                            <div className="mb-4">
-                                <h3 className="font-medium mb-3">Standard Fields:</h3>
-                                <div className="space-y-2 border border-gray-200 rounded p-3">
-                                    {(() => {
-                                        const standardFieldsMap: Record<string, Array<{ key: string; label: string }>> = {
-                                            taskOverview: headerFieldCatalog.filter((f) => !String(f.key).startsWith("custom:")),
-                                            details: headerFieldCatalog.filter((f) => !String(f.key).startsWith("custom:")),
-                                            recentNotes: [{ key: "notes", label: "Notes" }],
-                                        };
+                                    <div className="mb-4">
+                                        <h3 className="font-medium mb-3">Standard Fields:</h3>
+                                        <div className="space-y-2 border border-gray-200 rounded p-3">
+                                            {(() => {
+                                                const standardFieldsMap: Record<string, Array<{ key: string; label: string }>> = {
+                                                    recentNotes: [{ key: "notes", label: "Notes" }],
+                                                };
 
-                                        const fields = standardFieldsMap[editingPanel] || [];
-                                        return fields.map((field) => {
-                                            const isVisible =
-                                                visibleFields[editingPanel]?.includes(field.key) || false;
-                                            return (
-                                                <div
-                                                    key={field.key}
-                                                    className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                                                >
-                                                    <div className="flex items-center space-x-2">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={isVisible}
-                                                            onChange={() =>
-                                                                toggleFieldVisibility(editingPanel, field.key)
-                                                            }
-                                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                                        />
-                                                        <label className="text-sm text-gray-700">{field.label}</label>
-                                                    </div>
-                                                    <span className="text-xs text-gray-500">standard</span>
-                                                </div>
-                                            );
-                                        });
-                                    })()}
-                                </div>
-                            </div>
+                                                const fields = standardFieldsMap[editingPanel] || [];
+                                                return fields.map((field) => {
+                                                    const isVisible =
+                                                        visibleFields[editingPanel]?.includes(field.key) || false;
+                                                    return (
+                                                        <div
+                                                            key={field.key}
+                                                            className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                                                        >
+                                                            <div className="flex items-center space-x-2">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={isVisible}
+                                                                    onChange={() =>
+                                                                        toggleFieldVisibility(editingPanel, field.key)
+                                                                    }
+                                                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                                                />
+                                                                <label className="text-sm text-gray-700">{field.label}</label>
+                                                            </div>
+                                                            <span className="text-xs text-gray-500">standard</span>
+                                                        </div>
+                                                    );
+                                                });
+                                            })()}
+                                        </div>
+                                    </div>
 
-                            <div className="flex justify-end space-x-2 pt-4 border-t">
-                                <button
-                                    onClick={handleCloseEditModal}
-                                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-                                >
-                                    Close
-                                </button>
-                            </div>
+                                    <div className="flex justify-end space-x-2 pt-4 border-t">
+                                        <button
+                                            onClick={handleCloseEditModal}
+                                            className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                                        >
+                                            Close
+                                        </button>
+                                    </div>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>

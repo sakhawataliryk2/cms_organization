@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getCookie } from "cookies-next";
 import Image from "next/image";
@@ -25,7 +25,7 @@ import {
   defaultDropAnimationSideEffects,
   MeasuringStrategy,
 } from "@dnd-kit/core";
-import { restrictToWindowEdges } from "@dnd-kit/modifiers";
+import { restrictToWindowEdges, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
   SortableContext,
   useSortable,
@@ -85,6 +85,105 @@ function DroppableContainer({ id, children, items }: { id: string, children: Rea
     </SortableContext>
   );
 }
+
+// Sortable row for Lead Contact Info edit modal (vertical drag + checkbox + label)
+function SortableContactInfoFieldRow({
+  id,
+  label,
+  checked,
+  onToggle,
+  isOverlay,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+  isOverlay?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging && !isOverlay ? 0.5 : 1,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
+    >
+      {!isOverlay && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
+          title="Drag to reorder"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={18} />
+        </button>
+      )}
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        onClick={(e) => e.stopPropagation()}
+        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+      />
+      <span className="text-sm text-gray-700 flex-1">{label}</span>
+    </div>
+  );
+}
+
+// Sortable row for Lead Details edit modal (vertical drag + checkbox + label)
+function SortableDetailsFieldRow({
+  id,
+  label,
+  checked,
+  onToggle,
+  isOverlay,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+  isOverlay?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging && !isOverlay ? 0.5 : 1,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
+    >
+      {!isOverlay && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
+          title="Drag to reorder"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={18} />
+        </button>
+      )}
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        onClick={(e) => e.stopPropagation()}
+        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+      />
+      <span className="text-sm text-gray-700 flex-1">{label}</span>
+    </div>
+  );
+}
+
 import {
   buildPinnedKey,
   isPinnedRecord,
@@ -94,6 +193,12 @@ import {
 
 // Default header fields for Leads module - defined outside component to ensure stable reference
 const LEAD_DEFAULT_HEADER_FIELDS = ["phone", "email"];
+
+// Constants for Lead Contact Info and Details persistence
+const LEAD_CONTACT_INFO_DEFAULT_FIELDS = ['fullName', 'nickname', 'title', 'organizationName', 'department', 'phone', 'mobilePhone', 'email', 'email2', 'fullAddress', 'linkedinUrl'];
+const LEAD_CONTACT_INFO_STORAGE_KEY = "leadsContactInfoFields";
+const LEAD_DETAILS_DEFAULT_FIELDS = ['status', 'owner', 'reportsTo', 'dateAdded', 'lastContactDate'];
+const LEAD_DETAILS_STORAGE_KEY = "leadsDetailsFields";
 
 export default function LeadView() {
   const router = useRouter();
@@ -195,6 +300,22 @@ export default function LeadView() {
     })
   );
 
+  const measuringConfig = useMemo(() => ({
+    droppable: {
+      strategy: MeasuringStrategy.Always,
+    },
+  }), []);
+
+  const dropAnimationConfig = useMemo(() => ({
+    sideEffects: defaultDropAnimationSideEffects({
+      styles: {
+        active: {
+          opacity: "0.5",
+        },
+      },
+    }),
+  }), []);
+
   // Initialize columns from localStorage or default
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -209,6 +330,40 @@ export default function LeadView() {
           console.error("Error loading panel order:", e);
         }
       }
+    }
+  }, []);
+
+  // Initialize Lead Contact Info field order/visibility from localStorage (persists across all lead records)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem(LEAD_CONTACT_INFO_STORAGE_KEY);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Remove duplicates before setting
+        const unique = Array.from(new Set(parsed));
+        setVisibleFields((prev) => ({ ...prev, contactInfo: unique }));
+      }
+    } catch (_) {
+      /* keep default */
+    }
+  }, []);
+
+  // Initialize Lead Details field order/visibility from localStorage (persists across all lead records)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem(LEAD_DETAILS_STORAGE_KEY);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Remove duplicates before setting
+        const unique = Array.from(new Set(parsed));
+        setVisibleFields((prev) => ({ ...prev, details: unique }));
+      }
+    } catch (_) {
+      /* keep default */
     }
   }, []);
 
@@ -297,14 +452,22 @@ export default function LeadView() {
     setActiveId(null);
   };
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
-    contactInfo: ['fullName', 'nickname', 'title', 'organizationName', 'department', 'phone', 'mobilePhone', 'email', 'email2', 'fullAddress', 'linkedinUrl'],
-    details: ['status', 'owner', 'reportsTo', 'dateAdded', 'lastContactDate'],
+    contactInfo: Array.from(new Set(LEAD_CONTACT_INFO_DEFAULT_FIELDS)),
+    details: Array.from(new Set(LEAD_DETAILS_DEFAULT_FIELDS)),
     recentNotes: ['notes'],
     websiteJobs: ['jobs'],
     ourJobs: ['jobs']
   });
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
+  // Lead Contact Info edit modal: order and visibility (synced when modal opens)
+  const [modalContactInfoOrder, setModalContactInfoOrder] = useState<string[]>([]);
+  const [modalContactInfoVisible, setModalContactInfoVisible] = useState<Record<string, boolean>>({});
+  const [contactInfoDragActiveId, setContactInfoDragActiveId] = useState<string | null>(null);
+  // Lead Details edit modal: order and visibility (synced when modal opens)
+  const [modalDetailsOrder, setModalDetailsOrder] = useState<string[]>([]);
+  const [modalDetailsVisible, setModalDetailsVisible] = useState<Record<string, boolean>>({});
+  const [detailsDragActiveId, setDetailsDragActiveId] = useState<string | null>(null);
     // =========================
   // PENCIL-HEADER-MODAL (Lead Header Fields Row)
   // =========================
@@ -445,19 +608,27 @@ export default function LeadView() {
           customFieldKeys.forEach(fieldKey => {
             // Add to appropriate panel based on field name
             if (fieldKey.toLowerCase().includes('contact') || fieldKey.toLowerCase().includes('phone') || fieldKey.toLowerCase().includes('address') || fieldKey.toLowerCase().includes('email')) {
-              if (!visibleFields.contactInfo.includes(fieldKey)) {
-                setVisibleFields(prev => ({
-                  ...prev,
-                  contactInfo: [...prev.contactInfo, fieldKey]
-                }));
-              }
+              setVisibleFields(prev => {
+                const current = prev.contactInfo || [];
+                if (!current.includes(fieldKey)) {
+                  return {
+                    ...prev,
+                    contactInfo: Array.from(new Set([...current, fieldKey]))
+                  };
+                }
+                return prev;
+              });
             } else if (fieldKey.toLowerCase().includes('status') || fieldKey.toLowerCase().includes('owner') || fieldKey.toLowerCase().includes('date')) {
-              if (!visibleFields.details.includes(fieldKey)) {
-                setVisibleFields(prev => ({
-                  ...prev,
-                  details: [...prev.details, fieldKey]
-                }));
-              }
+              setVisibleFields(prev => {
+                const current = prev.details || [];
+                if (!current.includes(fieldKey)) {
+                  return {
+                    ...prev,
+                    details: Array.from(new Set([...current, fieldKey]))
+                  };
+                }
+                return prev;
+              });
             }
           });
         }
@@ -473,24 +644,252 @@ export default function LeadView() {
   const toggleFieldVisibility = (panelId: string, fieldKey: string) => {
     setVisibleFields(prev => {
       const panelFields = prev[panelId] || [];
-      if (panelFields.includes(fieldKey)) {
+      const uniqueFields = Array.from(new Set(panelFields));
+      if (uniqueFields.includes(fieldKey)) {
         return {
           ...prev,
-          [panelId]: panelFields.filter(f => f !== fieldKey)
+          [panelId]: uniqueFields.filter(f => f !== fieldKey)
         };
       } else {
         return {
           ...prev,
-          [panelId]: [...panelFields, fieldKey]
+          [panelId]: Array.from(new Set([...uniqueFields, fieldKey]))
         };
       }
     });
   };
 
+  // Lead Contact Info field catalog: standard + all custom (for edit modal and display order)
+  const contactInfoFieldCatalog = useMemo(() => {
+    const standard: { key: string; label: string }[] = [
+      { key: "fullName", label: "Name" },
+      { key: "nickname", label: "Nickname" },
+      { key: "title", label: "Title" },
+      { key: "organizationName", label: "Organization" },
+      { key: "department", label: "Department" },
+      { key: "phone", label: "Phone" },
+      { key: "mobilePhone", label: "Mobile" },
+      { key: "email", label: "Email" },
+      { key: "email2", label: "Email 2" },
+      { key: "fullAddress", label: "Address" },
+      { key: "linkedinUrl", label: "LinkedIn" },
+    ];
+    const customFromDefs = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
+    const standardKeys = new Set(standard.map((s) => s.key));
+    const customFromLead = Object.keys(lead?.customFields || {})
+      .filter((k) => !keysFromDefs.has(k) && !standardKeys.has(k))
+      .map((k) => ({ key: k, label: k }));
+    
+    // Deduplicate by key property
+    const allFields = [...standard, ...customFromDefs, ...customFromLead];
+    const seenKeys = new Set<string>();
+    return allFields.filter((f) => {
+      if (seenKeys.has(f.key)) return false;
+      seenKeys.add(f.key);
+      return true;
+    });
+  }, [availableFields, lead?.customFields]);
+
+  // Lead Details field catalog: standard + all custom (for edit modal and display order)
+  const detailsFieldCatalog = useMemo(() => {
+    const standard: { key: string; label: string }[] = [
+      { key: "status", label: "Status" },
+      { key: "owner", label: "Owner" },
+      { key: "reportsTo", label: "Reports To" },
+      { key: "dateAdded", label: "Date Added" },
+      { key: "lastContactDate", label: "Last Contact" },
+    ];
+    const customFromDefs = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
+    const standardKeys = new Set(standard.map((s) => s.key));
+    const customFromLead = Object.keys(lead?.customFields || {})
+      .filter((k) => !keysFromDefs.has(k) && !standardKeys.has(k))
+      .map((k) => ({ key: k, label: k }));
+    
+    // Deduplicate by key property
+    const allFields = [...standard, ...customFromDefs, ...customFromLead];
+    const seenKeys = new Set<string>();
+    return allFields.filter((f) => {
+      if (seenKeys.has(f.key)) return false;
+      seenKeys.add(f.key);
+      return true;
+    });
+  }, [availableFields, lead?.customFields]);
+
+  // Sync Lead Contact Info modal state when opening edit for contactInfo
+  useEffect(() => {
+    if (editingPanel !== "contactInfo") return;
+    const current = visibleFields.contactInfo || [];
+    const catalogKeys = contactInfoFieldCatalog.map((f) => f.key);
+    // Remove duplicates from catalogKeys
+    const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
+    const order = [...current.filter((k) => uniqueCatalogKeys.includes(k))];
+    uniqueCatalogKeys.forEach((k) => {
+      if (!order.includes(k)) order.push(k);
+    });
+    // Ensure order has no duplicates
+    const uniqueOrder = Array.from(new Set(order));
+    setModalContactInfoOrder(uniqueOrder);
+    setModalContactInfoVisible(
+      uniqueCatalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
+    );
+  }, [editingPanel, visibleFields.contactInfo, contactInfoFieldCatalog]);
+
+  // Sync Lead Details modal state when opening edit for details
+  useEffect(() => {
+    if (editingPanel !== "details") return;
+    const current = visibleFields.details || [];
+    const catalogKeys = detailsFieldCatalog.map((f) => f.key);
+    // Remove duplicates from catalogKeys
+    const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
+    const order = [...current.filter((k) => uniqueCatalogKeys.includes(k))];
+    uniqueCatalogKeys.forEach((k) => {
+      if (!order.includes(k)) order.push(k);
+    });
+    // Ensure order has no duplicates
+    const uniqueOrder = Array.from(new Set(order));
+    setModalDetailsOrder(uniqueOrder);
+    setModalDetailsVisible(
+      uniqueCatalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
+    );
+  }, [editingPanel, visibleFields.details, detailsFieldCatalog]);
+
   // Handle edit panel click
     const renderPanel = (id: string, isOverlay = false) => {
     switch (id) {
       case "contactInfo":
+        if (!lead) return null;
+        const customObj = lead.customFields || {};
+        const customFieldDefs = (availableFields || []).filter((f: any) => {
+          const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
+          return !isHidden;
+        });
+
+        const renderContactInfoRow = (key: string) => {
+          // Standard fields
+          switch (key) {
+            case "fullName":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Name:</div>
+                  <div className="flex-1 p-2 text-blue-600">{lead?.fullName}</div>
+                </div>
+              );
+            case "nickname":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Nickname:</div>
+                  <div className="flex-1 p-2">{lead?.nickname || "-"}</div>
+                </div>
+              );
+            case "title":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Title:</div>
+                  <div className="flex-1 p-2">{lead?.title || "-"}</div>
+                </div>
+              );
+            case "organizationName":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Organization:</div>
+                  <div className="flex-1 p-2 text-blue-600">{lead?.organizationName || lead?.organizationId || "-"}</div>
+                </div>
+              );
+            case "department":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Department:</div>
+                  <div className="flex-1 p-2">{lead?.department || "-"}</div>
+                </div>
+              );
+            case "phone":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Phone:</div>
+                  <div className="flex-1 p-2">{lead?.phone || "-"}</div>
+                </div>
+              );
+            case "mobilePhone":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Mobile:</div>
+                  <div className="flex-1 p-2">{lead?.mobilePhone || "-"}</div>
+                </div>
+              );
+            case "email":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Email:</div>
+                  <div className="flex-1 p-2 text-blue-600">
+                    {lead?.email ? <a href={`mailto:${lead.email}`}>{lead.email}</a> : "-"}
+                  </div>
+                </div>
+              );
+            case "email2":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Email 2:</div>
+                  <div className="flex-1 p-2 text-blue-600">
+                    {lead?.email2 ? <a href={`mailto:${lead.email2}`}>{lead.email2}</a> : "-"}
+                  </div>
+                </div>
+              );
+            case "fullAddress":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Address:</div>
+                  <div className="flex-1 p-2">{lead?.fullAddress}</div>
+                </div>
+              );
+            case "linkedinUrl":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">LinkedIn:</div>
+                  <div className="flex-1 p-2 text-blue-600">
+                    {lead?.linkedinUrl ? (
+                      <a href={lead.linkedinUrl} target="_blank" rel="noopener noreferrer">
+                        {lead.linkedinUrl}
+                      </a>
+                    ) : (
+                      "-"
+                    )}
+                  </div>
+                </div>
+              );
+            default:
+              // Custom field
+              const field = customFieldDefs.find(
+                (f: any) =>
+                  String(f.field_name || f.field_key || f.api_name || f.id) === String(key) ||
+                  String(f.field_label || "") === String(key) ||
+                  String(f.field_name || "") === String(key)
+              );
+              const value =
+                (customObj as any)?.[key] ??
+                (field?.field_label ? (customObj as any)?.[field.field_label] : undefined) ??
+                (field?.field_name ? (customObj as any)?.[field.field_name] : undefined);
+              const label = field?.field_label || field?.field_name || key;
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+                  <div className="flex-1 p-2">{value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-"}</div>
+                </div>
+              );
+          }
+        };
+
         return (
           <SortablePanel key={id} id={id} isOverlay={isOverlay}>
             <PanelWithHeader
@@ -498,207 +897,89 @@ export default function LeadView() {
               onEdit={() => handleEditPanel("contactInfo")}
             >
               <div className="space-y-0 border border-gray-200 rounded">
-                {visibleFields.contactInfo.includes("fullName") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      Name:
-                    </div>
-                    <div className="flex-1 p-2 text-blue-600">
-                      {lead?.fullName}
-                    </div>
-                  </div>
-                )}
-                {visibleFields.contactInfo.includes("nickname") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      Nickname:
-                    </div>
-                    <div className="flex-1 p-2">{lead?.nickname || "-"}</div>
-                  </div>
-                )}
-                {visibleFields.contactInfo.includes("title") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      Title:
-                    </div>
-                    <div className="flex-1 p-2">{lead?.title || "-"}</div>
-                  </div>
-                )}
-                {visibleFields.contactInfo.includes("organizationName") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      Organization:
-                    </div>
-                    <div className="flex-1 p-2 text-blue-600">
-                      {lead?.organizationName || lead?.organizationId || "-"}
-                    </div>
-                  </div>
-                )}
-                {visibleFields.contactInfo.includes("department") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      Department:
-                    </div>
-                    <div className="flex-1 p-2">{lead?.department || "-"}</div>
-                  </div>
-                )}
-                {visibleFields.contactInfo.includes("phone") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      Phone:
-                    </div>
-                    <div className="flex-1 p-2">{lead?.phone || "-"}</div>
-                  </div>
-                )}
-                {visibleFields.contactInfo.includes("mobilePhone") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      Mobile:
-                    </div>
-                    <div className="flex-1 p-2">
-                      {lead?.mobilePhone || "-"}
-                    </div>
-                  </div>
-                )}
-                {visibleFields.contactInfo.includes("email") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      Email:
-                    </div>
-                    <div className="flex-1 p-2 text-blue-600">
-                      {lead?.email ? (
-                        <a href={`mailto:${lead.email}`}>{lead.email}</a>
-                      ) : (
-                        "-"
-                      )}
-                    </div>
-                  </div>
-                )}
-                {visibleFields.contactInfo.includes("email2") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      Email 2:
-                    </div>
-                    <div className="flex-1 p-2 text-blue-600">
-                      {lead?.email2 ? (
-                        <a href={`mailto:${lead.email2}`}>{lead.email2}</a>
-                      ) : (
-                        "-"
-                      )}
-                    </div>
-                  </div>
-                )}
-                {visibleFields.contactInfo.includes("fullAddress") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      Address:
-                    </div>
-                    <div className="flex-1 p-2">{lead?.fullAddress}</div>
-                  </div>
-                )}
-                {visibleFields.contactInfo.includes("linkedinUrl") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      LinkedIn:
-                    </div>
-                    <div className="flex-1 p-2 text-blue-600">
-                      {lead?.linkedinUrl ? (
-                        <a
-                          href={lead.linkedinUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {lead.linkedinUrl}
-                        </a>
-                      ) : (
-                        "-"
-                      )}
-                    </div>
-                  </div>
-                )}
-                {/* Display custom fields */}
-                {lead?.customFields &&
-                  Object.keys(lead.customFields).map((fieldKey) => {
-                    if (visibleFields.contactInfo.includes(fieldKey)) {
-                      const field = availableFields.find(
-                        (f) =>
-                          (f.field_name || f.field_label || f.id) === fieldKey
-                      );
-                      const fieldLabel =
-                        field?.field_label || field?.field_name || fieldKey;
-                      const fieldValue = lead.customFields[fieldKey];
-                      return (
-                        <div
-                          key={fieldKey}
-                          className="flex border-b border-gray-200 last:border-b-0"
-                        >
-                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                            {fieldLabel}:
-                          </div>
-                          <div className="flex-1 p-2">
-                            {String(fieldValue || "-")}
-                          </div>
-                        </div>
-                      );
-                    }
-                    return null;
-                  })}
+                {Array.from(new Set(visibleFields.contactInfo || [])).map((key) => renderContactInfoRow(key))}
               </div>
             </PanelWithHeader>
           </SortablePanel>
         );
       case "details":
+        if (!lead) return null;
+        const detailsCustomObj = lead.customFields || {};
+        const detailsCustomFieldDefs = (availableFields || []).filter((f: any) => {
+          const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
+          return !isHidden;
+        });
+
+        const renderDetailsRow = (key: string) => {
+          // Standard fields
+          switch (key) {
+            case "status":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
+                  <div className="flex-1 p-2">
+                    <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{lead?.status}</span>
+                  </div>
+                </div>
+              );
+            case "owner":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Owner:</div>
+                  <div className="flex-1 p-2">{lead?.owner || "-"}</div>
+                </div>
+              );
+            case "reportsTo":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Reports To:</div>
+                  <div className="flex-1 p-2">{lead?.reportsTo || "-"}</div>
+                </div>
+              );
+            case "dateAdded":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
+                  <div className="flex-1 p-2">{lead?.dateAdded || "-"}</div>
+                </div>
+              );
+            case "lastContactDate":
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Last Contact Date:</div>
+                  <div className="flex-1 p-2">{lead?.lastContactDate || "-"}</div>
+                </div>
+              );
+            default:
+              // Custom field
+              const field = detailsCustomFieldDefs.find(
+                (f: any) =>
+                  String(f.field_name || f.field_key || f.api_name || f.id) === String(key) ||
+                  String(f.field_label || "") === String(key) ||
+                  String(f.field_name || "") === String(key)
+              );
+              const value =
+                (detailsCustomObj as any)?.[key] ??
+                (field?.field_label ? (detailsCustomObj as any)?.[field.field_label] : undefined) ??
+                (field?.field_name ? (detailsCustomObj as any)?.[field.field_name] : undefined);
+              const label = field?.field_label || field?.field_name || key;
+              return (
+                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+                  <div className="flex-1 p-2">{value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-"}</div>
+                </div>
+              );
+          }
+        };
+
         return (
           <SortablePanel key={id} id={id} isOverlay={isOverlay}>
             <PanelWithHeader
-              title="Lead Details:"
+              title="Lead Details"
               onEdit={() => handleEditPanel("details")}
             >
               <div className="space-y-0 border border-gray-200 rounded">
-                {visibleFields.details.includes("status") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      Status:
-                    </div>
-                    <div className="flex-1 p-2">
-                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                        {lead?.status}
-                      </span>
-                    </div>
-                  </div>
-                )}
-                {visibleFields.details.includes("owner") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      Owner:
-                    </div>
-                    <div className="flex-1 p-2">{lead?.owner || "-"}</div>
-                  </div>
-                )}
-                {visibleFields.details.includes("reportsTo") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      Reports To:
-                    </div>
-                    <div className="flex-1 p-2">{lead?.reportsTo || "-"}</div>
-                  </div>
-                )}
-                {visibleFields.details.includes("dateAdded") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      Date Added:
-                    </div>
-                    <div className="flex-1 p-2">{lead?.dateAdded || "-"}</div>
-                  </div>
-                )}
-                {visibleFields.details.includes("lastContactDate") && (
-                  <div className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      Last Contact Date:
-                    </div>
-                    <div className="flex-1 p-2">{lead?.lastContactDate || "-"}</div>
-                  </div>
-                )}
+                {Array.from(new Set(visibleFields.details || [])).map((key) => renderDetailsRow(key))}
               </div>
             </PanelWithHeader>
           </SortablePanel>
@@ -794,6 +1075,52 @@ export default function LeadView() {
   const handleCloseEditModal = () => {
     setEditingPanel(null);
   };
+
+  // Lead Contact Info modal: drag end (reorder)
+  const handleContactInfoDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setContactInfoDragActiveId(null);
+    if (!over || active.id === over.id) return;
+    setModalContactInfoOrder((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, []);
+
+  // Lead Contact Info modal: save order/visibility and persist for all lead records
+  const handleSaveContactInfoFields = useCallback(() => {
+    const newOrder = Array.from(new Set(modalContactInfoOrder.filter((k) => modalContactInfoVisible[k])));
+    if (typeof window !== "undefined") {
+      localStorage.setItem(LEAD_CONTACT_INFO_STORAGE_KEY, JSON.stringify(newOrder));
+    }
+    setVisibleFields((prev) => ({ ...prev, contactInfo: newOrder }));
+    setEditingPanel(null);
+  }, [modalContactInfoOrder, modalContactInfoVisible]);
+
+  // Lead Details modal: drag end (reorder)
+  const handleDetailsDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setDetailsDragActiveId(null);
+    if (!over || active.id === over.id) return;
+    setModalDetailsOrder((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, []);
+
+  // Lead Details modal: save order/visibility and persist for all lead records
+  const handleSaveDetailsFields = useCallback(() => {
+    const newOrder = Array.from(new Set(modalDetailsOrder.filter((k) => modalDetailsVisible[k])));
+    if (typeof window !== "undefined") {
+      localStorage.setItem(LEAD_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
+    }
+    setVisibleFields((prev) => ({ ...prev, details: newOrder }));
+    setEditingPanel(null);
+  }, [modalDetailsOrder, modalDetailsVisible]);
 
   const fetchLeadData = async (id: string) => {
     setIsLoading(true);
@@ -2265,7 +2592,7 @@ export default function LeadView() {
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">
-                Edit Fields - {editingPanel}
+                Edit Fields - {editingPanel === "contactInfo" ? "Lead Contact Info" : editingPanel === "details" ? "Lead Details" : editingPanel}
               </h2>
               <button
                 onClick={handleCloseEditModal}
@@ -2275,6 +2602,146 @@ export default function LeadView() {
               </button>
             </div>
             <div className="p-6">
+              {editingPanel === "contactInfo" ? (
+                <>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Drag to reorder. Toggle visibility with the checkbox. Changes apply to all lead records.
+                  </p>
+                  <DndContext
+                    collisionDetection={closestCorners}
+                    onDragStart={(e) => setContactInfoDragActiveId(e.active.id as string)}
+                    onDragEnd={handleContactInfoDragEnd}
+                    onDragCancel={() => setContactInfoDragActiveId(null)}
+                    sensors={sensors}
+                    modifiers={[restrictToVerticalAxis]}
+                  >
+                    <SortableContext
+                      items={modalContactInfoOrder}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
+                        {Array.from(new Set(modalContactInfoOrder)).map((key, index) => {
+                          const entry = contactInfoFieldCatalog.find((f) => f.key === key);
+                          if (!entry) return null;
+                          return (
+                            <SortableContactInfoFieldRow
+                              key={`contactInfo-${entry.key}-${index}`}
+                              id={entry.key}
+                              label={entry.label}
+                              checked={!!modalContactInfoVisible[entry.key]}
+                              onToggle={() =>
+                                setModalContactInfoVisible((prev) => ({
+                                  ...prev,
+                                  [entry.key]: !prev[entry.key],
+                                }))
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                    </SortableContext>
+                    <DragOverlay dropAnimation={dropAnimationConfig}>
+                      {contactInfoDragActiveId ? (() => {
+                        const entry = contactInfoFieldCatalog.find((f) => f.key === contactInfoDragActiveId);
+                        if (!entry) return null;
+                        return (
+                          <SortableContactInfoFieldRow
+                            id={entry.key}
+                            label={entry.label}
+                            checked={!!modalContactInfoVisible[entry.key]}
+                            onToggle={() => {}}
+                            isOverlay
+                          />
+                        );
+                      })() : null}
+                    </DragOverlay>
+                  </DndContext>
+                  <div className="flex justify-end gap-2 pt-4 mt-4 border-t">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveContactInfoFields}
+                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </>
+              ) : editingPanel === "details" ? (
+                <>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Drag to reorder. Toggle visibility with the checkbox. Changes apply to all lead records.
+                  </p>
+                  <DndContext
+                    collisionDetection={closestCorners}
+                    onDragStart={(e) => setDetailsDragActiveId(e.active.id as string)}
+                    onDragEnd={handleDetailsDragEnd}
+                    onDragCancel={() => setDetailsDragActiveId(null)}
+                    sensors={sensors}
+                    modifiers={[restrictToVerticalAxis]}
+                  >
+                    <SortableContext
+                      items={modalDetailsOrder}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
+                        {Array.from(new Set(modalDetailsOrder)).map((key, index) => {
+                          const entry = detailsFieldCatalog.find((f) => f.key === key);
+                          if (!entry) return null;
+                          return (
+                            <SortableDetailsFieldRow
+                              key={`details-${entry.key}-${index}`}
+                              id={entry.key}
+                              label={entry.label}
+                              checked={!!modalDetailsVisible[entry.key]}
+                              onToggle={() =>
+                                setModalDetailsVisible((prev) => ({
+                                  ...prev,
+                                  [entry.key]: !prev[entry.key],
+                                }))
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                    </SortableContext>
+                    <DragOverlay dropAnimation={dropAnimationConfig}>
+                      {detailsDragActiveId ? (() => {
+                        const entry = detailsFieldCatalog.find((f) => f.key === detailsDragActiveId);
+                        if (!entry) return null;
+                        return (
+                          <SortableDetailsFieldRow
+                            id={entry.key}
+                            label={entry.label}
+                            checked={!!modalDetailsVisible[entry.key]}
+                            onToggle={() => {}}
+                            isOverlay
+                          />
+                        );
+                      })() : null}
+                    </DragOverlay>
+                  </DndContext>
+                  <div className="flex justify-end gap-2 pt-4 mt-4 border-t">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveDetailsFields}
+                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
               <div className="mb-4">
                 <h3 className="font-medium mb-3">
                   Available Fields from Modify Page:
@@ -2402,6 +2869,8 @@ export default function LeadView() {
                   Close
                 </button>
               </div>
+                </>
+              )}
             </div>
           </div>
         </div>

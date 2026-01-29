@@ -42,6 +42,10 @@ const ORG_PANEL_TITLES: Record<string, string> = {
   openTasks: "Open Tasks:",
 };
 
+// Default and storage for Organization Contact Info panel (global for all org records)
+const CONTACT_INFO_DEFAULT_FIELDS = ["name", "nickname", "phone", "address", "website"];
+const CONTACT_INFO_STORAGE_KEY = "organizationContactInfoFields";
+
 // Sortable Panel Component with drag handle
 function SortablePanel({
   id,
@@ -655,15 +659,45 @@ export default function OrganizationView() {
   };
 
 
-  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
-    contactInfo: ["name", "nickname", "phone", "address", "website"],
-    about: ["about"],
-    recentNotes: ["notes"],
-    websiteJobs: ["jobs"],
-    ourJobs: ["jobs"],
+  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
+    if (typeof window === "undefined") {
+      return {
+        contactInfo: CONTACT_INFO_DEFAULT_FIELDS,
+        about: ["about"],
+        recentNotes: ["notes"],
+        websiteJobs: ["jobs"],
+        ourJobs: ["jobs"],
+      };
+    }
+    const saved = localStorage.getItem(CONTACT_INFO_STORAGE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return {
+            contactInfo: parsed,
+            about: ["about"],
+            recentNotes: ["notes"],
+            websiteJobs: ["jobs"],
+            ourJobs: ["jobs"],
+          };
+        }
+      } catch (_) {}
+    }
+    return {
+      contactInfo: CONTACT_INFO_DEFAULT_FIELDS,
+      about: ["about"],
+      recentNotes: ["notes"],
+      websiteJobs: ["jobs"],
+      ourJobs: ["jobs"],
+    };
   });
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
+
+  // Modal-local state for Contact Info edit: order and visibility (only applied on Save)
+  const [modalContactInfoOrder, setModalContactInfoOrder] = useState<string[]>([]);
+  const [modalContactInfoVisible, setModalContactInfoVisible] = useState<Record<string, boolean>>({});
 
   // Fetch organization data when component mounts
   useEffect(() => {
@@ -1165,7 +1199,57 @@ export default function OrganizationView() {
     }
   };
 
-  // Toggle field visibility
+  // Contact Info panel: full catalog (standard + all custom) for edit modal and display order
+  const contactInfoFieldCatalog = useMemo(() => {
+    const standard: { key: string; label: string }[] = [
+      { key: "name", label: "Name" },
+      { key: "nickname", label: "Nickname" },
+      { key: "phone", label: "Phone" },
+      { key: "address", label: "Address" },
+      { key: "website", label: "Website" },
+    ];
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: String(f.field_key || f.api_name || f.field_name || f.id),
+        label: f.field_label || f.field_name || String(f.field_key || f.api_name || f.field_name || f.id),
+      }));
+    const customKeys = Object.keys(organization?.customFields || {});
+    const seen = new Set(standard.map((s) => s.key));
+    fromApi.forEach((f) => seen.add(f.key));
+    const fromOrg = customKeys
+      .filter((k) => !seen.has(k))
+      .map((k) => ({ key: k, label: k }));
+    return [...standard, ...fromApi, ...fromOrg];
+  }, [availableFields, organization?.customFields]);
+
+  // Initialize modal state when opening Contact Info edit
+  useEffect(() => {
+    if (editingPanel !== "contactInfo") return;
+    const current = visibleFields.contactInfo || [];
+    const catalogKeys = contactInfoFieldCatalog.map((f) => f.key);
+    const order = [...current.filter((k) => catalogKeys.includes(k)), ...catalogKeys.filter((k) => !current.includes(k))];
+    setModalContactInfoOrder(order);
+    setModalContactInfoVisible(
+      catalogKeys.reduce<Record<string, boolean>>((acc, k) => {
+        acc[k] = current.includes(k);
+        return acc;
+      }, {})
+    );
+  }, [editingPanel, contactInfoFieldCatalog, visibleFields.contactInfo]);
+
+  // Save Contact Info config (visibility + order) and persist globally
+  const saveContactInfoConfig = () => {
+    const orderedVisible = modalContactInfoOrder.filter((k) => modalContactInfoVisible[k]);
+    if (orderedVisible.length === 0) return;
+    setVisibleFields((prev) => ({ ...prev, contactInfo: orderedVisible }));
+    try {
+      localStorage.setItem(CONTACT_INFO_STORAGE_KEY, JSON.stringify(orderedVisible));
+    } catch (_) {}
+    setEditingPanel(null);
+  };
+
+  // Toggle field visibility (used by non-contactInfo panels)
   const toggleFieldVisibility = (panelId: string, fieldKey: string) => {
     setVisibleFields((prev) => {
       const panelFields = prev[panelId] || [];
@@ -1180,6 +1264,22 @@ export default function OrganizationView() {
           [panelId]: [...panelFields, fieldKey],
         };
       }
+    });
+  };
+
+  // Contact Info modal: toggle visibility for a field
+  const toggleModalContactInfoVisible = (key: string) => {
+    setModalContactInfoVisible((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  // Contact Info modal: move field up/down in order
+  const moveContactInfoField = (index: number, direction: "up" | "down") => {
+    setModalContactInfoOrder((prev) => {
+      const next = [...prev];
+      const target = direction === "up" ? index - 1 : index + 1;
+      if (target < 0 || target >= next.length) return prev;
+      [next[index], next[target]] = [next[target], next[index]];
+      return next;
     });
   };
 
@@ -2112,6 +2212,31 @@ export default function OrganizationView() {
 
   const renderPanel = (panelId: string) => {
     if (panelId === "contactInfo") {
+      const customObj = organization?.customFields || {};
+      const getContactInfoLabel = (key: string) =>
+        contactInfoFieldCatalog.find((f) => f.key === key)?.label || key;
+      const getContactInfoValue = (key: string) => {
+        switch (key) {
+          case "name":
+            return organization?.contact?.name || organization?.name || "-";
+          case "nickname":
+            return organization?.contact?.nickname || organization?.nicknames || "-";
+          case "phone":
+            return organization?.contact?.phone || organization?.phone || "-";
+          case "address":
+            return organization?.contact?.address || organization?.address || "-";
+          case "website":
+            return organization?.contact?.website || organization?.website || "-";
+          default: {
+            const val = (customObj as any)?.[key];
+            return val === undefined || val === null || String(val).trim() === ""
+              ? "-"
+              : String(val);
+          }
+        }
+      };
+      const isWebsite = (key: string) => key === "website";
+
       return (
         <SortablePanel key={panelId} id={panelId}>
           <PanelWithHeader
@@ -2119,155 +2244,36 @@ export default function OrganizationView() {
             onEdit={() => handleEditPanel("contactInfo")}
           >
             <div className="space-y-0 border border-gray-200 rounded">
-              {visibleFields.contactInfo.includes("name") && (
-                <div className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                    Name:
-                  </div>
-                  <div className="flex-1 p-2 text-blue-600">
-                    {organization?.contact?.name || organization?.name || "-"}
-                  </div>
-                </div>
-              )}
-              {visibleFields.contactInfo.includes("nickname") && (
-                <div className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                    Nickname:
-                  </div>
-                  <div className="flex-1 p-2">
-                    {organization?.contact?.nickname || organization?.nicknames || "-"}
-                  </div>
-                </div>
-              )}
-              {visibleFields.contactInfo.includes("phone") && (
-                <div className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                    Phone:
-                  </div>
-                  <div className="flex-1 p-2">
-                    {organization?.contact?.phone || organization?.phone || "-"}
-                  </div>
-                </div>
-              )}
-              {visibleFields.contactInfo.includes("address") && (
-                <div className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                    Address:
-                  </div>
-                  <div className="flex-1 p-2">
-                    {organization?.contact?.address || organization?.address || "-"}
-                  </div>
-                </div>
-              )}
-              {visibleFields.contactInfo.includes("website") && (
-                <div className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                    Website:
-                  </div>
-                  <div className="flex-1 p-2 text-blue-600">
-                    <a
-                      href={organization?.contact?.website || organization?.website}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {organization?.contact?.website || organization?.website || "-"}
-                    </a>
-                  </div>
-                </div>
-              )}
-              {organization?.customFields &&
-                (() => {
-                  const customObj = organization.customFields || {};
-
-                  const customFieldDefs = (availableFields || []).filter((f: any) => {
-                    const isHidden =
-                      f?.is_hidden === true ||
-                      f?.hidden === true ||
-                      f?.isHidden === true;
-                    return !isHidden;
-                  });
-
-                  const renderedStableKeys = new Set<string>();
-
-                  const rowsFromDefs = customFieldDefs
-                    .map((f: any) => {
-                      const stableKey = String(
-                        f.field_key || f.api_name || f.field_name || f.id
-                      );
-
-                      const value =
-                        (customObj as any)?.[stableKey] ??
-                        (f.field_label ? (customObj as any)?.[f.field_label] : undefined) ??
-                        (f.field_name ? (customObj as any)?.[f.field_name] : undefined);
-
-                      const hasAnyValue =
-                        value !== undefined &&
-                        value !== null &&
-                        String(value).trim() !== "";
-
-                      if (!hasAnyValue) return null;
-                      if (!visibleFields.contactInfo.includes(stableKey)) return null;
-
-                      renderedStableKeys.add(stableKey);
-                      const label = f.field_label || f.field_name || stableKey;
-
-                      return (
-                        <div
-                          key={stableKey}
-                          className="flex border-b border-gray-200 last:border-b-0"
+              {(visibleFields.contactInfo || []).map((key) => {
+                const label = getContactInfoLabel(key);
+                const value = getContactInfoValue(key);
+                return (
+                  <div
+                    key={key}
+                    className="flex border-b border-gray-200 last:border-b-0"
+                  >
+                    <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      {label}:
+                    </div>
+                    <div className="flex-1 p-2">
+                      {isWebsite(key) && value !== "-" ? (
+                        <a
+                          href={value}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-600 hover:underline"
                         >
-                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                            {label}:
-                          </div>
-                          <div className="flex-1 p-2">{String(value || "-")}</div>
-                        </div>
-                      );
-                    })
-                    .filter(Boolean);
-
-                  const rowsFromUnknownKeys = Object.keys(customObj)
-                    .filter((k) => !renderedStableKeys.has(String(k)))
-                    .map((fieldKey) => {
-                      if (!visibleFields.contactInfo.includes(fieldKey)) return null;
-
-                      const field = (availableFields || []).find(
-                        (f: any) =>
-                          String(
-                            f.field_key ||
-                            f.api_name ||
-                            f.field_name ||
-                            f.field_label ||
-                            f.id
-                          ) === String(fieldKey) ||
-                          String(f.field_label || "") === String(fieldKey) ||
-                          String(f.field_name || "") === String(fieldKey)
-                      );
-
-                      const fieldLabel =
-                        field?.field_label || field?.field_name || String(fieldKey);
-                      const fieldValue = (customObj as any)[fieldKey];
-
-                      return (
-                        <div
-                          key={fieldKey}
-                          className="flex border-b border-gray-200 last:border-b-0"
-                        >
-                          <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                            {fieldLabel}:
-                          </div>
-                          <div className="flex-1 p-2">{String(fieldValue || "-")}</div>
-                        </div>
-                      );
-                    })
-                    .filter(Boolean);
-
-                  return (
-                    <>
-                      {rowsFromDefs}
-                      {rowsFromUnknownKeys}
-                    </>
-                  );
-                })()}
+                          {value}
+                        </a>
+                      ) : key === "name" ? (
+                        <span className="text-blue-600">{value}</span>
+                      ) : (
+                        value
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </PanelWithHeader>
         </SortablePanel>
@@ -5135,7 +5141,7 @@ export default function OrganizationView() {
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">
-                Edit Fields - {editingPanel}
+                Edit Fields - {editingPanel === "contactInfo" ? "Organization Contact Info" : editingPanel}
               </h2>
               <button
                 onClick={handleCloseEditModal}
@@ -5145,121 +5151,197 @@ export default function OrganizationView() {
               </button>
             </div>
             <div className="p-6">
-              <div className="mb-4">
-                <h3 className="font-medium mb-3">
-                  Available Fields from Modify Page:
-                </h3>
-                <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
-                  {isLoadingFields ? (
-                    <div className="text-center py-4 text-gray-500">
-                      Loading fields...
-                    </div>
-                  ) : availableFields.length > 0 ? (
-                    availableFields.map((field) => {
-                      const fieldKey =
-                        field.field_key || field.api_name || field.field_name || field.id;
-                      const isVisible =
-                        visibleFields[editingPanel]?.includes(fieldKey) ||
-                        false;
-                      return (
-                        <div
-                          key={field.id || fieldKey}
-                          className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={isVisible}
-                              onChange={() =>
-                                toggleFieldVisibility(editingPanel, fieldKey)
-                              }
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            />
-                            <label className="text-sm text-gray-700">
-                              {field.field_label ||
-                                field.field_name ||
-                                fieldKey}
-                            </label>
+              {editingPanel === "contactInfo" ? (
+                <>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Choose which fields to show and drag order. Changes apply to all organization contact cards.
+                  </p>
+                  <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
+                    {isLoadingFields && contactInfoFieldCatalog.length === 0 ? (
+                      <div className="text-center py-4 text-gray-500">
+                        Loading fields...
+                      </div>
+                    ) : (
+                      modalContactInfoOrder.map((key, index) => {
+                        const entry = contactInfoFieldCatalog.find((f) => f.key === key);
+                        const label = entry?.label ?? key;
+                        const isVisible = modalContactInfoVisible[key] ?? false;
+                        return (
+                          <div
+                            key={key}
+                            className="flex items-center justify-between p-2 hover:bg-gray-50 rounded border border-gray-100"
+                          >
+                            <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={isVisible}
+                                onChange={() => toggleModalContactInfoVisible(key)}
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 shrink-0"
+                              />
+                              <label className="text-sm text-gray-700 truncate">
+                                {label}
+                              </label>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => moveContactInfoField(index, "up")}
+                                disabled={index === 0}
+                                className="p-1.5 border rounded text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                title="Move up"
+                              >
+                                <FiArrowUp size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => moveContactInfoField(index, "down")}
+                                disabled={index === modalContactInfoOrder.length - 1}
+                                className="p-1.5 border rounded text-gray-600 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                                title="Move down"
+                              >
+                                <FiArrowDown size={14} />
+                              </button>
+                            </div>
                           </div>
-                          <span className="text-xs text-gray-500">
-                            {field.field_type || "text"}
-                          </span>
+                        );
+                      })
+                    )}
+                  </div>
+                  <div className="flex justify-end gap-2 pt-4 border-t mt-4">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={saveContactInfoConfig}
+                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={modalContactInfoOrder.filter((k) => modalContactInfoVisible[k]).length === 0}
+                    >
+                      Save (applies to all organizations)
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="mb-4">
+                    <h3 className="font-medium mb-3">
+                      Available Fields from Modify Page:
+                    </h3>
+                    <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                      {isLoadingFields ? (
+                        <div className="text-center py-4 text-gray-500">
+                          Loading fields...
                         </div>
-                      );
-                    })
-                  ) : (
-                    <div className="text-center py-4 text-gray-500">
-                      <p>No custom fields available</p>
-                      <p className="text-xs mt-1">
-                        Fields from the modify page will appear here
-                      </p>
+                      ) : availableFields.length > 0 ? (
+                        availableFields.map((field) => {
+                          const fieldKey =
+                            field.field_key || field.api_name || field.field_name || field.id;
+                          const isVisible =
+                            visibleFields[editingPanel]?.includes(fieldKey) ||
+                            false;
+                          return (
+                            <div
+                              key={field.id || fieldKey}
+                              className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                            >
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isVisible}
+                                  onChange={() =>
+                                    toggleFieldVisibility(editingPanel, fieldKey)
+                                  }
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <label className="text-sm text-gray-700">
+                                  {field.field_label ||
+                                    field.field_name ||
+                                    fieldKey}
+                                </label>
+                              </div>
+                              <span className="text-xs text-gray-500">
+                                {field.field_type || "text"}
+                              </span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="text-center py-4 text-gray-500">
+                          <p>No custom fields available</p>
+                          <p className="text-xs mt-1">
+                            Fields from the modify page will appear here
+                          </p>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-              </div>
+                  </div>
 
-              <div className="mb-4">
-                <h3 className="font-medium mb-3">Standard Fields:</h3>
-                <div className="space-y-2 border border-gray-200 rounded p-3">
-                  {(() => {
-                    const standardFieldsMap: Record<
-                      string,
-                      Array<{ key: string; label: string }>
-                    > = {
-                      contactInfo: [
-                        { key: "name", label: "Name" },
-                        { key: "nickname", label: "Nickname" },
-                        { key: "phone", label: "Phone" },
-                        { key: "address", label: "Address" },
-                        { key: "website", label: "Website" },
-                      ],
-                      about: [{ key: "about", label: "About" }],
-                      recentNotes: [{ key: "notes", label: "Notes" }],
-                      websiteJobs: [{ key: "jobs", label: "Jobs" }],
-                      ourJobs: [{ key: "jobs", label: "Jobs" }],
-                    };
+                  <div className="mb-4">
+                    <h3 className="font-medium mb-3">Standard Fields:</h3>
+                    <div className="space-y-2 border border-gray-200 rounded p-3">
+                      {(() => {
+                        const standardFieldsMap: Record<
+                          string,
+                          Array<{ key: string; label: string }>
+                        > = {
+                          contactInfo: [
+                            { key: "name", label: "Name" },
+                            { key: "nickname", label: "Nickname" },
+                            { key: "phone", label: "Phone" },
+                            { key: "address", label: "Address" },
+                            { key: "website", label: "Website" },
+                          ],
+                          about: [{ key: "about", label: "About" }],
+                          recentNotes: [{ key: "notes", label: "Notes" }],
+                          websiteJobs: [{ key: "jobs", label: "Jobs" }],
+                          ourJobs: [{ key: "jobs", label: "Jobs" }],
+                        };
 
-                    const fields = standardFieldsMap[editingPanel] || [];
-                    return fields.map((field) => {
-                      const isVisible =
-                        visibleFields[editingPanel]?.includes(field.key) ||
-                        false;
-                      return (
-                        <div
-                          key={field.key}
-                          className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={isVisible}
-                              onChange={() =>
-                                toggleFieldVisibility(editingPanel, field.key)
-                              }
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            />
-                            <label className="text-sm text-gray-700">
-                              {field.label}
-                            </label>
-                          </div>
-                          <span className="text-xs text-gray-500">
-                            standard
-                          </span>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
+                        const fields = standardFieldsMap[editingPanel] || [];
+                        return fields.map((field) => {
+                          const isVisible =
+                            visibleFields[editingPanel]?.includes(field.key) ||
+                            false;
+                          return (
+                            <div
+                              key={field.key}
+                              className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                            >
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isVisible}
+                                  onChange={() =>
+                                    toggleFieldVisibility(editingPanel, field.key)
+                                  }
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <label className="text-sm text-gray-700">
+                                  {field.label}
+                                </label>
+                              </div>
+                              <span className="text-xs text-gray-500">
+                                standard
+                              </span>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
 
-              <div className="flex justify-end space-x-2 pt-4 border-t">
-                <button
-                  onClick={handleCloseEditModal}
-                  className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-                >
-                  Close
-                </button>
-              </div>
+                  <div className="flex justify-end space-x-2 pt-4 border-t">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>

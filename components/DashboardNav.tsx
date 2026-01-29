@@ -86,10 +86,15 @@ function SortablePinnedTab({
     zIndex: isDragging ? 50 : undefined,
     ...(isActive
       ? {
+        backgroundColor: "#16a34a",
+        color: "#ffffff",
         ["--tabs-selected-bg-color" as any]: "#16a34a",
         ["--tabs-selected-text-color" as any]: "#ffffff",
       }
-      : {})
+      : {
+        backgroundColor: "rgb(29 41 61)",
+        color: "rgb(255, 255, 255)",
+      })
   };
 
   return (

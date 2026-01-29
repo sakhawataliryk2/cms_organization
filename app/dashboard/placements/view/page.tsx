@@ -32,7 +32,7 @@ import {
   defaultDropAnimationSideEffects,
   MeasuringStrategy,
 } from "@dnd-kit/core";
-import { restrictToWindowEdges } from "@dnd-kit/modifiers";
+import { restrictToWindowEdges, restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
   SortableContext,
   useSortable,
@@ -45,6 +45,10 @@ import { TbGripVertical } from "react-icons/tb";
 
 // Default header fields for Placements module - defined outside component to ensure stable reference
 const PLACEMENT_DEFAULT_HEADER_FIELDS = ["status", "owner"];
+
+// Constants for Placement Details persistence
+const PLACEMENT_DETAILS_DEFAULT_FIELDS = ['candidate', 'job', 'status', 'startDate', 'endDate', 'salary'];
+const PLACEMENT_DETAILS_STORAGE_KEY = "placementDetailsFields";
 
 function DroppableContainer({
   id,
@@ -110,6 +114,55 @@ function SortablePanel({
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// Sortable row for Placement Details edit modal (vertical drag + checkbox + label)
+function SortablePlacementDetailsFieldRow({
+  id,
+  label,
+  checked,
+  onToggle,
+  isOverlay,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+  isOverlay?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging && !isOverlay ? 0.5 : 1,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
+    >
+      {!isOverlay && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
+          title="Drag to reorder"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={18} />
+        </button>
+      )}
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        onClick={(e) => e.stopPropagation()}
+        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+      />
+      <span className="text-sm text-gray-700 flex-1">{label}</span>
     </div>
   );
 }
@@ -225,6 +278,22 @@ export default function PlacementView() {
           console.error("Error loading panel order:", e);
         }
       }
+    }
+  }, []);
+
+  // Initialize Placement Details field order/visibility from localStorage (persists across all records)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem(PLACEMENT_DETAILS_STORAGE_KEY);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const unique = Array.from(new Set(parsed));
+        setVisibleFields((prev) => ({ ...prev, placementDetails: unique }));
+      }
+    } catch (_) {
+      /* keep default */
     }
   }, []);
 
@@ -375,12 +444,17 @@ export default function PlacementView() {
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
-    placementDetails: ['candidate', 'job', 'status', 'startDate', 'endDate', 'salary'],
+    placementDetails: Array.from(new Set(PLACEMENT_DETAILS_DEFAULT_FIELDS)),
     details: ['owner', 'dateAdded', 'lastContactDate'],
     recentNotes: ['notes']
   });
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
+
+  // Modal-local state for Placement Details edit
+  const [modalPlacementDetailsOrder, setModalPlacementDetailsOrder] = useState<string[]>([]);
+  const [modalPlacementDetailsVisible, setModalPlacementDetailsVisible] = useState<Record<string, boolean>>({});
+  const [placementDetailsDragActiveId, setPlacementDetailsDragActiveId] = useState<string | null>(null);
 
   // =====================
   // HEADER FIELDS (Top Row)
@@ -555,19 +629,92 @@ export default function PlacementView() {
   const toggleFieldVisibility = (panelId: string, fieldKey: string) => {
     setVisibleFields(prev => {
       const panelFields = prev[panelId] || [];
-      if (panelFields.includes(fieldKey)) {
+      const uniqueFields = Array.from(new Set(panelFields));
+      if (uniqueFields.includes(fieldKey)) {
         return {
           ...prev,
-          [panelId]: panelFields.filter(f => f !== fieldKey)
+          [panelId]: uniqueFields.filter(f => f !== fieldKey)
         };
       } else {
         return {
           ...prev,
-          [panelId]: [...panelFields, fieldKey]
+          [panelId]: Array.from(new Set([...uniqueFields, fieldKey]))
         };
       }
     });
   };
+
+  // Placement Details field catalog: standard + all custom (for edit modal and display order)
+  const placementDetailsFieldCatalog = useMemo(() => {
+    const standard: { key: string; label: string }[] = [
+      { key: 'candidate', label: 'Candidate' },
+      { key: 'job', label: 'Job' },
+      { key: 'status', label: 'Status' },
+      { key: 'startDate', label: 'Start Date' },
+      { key: 'endDate', label: 'End Date' },
+      { key: 'salary', label: 'Salary' },
+    ];
+    const customFromDefs = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
+    const standardKeys = new Set(standard.map((s) => s.key));
+    const customFromPlacement = Object.keys(placement?.customFields || {})
+      .filter((k) => !keysFromDefs.has(k) && !standardKeys.has(k))
+      .map((k) => ({ key: k, label: k }));
+    
+    // Deduplicate by key property
+    const allFields = [...standard, ...customFromDefs, ...customFromPlacement];
+    const seenKeys = new Set<string>();
+    return allFields.filter((f) => {
+      if (seenKeys.has(f.key)) return false;
+      seenKeys.add(f.key);
+      return true;
+    });
+  }, [availableFields, placement?.customFields]);
+
+  // Sync Placement Details modal state when opening edit for placementDetails
+  useEffect(() => {
+    if (editingPanel !== "placementDetails") return;
+    const current = visibleFields.placementDetails || [];
+    const catalogKeys = placementDetailsFieldCatalog.map((f) => f.key);
+    const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
+    const order = [...current.filter((k) => uniqueCatalogKeys.includes(k))];
+    uniqueCatalogKeys.forEach((k) => {
+      if (!order.includes(k)) order.push(k);
+    });
+    const uniqueOrder = Array.from(new Set(order));
+    setModalPlacementDetailsOrder(uniqueOrder);
+    setModalPlacementDetailsVisible(
+      uniqueCatalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
+    );
+  }, [editingPanel, visibleFields.placementDetails, placementDetailsFieldCatalog]);
+
+  // Placement Details modal: drag end (reorder)
+  const handlePlacementDetailsDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setPlacementDetailsDragActiveId(null);
+    if (!over || active.id === over.id) return;
+    setModalPlacementDetailsOrder((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, []);
+
+  // Placement Details modal: save order/visibility and persist for all records
+  const handleSavePlacementDetailsFields = useCallback(() => {
+    const newOrder = Array.from(new Set(modalPlacementDetailsOrder.filter((k) => modalPlacementDetailsVisible[k])));
+    if (typeof window !== "undefined") {
+      localStorage.setItem(PLACEMENT_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
+    }
+    setVisibleFields((prev) => ({ ...prev, placementDetails: newOrder }));
+    setEditingPanel(null);
+  }, [modalPlacementDetailsOrder, modalPlacementDetailsVisible]);
 
   // Handle edit panel click
   const handleEditPanel = (panelId: string) => {
@@ -1995,26 +2142,25 @@ export default function PlacementView() {
   };
 
   const renderPlacementDetailsPanel = () => {
-    return (
-      <PanelWithHeader
-        title="Placement Details:"
-        onEdit={() => handleEditPanel("placementDetails")}
-      >
-        <div className="space-y-0 border border-gray-200 rounded">
-          {visibleFields.placementDetails.includes("candidate") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
+    const renderPlacementDetailsRow = (key: string, index: number) => {
+      switch (key) {
+        case "candidate":
+          return (
+            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Candidate:</div>
               <div className="flex-1 p-2 text-blue-600">{placement.jobSeekerName}</div>
             </div>
-          )}
-          {visibleFields.placementDetails.includes("job") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
+          );
+        case "job":
+          return (
+            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Job:</div>
               <div className="flex-1 p-2 text-blue-600">{placement.jobTitle}</div>
             </div>
-          )}
-          {visibleFields.placementDetails.includes("status") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
+          );
+        case "status":
+          return (
+            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
               <div className="flex-1 p-2">
                 <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
@@ -2022,42 +2168,51 @@ export default function PlacementView() {
                 </span>
               </div>
             </div>
-          )}
-          {visibleFields.placementDetails.includes("startDate") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
+          );
+        case "startDate":
+          return (
+            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Start Date:</div>
               <div className="flex-1 p-2">{placement.startDate || "-"}</div>
             </div>
-          )}
-          {visibleFields.placementDetails.includes("endDate") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
+          );
+        case "endDate":
+          return (
+            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">End Date:</div>
               <div className="flex-1 p-2">{placement.endDate || "-"}</div>
             </div>
-          )}
-          {visibleFields.placementDetails.includes("salary") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
+          );
+        case "salary":
+          return (
+            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Salary:</div>
               <div className="flex-1 p-2">{placement.salary || "-"}</div>
             </div>
-          )}
-          {placement.customFields &&
-            Object.keys(placement.customFields).map((fieldKey) => {
-              if (visibleFields.placementDetails.includes(fieldKey)) {
-                const field = availableFields.find(
-                  (f) => (f.field_name || f.field_label || f.id) === fieldKey
-                );
-                const fieldLabel = field?.field_label || field?.field_name || fieldKey;
-                const fieldValue = placement.customFields[fieldKey];
-                return (
-                  <div key={fieldKey} className="flex border-b border-gray-200 last:border-b-0">
-                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
-                    <div className="flex-1 p-2">{String(fieldValue || "-")}</div>
-                  </div>
-                );
-              }
-              return null;
-            })}
+          );
+        default:
+          // Custom field
+          const field = availableFields.find(
+            (f: any) => (f.field_name || f.field_label || f.id) === key
+          );
+          const fieldLabel = field?.field_label || field?.field_name || key;
+          const fieldValue = placement.customFields?.[key] || "-";
+          return (
+            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
+              <div className="flex-1 p-2">{String(fieldValue)}</div>
+            </div>
+          );
+      }
+    };
+
+    return (
+      <PanelWithHeader
+        title="Placement Details:"
+        onEdit={() => handleEditPanel("placementDetails")}
+      >
+        <div className="space-y-0 border border-gray-200 rounded">
+          {Array.from(new Set(visibleFields.placementDetails || [])).map((key, index) => renderPlacementDetailsRow(key, index))}
         </div>
       </PanelWithHeader>
     );
@@ -2681,7 +2836,9 @@ export default function PlacementView() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Edit Fields - {editingPanel}</h2>
+              <h2 className="text-lg font-semibold">
+                Edit Fields - {editingPanel === "placementDetails" ? "Placement Details" : editingPanel}
+              </h2>
               <button
                 onClick={handleCloseEditModal}
                 className="p-1 rounded hover:bg-gray-200"
@@ -2690,94 +2847,158 @@ export default function PlacementView() {
               </button>
             </div>
             <div className="p-6">
-              <div className="mb-4">
-                <h3 className="font-medium mb-3">Available Fields from Modify Page:</h3>
-                <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
-                  {isLoadingFields ? (
-                    <div className="text-center py-4 text-gray-500">Loading fields...</div>
-                  ) : availableFields.length > 0 ? (
-                    availableFields.map((field) => {
-                      const fieldKey = field.field_name || field.field_label || field.id;
-                      const isVisible = visibleFields[editingPanel]?.includes(fieldKey) || false;
-                      return (
-                        <div key={field.id || fieldKey} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={isVisible}
-                              onChange={() => toggleFieldVisibility(editingPanel, fieldKey)}
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            />
-                            <label className="text-sm text-gray-700">
-                              {field.field_label || field.field_name || fieldKey}
-                            </label>
-                          </div>
-                          <span className="text-xs text-gray-500">{field.field_type || 'text'}</span>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="text-center py-4 text-gray-500">
-                      <p>No custom fields available</p>
-                      <p className="text-xs mt-1">Fields from the modify page will appear here</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              <div className="mb-4">
-                <h3 className="font-medium mb-3">Standard Fields:</h3>
-                <div className="space-y-2 border border-gray-200 rounded p-3">
-                  {(() => {
-                    const standardFieldsMap: Record<string, Array<{ key: string; label: string }>> = {
-                      placementDetails: [
-                        { key: 'candidate', label: 'Candidate' },
-                        { key: 'job', label: 'Job' },
-                        { key: 'status', label: 'Status' },
-                        { key: 'startDate', label: 'Start Date' },
-                        { key: 'endDate', label: 'End Date' },
-                        { key: 'salary', label: 'Salary' }
-                      ],
-                      details: [
-                        { key: 'owner', label: 'Owner' },
-                        { key: 'dateAdded', label: 'Date Added' },
-                        { key: 'lastContactDate', label: 'Last Contact' }
-                      ],
-                      recentNotes: [
-                        { key: 'notes', label: 'Notes' }
-                      ]
-                    };
-                    
-                    const fields = standardFieldsMap[editingPanel] || [];
-                    return fields.map((field) => {
-                      const isVisible = visibleFields[editingPanel]?.includes(field.key) || false;
-                      return (
-                        <div key={field.key} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={isVisible}
-                              onChange={() => toggleFieldVisibility(editingPanel, field.key)}
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            />
-                            <label className="text-sm text-gray-700">{field.label}</label>
-                          </div>
-                          <span className="text-xs text-gray-500">standard</span>
-                        </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-4 border-t">
-                <button
-                  onClick={handleCloseEditModal}
-                  className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+              {editingPanel === "placementDetails" && (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCorners}
+                  onDragStart={(e) => setPlacementDetailsDragActiveId(e.active.id as string)}
+                  onDragEnd={handlePlacementDetailsDragEnd}
+                  onDragCancel={() => setPlacementDetailsDragActiveId(null)}
                 >
-                  Close
-                </button>
-              </div>
+                  <div className="mb-4">
+                    <h3 className="font-medium mb-3">Drag to reorder, check/uncheck to show/hide:</h3>
+                    <SortableContext
+                      items={modalPlacementDetailsOrder}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                        {modalPlacementDetailsOrder.map((key, index) => {
+                          const field = placementDetailsFieldCatalog.find((f) => f.key === key);
+                          if (!field) return null;
+                          return (
+                            <SortablePlacementDetailsFieldRow
+                              key={`placementDetails-${key}-${index}`}
+                              id={key}
+                              label={field.label}
+                              checked={modalPlacementDetailsVisible[key] || false}
+                              onToggle={() =>
+                                setModalPlacementDetailsVisible((prev) => ({
+                                  ...prev,
+                                  [key]: !prev[key],
+                                }))
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                    </SortableContext>
+                    <DragOverlay>
+                      {placementDetailsDragActiveId ? (
+                        (() => {
+                          const field = placementDetailsFieldCatalog.find((f) => f.key === placementDetailsDragActiveId);
+                          return field ? (
+                            <SortablePlacementDetailsFieldRow
+                              id={placementDetailsDragActiveId}
+                              label={field.label}
+                              checked={modalPlacementDetailsVisible[placementDetailsDragActiveId] || false}
+                              onToggle={() => {}}
+                              isOverlay
+                            />
+                          ) : null;
+                        })()
+                      ) : null}
+                    </DragOverlay>
+                  </div>
+                  <div className="flex justify-end space-x-2 pt-4 border-t">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSavePlacementDetailsFields}
+                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </DndContext>
+              )}
+              {editingPanel !== "placementDetails" && (
+                <>
+                  <div className="mb-4">
+                    <h3 className="font-medium mb-3">Available Fields from Modify Page:</h3>
+                    <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                      {isLoadingFields ? (
+                        <div className="text-center py-4 text-gray-500">Loading fields...</div>
+                      ) : availableFields.length > 0 ? (
+                        availableFields.map((field) => {
+                          const fieldKey = field.field_name || field.field_label || field.id;
+                          const isVisible = visibleFields[editingPanel]?.includes(fieldKey) || false;
+                          return (
+                            <div key={field.id || fieldKey} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isVisible}
+                                  onChange={() => toggleFieldVisibility(editingPanel, fieldKey)}
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <label className="text-sm text-gray-700">
+                                  {field.field_label || field.field_name || fieldKey}
+                                </label>
+                              </div>
+                              <span className="text-xs text-gray-500">{field.field_type || 'text'}</span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="text-center py-4 text-gray-500">
+                          <p>No custom fields available</p>
+                          <p className="text-xs mt-1">Fields from the modify page will appear here</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  
+                  <div className="mb-4">
+                    <h3 className="font-medium mb-3">Standard Fields:</h3>
+                    <div className="space-y-2 border border-gray-200 rounded p-3">
+                      {(() => {
+                        const standardFieldsMap: Record<string, Array<{ key: string; label: string }>> = {
+                          details: [
+                            { key: 'owner', label: 'Owner' },
+                            { key: 'dateAdded', label: 'Date Added' },
+                            { key: 'lastContactDate', label: 'Last Contact' }
+                          ],
+                          recentNotes: [
+                            { key: 'notes', label: 'Notes' }
+                          ]
+                        };
+                        
+                        const fields = standardFieldsMap[editingPanel] || [];
+                        return fields.map((field) => {
+                          const isVisible = visibleFields[editingPanel]?.includes(field.key) || false;
+                          return (
+                            <div key={field.key} className="flex items-center justify-between p-2 hover:bg-gray-50 rounded">
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isVisible}
+                                  onChange={() => toggleFieldVisibility(editingPanel, field.key)}
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <label className="text-sm text-gray-700">{field.label}</label>
+                              </div>
+                              <span className="text-xs text-gray-500">standard</span>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end space-x-2 pt-4 border-t">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Close
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
         </div>
