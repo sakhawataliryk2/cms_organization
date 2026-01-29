@@ -11,7 +11,13 @@ import {
   unpinRecord,
   pinRecord,
   buildPinnedKey,
+  savePinnedRecords,
+  dispatchPinnedRecordsChanged,
 } from "@/lib/pinnedRecords";
+import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
+import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
+import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 // Import icons from react-icons
 import {
   FiHome,
@@ -53,6 +59,62 @@ interface SearchResults {
   placements?: any[];
 }
 
+function SortablePinnedTab({
+  record,
+  isActive,
+  onClick,
+  onUnpin
+}: {
+  record: PinnedRecord;
+  isActive: boolean;
+  onClick: () => void;
+  onUnpin: (e: React.MouseEvent) => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: record.key });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : undefined,
+    ...(isActive
+      ? {
+        ["--tabs-selected-bg-color" as any]: "#16a34a",
+        ["--tabs-selected-text-color" as any]: "#ffffff",
+      }
+      : {})
+  };
+
+  return (
+    <button
+      ref={setNodeRef}
+      style={style}
+      {...attributes}
+      {...listeners}
+      type="button"
+      className={`sd-tab-label is-pinned ${isActive ? "is-active" : "hover:bg-slate-200"} transition-colors cursor-grab active:cursor-grabbing`}
+      onClick={onClick}
+    >
+      <div className="sd-tab-desc">{String(record.label || "")}</div>
+      <span
+        className="sd-tab-icon sd-tab-close"
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={onUnpin}
+        title="Unpin"
+      >
+        <FiX size={14} />
+      </span>
+    </button>
+  );
+}
+
 export default function DashboardNav() {
   const [user, setUser] = useState<User | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState<boolean>(false);
@@ -64,6 +126,33 @@ export default function DashboardNav() {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState<boolean>(false);
 
   const [pinnedRecords, setPinnedRecords] = useState<PinnedRecord[]>([]);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (active.id !== over?.id) {
+      setPinnedRecords((items) => {
+        const oldIndex = items.findIndex((item) => item.key === active.id);
+        const newIndex = items.findIndex((item) => item.key === over?.id);
+        const newItems = arrayMove(items, oldIndex, newIndex);
+        // Save to storage
+        savePinnedRecords(newItems);
+        // dispatchPinnedRecordsChanged(); // Avoid double update in same window
+        return newItems;
+      });
+    }
+  };
+
   const [showTbiQuickTab, setShowTbiQuickTab] = useState(false);
   const [currentUrl, setCurrentUrl] = useState<string>("");
   const pathname = usePathname();
@@ -559,7 +648,7 @@ export default function DashboardNav() {
                     <button
                       key="tbi"
                       type="button"
-                      className={`sd-tab-label ${isActive ? "is-active" : ""} transition-colors hover:bg-slate-200`}
+                      className={`sd-tab-label ${isActive ? "is-active" : "hover:bg-slate-200"} transition-colors`}
                       style={
                         isActive
                           ? ({
@@ -586,40 +675,30 @@ export default function DashboardNav() {
                   );
                 })()}
 
-              {pinnedRecords.map((rec) => (
-                (() => {
-                  const isActive = currentUrl === rec.url;
-                  return (
-                    <button
+              <DndContext
+                sensors={sensors}
+                collisionDetection={closestCenter}
+                onDragEnd={handleDragEnd}
+                modifiers={[restrictToHorizontalAxis]}
+              >
+                <SortableContext
+                  items={pinnedRecords.map((r) => r.key)}
+                  strategy={horizontalListSortingStrategy}
+                >
+                  {pinnedRecords.map((rec) => (
+                    <SortablePinnedTab
                       key={rec.key}
-                      type="button"
-                      className={`sd-tab-label is-pinned ${isActive ? "is-active" : ""} transition-colors`}
-                      style={
-                        isActive
-                          ? ({
-                            ["--tabs-selected-bg-color" as any]: "#16a34a",
-                            ["--tabs-selected-text-color" as any]: "#ffffff",
-                          } as any)
-                          : undefined
-                      }
+                      record={rec}
+                      isActive={currentUrl === rec.url}
                       onClick={() => goToPinned(rec.url)}
-                    >
-                      <div className="sd-tab-desc">{String(rec.label || "")}</div>
-
-                      <span
-                        className="sd-tab-icon sd-tab-close"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          unpinRecord(rec.key);
-                        }}
-                        title="Unpin"
-                      >
-                        <FiX size={14} />
-                      </span>
-                    </button>
-                  );
-                })()
-              ))}
+                      onUnpin={(e) => {
+                        e.stopPropagation();
+                        unpinRecord(rec.key);
+                      }}
+                    />
+                  ))}
+                </SortableContext>
+              </DndContext>
             </div>
           </div>
         )}

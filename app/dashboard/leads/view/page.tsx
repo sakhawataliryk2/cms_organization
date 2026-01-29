@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getCookie } from "cookies-next";
 import Image from "next/image";
@@ -10,6 +10,81 @@ import LoadingScreen from "@/components/LoadingScreen";
 import { FiTarget } from "react-icons/fi";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+// Drag and drop imports
+import {
+  DndContext,
+  closestCorners,
+  type DragEndEvent,
+  type DragOverEvent,
+  useDroppable,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+  defaultDropAnimationSideEffects,
+  MeasuringStrategy,
+} from "@dnd-kit/core";
+import { restrictToWindowEdges } from "@dnd-kit/modifiers";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+  horizontalListSortingStrategy,
+  sortableKeyboardCoordinates,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { TbGripVertical } from "react-icons/tb";
+
+// SortablePanel helper
+function SortablePanel({ id, children, isOverlay = false }: { id: string; children: React.ReactNode; isOverlay?: boolean }) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+    opacity: isDragging && !isOverlay ? 0.3 : 1,
+    zIndex: isOverlay ? 1000 : undefined,
+  };
+
+  return (
+    <div ref={setNodeRef} style={style} className={`relative group ${isOverlay ? 'cursor-grabbing' : ''}`}>
+      {!isOverlay && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="absolute left-2 top-2 z-10 p-1 bg-gray-100 hover:bg-gray-200 rounded cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Drag to reorder"
+        >
+          <TbGripVertical className="no-print w-5 h-5 text-gray-600" />
+        </button>
+      )}
+      <div className={`${isDragging && !isOverlay ? 'invisible' : ''} pt-0`}>
+        {children}
+      </div>
+      {isDragging && !isOverlay && (
+        <div className="absolute inset-0 border-2 border-dashed border-gray-300 rounded bg-gray-50 flex items-center justify-center p-4">
+          <div className="text-gray-400 text-xs font-semibold uppercase tracking-wider italic">
+            Moving Panel...
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Droppable Column Container
+function DroppableContainer({ id, children, items }: { id: string, children: React.ReactNode, items: string[] }) {
+  const { setNodeRef } = useDroppable({ id });
+  return (
+    <SortableContext id={id} items={items} strategy={verticalListSortingStrategy}>
+      <div ref={setNodeRef} className="flex flex-col gap-4 w-full min-h-[100px]">
+        {children}
+      </div>
+    </SortableContext>
+  );
+}
 import {
   buildPinnedKey,
   isPinnedRecord,
@@ -98,6 +173,129 @@ export default function LeadView() {
 
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
+
+  // Drag and drop state
+  const [columns, setColumns] = useState<{
+    left: string[];
+    right: string[];
+  }>({
+    left: ["contactInfo", "details"],
+    right: ["recentNotes", "websiteJobs", "ourJobs"],
+  });
+  const [activeId, setActiveId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  // Initialize columns from localStorage or default
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("leadsSummaryColumns");
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved);
+          if (parsed.left && Array.isArray(parsed.left) && parsed.right && Array.isArray(parsed.right)) {
+            setColumns(parsed);
+          }
+        } catch (e) {
+          console.error("Error loading panel order:", e);
+        }
+      }
+    }
+  }, []);
+
+  const prevColumnsRef = useRef<string>("");
+
+  // Save columns to localStorage
+  useEffect(() => {
+    const colsString = JSON.stringify(columns);
+    if (prevColumnsRef.current !== colsString) {
+      localStorage.setItem("leadsSummaryColumns", colsString);
+      prevColumnsRef.current = colsString;
+    }
+  }, [columns]);
+
+  const findContainer = (id: string) => {
+    if (id === "left" || id === "right") {
+      return id;
+    }
+
+    if (columns.left.includes(id)) return "left";
+    if (columns.right.includes(id)) return "right";
+
+    return undefined;
+  };
+
+  const handlePanelDragStart = (event: any) => {
+    setActiveId(event.active.id);
+  };
+
+  const handlePanelDragCancel = () => {
+    setActiveId(null);
+  };
+
+  const handlePanelDragOver = (_event: DragOverEvent) => {
+    return;
+  };
+
+  const handlePanelDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (!over) {
+      setActiveId(null);
+      return;
+    }
+
+    const activeId = String(active.id);
+    const overId = String(over.id);
+
+    setColumns((prev) => {
+      const findContainerInState = (id: string) => {
+        if (id === "left" || id === "right") return id as "left" | "right";
+        if (prev.left.includes(id)) return "left";
+        if (prev.right.includes(id)) return "right";
+        return undefined;
+      };
+
+      const source = findContainerInState(activeId);
+      const target = findContainerInState(overId);
+
+      if (!source || !target) return prev;
+
+      // Reorder within the same column
+      if (source === target) {
+        // Dropped on the container itself (not a panel)
+        if (overId === source) return prev;
+        const oldIndex = prev[source].indexOf(activeId);
+        const newIndex = prev[source].indexOf(overId);
+        if (oldIndex === -1 || newIndex === -1 || oldIndex === newIndex) return prev;
+        return {
+          ...prev,
+          [source]: arrayMove(prev[source], oldIndex, newIndex),
+        };
+      }
+
+      // Move across columns
+      const sourceItems = prev[source].filter((id) => id !== activeId);
+      const targetItems = [activeId, ...prev[target].filter((id) => id !== activeId)];
+
+      return {
+        ...prev,
+        [source]: sourceItems,
+        [target]: targetItems,
+      };
+    });
+
+    setActiveId(null);
+  };
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
     contactInfo: ['fullName', 'nickname', 'title', 'organizationName', 'department', 'phone', 'mobilePhone', 'email', 'email2', 'fullAddress', 'linkedinUrl'],
     details: ['status', 'owner', 'reportsTo', 'dateAdded', 'lastContactDate'],
@@ -290,6 +488,304 @@ export default function LeadView() {
   };
 
   // Handle edit panel click
+    const renderPanel = (id: string, isOverlay = false) => {
+    switch (id) {
+      case "contactInfo":
+        return (
+          <SortablePanel key={id} id={id} isOverlay={isOverlay}>
+            <PanelWithHeader
+              title="Lead Contact Info:"
+              onEdit={() => handleEditPanel("contactInfo")}
+            >
+              <div className="space-y-0 border border-gray-200 rounded">
+                {visibleFields.contactInfo.includes("fullName") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      Name:
+                    </div>
+                    <div className="flex-1 p-2 text-blue-600">
+                      {lead?.fullName}
+                    </div>
+                  </div>
+                )}
+                {visibleFields.contactInfo.includes("nickname") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      Nickname:
+                    </div>
+                    <div className="flex-1 p-2">{lead?.nickname || "-"}</div>
+                  </div>
+                )}
+                {visibleFields.contactInfo.includes("title") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      Title:
+                    </div>
+                    <div className="flex-1 p-2">{lead?.title || "-"}</div>
+                  </div>
+                )}
+                {visibleFields.contactInfo.includes("organizationName") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      Organization:
+                    </div>
+                    <div className="flex-1 p-2 text-blue-600">
+                      {lead?.organizationName || lead?.organizationId || "-"}
+                    </div>
+                  </div>
+                )}
+                {visibleFields.contactInfo.includes("department") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      Department:
+                    </div>
+                    <div className="flex-1 p-2">{lead?.department || "-"}</div>
+                  </div>
+                )}
+                {visibleFields.contactInfo.includes("phone") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      Phone:
+                    </div>
+                    <div className="flex-1 p-2">{lead?.phone || "-"}</div>
+                  </div>
+                )}
+                {visibleFields.contactInfo.includes("mobilePhone") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      Mobile:
+                    </div>
+                    <div className="flex-1 p-2">
+                      {lead?.mobilePhone || "-"}
+                    </div>
+                  </div>
+                )}
+                {visibleFields.contactInfo.includes("email") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      Email:
+                    </div>
+                    <div className="flex-1 p-2 text-blue-600">
+                      {lead?.email ? (
+                        <a href={`mailto:${lead.email}`}>{lead.email}</a>
+                      ) : (
+                        "-"
+                      )}
+                    </div>
+                  </div>
+                )}
+                {visibleFields.contactInfo.includes("email2") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      Email 2:
+                    </div>
+                    <div className="flex-1 p-2 text-blue-600">
+                      {lead?.email2 ? (
+                        <a href={`mailto:${lead.email2}`}>{lead.email2}</a>
+                      ) : (
+                        "-"
+                      )}
+                    </div>
+                  </div>
+                )}
+                {visibleFields.contactInfo.includes("fullAddress") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      Address:
+                    </div>
+                    <div className="flex-1 p-2">{lead?.fullAddress}</div>
+                  </div>
+                )}
+                {visibleFields.contactInfo.includes("linkedinUrl") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      LinkedIn:
+                    </div>
+                    <div className="flex-1 p-2 text-blue-600">
+                      {lead?.linkedinUrl ? (
+                        <a
+                          href={lead.linkedinUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {lead.linkedinUrl}
+                        </a>
+                      ) : (
+                        "-"
+                      )}
+                    </div>
+                  </div>
+                )}
+                {/* Display custom fields */}
+                {lead?.customFields &&
+                  Object.keys(lead.customFields).map((fieldKey) => {
+                    if (visibleFields.contactInfo.includes(fieldKey)) {
+                      const field = availableFields.find(
+                        (f) =>
+                          (f.field_name || f.field_label || f.id) === fieldKey
+                      );
+                      const fieldLabel =
+                        field?.field_label || field?.field_name || fieldKey;
+                      const fieldValue = lead.customFields[fieldKey];
+                      return (
+                        <div
+                          key={fieldKey}
+                          className="flex border-b border-gray-200 last:border-b-0"
+                        >
+                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                            {fieldLabel}:
+                          </div>
+                          <div className="flex-1 p-2">
+                            {String(fieldValue || "-")}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return null;
+                  })}
+              </div>
+            </PanelWithHeader>
+          </SortablePanel>
+        );
+      case "details":
+        return (
+          <SortablePanel key={id} id={id} isOverlay={isOverlay}>
+            <PanelWithHeader
+              title="Lead Details:"
+              onEdit={() => handleEditPanel("details")}
+            >
+              <div className="space-y-0 border border-gray-200 rounded">
+                {visibleFields.details.includes("status") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      Status:
+                    </div>
+                    <div className="flex-1 p-2">
+                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
+                        {lead?.status}
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {visibleFields.details.includes("owner") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      Owner:
+                    </div>
+                    <div className="flex-1 p-2">{lead?.owner || "-"}</div>
+                  </div>
+                )}
+                {visibleFields.details.includes("reportsTo") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      Reports To:
+                    </div>
+                    <div className="flex-1 p-2">{lead?.reportsTo || "-"}</div>
+                  </div>
+                )}
+                {visibleFields.details.includes("dateAdded") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      Date Added:
+                    </div>
+                    <div className="flex-1 p-2">{lead?.dateAdded || "-"}</div>
+                  </div>
+                )}
+                {visibleFields.details.includes("lastContactDate") && (
+                  <div className="flex border-b border-gray-200 last:border-b-0">
+                    <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                      Last Contact Date:
+                    </div>
+                    <div className="flex-1 p-2">{lead?.lastContactDate || "-"}</div>
+                  </div>
+                )}
+              </div>
+            </PanelWithHeader>
+          </SortablePanel>
+        );
+      case "recentNotes":
+        return (
+          <SortablePanel key={id} id={id} isOverlay={isOverlay}>
+            <PanelWithHeader
+              title="Recent Notes"
+              onEdit={() => handleEditPanel("recentNotes")}
+            >
+              {isLoadingNotes ? (
+                <div className="text-gray-500 text-sm italic p-2">
+                  Loading notes...
+                </div>
+              ) : notes.length === 0 ? (
+                <div className="text-gray-500 text-sm italic p-2">
+                  No notes found.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {notes.slice(0, 3).map((note) => (
+                    <div
+                      key={note.id}
+                      className="p-3 bg-gray-50 rounded border border-gray-200"
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <span className="text-xs text-gray-500">
+                          {new Date(note.created_at).toLocaleString()}
+                        </span>
+                        <span className="text-xs font-medium text-blue-600">
+                          {note.created_by_name}
+                        </span>
+                      </div>
+                      <p className="text-sm text-gray-700 whitespace-pre-line">
+                        {note.text}
+                      </p>
+                    </div>
+                  ))}
+                  {notes.length > 3 && (
+                    <button
+                      onClick={() => setActiveTab("notes")}
+                      className="text-sm text-blue-600 hover:text-blue-800 font-medium"
+                    >
+                      View all {notes.length} notes
+                    </button>
+                  )}
+                </div>
+              )}
+            </PanelWithHeader>
+          </SortablePanel>
+        );
+      case "websiteJobs":
+        return (
+          <SortablePanel key={id} id={id} isOverlay={isOverlay}>
+            <PanelWithHeader
+              title="Open Jobs from Website:"
+              onEdit={() => handleEditPanel("websiteJobs")}
+            >
+              <div className="border border-gray-200 rounded">
+                <div className="p-2">
+                  <p className="text-gray-500 italic">No open jobs found</p>
+                </div>
+              </div>
+            </PanelWithHeader>
+          </SortablePanel>
+        );
+      case "ourJobs":
+        return (
+          <SortablePanel key={id} id={id} isOverlay={isOverlay}>
+            <PanelWithHeader
+              title="Our Open Jobs:"
+              onEdit={() => handleEditPanel("ourJobs")}
+            >
+              <div className="border border-gray-200 rounded">
+                <div className="p-2">
+                  <p className="text-gray-500 italic">No open jobs</p>
+                </div>
+              </div>
+            </PanelWithHeader>
+          </SortablePanel>
+        );
+      default:
+        return null;
+    }
+  };
+
   const handleEditPanel = (panelId: string) => {
     setEditingPanel(panelId);
   };
@@ -1208,323 +1704,35 @@ export default function LeadView() {
       <div className="p-4">
         {/* Display content based on active tab */}
         {activeTab === "summary" && (
-          <div className="grid grid-cols-7 gap-4">
-            {/* Left Column - 4/7 width */}
-            <div className="col-span-4 space-y-4">
-              {/* Lead Contact Info */}
-              <PanelWithHeader
-                title="Lead Contact Info:"
-                onEdit={() => handleEditPanel("contactInfo")}
-              >
-                <div className="space-y-0 border border-gray-200 rounded">
-                  {visibleFields.contactInfo.includes("fullName") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Name:
-                      </div>
-                      <div className="flex-1 p-2 text-blue-600">
-                        {lead.fullName}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.contactInfo.includes("nickname") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Nickname:
-                      </div>
-                      <div className="flex-1 p-2">{lead.nickname || "-"}</div>
-                    </div>
-                  )}
-                  {visibleFields.contactInfo.includes("title") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Title:
-                      </div>
-                      <div className="flex-1 p-2">{lead.title || "-"}</div>
-                    </div>
-                  )}
-                  {visibleFields.contactInfo.includes("organizationName") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Organization:
-                      </div>
-                      <div className="flex-1 p-2 text-blue-600">
-                        {lead.organizationName || lead.organizationId || "-"}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.contactInfo.includes("department") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Department:
-                      </div>
-                      <div className="flex-1 p-2">{lead.department || "-"}</div>
-                    </div>
-                  )}
-                  {visibleFields.contactInfo.includes("phone") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Phone:
-                      </div>
-                      <div className="flex-1 p-2">{lead.phone || "-"}</div>
-                    </div>
-                  )}
-                  {visibleFields.contactInfo.includes("mobilePhone") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Mobile:
-                      </div>
-                      <div className="flex-1 p-2">
-                        {lead.mobilePhone || "-"}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.contactInfo.includes("email") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Email:
-                      </div>
-                      <div className="flex-1 p-2 text-blue-600">
-                        {lead.email ? (
-                          <a href={`mailto:${lead.email}`}>{lead.email}</a>
-                        ) : (
-                          "-"
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.contactInfo.includes("email2") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Email 2:
-                      </div>
-                      <div className="flex-1 p-2 text-blue-600">
-                        {lead.email2 ? (
-                          <a href={`mailto:${lead.email2}`}>{lead.email2}</a>
-                        ) : (
-                          "-"
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.contactInfo.includes("fullAddress") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Address:
-                      </div>
-                      <div className="flex-1 p-2">{lead.fullAddress}</div>
-                    </div>
-                  )}
-                  {visibleFields.contactInfo.includes("linkedinUrl") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        LinkedIn:
-                      </div>
-                      <div className="flex-1 p-2 text-blue-600">
-                        {lead.linkedinUrl ? (
-                          <a
-                            href={lead.linkedinUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {lead.linkedinUrl}
-                          </a>
-                        ) : (
-                          "-"
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  {/* Display custom fields */}
-                  {lead.customFields &&
-                    Object.keys(lead.customFields).map((fieldKey) => {
-                      if (visibleFields.contactInfo.includes(fieldKey)) {
-                        const field = availableFields.find(
-                          (f) =>
-                            (f.field_name || f.field_label || f.id) === fieldKey
-                        );
-                        const fieldLabel =
-                          field?.field_label || field?.field_name || fieldKey;
-                        const fieldValue = lead.customFields[fieldKey];
-                        return (
-                          <div
-                            key={fieldKey}
-                            className="flex border-b border-gray-200 last:border-b-0"
-                          >
-                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                              {fieldLabel}:
-                            </div>
-                            <div className="flex-1 p-2">
-                              {String(fieldValue || "-")}
-                            </div>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })}
-                </div>
-              </PanelWithHeader>
-
-              {/* Lead Details */}
-              <PanelWithHeader
-                title="Lead Details:"
-                onEdit={() => handleEditPanel("details")}
-              >
-                <div className="space-y-0 border border-gray-200 rounded">
-                  {visibleFields.details.includes("status") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Status:
-                      </div>
-                      <div className="flex-1 p-2">
-                        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                          {lead.status}
-                        </span>
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.details.includes("owner") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Owner:
-                      </div>
-                      <div className="flex-1 p-2">{lead.owner || "-"}</div>
-                    </div>
-                  )}
-                  {visibleFields.details.includes("reportsTo") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Reports To:
-                      </div>
-                      <div className="flex-1 p-2">{lead.reportsTo || "-"}</div>
-                    </div>
-                  )}
-                  {visibleFields.details.includes("dateAdded") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Date Added:
-                      </div>
-                      <div className="flex-1 p-2">{lead.dateAdded || "-"}</div>
-                    </div>
-                  )}
-                  {visibleFields.details.includes("lastContactDate") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Last Contact:
-                      </div>
-                      <div className="flex-1 p-2">{lead.lastContactDate}</div>
-                    </div>
-                  )}
-                  {/* Display custom fields */}
-                  {lead.customFields &&
-                    Object.keys(lead.customFields).map((fieldKey) => {
-                      if (visibleFields.details.includes(fieldKey)) {
-                        const field = availableFields.find(
-                          (f) =>
-                            (f.field_name || f.field_label || f.id) === fieldKey
-                        );
-                        const fieldLabel =
-                          field?.field_label || field?.field_name || fieldKey;
-                        const fieldValue = lead.customFields[fieldKey];
-                        return (
-                          <div
-                            key={fieldKey}
-                            className="flex border-b border-gray-200 last:border-b-0"
-                          >
-                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                              {fieldLabel}:
-                            </div>
-                            <div className="flex-1 p-2">
-                              {String(fieldValue || "-")}
-                            </div>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })}
-                </div>
-              </PanelWithHeader>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCorners}
+            onDragStart={handlePanelDragStart}
+            onDragCancel={handlePanelDragCancel}
+            onDragOver={handlePanelDragOver}
+            onDragEnd={handlePanelDragEnd}
+            measuring={{
+              droppable: {
+                strategy: MeasuringStrategy.Always,
+              },
+            }}
+          >
+            <div className="grid grid-cols-7 gap-4">
+              <div className="col-span-4 space-y-4">
+                <DroppableContainer id="left" items={columns.left}>
+                  {columns.left.map((id) => renderPanel(id))}
+                </DroppableContainer>
+              </div>
+              <div className="col-span-3 space-y-4">
+                <DroppableContainer id="right" items={columns.right}>
+                  {columns.right.map((id) => renderPanel(id))}
+                </DroppableContainer>
+              </div>
             </div>
-
-            {/* Right Column - 3/7 width */}
-            <div className="col-span-3 space-y-4">
-              {/* Recent Notes */}
-              <PanelWithHeader
-                title="Recent Notes:"
-                onEdit={() => handleEditPanel("recentNotes")}
-              >
-                <div className="border border-gray-200 rounded">
-                  {visibleFields.recentNotes.includes("notes") && (
-                    <div className="p-2">
-                      {notes.length > 0 ? (
-                        <div>
-                          {notes.slice(0, 3).map((note) => (
-                            <div
-                              key={note.id}
-                              className="mb-3 pb-3 border-b border-gray-200 last:border-0"
-                            >
-                              <div className="flex justify-between text-sm mb-1">
-                                <span className="font-medium">
-                                  {note.created_by_name || "Unknown User"}
-                                </span>
-                                <span className="text-gray-500">
-                                  {new Date(note.created_at).toLocaleString()}
-                                </span>
-                              </div>
-                              {note.note_type && (
-                                <div className="text-xs text-gray-500 mb-1">
-                                  Type: {note.note_type}
-                                </div>
-                              )}
-                              <p className="text-sm text-gray-700">
-                                {note.text.length > 100
-                                  ? `${note.text.substring(0, 100)}...`
-                                  : note.text}
-                              </p>
-                            </div>
-                          ))}
-                          {notes.length > 3 && (
-                            <button
-                              onClick={() => setActiveTab("notes")}
-                              className="text-blue-500 text-sm hover:underline"
-                            >
-                              View all {notes.length} notes
-                            </button>
-                          )}
-                        </div>
-                      ) : (
-                        <p className="text-gray-500 italic">No recent notes</p>
-                      )}
-                    </div>
-                  )}
-                </div>
-              </PanelWithHeader>
-
-              {/* Open Jobs from Website */}
-              <PanelWithHeader
-                title="Open Jobs from Website:"
-                onEdit={() => handleEditPanel("websiteJobs")}
-              >
-                <div className="border border-gray-200 rounded">
-                  <div className="p-2">
-                    <p className="text-gray-500 italic">No open jobs found</p>
-                  </div>
-                </div>
-              </PanelWithHeader>
-
-              {/* Our Open Jobs */}
-              <PanelWithHeader
-                title="Our Open Jobs:"
-                onEdit={() => handleEditPanel("ourJobs")}
-              >
-                <div className="border border-gray-200 rounded">
-                  <div className="p-2">
-                    <p className="text-gray-500 italic">No open jobs</p>
-                  </div>
-                </div>
-              </PanelWithHeader>
-            </div>
-          </div>
+            <DragOverlay>
+              {activeId ? renderPanel(activeId, true) : null}
+            </DragOverlay>
+          </DndContext>
         )}
 
         {/* Modify Tab */}

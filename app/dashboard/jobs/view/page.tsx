@@ -1085,7 +1085,7 @@ export default function JobView() {
     if (!job) return null;
     return (
       <PanelWithHeader
-        title={`${job.title} - ${job.organization.name} • ${job.location}`}
+        title="Job Details"
         onEdit={() => handleEditPanel("jobDetails")}
       >
         <div className="space-y-0 border border-gray-200 rounded">

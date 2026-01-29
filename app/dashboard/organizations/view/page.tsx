@@ -1952,9 +1952,6 @@ export default function OrganizationView() {
 
       // Refresh summary counts
       fetchSummaryCounts();
-
-      // Show success message
-      alert("Document added successfully");
     } catch (err) {
       console.error("Error adding document:", err);
       alert(
@@ -2555,7 +2552,6 @@ export default function OrganizationView() {
       if (organization) {
         setOrganization({ ...organization, about: tempAboutText });
       }
-      alert("About text saved successfully");
     } catch (err) {
       console.error("Error saving about text:", err);
       alert("Failed to save about text. Please try again.");

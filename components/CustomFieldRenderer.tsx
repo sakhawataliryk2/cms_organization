@@ -1237,6 +1237,14 @@ export function useCustomFields(entityType: string) {
       
       // Special validation for date fields
       if (field.field_type === "date") {
+        // Special check for "Date Added" - always valid as it's auto-populated/read-only
+        if (
+          field.field_label?.toLowerCase() === "date added" ||
+          field.field_name?.toLowerCase() === "dateadded"
+        ) {
+          return true;
+        }
+
         // Accept both YYYY-MM-DD (storage format) and mm/dd/yyyy (display format)
         let dateToValidate = trimmed;
         
@@ -1254,10 +1262,12 @@ export function useCustomFields(entityType: string) {
         if (isNaN(date.getTime())) return false;
         
         // Additional validation: check if the date components match
+        // Note: new Date("YYYY-MM-DD") parses as UTC, so we must use UTC methods
+        // to avoid timezone issues causing validation failures (e.g. 2024-01-29 becoming 28th in EST)
         const [year, month, day] = dateToValidate.split("-");
-        if (date.getFullYear() !== parseInt(year) ||
-            date.getMonth() + 1 !== parseInt(month) ||
-            date.getDate() !== parseInt(day)) {
+        if (date.getUTCFullYear() !== parseInt(year) ||
+            date.getUTCMonth() + 1 !== parseInt(month) ||
+            date.getUTCDate() !== parseInt(day)) {
           return false; // Invalid date (e.g., 02/30/2024)
         }
         

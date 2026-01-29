@@ -794,9 +794,6 @@ export default function JobList() {
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ID
-                </th>
 
                 <SortableContext
                   items={columnFields}
@@ -928,8 +925,6 @@ export default function JobList() {
                         )}
                       </div>
                     </td>
-
-                  <td className="px-6 py-4 text-black whitespace-nowrap">J {job?.id}</td>
 
                     {columnFields.map((colKey) => (
                       <td key={colKey} className="px-6 py-4 whitespace-nowrap">

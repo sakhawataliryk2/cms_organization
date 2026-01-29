@@ -1,11 +1,21 @@
 "use client";
 
 import { useEffect, useMemo, useState, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import ActionDropdown from "@/components/ActionDropdown";
-import { FiX, FiPrinter } from "react-icons/fi";
+import { FiX, FiPrinter, FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
 import { BsFillPinAngleFill } from "react-icons/bs";
+import { TbGripVertical } from "react-icons/tb";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  horizontalListSortingStrategy,
+  arrayMove,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import {
   buildPinnedKey,
   isPinnedRecord,
@@ -24,6 +34,192 @@ type TearsheetRow = {
   created_at?: string | null;
   last_opened_at?: string | null;
 };
+
+type ColumnSortState = "asc" | "desc" | null;
+type ColumnFilterState = string | null;
+
+// Sortable Column Header Component
+function SortableColumnHeader({
+  id,
+  columnKey,
+  label,
+  sortState,
+  filterValue,
+  onSort,
+  onFilterChange,
+  filterType,
+  filterOptions,
+  children,
+}: {
+  id: string;
+  columnKey: string;
+  label: string;
+  sortState: ColumnSortState;
+  filterValue: ColumnFilterState;
+  onSort: () => void;
+  onFilterChange: (value: string) => void;
+  filterType: "text" | "select" | "number";
+  filterOptions?: { label: string; value: string }[];
+  children?: React.ReactNode;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  };
+
+  const [showFilter, setShowFilter] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+
+  // Close filter on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        filterRef.current &&
+        !filterRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
+      ) {
+        setShowFilter(false);
+      }
+    };
+
+    if (showFilter) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showFilter, id]);
+
+  return (
+    <th
+      ref={setNodeRef}
+      style={style}
+      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200 relative group"
+    >
+      <div className="flex items-center gap-2">
+        {/* Drag Handle */}
+        <button
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing text-gray-400 hover:text-gray-600 opacity-0 group-hover:opacity-100 transition-opacity"
+          title="Drag to reorder column"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={16} />
+        </button>
+
+        {/* Column Label */}
+        <span className="flex-1">{label}</span>
+
+        {/* Sort Control */}
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSort();
+          }}
+          className="text-gray-400 hover:text-gray-600 transition-colors"
+          title={sortState === "asc" ? "Sort descending" : "Sort ascending"}
+        >
+          {sortState === "asc" ? (
+            <FiArrowUp size={14} />
+          ) : (
+            <FiArrowDown size={14} />
+          )}
+        </button>
+        
+        {/* Filter Toggle */}
+        <button
+          data-filter-toggle={id}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowFilter(!showFilter);
+          }}
+          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
+            }`}
+          title="Filter column"
+        >
+          <FiFilter size={14} />
+        </button>
+      </div>
+
+      {/* Filter Dropdown */}
+      {showFilter && (
+        <div
+          ref={filterRef}
+          className="absolute top-full left-0 right-0 z-50 bg-white border border-gray-300 shadow-lg p-2 mt-1 min-w-[150px]"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {filterType === "text" && (
+            <input
+              type="text"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "number" && (
+            <input
+              type="number"
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              placeholder={`Filter ${label.toLowerCase()}...`}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            />
+          )}
+          {filterType === "select" && filterOptions && (
+            <select
+              value={filterValue || ""}
+              onChange={(e) => onFilterChange(e.target.value)}
+              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+              autoFocus
+            >
+              <option value="">All</option>
+              {filterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          )}
+          {filterValue && (
+            <button
+              onClick={() => {
+                onFilterChange("");
+                setShowFilter(false);
+              }}
+              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+            >
+              Clear Filter
+            </button>
+          )}
+        </div>
+      )}
+    </th>
+  );
+}
+
+const TEARSHEET_DEFAULT_COLUMNS = [
+  "id",
+  "name",
+  "job_seeker_count",
+  "hiring_manager_count",
+  "job_order_count",
+  "lead_count",
+  "owner_name",
+  "created_at",
+  "last_opened_at",
+] as const;
 
 type RecordItem = {
   id: number;
@@ -58,6 +254,7 @@ const formatDate = (value?: string | null) => {
 
 const TearsheetsPage = () => {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [rows, setRows] = useState<TearsheetRow[]>([]);
@@ -84,6 +281,235 @@ const TearsheetsPage = () => {
   const hasRows = useMemo(() => rows.length > 0, [rows.length]);
 
   const [pinnedKeySet, setPinnedKeySet] = useState<Set<string>>(new Set());
+
+  // Per-column sorting state
+  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
+
+  // Per-column filtering state
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+
+  const {
+    columnFields,
+    setColumnFields,
+    showHeaderFieldModal: showColumnModal,
+    setShowHeaderFieldModal: setShowColumnModal,
+    saveHeaderConfig: saveColumnConfig,
+    isSaving: isSavingColumns,
+  } = useHeaderConfig({
+    entityType: "TEARSHEET",
+    defaultFields: [...TEARSHEET_DEFAULT_COLUMNS],
+    configType: "columns",
+  });
+
+  const columnsCatalog = useMemo(() => {
+    return [
+      { key: "id", label: "ID", sortable: true, filterType: "number" as const },
+      { key: "name", label: "Name", sortable: true, filterType: "text" as const },
+      { key: "job_seeker_count", label: "Job Seeker", sortable: true, filterType: "number" as const },
+      { key: "hiring_manager_count", label: "Hiring Manager", sortable: true, filterType: "number" as const },
+      { key: "job_order_count", label: "Job Order", sortable: true, filterType: "number" as const },
+      { key: "lead_count", label: "Lead", sortable: true, filterType: "number" as const },
+      { key: "owner_name", label: "Owner", sortable: true, filterType: "text" as const },
+      { key: "created_at", label: "Date Added", sortable: true, filterType: "text" as const },
+      { key: "last_opened_at", label: "Last Date Opened", sortable: true, filterType: "text" as const },
+    ];
+  }, []);
+
+  const getColumnLabel = (key: string) =>
+    columnsCatalog.find((c) => c.key === key)?.label || key;
+
+  const getColumnFilterType = (key: string) =>
+    columnsCatalog.find((c) => c.key === key)?.filterType || "text";
+
+  // Load column order from localStorage on mount
+  useEffect(() => {
+    const savedOrder = localStorage.getItem("tearsheetsColumnOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validOrder = parsed.filter((key) =>
+            [...TEARSHEET_DEFAULT_COLUMNS].includes(key)
+          );
+          if (validOrder.length > 0) {
+            setColumnFields(validOrder);
+          }
+        }
+      } catch (e) {
+        console.error("Error loading column order:", e);
+      }
+    }
+  }, []);
+
+  // Save column order to localStorage whenever it changes
+  useEffect(() => {
+    if (columnFields.length > 0) {
+      localStorage.setItem("tearsheetsColumnOrder", JSON.stringify(columnFields));
+    }
+  }, [columnFields]);
+
+  const getColumnValue = (row: TearsheetRow, key: string) => {
+    switch (key) {
+      case "id": return row.id;
+      case "name": return row.name;
+      case "job_seeker_count": return row.job_seeker_count;
+      case "hiring_manager_count": return row.hiring_manager_count;
+      case "job_order_count": return row.job_order_count;
+      case "lead_count": return row.lead_count;
+      case "owner_name": return row.owner_name || "-";
+      case "created_at": return row.created_at; // Keep raw for sorting
+      case "last_opened_at": return row.last_opened_at; // Keep raw for sorting
+      default: return "";
+    }
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (active.id !== over?.id) {
+      setColumnFields((items) => {
+        const oldIndex = items.indexOf(active.id as string);
+        const newIndex = items.indexOf(over?.id as string);
+        return arrayMove(items, oldIndex, newIndex);
+      });
+    }
+  };
+
+  const renderCell = (r: TearsheetRow, key: string) => {
+    switch (key) {
+      case "id":
+        return (
+          <button onClick={() => handleTearsheetNameClick(r)} className="">
+            TE {r.id || "-"}
+          </button>
+        );
+      case "name":
+        return (
+          <button
+            onClick={() => handleTearsheetNameClick(r)}
+            className="text-blue-600 hover:text-blue-800 underline cursor-pointer"
+          >
+            {r.name || "-"}
+          </button>
+        );
+      case "job_seeker_count":
+        return (
+          <button
+            onClick={() => handleCountClick(r.id, r.name, 'job_seekers', r.job_seeker_count)}
+            className={`${r.job_seeker_count > 0 ? 'text-blue-600 hover:text-blue-800 underline cursor-pointer' : 'text-gray-700'}`}
+            disabled={r.job_seeker_count === 0}
+          >
+            {r.job_seeker_count || 0}
+          </button>
+        );
+      case "hiring_manager_count":
+        return (
+          <button
+            onClick={() => handleCountClick(r.id, r.name, 'hiring_managers', r.hiring_manager_count)}
+            className={`${r.hiring_manager_count > 0 ? 'text-blue-600 hover:text-blue-800 underline cursor-pointer' : 'text-gray-700'}`}
+            disabled={r.hiring_manager_count === 0}
+          >
+            {r.hiring_manager_count || 0}
+          </button>
+        );
+      case "job_order_count":
+        return (
+          <button
+            onClick={() => handleCountClick(r.id, r.name, 'jobs', r.job_order_count)}
+            className={`${r.job_order_count > 0 ? 'text-blue-600 hover:text-blue-800 underline cursor-pointer' : 'text-gray-700'}`}
+            disabled={r.job_order_count === 0}
+          >
+            {r.job_order_count || 0}
+          </button>
+        );
+      case "lead_count":
+        return (
+          <button
+            onClick={() => handleCountClick(r.id, r.name, 'leads', r.lead_count)}
+            className={`${r.lead_count > 0 ? 'text-blue-600 hover:text-blue-800 underline cursor-pointer' : 'text-gray-700'}`}
+            disabled={r.lead_count === 0}
+          >
+            {r.lead_count || 0}
+          </button>
+        );
+      case "owner_name":
+        return <span className="text-gray-700">{r.owner_name || "-"}</span>;
+      case "created_at":
+        return <span className="text-gray-700">{formatDateTime(r.created_at)}</span>;
+      case "last_opened_at":
+        return <span className="text-gray-700">{formatDate(r.last_opened_at)}</span>;
+      default:
+        return <span className="text-gray-700">{String(getColumnValue(r, key))}</span>;
+    }
+  };
+
+  const handleColumnSort = (columnKey: string) => {
+    setColumnSorts((prev) => {
+      const current = prev[columnKey];
+      let next: ColumnSortState = "asc";
+      if (current === "asc") next = "desc";
+      else if (current === "desc") next = null;
+      return { [columnKey]: next };
+    });
+  };
+
+  const handleColumnFilter = (columnKey: string, value: string) => {
+    setColumnFilters((prev) => ({
+      ...prev,
+      [columnKey]: value || null,
+    }));
+  };
+
+  const processedRows = useMemo(() => {
+    let result = [...rows];
+
+    // 1. Filter
+    Object.entries(columnFilters).forEach(([key, value]) => {
+      if (value) {
+        result = result.filter((row) => {
+          let cellValue = getColumnValue(row, key);
+          // For display formatted values in search, we might want to check formatted value too
+          if (key === 'created_at') cellValue = formatDateTime(cellValue as string);
+          if (key === 'last_opened_at') cellValue = formatDate(cellValue as string);
+          
+          return String(cellValue).toLowerCase().includes(value.toLowerCase());
+        });
+      }
+    });
+
+    // 2. Sort
+    const activeSortColumn = Object.keys(columnSorts).find((key) => columnSorts[key] !== null);
+    if (activeSortColumn) {
+      const direction = columnSorts[activeSortColumn];
+      result.sort((a, b) => {
+        let aValue = getColumnValue(a, activeSortColumn);
+        let bValue = getColumnValue(b, activeSortColumn);
+
+        // Handle nulls
+        if (aValue === null || aValue === undefined) return 1;
+        if (bValue === null || bValue === undefined) return -1;
+
+        if (aValue === bValue) return 0;
+
+        // Handle numbers
+        if (typeof aValue === 'number' && typeof bValue === 'number') {
+          return direction === "asc" ? aValue - bValue : bValue - aValue;
+        }
+
+        // Handle strings
+        const aString = String(aValue).toLowerCase();
+        const bString = String(bValue).toLowerCase();
+
+        if (direction === "asc") {
+          return aString.localeCompare(bString);
+        } else {
+          return bString.localeCompare(aString);
+        }
+      });
+    }
+
+    return result;
+  }, [rows, columnSorts, columnFilters]);
 
   // Load pinned state from localStorage
   useEffect(() => {
@@ -159,8 +585,21 @@ const TearsheetsPage = () => {
     }
   };
 
+  // Close modal and clear URL param
+  const handleCloseModal = () => {
+    setSelectedTearsheet(null);
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("id");
+    router.push(`/dashboard/tearsheets?${params.toString()}`);
+  };
+
   // Handle tearsheet name click - show all affiliated records
   const handleTearsheetNameClick = async (tearsheet: TearsheetRow) => {
+    // Update URL
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("id", tearsheet.id.toString());
+    router.push(`/dashboard/tearsheets?${params.toString()}`);
+
     setIsLoadingRecords(true);
     setSelectedTearsheet({ id: tearsheet.id, name: tearsheet.name, records: [] });
     
@@ -213,6 +652,11 @@ const TearsheetsPage = () => {
 
   const handleCountClick = async (tearsheetId: number, tearsheetName: string, type: string, count: number) => {
     if (count === 0) return;
+
+    // Update URL
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("id", tearsheetId.toString());
+    router.push(`/dashboard/tearsheets?${params.toString()}`);
 
     setIsLoadingRecords(true);
     // Track view when clicking count buttons
@@ -394,6 +838,21 @@ const TearsheetsPage = () => {
     fetchTearsheets();
   }, []);
 
+  // Handle URL search params to open tearsheet
+  useEffect(() => {
+    const idParam = searchParams.get("id");
+    if (idParam && rows.length > 0) {
+      const id = parseInt(idParam);
+      // Avoid re-opening if already open
+      if (selectedTearsheet?.id === id) return;
+
+      const tearsheet = rows.find((r) => r.id === id);
+      if (tearsheet) {
+        handleTearsheetNameClick(tearsheet);
+      }
+    }
+  }, [searchParams, rows]);
+
   return (
     <>
       <style jsx global>{`
@@ -411,6 +870,13 @@ const TearsheetsPage = () => {
               {isLoading ? "Loading..." : `${rows.length} tearsheet(s)`}
             </div>
             <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={() => setShowColumnModal(true)}
+                className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded border border-gray-200"
+              >
+                Columns
+              </button>
               <button
                 type="button"
                 onClick={fetchTearsheets}
@@ -442,190 +908,180 @@ const TearsheetsPage = () => {
           )}
 
           <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    Actions
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    ID
-                  </th>
-
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    Name
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    Job Seeker
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    Hiring Manager
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    Job Order
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    Lead
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    Owner
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    Date Added
-                  </th>
-                  <th
-                    scope="col"
-                    className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                  >
-                    Last Date Opened
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {isLoading ? (
+            <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <table className="min-w-full divide-y divide-gray-200">
+                <thead className="bg-gray-50">
                   <tr>
-                    <td colSpan={9} className="px-6 py-6 text-sm text-gray-500">
-                      Loading tearsheets...
-                    </td>
+                    <th
+                      scope="col"
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200"
+                    >
+                      Actions
+                    </th>
+                    <SortableContext items={columnFields} strategy={horizontalListSortingStrategy}>
+                      {columnFields.map((columnKey) => (
+                        <SortableColumnHeader
+                          key={columnKey}
+                          id={columnKey}
+                          columnKey={columnKey}
+                          label={getColumnLabel(columnKey)}
+                          sortState={columnSorts[columnKey] || null}
+                          filterValue={columnFilters[columnKey] || null}
+                          onSort={() => handleColumnSort(columnKey)}
+                          onFilterChange={(val) => handleColumnFilter(columnKey, val)}
+                          filterType={getColumnFilterType(columnKey)}
+                        />
+                      ))}
+                    </SortableContext>
                   </tr>
-                ) : hasRows ? (
-                  rows.map((r) => (
-                    <tr key={r.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-3 text-sm">
-                        <div className="min-w-[120px]">
-                          <button
-                            type="button"
-                            onClick={() => handleTogglePinnedTearsheet(r)}
-                            className={`mr-2 p-1 hover:bg-gray-200 rounded ${pinnedKeySet.has(buildPinnedKey("tearsheet", r.id)) ? "text-yellow-600" : "text-gray-600"}`}
-                            aria-label={pinnedKeySet.has(buildPinnedKey("tearsheet", r.id)) ? "Unpin" : "Pin"}
-                            title={pinnedKeySet.has(buildPinnedKey("tearsheet", r.id)) ? "Unpin" : "Pin"}
-                          >
-                            <BsFillPinAngleFill size={16} />
-                          </button>
-                          <ActionDropdown
-                            label="Actions"
-                            options={[
-                              {
-                                label: 'Send Internally',
-                                action: () => {
-                                  setSelectedTearsheetForAction(r);
-                                  handleSendInternally();
-                                },
-                              },
-                              {
-                                label: 'Delete',
-                                action: () => {
-                                  setSelectedTearsheetForAction(r);
-                                  handleDeleteClick();
-                                },
-                              },
-                            ]}
-                            buttonClassName="px-3 py-1 bg-gray-100 border border-gray-300 rounded flex items-center text-gray-600 hover:bg-gray-200 whitespace-nowrap"
-                            menuClassName="absolute z-100 mt-1 w-56 bg-white border border-gray-300 shadow-lg text-black rounded z-50"
-                          />
-                        </div>
-                      </td>
-                      <td className="px-6 py-3 text-sm font-medium text-gray-900">
-                        <button
-                          onClick={() => handleTearsheetNameClick(r)}
-                          className=""
-                        >
-                          TE {r.id || "-"}
-                        </button>
-                      </td>
-                      <td className="px-6 py-3 text-sm font-medium text-gray-900">
-                        <button
-                          onClick={() => handleTearsheetNameClick(r)}
-                          className="text-blue-600 hover:text-blue-800 underline cursor-pointer"
-                        >
-                          {r.name || "-"}
-                        </button>
-                      </td>
-                      <td className="px-6 py-3 text-sm text-gray-700">
-                        <button
-                          onClick={() => handleCountClick(r.id, r.name, 'job_seekers', r.job_seeker_count)}
-                          className={`${r.job_seeker_count > 0 ? 'text-blue-600 hover:text-blue-800 underline cursor-pointer' : 'text-gray-700'}`}
-                          disabled={r.job_seeker_count === 0}
-                        >
-                          {r.job_seeker_count || 0}
-                        </button>
-                      </td>
-                      <td className="px-6 py-3 text-sm text-gray-700">
-                        <button
-                          onClick={() => handleCountClick(r.id, r.name, 'hiring_managers', r.hiring_manager_count)}
-                          className={`${r.hiring_manager_count > 0 ? 'text-blue-600 hover:text-blue-800 underline cursor-pointer' : 'text-gray-700'}`}
-                          disabled={r.hiring_manager_count === 0}
-                        >
-                          {r.hiring_manager_count || 0}
-                        </button>
-                      </td>
-                      <td className="px-6 py-3 text-sm text-gray-700">
-                        <button
-                          onClick={() => handleCountClick(r.id, r.name, 'jobs', r.job_order_count)}
-                          className={`${r.job_order_count > 0 ? 'text-blue-600 hover:text-blue-800 underline cursor-pointer' : 'text-gray-700'}`}
-                          disabled={r.job_order_count === 0}
-                        >
-                          {r.job_order_count || 0}
-                        </button>
-                      </td>
-                      <td className="px-6 py-3 text-sm text-gray-700">
-                        <button
-                          onClick={() => handleCountClick(r.id, r.name, 'leads', r.lead_count)}
-                          className={`${r.lead_count > 0 ? 'text-blue-600 hover:text-blue-800 underline cursor-pointer' : 'text-gray-700'}`}
-                          disabled={r.lead_count === 0}
-                        >
-                          {r.lead_count || 0}
-                        </button>
-                      </td>
-                      <td className="px-6 py-3 text-sm text-gray-700">
-                        {r.owner_name || "-"}
-                      </td>
-                      <td className="px-6 py-3 text-sm text-gray-700">
-                        {formatDateTime(r.created_at)}
-                      </td>
-                      <td className="px-6 py-3 text-sm text-gray-700">
-                        {formatDate(r.last_opened_at)}
+                </thead>
+                <tbody className="bg-white divide-y divide-gray-200">
+                  {isLoading ? (
+                    <tr>
+                      <td colSpan={columnFields.length + 1} className="px-6 py-6 text-sm text-gray-500 text-center">
+                        Loading tearsheets...
                       </td>
                     </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td colSpan={9} className="px-6 py-10 text-sm text-gray-500">
-                      No tearsheets found.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+                  ) : processedRows.length > 0 ? (
+                    processedRows.map((r) => (
+                      <tr key={r.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-3 text-sm">
+                          <div className="min-w-[120px]">
+                            <button
+                              type="button"
+                              onClick={() => handleTogglePinnedTearsheet(r)}
+                              className={`mr-2 p-1 hover:bg-gray-200 rounded ${pinnedKeySet.has(buildPinnedKey("tearsheet", r.id)) ? "text-yellow-600" : "text-gray-600"}`}
+                              aria-label={pinnedKeySet.has(buildPinnedKey("tearsheet", r.id)) ? "Unpin" : "Pin"}
+                              title={pinnedKeySet.has(buildPinnedKey("tearsheet", r.id)) ? "Unpin" : "Pin"}
+                            >
+                              <BsFillPinAngleFill size={16} />
+                            </button>
+                            <ActionDropdown
+                              label="Actions"
+                              options={[
+                                {
+                                  label: 'Send Internally',
+                                  action: () => {
+                                    setSelectedTearsheetForAction(r);
+                                    handleSendInternally();
+                                  },
+                                },
+                                {
+                                  label: 'Delete',
+                                  action: () => {
+                                    setSelectedTearsheetForAction(r);
+                                    handleDeleteClick();
+                                  },
+                                },
+                              ]}
+                              buttonClassName="px-3 py-1 bg-gray-100 border border-gray-300 rounded flex items-center text-gray-600 hover:bg-gray-200 whitespace-nowrap"
+                              menuClassName="absolute z-100 mt-1 w-56 bg-white border border-gray-300 shadow-lg text-black rounded z-50"
+                            />
+                          </div>
+                        </td>
+                        {columnFields.map((columnKey) => (
+                          <td key={`${r.id}-${columnKey}`} className="px-6 py-3 text-sm text-gray-900">
+                            {renderCell(r, columnKey)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={columnFields.length + 1} className="px-6 py-10 text-sm text-gray-500 text-center">
+                        No tearsheets found.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </DndContext>
           </div>
         </div>
+
+        {/* Column Customization Modal */}
+        {showColumnModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]">
+            <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col">
+              <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                <h2 className="text-lg font-semibold text-gray-800">Customize Columns</h2>
+                <button
+                  onClick={() => setShowColumnModal(false)}
+                  className="p-1 rounded hover:bg-gray-200 text-gray-500"
+                >
+                  <FiX size={24} />
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto flex-1">
+                <p className="text-sm text-gray-500 mb-4">
+                  Select the columns you want to see in the table. You can also drag and drop column headers in the table to reorder them.
+                </p>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {columnsCatalog.map((col) => {
+                    const isChecked = columnFields.includes(col.key);
+                    return (
+                      <label
+                        key={col.key}
+                        className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${
+                          isChecked ? "bg-blue-50 border-blue-200" : "bg-gray-50 border-gray-200 hover:bg-gray-100"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                          checked={isChecked}
+                          onChange={() => {
+                            if (isChecked) {
+                              // Don't allow removing all columns
+                              if (columnFields.length > 1) {
+                                setColumnFields(columnFields.filter((f) => f !== col.key));
+                              }
+                            } else {
+                              // Add column - maintaining order if possible or just append
+                              setColumnFields([...columnFields, col.key]);
+                            }
+                          }}
+                        />
+                        <span className="ml-3 text-sm font-medium text-gray-700">{col.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="p-4 border-t bg-gray-50 flex justify-end space-x-3">
+                <button
+                  onClick={() => setShowColumnModal(false)}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
+                >
+                  Close
+                </button>
+                <button
+                  onClick={async () => {
+                    await saveColumnConfig();
+                    setShowColumnModal(false);
+                  }}
+                  disabled={isSavingColumns}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 flex items-center"
+                >
+                  {isSavingColumns ? (
+                    <>
+                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Saving...
+                    </>
+                  ) : (
+                    "Save Preferences"
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Tearsheet Records Modal - Shows all affiliated records */}
         {selectedTearsheet && (
@@ -642,12 +1098,45 @@ const TearsheetsPage = () => {
                       {selectedTearsheet.records.length} record(s)
                     </p>
                   </div>
-                  <button
-                    onClick={() => setSelectedTearsheet(null)}
-                    className="text-gray-500 hover:text-gray-700"
-                  >
-                    <FiX size={24} />
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    <button
+                      onClick={() =>
+                        handleTogglePinnedTearsheet({
+                          id: selectedTearsheet.id,
+                          name: selectedTearsheet.name,
+                        } as any)
+                      }
+                      className={`p-1 hover:bg-gray-200 rounded ${
+                        pinnedKeySet.has(
+                          buildPinnedKey("tearsheet", selectedTearsheet.id)
+                        )
+                          ? "text-yellow-600"
+                          : "text-gray-600"
+                      }`}
+                      aria-label={
+                        pinnedKeySet.has(
+                          buildPinnedKey("tearsheet", selectedTearsheet.id)
+                        )
+                          ? "Unpin"
+                          : "Pin"
+                      }
+                      title={
+                        pinnedKeySet.has(
+                          buildPinnedKey("tearsheet", selectedTearsheet.id)
+                        )
+                          ? "Unpin"
+                          : "Pin"
+                      }
+                    >
+                      <BsFillPinAngleFill size={20} />
+                    </button>
+                    <button
+                      onClick={handleCloseModal}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      <FiX size={24} />
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -692,7 +1181,7 @@ const TearsheetsPage = () => {
               {/* Modal Footer */}
               <div className="p-6 border-t border-gray-200">
                 <button
-                  onClick={() => setSelectedTearsheet(null)}
+                  onClick={handleCloseModal}
                   className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium"
                 >
                   Close
