@@ -15,6 +15,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
+import ActionDropdown from "@/components/ActionDropdown";
 
 interface HiringManager {
   id: string;
@@ -228,7 +229,6 @@ export default function HiringManagerList() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [openActionId, setOpenActionId] = useState<string | null>(null);
 
   // Favorites State
   const [favorites, setFavorites] = useState<HiringManagerFavorite[]>([]);
@@ -1059,94 +1059,57 @@ export default function HiringManagerList() {
                       />
                     </td>
 
-                    {/* Fixed Actions dropdown (LOCKED) */}
+                    {/* Fixed Actions */}
                     <td
                       className="px-6 py-4 whitespace-nowrap text-sm"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div className="relative inline-block text-left">
-                        <button
-                          type="button"
-                          className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setOpenActionId((prev) =>
-                              prev === hm.id ? null : hm.id
-                            );
-                          }}
-                        >
-                          Actions ▾
-                        </button>
-
-                        {openActionId === hm.id && (
-                          <div
-                            className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <div className="flex flex-col">
-                              <button
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOpenActionId(null);
-                                  handleViewHiringManager(hm.id);
-                                }}
-                              >
-                                View
-                              </button>
-
-                              <button
-                                className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-50"
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  setOpenActionId(null);
-
-                                  if (
-                                    !window.confirm(
-                                      "Are you sure you want to delete this hiring manager?"
-                                    )
-                                  )
-                                    return;
-
-                                  setIsLoading(true);
-                                  try {
-                                    const token = document.cookie
-                                      .split("; ")
-                                      .find((row) => row.startsWith("token="))
-                                      ?.split("=")[1];
-
-                                    const res = await fetch(
-                                      `/api/hiring-managers/${hm.id}`,
-                                      {
-                                        method: "DELETE",
-                                        headers: token
-                                          ? { Authorization: `Bearer ${token}` }
-                                          : undefined,
-                                      }
-                                    );
-
-                                    if (!res.ok)
-                                      throw new Error(
-                                        "Failed to delete hiring manager"
-                                      );
-                                    await fetchHiringManagers();
-                                  } catch (err) {
-                                    setError(
-                                      err instanceof Error
-                                        ? err.message
-                                        : "Delete failed"
-                                    );
-                                  } finally {
-                                    setIsLoading(false);
+                      <ActionDropdown
+                        label="Actions"
+                        options={[
+                          { label: "View", action: () => handleViewHiringManager(hm.id) },
+                          {
+                            label: "Delete",
+                            action: async () => {
+                              if (
+                                !window.confirm(
+                                  "Are you sure you want to delete this hiring manager?"
+                                )
+                              )
+                                return;
+                              setIsLoading(true);
+                              try {
+                                const token = document.cookie
+                                  .split("; ")
+                                  .find((row) => row.startsWith("token="))
+                                  ?.split("=")[1];
+                                const res = await fetch(
+                                  `/api/hiring-managers/${hm.id}`,
+                                  {
+                                    method: "DELETE",
+                                    headers: token
+                                      ? { Authorization: `Bearer ${token}` }
+                                      : undefined,
                                   }
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                                );
+                                if (!res.ok)
+                                  throw new Error(
+                                    "Failed to delete hiring manager"
+                                  );
+                                await fetchHiringManagers();
+                              } catch (err) {
+                                setError(
+                                  err instanceof Error
+                                    ? err.message
+                                    : "Delete failed"
+                                );
+                              } finally {
+                                setIsLoading(false);
+                              }
+                            },
+                          },
+                        ]}
+                      />
                     </td>
 
                     {/* Fixed ID */}

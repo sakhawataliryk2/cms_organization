@@ -15,6 +15,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
+import ActionDropdown from "@/components/ActionDropdown";
 
 interface JobSeeker {
   id: string;
@@ -227,13 +228,6 @@ export default function JobSeekerList() {
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
   const [favoriteName, setFavoriteName] = useState("");
   const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
-
-  const [openActionId, setOpenActionId] = useState<string | null>(null);
-  useEffect(() => {
-    const close = () => setOpenActionId(null);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, []);
 
   // =====================
   // TABLE COLUMNS (Overview List)
@@ -1060,105 +1054,63 @@ export default function JobSeekerList() {
                       />
                     </td>
 
-                    {/* Fixed Actions (LOCKED dropdown) */}
+                    {/* Fixed Actions */}
                     <td
                       className="px-6 py-4 whitespace-nowrap text-sm"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div
-                        className="relative inline-block text-left"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <button
-                          type="button"
-                          className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setOpenActionId((prev) =>
-                              prev === jobSeeker.id ? null : jobSeeker.id
-                            );
-                          }}
-                        >
-                          Actions ▾
-                        </button>
-
-                        {openActionId === jobSeeker.id && (
-                          <div
-                            className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <div className="flex flex-col">
-                              <button
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleViewJobSeeker(jobSeeker.id);
-                                  setOpenActionId(null);
-                                }}
-                              >
-                                View
-                              </button>
-                              <button
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  router.push(
-                                    `/dashboard/job-seekers/add?id=${jobSeeker.id}`
-                                  );
-                                  setOpenActionId(null);
-                                }}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-red-50 text-red-600"
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  setOpenActionId(null);
-
-                                  if (
-                                    !window.confirm(
-                                      "Are you sure you want to delete this job seeker?"
-                                    )
-                                  )
-                                    return;
-
-                                  setIsDeleting(true);
-                                  try {
-                                    const response = await fetch(
-                                      `/api/job-seekers/${jobSeeker.id}`,
-                                      {
-                                        method: "DELETE",
-                                        headers: {
-                                          Authorization: `Bearer ${document.cookie.replace(
-                                            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-                                            "$1"
-                                          )}`,
-                                        },
-                                      }
-                                    );
-                                    if (!response.ok)
-                                      throw new Error(
-                                        "Failed to delete job seeker"
-                                      );
-                                    await fetchJobSeekers();
-                                  } catch (err) {
-                                    setError(
-                                      err instanceof Error
-                                        ? err.message
-                                        : "An error occurred"
-                                    );
-                                  } finally {
-                                    setIsDeleting(false);
+                      <ActionDropdown
+                        label="Actions"
+                        options={[
+                          { label: "View", action: () => handleViewJobSeeker(jobSeeker.id) },
+                          {
+                            label: "Edit",
+                            action: () =>
+                              router.push(
+                                `/dashboard/job-seekers/add?id=${jobSeeker.id}`
+                              ),
+                          },
+                          {
+                            label: "Delete",
+                            action: async () => {
+                              if (
+                                !window.confirm(
+                                  "Are you sure you want to delete this job seeker?"
+                                )
+                              )
+                                return;
+                              setIsDeleting(true);
+                              try {
+                                const response = await fetch(
+                                  `/api/job-seekers/${jobSeeker.id}`,
+                                  {
+                                    method: "DELETE",
+                                    headers: {
+                                      Authorization: `Bearer ${document.cookie.replace(
+                                        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                                        "$1"
+                                      )}`,
+                                    },
                                   }
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                                );
+                                if (!response.ok)
+                                  throw new Error(
+                                    "Failed to delete job seeker"
+                                  );
+                                await fetchJobSeekers();
+                              } catch (err) {
+                                setError(
+                                  err instanceof Error
+                                    ? err.message
+                                    : "An error occurred"
+                                );
+                              } finally {
+                                setIsDeleting(false);
+                              }
+                            },
+                          },
+                        ]}
+                      />
                     </td>
 
                     {/* Fixed ID */}

@@ -1984,7 +1984,7 @@ export default function OrganizationView() {
     setShowFileDetailsModal(true);
   };
 
-  // Upload a single file with the user-confirmed metadata
+  
   // Confirm details and upload the first file in the queue
   const handleConfirmFileDetails = async () => {
     if (pendingFiles.length === 0) return;

@@ -15,6 +15,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowDown, FiArrowUp, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
+import ActionDropdown from "@/components/ActionDropdown";
 
 interface Lead {
   id: string;
@@ -223,13 +224,6 @@ function SortableColumnHeader({
 
 export default function LeadList() {
   const router = useRouter();
-
-  const [openActionId, setOpenActionId] = useState<string | null>(null);
-  useEffect(() => {
-    const close = () => setOpenActionId(null);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, []);
 
   const [searchTerm, setSearchTerm] = useState("");
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -1007,84 +1001,46 @@ const {
                   />
                 </td>
 
-                {/* Fixed Actions (LOCKED dropdown) */}
+                {/* Fixed Actions */}
                 <td
                   className="px-6 py-4 whitespace-nowrap text-sm"
                   onClick={(e) => e.stopPropagation()}
                 >
-                  <div
-                    className="relative inline-block text-left"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <button
-                      type="button"
-                      className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setOpenActionId((prev) =>
-                          prev === lead.id ? null : lead.id
-                        );
-                      }}
-                    >
-                      Actions ▾
-                    </button>
-
-                    {openActionId === lead.id && (
-                      <div
-                        className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-9999 overflow-hidden"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="flex flex-col">
-                          <button
-                            className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setOpenActionId(null);
-                              handleViewLead(lead.id);
-                            }}
-                          >
-                            View
-                          </button>
-
-                          <button
-                            className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-50"
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              setOpenActionId(null);
-
-                              if (
-                                !window.confirm(
-                                  "Are you sure you want to delete this lead?"
-                                )
-                              )
-                                return;
-
-                              setIsDeleting(true);
-                              try {
-                                const response = await fetch(
-                                  `/api/leads/${lead.id}`,
-                                  { method: "DELETE" }
-                                );
-                                if (!response.ok)
-                                  throw new Error("Failed to delete lead");
-                                await fetchLeads();
-                              } catch (err) {
-                                setDeleteError(
-                                  err instanceof Error
-                                    ? err.message
-                                    : "An error occurred"
-                                );
-                              } finally {
-                                setIsDeleting(false);
-                              }
-                            }}
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  <ActionDropdown
+                    label="Actions"
+                    options={[
+                      { label: "View", action: () => handleViewLead(lead.id) },
+                      {
+                        label: "Delete",
+                        action: async () => {
+                          if (
+                            !window.confirm(
+                              "Are you sure you want to delete this lead?"
+                            )
+                          )
+                            return;
+                          setIsDeleting(true);
+                          try {
+                            const response = await fetch(
+                              `/api/leads/${lead.id}`,
+                              { method: "DELETE" }
+                            );
+                            if (!response.ok)
+                              throw new Error("Failed to delete lead");
+                            await fetchLeads();
+                          } catch (err) {
+                            setDeleteError(
+                              err instanceof Error
+                                ? err.message
+                                : "An error occurred"
+                            );
+                          } finally {
+                            setIsDeleting(false);
+                          }
+                        },
+                      },
+                    ]}
+                  />
                 </td>
 
                 {/* Fixed ID */}

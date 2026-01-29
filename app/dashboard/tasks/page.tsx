@@ -14,6 +14,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
+import ActionDropdown from "@/components/ActionDropdown";
 
 interface Task {
   id: string;
@@ -283,7 +284,6 @@ export default function TaskList() {
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<string>('created_at');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
-  const [openActionId, setOpenActionId] = useState<string | null>(null);
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
 
@@ -1141,92 +1141,55 @@ export default function TaskList() {
                       />
                     </td>
 
-                    {/* Fixed Actions dropdown */}
+                    {/* Fixed Actions */}
                     <td
                       className="px-6 py-4 whitespace-nowrap text-sm"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <div className="relative inline-block text-left">
-                        <button
-                          type="button"
-                          className="px-3 py-1.5 border rounded text-sm hover:bg-gray-50"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setOpenActionId((prev) =>
-                              prev === task.id ? null : task.id
-                            );
-                          }}
-                        >
-                          Actions ▾
-                        </button>
-
-                        {openActionId === task.id && (
-                          <div
-                            className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <div className="flex flex-col">
-                              <button
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setOpenActionId(null);
-                                  handleViewTask(task.id);
-                                }}
-                              >
-                                View
-                              </button>
-
-                              <button
-                                className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-50"
-                                onClick={async (e) => {
-                                  e.stopPropagation();
-                                  setOpenActionId(null);
-
-                                  if (
-                                    !window.confirm(
-                                      "Are you sure you want to delete this task?"
-                                    )
-                                  )
-                                    return;
-
-                                  setIsLoading(true);
-                                  try {
-                                    const token = document.cookie
-                                      .split("; ")
-                                      .find((row) => row.startsWith("token="))
-                                      ?.split("=")[1];
-
-                                    const res = await fetch(
-                                      `/api/tasks/${task.id}`,
-                                      {
-                                        method: "DELETE",
-                                        headers: token
-                                          ? { Authorization: `Bearer ${token}` }
-                                          : undefined,
-                                      }
-                                    );
-
-                                    if (!res.ok)
-                                      throw new Error("Failed to delete task");
-                                    await fetchTasks();
-                                  } catch (err) {
-                                    setError(
-                                      err instanceof Error
-                                        ? err.message
-                                        : "Delete failed"
-                                    );
-                                  } finally {
-                                    setIsLoading(false);
+                      <ActionDropdown
+                        label="Actions"
+                        options={[
+                          { label: "View", action: () => handleViewTask(task.id) },
+                          {
+                            label: "Delete",
+                            action: async () => {
+                              if (
+                                !window.confirm(
+                                  "Are you sure you want to delete this task?"
+                                )
+                              )
+                                return;
+                              setIsLoading(true);
+                              try {
+                                const token = document.cookie
+                                  .split("; ")
+                                  .find((row) => row.startsWith("token="))
+                                  ?.split("=")[1];
+                                const res = await fetch(
+                                  `/api/tasks/${task.id}`,
+                                  {
+                                    method: "DELETE",
+                                    headers: token
+                                      ? { Authorization: `Bearer ${token}` }
+                                      : undefined,
                                   }
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                                );
+                                if (!res.ok)
+                                  throw new Error("Failed to delete task");
+                                await fetchTasks();
+                              } catch (err) {
+                                setError(
+                                  err instanceof Error
+                                    ? err.message
+                                    : "Delete failed"
+                                );
+                              } finally {
+                                setIsLoading(false);
+                              }
+                            },
+                          },
+                        ]}
+                      />
                     </td>
 
                     {/* Fixed ID */}
@@ -1309,18 +1272,58 @@ export default function TaskList() {
           <div>
             <p className="text-sm text-gray-700">
               Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">{filteredAndSortedTasks.length}</span> of{" "}
+              <span className="font-medium">{filteredAndSortedTasks.length}</span>{" "}
+              of{" "}
               <span className="font-medium">{filteredAndSortedTasks.length}</span>{" "}
               results
             </p>
           </div>
+          {filteredAndSortedTasks.length > 0 && (
+            <div>
+              <nav
+                className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
+                aria-label="Pagination"
+              >
+                <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                  <span className="sr-only">Previous</span>
+                  <svg
+                    className="h-5 w-5"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </button>
+                <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
+                  1
+                </button>
+                <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                  <span className="sr-only">Next</span>
+                  <svg
+                    className="h-5 w-5"
+                    xmlns="http://www.w3.org/2000/svg"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </button>
+              </nav>
+            </div>
+          )}
         </div>
       </div>
-      {filteredAndSortedTasks.length > 0 && (
-        <div className="px-4 py-3 border-t border-gray-200">
-          {/* nav etc if needed, but the original block was a bit messy, let's just use the count for now or fix nav if user wants */}
-        </div>
-      )}
       {showColumnModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">

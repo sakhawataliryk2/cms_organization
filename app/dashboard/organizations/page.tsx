@@ -21,6 +21,7 @@ import {
   FiChevronDown,
   FiX,
 } from "react-icons/fi";
+import ActionDropdown from "@/components/ActionDropdown";
 
 interface Organization {
   id: string;
@@ -422,13 +423,6 @@ export default function OrganizationList() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-
-  const [openActionId, setOpenActionId] = useState<string | null>(null);
-  useEffect(() => {
-    const close = () => setOpenActionId(null);
-    window.addEventListener("click", close);
-    return () => window.removeEventListener("click", close);
-  }, []);
 
   // Columns Catalog
   const humanize = (s: string) =>
@@ -971,7 +965,7 @@ export default function OrganizationList() {
                 </th>
 
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Id
+                  ID
                 </th>
                 {/* Draggable Dynamic headers */}
                 <SortableContext
@@ -1036,81 +1030,41 @@ export default function OrganizationList() {
                     className="px-6 py-4 whitespace-nowrap text-sm"
                     onClick={(e) => e.stopPropagation()}
                   >
-                    <div
-                      className="relative inline-block text-left"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <button
-                        type="button"
-                        className="px-3 py-1.5 border border-black text-black rounded text-sm hover:bg-gray-50"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setOpenActionId((prev) =>
-                            prev === org.id ? null : org.id
-                          );
-                        }}
-                      >
-                        Actions ▾
-                      </button>
-
-                      {openActionId === org.id && (
-                        <div
-                          className="absolute left-0 mt-2 w-44 rounded border bg-white shadow-lg z-[9999] overflow-hidden"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="flex flex-col">
-                            <button
-                              className="w-full text-black text-left px-3 py-2 text-sm hover:bg-gray-50"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setOpenActionId(null);
-                                handleViewOrganization(org.id);
-                              }}
-                            >
-                              View
-                            </button>
-
-                            <button
-                              className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-gray-50"
-                              onClick={async (e) => {
-                                e.stopPropagation();
-                                setOpenActionId(null);
-
-                                if (
-                                  !window.confirm(
-                                    "Are you sure you want to delete this organization?"
-                                  )
-                                )
-                                  return;
-
-                                setIsDeleting(true);
-                                try {
-                                  const response = await fetch(
-                                    `/api/organizations/${org.id}`,
-                                    { method: "DELETE" }
-                                  );
-                                  if (!response.ok)
-                                    throw new Error(
-                                      "Failed to delete organization"
-                                    );
-                                  await fetchOrganizations();
-                                } catch (err) {
-                                  setDeleteError(
-                                    err instanceof Error
-                                      ? err.message
-                                      : "An error occurred"
-                                  );
-                                } finally {
-                                  setIsDeleting(false);
-                                }
-                              }}
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    <ActionDropdown
+                      label="Actions"
+                      options={[
+                        { label: "View", action: () => handleViewOrganization(org.id) },
+                        {
+                          label: "Delete",
+                          action: async () => {
+                            if (
+                              !window.confirm(
+                                "Are you sure you want to delete this organization?"
+                              )
+                            )
+                              return;
+                            setIsDeleting(true);
+                            try {
+                              const response = await fetch(
+                                `/api/organizations/${org.id}`,
+                                { method: "DELETE" }
+                              );
+                              if (!response.ok)
+                                throw new Error("Failed to delete organization");
+                              await fetchOrganizations();
+                            } catch (err) {
+                              setDeleteError(
+                                err instanceof Error
+                                  ? err.message
+                                  : "An error occurred"
+                              );
+                            } finally {
+                              setIsDeleting(false);
+                            }
+                          },
+                        },
+                      ]}
+                    />
                   </td>
 
                   <td className="px-6 py-4 text-black whitespace-nowrap">O {org?.id}</td>

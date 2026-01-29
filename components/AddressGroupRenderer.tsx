@@ -54,7 +54,7 @@ export function getAddressFields(customFields: CustomFieldDefinition[]) {
 function SearchIcon() {
   return (
     <svg
-      className="w-4 h-4 text-gray-400"
+      className="w-4 h-4 text-gray-400 shrink-0"
       viewBox="0 0 20 20"
       fill="currentColor"
       aria-hidden="true"
@@ -65,7 +65,6 @@ function SearchIcon() {
         clipRule="evenodd"
       />
     </svg>
-
   );
 }
 
@@ -84,11 +83,13 @@ function UnderlineField({
 }) {
   const value = values?.[field.field_name] ?? "";
 
-  // Check if field has a valid value
   const isValid = () => {
-    // For select fields, check if a valid option is selected
     if (field.field_type === "select") {
-      if (!value || String(value).trim() === "" || String(value).trim().toLowerCase() === "select an option") {
+      if (
+        !value ||
+        String(value).trim() === "" ||
+        String(value).trim().toLowerCase() === "select an option"
+      ) {
         return false;
       }
       return true;
@@ -97,13 +98,11 @@ function UnderlineField({
     const hasValue = value && String(value).trim() !== "";
     if (!hasValue) return false;
 
-    // Special validation for ZIP code (must be exactly 5 digits)
-    // Check by both label and field_name (Field_24)
     const isZipCodeField =
       field.field_label?.toLowerCase().includes("zip") ||
       field.field_label?.toLowerCase().includes("postal code") ||
       field.field_name?.toLowerCase().includes("zip") ||
-      field.field_name === "Field_24" || // ZIP Code
+      field.field_name === "Field_24" ||
       field.field_name === "field_24";
 
     if (isZipCodeField) {
@@ -121,22 +120,34 @@ function UnderlineField({
   };
 
   return (
-    <div className="min-w-0">
-      <div className="border-b border-gray-300 flex items-center gap-2">
-        {/* Red circle or green checkmark at the beginning - consistent with other fields */}
+    <div className="min-w-0 w-full">
+      <div
+        className={`
+          flex items-center gap-3 py-2.5 px-1
+          border-b border-gray-300
+          transition-colors duration-200
+          focus-within:border-blue-500
+        `}
+      >
         {field.is_required && (
           fieldIsValid ? (
-            <span className="text-green-500 text-sm transition-opacity duration-300 ease-in-out shrink-0">
+            <span
+              className="text-green-600 text-sm shrink-0 transition-opacity duration-300"
+              aria-hidden="true"
+            >
               ✔
             </span>
           ) : (
-            <span className="w-2 h-2 rounded-full inline-block bg-red-500 transition-colors duration-300 shrink-0" />
+            <span
+              className="w-2.5 h-2.5 rounded-full bg-red-500 shrink-0 transition-colors duration-300"
+              aria-hidden="true"
+            />
           )
         )}
 
         {withSearchIcon && <SearchIcon />}
 
-        <div className="address-input flex-1">
+        <div className="address-input flex-1 min-w-0">
           <CustomFieldRenderer
             field={safeField}
             value={value}
@@ -177,17 +188,26 @@ export default function AddressGroupRenderer({
     )
   );
 
-  if (!addressField && !address2Field && !cityField && !stateField && !zipField)
+  if (
+    !addressField &&
+    !address2Field &&
+    !cityField &&
+    !stateField &&
+    !zipField
+  ) {
     return null;
+  }
 
-  // Check if a field is complete (filled and valid)
   const checkFieldComplete = (field: CustomFieldDefinition | undefined): boolean => {
-    if (!field) return true; // Field doesn't exist, consider it complete for validation purposes
+    if (!field) return true;
     const value = values?.[field.field_name] ?? "";
 
-    // For select fields, empty string means "Select an option" (not selected)
     if (field.field_type === "select") {
-      if (!value || String(value).trim() === "" || String(value).trim().toLowerCase() === "select an option") {
+      if (
+        !value ||
+        String(value).trim() === "" ||
+        String(value).trim().toLowerCase() === "select an option"
+      ) {
         return false;
       }
       return true;
@@ -195,13 +215,11 @@ export default function AddressGroupRenderer({
 
     if (!value || String(value).trim() === "") return false;
 
-    // Special validation for ZIP code (must be exactly 5 digits)
-    // Check by both label and field_name (Field_24)
     const isZipCodeField =
       field.field_label?.toLowerCase().includes("zip") ||
       field.field_label?.toLowerCase().includes("postal code") ||
       field.field_name?.toLowerCase().includes("zip") ||
-      field.field_name === "Field_24" || // ZIP Code
+      field.field_name === "Field_24" ||
       field.field_name === "field_24";
     if (isZipCodeField) {
       return /^\d{5}$/.test(String(value).trim());
@@ -210,79 +228,91 @@ export default function AddressGroupRenderer({
     return true;
   };
 
-  // Check if all main address fields are complete
-  // Address, City, State, and ZIP Code must be filled
-  // Address 2: if it exists in the form, it must be filled; if it doesn't exist, we don't check it
   const isAddressComplete = addressField ? checkFieldComplete(addressField) : false;
-  const isAddress2Complete = address2Field ? checkFieldComplete(address2Field) : true; // If Address 2 field doesn't exist, consider it complete
+  const isAddress2Complete = address2Field ? checkFieldComplete(address2Field) : true;
   const isCityComplete = cityField ? checkFieldComplete(cityField) : false;
-  const isStateComplete = stateField ? checkFieldComplete(stateField) : true; // State might be optional, but if it exists and is required, check it
+  const isStateComplete = stateField ? checkFieldComplete(stateField) : true;
   const isZipComplete = zipField ? checkFieldComplete(zipField) : false;
 
-  // All main address fields are complete (Address, City, State, ZIP Code)
-  // Address 2 is optional, so if it doesn't exist, we only check Address, City, State, and ZIP Code
-  const allFieldsComplete = isAddressComplete && isAddress2Complete && isCityComplete && isStateComplete && isZipComplete;
+  const allFieldsComplete =
+    isAddressComplete &&
+    isAddress2Complete &&
+    isCityComplete &&
+    isStateComplete &&
+    isZipComplete;
 
   return (
-    <div className="address-underline">
-      {/* Row 1 */}
+    <div className="address-underline rounded-lg py-2">
+
+      {/* Row 1: Address & Address 2 */}
       {(addressField || address2Field) && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-5">
           {addressField && (
-            <UnderlineField
-              field={addressField}
-              values={values}
-              onChange={onChange}
-            />
+            <div className="space-y-1">
+              <UnderlineField
+                field={addressField}
+                values={values}
+                onChange={onChange}
+              />
+            </div>
           )}
           {address2Field && (
-            <UnderlineField
-              field={address2Field}
-              values={values}
-              onChange={onChange}
-            />
+            <div className="space-y-1">
+              <UnderlineField
+                field={address2Field}
+                values={values}
+                onChange={onChange}
+              />
+            </div>
           )}
         </div>
       )}
 
-      {/* Row 2 */}
+      {/* Row 2: City, State, ZIP */}
       {(cityField || stateField || zipField) && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-x-10 gap-y-3 mt-3">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {cityField && (
-            <UnderlineField
-              field={cityField}
-              values={values}
-              onChange={onChange}
-            />
+            <div className="space-y-1">
+              <UnderlineField
+                field={cityField}
+                values={values}
+                onChange={onChange}
+              />
+            </div>
           )}
           {stateField && (
-            <UnderlineField
-              withSearchIcon
-              field={stateField}
-              values={values}
-              onChange={onChange}
-            />
+            <div className="space-y-1">
+              <UnderlineField
+                withSearchIcon
+                field={stateField}
+                values={values}
+                onChange={onChange}
+              />
+            </div>
           )}
           {zipField && (
-            <UnderlineField
-              field={zipField}
-              values={values}
-              onChange={onChange}
-            />
+            <div className="space-y-1">
+              <UnderlineField
+                field={zipField}
+                values={values}
+                onChange={onChange}
+              />
+            </div>
           )}
         </div>
       )}
 
-      {/* Success message when all fields are complete */}
+      {/* Success message */}
       {allFieldsComplete && (
-        <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-md transition-all duration-300 ease-in-out transform opacity-100">
-          <p className="text-green-700 text-sm font-medium flex items-center">
-            <span className="mr-2">✅</span>
+        <div className="mt-5 p-4 bg-green-50 border border-green-200 rounded-lg transition-all duration-300">
+          <p className="text-green-800 text-sm font-medium flex items-center gap-2">
+            <span className="text-green-600" aria-hidden="true">
+              ✓
+            </span>
             Address information complete.
           </p>
         </div>
       )}
     </div>
   );
-
 }
