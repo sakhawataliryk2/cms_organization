@@ -2093,7 +2093,7 @@ export default function PlacementView() {
   const renderRecentNotesPanel = () => {
     return (
       <PanelWithHeader
-        title="Recent Notes:"
+        title="Recent Notes"
         onEdit={() => handleEditPanel("recentNotes")}
       >
         <div className="border border-gray-200 rounded">
