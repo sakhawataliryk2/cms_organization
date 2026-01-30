@@ -200,6 +200,11 @@ const LEAD_CONTACT_INFO_STORAGE_KEY = "leadsContactInfoFields";
 const LEAD_DETAILS_DEFAULT_FIELDS = ['status', 'owner', 'reportsTo', 'dateAdded', 'lastContactDate'];
 const LEAD_DETAILS_STORAGE_KEY = "leadsDetailsFields";
 
+const WEBSITE_JOBS_DEFAULT_FIELDS = ['jobs'];
+const WEBSITE_JOBS_STORAGE_KEY = "leadsWebsiteJobsFields";
+const OUR_JOBS_DEFAULT_FIELDS = ['jobs'];
+const OUR_JOBS_STORAGE_KEY = "leadsOurJobsFields";
+
 export default function LeadView() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -379,6 +384,28 @@ export default function LeadView() {
     }
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const savedW = localStorage.getItem(WEBSITE_JOBS_STORAGE_KEY);
+    if (savedW) {
+      try {
+        const parsed = JSON.parse(savedW);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setVisibleFields((prev) => ({ ...prev, websiteJobs: parsed }));
+        }
+      } catch (_) {}
+    }
+    const savedO = localStorage.getItem(OUR_JOBS_STORAGE_KEY);
+    if (savedO) {
+      try {
+        const parsed = JSON.parse(savedO);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setVisibleFields((prev) => ({ ...prev, ourJobs: parsed }));
+        }
+      } catch (_) {}
+    }
+  }, []);
+
   const prevColumnsRef = useRef<string>("");
 
   // Save columns to localStorage
@@ -480,6 +507,15 @@ export default function LeadView() {
   const [modalDetailsOrder, setModalDetailsOrder] = useState<string[]>([]);
   const [modalDetailsVisible, setModalDetailsVisible] = useState<Record<string, boolean>>({});
   const [detailsDragActiveId, setDetailsDragActiveId] = useState<string | null>(null);
+
+  const [modalWebsiteJobsOrder, setModalWebsiteJobsOrder] = useState<string[]>([]);
+  const [modalWebsiteJobsVisible, setModalWebsiteJobsVisible] = useState<Record<string, boolean>>({});
+  const [websiteJobsDragActiveId, setWebsiteJobsDragActiveId] = useState<string | null>(null);
+
+  const [modalOurJobsOrder, setModalOurJobsOrder] = useState<string[]>([]);
+  const [modalOurJobsVisible, setModalOurJobsVisible] = useState<Record<string, boolean>>({});
+  const [ourJobsDragActiveId, setOurJobsDragActiveId] = useState<string | null>(null);
+
     // =========================
   // PENCIL-HEADER-MODAL (Lead Header Fields Row)
   // =========================
@@ -776,6 +812,37 @@ export default function LeadView() {
       uniqueCatalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
     );
   }, [editingPanel, visibleFields.details, detailsFieldCatalog]);
+
+  const websiteJobsFieldCatalog = useMemo(() => [{ key: "jobs", label: "Jobs" }], []);
+  const ourJobsFieldCatalog = useMemo(() => [{ key: "jobs", label: "Jobs" }], []);
+
+  useEffect(() => {
+    if (editingPanel !== "websiteJobs") return;
+    const current = visibleFields.websiteJobs || [];
+    const catalogKeys = websiteJobsFieldCatalog.map((f) => f.key);
+    const order = [...current.filter((k) => catalogKeys.includes(k))];
+    catalogKeys.forEach((k) => {
+      if (!order.includes(k)) order.push(k);
+    });
+    setModalWebsiteJobsOrder(order);
+    setModalWebsiteJobsVisible(
+      catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
+    );
+  }, [editingPanel, visibleFields.websiteJobs, websiteJobsFieldCatalog]);
+
+  useEffect(() => {
+    if (editingPanel !== "ourJobs") return;
+    const current = visibleFields.ourJobs || [];
+    const catalogKeys = ourJobsFieldCatalog.map((f) => f.key);
+    const order = [...current.filter((k) => catalogKeys.includes(k))];
+    catalogKeys.forEach((k) => {
+      if (!order.includes(k)) order.push(k);
+    });
+    setModalOurJobsOrder(order);
+    setModalOurJobsVisible(
+      catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
+    );
+  }, [editingPanel, visibleFields.ourJobs, ourJobsFieldCatalog]);
 
   // Handle edit panel click
     const renderPanel = (id: string, isOverlay = false) => {
@@ -1133,6 +1200,48 @@ export default function LeadView() {
     setVisibleFields((prev) => ({ ...prev, details: newOrder }));
     setEditingPanel(null);
   }, [modalDetailsOrder, modalDetailsVisible]);
+
+  const handleWebsiteJobsDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setWebsiteJobsDragActiveId(null);
+    if (!over || active.id === over.id) return;
+    setModalWebsiteJobsOrder((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, []);
+
+  const handleSaveWebsiteJobsFields = useCallback(() => {
+    const newOrder = modalWebsiteJobsOrder.filter((k) => modalWebsiteJobsVisible[k]);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(WEBSITE_JOBS_STORAGE_KEY, JSON.stringify(newOrder));
+    }
+    setVisibleFields((prev) => ({ ...prev, websiteJobs: newOrder }));
+    setEditingPanel(null);
+  }, [modalWebsiteJobsOrder, modalWebsiteJobsVisible]);
+
+  const handleOurJobsDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setOurJobsDragActiveId(null);
+    if (!over || active.id === over.id) return;
+    setModalOurJobsOrder((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, []);
+
+  const handleSaveOurJobsFields = useCallback(() => {
+    const newOrder = modalOurJobsOrder.filter((k) => modalOurJobsVisible[k]);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(OUR_JOBS_STORAGE_KEY, JSON.stringify(newOrder));
+    }
+    setVisibleFields((prev) => ({ ...prev, ourJobs: newOrder }));
+    setEditingPanel(null);
+  }, [modalOurJobsOrder, modalOurJobsVisible]);
 
   const fetchLeadData = async (id: string) => {
     setIsLoading(true);
@@ -2974,7 +3083,7 @@ export default function LeadView() {
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">
-                Edit Fields - {editingPanel === "contactInfo" ? "Lead Contact Info" : editingPanel === "details" ? "Lead Details" : editingPanel}
+                Edit Fields - {editingPanel === "contactInfo" ? "Lead Contact Info" : editingPanel === "details" ? "Lead Details" : editingPanel === "websiteJobs" ? "Website Jobs" : editingPanel === "ourJobs" ? "Our Jobs" : editingPanel}
               </h2>
               <button
                 onClick={handleCloseEditModal}
@@ -3116,6 +3225,144 @@ export default function LeadView() {
                     </button>
                     <button
                       onClick={handleSaveDetailsFields}
+                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </>
+              ) : editingPanel === "websiteJobs" ? (
+                <>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Drag to reorder. Toggle visibility with the checkbox. Changes apply to all lead records.
+                  </p>
+                  <DndContext
+                    collisionDetection={closestCorners}
+                    onDragStart={(e) => setWebsiteJobsDragActiveId(e.active.id as string)}
+                    onDragEnd={handleWebsiteJobsDragEnd}
+                    onDragCancel={() => setWebsiteJobsDragActiveId(null)}
+                    sensors={sensors}
+                    modifiers={[restrictToVerticalAxis]}
+                  >
+                    <SortableContext
+                      items={modalWebsiteJobsOrder}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
+                        {modalWebsiteJobsOrder.map((key, index) => {
+                          const entry = websiteJobsFieldCatalog.find((f) => f.key === key);
+                          if (!entry) return null;
+                          return (
+                            <SortableDetailsFieldRow
+                              key={`websiteJobs-${entry.key}-${index}`}
+                              id={entry.key}
+                              label={entry.label}
+                              checked={!!modalWebsiteJobsVisible[entry.key]}
+                              onToggle={() =>
+                                setModalWebsiteJobsVisible((prev) => ({
+                                  ...prev,
+                                  [entry.key]: !prev[entry.key],
+                                }))
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                    </SortableContext>
+                    <DragOverlay dropAnimation={dropAnimationConfig}>
+                      {websiteJobsDragActiveId ? (() => {
+                        const entry = websiteJobsFieldCatalog.find((f) => f.key === websiteJobsDragActiveId);
+                        if (!entry) return null;
+                        return (
+                          <SortableDetailsFieldRow
+                            id={entry.key}
+                            label={entry.label}
+                            checked={!!modalWebsiteJobsVisible[entry.key]}
+                            onToggle={() => {}}
+                            isOverlay
+                          />
+                        );
+                      })() : null}
+                    </DragOverlay>
+                  </DndContext>
+                  <div className="flex justify-end gap-2 pt-4 mt-4 border-t">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveWebsiteJobsFields}
+                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </>
+              ) : editingPanel === "ourJobs" ? (
+                <>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Drag to reorder. Toggle visibility with the checkbox. Changes apply to all lead records.
+                  </p>
+                  <DndContext
+                    collisionDetection={closestCorners}
+                    onDragStart={(e) => setOurJobsDragActiveId(e.active.id as string)}
+                    onDragEnd={handleOurJobsDragEnd}
+                    onDragCancel={() => setOurJobsDragActiveId(null)}
+                    sensors={sensors}
+                    modifiers={[restrictToVerticalAxis]}
+                  >
+                    <SortableContext
+                      items={modalOurJobsOrder}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
+                        {modalOurJobsOrder.map((key, index) => {
+                          const entry = ourJobsFieldCatalog.find((f) => f.key === key);
+                          if (!entry) return null;
+                          return (
+                            <SortableDetailsFieldRow
+                              key={`ourJobs-${entry.key}-${index}`}
+                              id={entry.key}
+                              label={entry.label}
+                              checked={!!modalOurJobsVisible[entry.key]}
+                              onToggle={() =>
+                                setModalOurJobsVisible((prev) => ({
+                                  ...prev,
+                                  [entry.key]: !prev[entry.key],
+                                }))
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                    </SortableContext>
+                    <DragOverlay dropAnimation={dropAnimationConfig}>
+                      {ourJobsDragActiveId ? (() => {
+                        const entry = ourJobsFieldCatalog.find((f) => f.key === ourJobsDragActiveId);
+                        if (!entry) return null;
+                        return (
+                          <SortableDetailsFieldRow
+                            id={entry.key}
+                            label={entry.label}
+                            checked={!!modalOurJobsVisible[entry.key]}
+                            onToggle={() => {}}
+                            isOverlay
+                          />
+                        );
+                      })() : null}
+                    </DragOverlay>
+                  </DndContext>
+                  <div className="flex justify-end gap-2 pt-4 mt-4 border-t">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveOurJobsFields}
                       className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
                     >
                       Save

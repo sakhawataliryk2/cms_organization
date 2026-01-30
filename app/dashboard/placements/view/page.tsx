@@ -54,6 +54,9 @@ const PLACEMENT_DEFAULT_HEADER_FIELDS = ["status", "owner"];
 const PLACEMENT_DETAILS_DEFAULT_FIELDS = ['candidate', 'job', 'status', 'startDate', 'endDate', 'salary'];
 const PLACEMENT_DETAILS_STORAGE_KEY = "placementDetailsFields";
 
+const DETAILS_DEFAULT_FIELDS = ['owner', 'dateAdded', 'lastContactDate'];
+const DETAILS_STORAGE_KEY = "placementDetailsPanelFields";
+
 type ColumnSortState = "asc" | "desc" | null;
 type ColumnFilterState = string | null;
 
@@ -487,6 +490,18 @@ export default function PlacementView() {
     }
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem(DETAILS_STORAGE_KEY);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setVisibleFields((prev) => ({ ...prev, details: parsed }));
+      }
+    } catch (_) {}
+  }, []);
+
   const prevColumnsRef = useRef<string>("");
 
   useEffect(() => {
@@ -645,6 +660,10 @@ export default function PlacementView() {
   const [modalPlacementDetailsOrder, setModalPlacementDetailsOrder] = useState<string[]>([]);
   const [modalPlacementDetailsVisible, setModalPlacementDetailsVisible] = useState<Record<string, boolean>>({});
   const [placementDetailsDragActiveId, setPlacementDetailsDragActiveId] = useState<string | null>(null);
+
+  const [modalDetailsOrder, setModalDetailsOrder] = useState<string[]>([]);
+  const [modalDetailsVisible, setModalDetailsVisible] = useState<Record<string, boolean>>({});
+  const [detailsDragActiveId, setDetailsDragActiveId] = useState<string | null>(null);
 
   // =====================
   // HEADER FIELDS (Top Row)
@@ -883,6 +902,29 @@ export default function PlacementView() {
     );
   }, [editingPanel, visibleFields.placementDetails, placementDetailsFieldCatalog]);
 
+  const detailsFieldCatalog = useMemo(
+    () => [
+      { key: "owner", label: "Owner" },
+      { key: "dateAdded", label: "Date Added" },
+      { key: "lastContactDate", label: "Last Contact" },
+    ],
+    []
+  );
+
+  useEffect(() => {
+    if (editingPanel !== "details") return;
+    const current = visibleFields.details || [];
+    const catalogKeys = detailsFieldCatalog.map((f) => f.key);
+    const order = [...current.filter((k) => catalogKeys.includes(k))];
+    catalogKeys.forEach((k) => {
+      if (!order.includes(k)) order.push(k);
+    });
+    setModalDetailsOrder(order);
+    setModalDetailsVisible(
+      catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
+    );
+  }, [editingPanel, visibleFields.details, detailsFieldCatalog]);
+
   // Placement Details modal: drag end (reorder)
   const handlePlacementDetailsDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -905,6 +947,27 @@ export default function PlacementView() {
     setVisibleFields((prev) => ({ ...prev, placementDetails: newOrder }));
     setEditingPanel(null);
   }, [modalPlacementDetailsOrder, modalPlacementDetailsVisible]);
+
+  const handleDetailsDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setDetailsDragActiveId(null);
+    if (!over || active.id === over.id) return;
+    setModalDetailsOrder((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, []);
+
+  const handleSaveDetailsFields = useCallback(() => {
+    const newOrder = modalDetailsOrder.filter((k) => modalDetailsVisible[k]);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
+    }
+    setVisibleFields((prev) => ({ ...prev, details: newOrder }));
+    setEditingPanel(null);
+  }, [modalDetailsOrder, modalDetailsVisible]);
 
   // Handle edit panel click
   const handleEditPanel = (panelId: string) => {
@@ -3315,7 +3378,7 @@ export default function PlacementView() {
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">
-                Edit Fields - {editingPanel === "placementDetails" ? "Placement Details" : editingPanel}
+                Edit Fields - {editingPanel === "placementDetails" ? "Placement Details" : editingPanel === "details" ? "Details" : editingPanel}
               </h2>
               <button
                 onClick={handleCloseEditModal}
@@ -3393,7 +3456,73 @@ export default function PlacementView() {
                   </div>
                 </DndContext>
               )}
-              {editingPanel !== "placementDetails" && (
+              {editingPanel === "details" && (
+                <DndContext
+                  sensors={sensors}
+                  collisionDetection={closestCorners}
+                  onDragStart={(e) => setDetailsDragActiveId(e.active.id as string)}
+                  onDragEnd={handleDetailsDragEnd}
+                  onDragCancel={() => setDetailsDragActiveId(null)}
+                >
+                  <div className="mb-4">
+                    <h3 className="font-medium mb-3">Drag to reorder, check/uncheck to show/hide:</h3>
+                    <SortableContext
+                      items={modalDetailsOrder}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                        {modalDetailsOrder.map((key, index) => {
+                          const field = detailsFieldCatalog.find((f) => f.key === key);
+                          if (!field) return null;
+                          return (
+                            <SortablePlacementDetailsFieldRow
+                              key={`details-${key}-${index}`}
+                              id={key}
+                              label={field.label}
+                              checked={modalDetailsVisible[key] || false}
+                              onToggle={() =>
+                                setModalDetailsVisible((prev) => ({
+                                  ...prev,
+                                  [key]: !prev[key],
+                                }))
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                    </SortableContext>
+                    <DragOverlay>
+                      {detailsDragActiveId ? (() => {
+                        const field = detailsFieldCatalog.find((f) => f.key === detailsDragActiveId);
+                        return field ? (
+                          <SortablePlacementDetailsFieldRow
+                            id={detailsDragActiveId}
+                            label={field.label}
+                            checked={modalDetailsVisible[detailsDragActiveId] || false}
+                            onToggle={() => {}}
+                            isOverlay
+                          />
+                        ) : null;
+                      })() : null}
+                    </DragOverlay>
+                  </div>
+                  <div className="flex justify-end space-x-2 pt-4 border-t">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveDetailsFields}
+                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </DndContext>
+              )}
+              {editingPanel !== "placementDetails" && editingPanel !== "details" && (
                 <>
                   <div className="mb-4">
                     <h3 className="font-medium mb-3">Available Fields from Modify Page:</h3>

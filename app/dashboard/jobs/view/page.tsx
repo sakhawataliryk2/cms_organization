@@ -337,6 +337,12 @@ const DEFAULT_HEADER_FIELDS = ["phone", "website"];
 const JOB_DETAILS_DEFAULT_FIELDS = ["title", "description", "benefits", "requiredSkills", "salaryRange"];
 const JOB_DETAILS_STORAGE_KEY = "jobsJobDetailsFields";
 
+const DETAILS_DEFAULT_FIELDS = ["status", "priority", "employmentType", "startDate", "worksite", "dateAdded", "jobBoardStatus", "owner"];
+const DETAILS_STORAGE_KEY = "jobsDetailsFields";
+
+const HIRING_MANAGER_DEFAULT_FIELDS = ["name", "phone", "email"];
+const HIRING_MANAGER_STORAGE_KEY = "jobsHiringManagerFields";
+
 export default function JobView() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -1058,6 +1064,29 @@ export default function JobView() {
     }
   }, []);
 
+  // Initialize Details and Hiring Manager field order from localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const savedDetails = localStorage.getItem(DETAILS_STORAGE_KEY);
+    if (savedDetails) {
+      try {
+        const parsed = JSON.parse(savedDetails);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setVisibleFields((prev) => ({ ...prev, details: parsed }));
+        }
+      } catch (_) {}
+    }
+    const savedHm = localStorage.getItem(HIRING_MANAGER_STORAGE_KEY);
+    if (savedHm) {
+      try {
+        const parsed = JSON.parse(savedHm);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setVisibleFields((prev) => ({ ...prev, hiringManager: parsed }));
+        }
+      } catch (_) {}
+    }
+  }, []);
+
   const prevColumnsRef = useRef<string>("");
 
   // Save columns to localStorage
@@ -1522,6 +1551,14 @@ export default function JobView() {
   const [modalJobDetailsOrder, setModalJobDetailsOrder] = useState<string[]>([]);
   const [modalJobDetailsVisible, setModalJobDetailsVisible] = useState<Record<string, boolean>>({});
   const [jobDetailsDragActiveId, setJobDetailsDragActiveId] = useState<string | null>(null);
+
+  const [modalDetailsOrder, setModalDetailsOrder] = useState<string[]>([]);
+  const [modalDetailsVisible, setModalDetailsVisible] = useState<Record<string, boolean>>({});
+  const [detailsDragActiveId, setDetailsDragActiveId] = useState<string | null>(null);
+
+  const [modalHiringManagerOrder, setModalHiringManagerOrder] = useState<string[]>([]);
+  const [modalHiringManagerVisible, setModalHiringManagerVisible] = useState<Record<string, boolean>>({});
+  const [hiringManagerDragActiveId, setHiringManagerDragActiveId] = useState<string | null>(null);
 
   // Add Placement modal state
   const [showAddPlacementModal, setShowAddPlacementModal] = useState(false);
@@ -2041,6 +2078,57 @@ export default function JobView() {
     );
   }, [editingPanel, visibleFields.jobDetails, jobDetailsFieldCatalog]);
 
+  const detailsFieldCatalog = useMemo(
+    () => [
+      { key: "status", label: "Status" },
+      { key: "priority", label: "Priority" },
+      { key: "employmentType", label: "Employment Type" },
+      { key: "startDate", label: "Start Date" },
+      { key: "worksite", label: "Worksite Location" },
+      { key: "dateAdded", label: "Date Added" },
+      { key: "jobBoardStatus", label: "Job Board Status" },
+      { key: "owner", label: "User Owner" },
+    ],
+    []
+  );
+
+  const hiringManagerFieldCatalog = useMemo(
+    () => [
+      { key: "name", label: "Name" },
+      { key: "phone", label: "Phone" },
+      { key: "email", label: "Email" },
+    ],
+    []
+  );
+
+  useEffect(() => {
+    if (editingPanel !== "details") return;
+    const current = visibleFields.details || [];
+    const catalogKeys = detailsFieldCatalog.map((f) => f.key);
+    const order = [...current.filter((k) => catalogKeys.includes(k))];
+    catalogKeys.forEach((k) => {
+      if (!order.includes(k)) order.push(k);
+    });
+    setModalDetailsOrder(order);
+    setModalDetailsVisible(
+      catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
+    );
+  }, [editingPanel, visibleFields.details, detailsFieldCatalog]);
+
+  useEffect(() => {
+    if (editingPanel !== "hiringManager") return;
+    const current = visibleFields.hiringManager || [];
+    const catalogKeys = hiringManagerFieldCatalog.map((f) => f.key);
+    const order = [...current.filter((k) => catalogKeys.includes(k))];
+    catalogKeys.forEach((k) => {
+      if (!order.includes(k)) order.push(k);
+    });
+    setModalHiringManagerOrder(order);
+    setModalHiringManagerVisible(
+      catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
+    );
+  }, [editingPanel, visibleFields.hiringManager, hiringManagerFieldCatalog]);
+
   // Header fields list builder (standard + custom)
   const getHeaderFieldOptions = () => {
     const standard = [
@@ -2131,6 +2219,48 @@ export default function JobView() {
     setVisibleFields((prev) => ({ ...prev, jobDetails: newOrder }));
     setEditingPanel(null);
   }, [modalJobDetailsOrder, modalJobDetailsVisible]);
+
+  const handleDetailsDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setDetailsDragActiveId(null);
+    if (!over || active.id === over.id) return;
+    setModalDetailsOrder((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, []);
+
+  const handleSaveDetailsFields = useCallback(() => {
+    const newOrder = modalDetailsOrder.filter((k) => modalDetailsVisible[k]);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
+    }
+    setVisibleFields((prev) => ({ ...prev, details: newOrder }));
+    setEditingPanel(null);
+  }, [modalDetailsOrder, modalDetailsVisible]);
+
+  const handleHiringManagerDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setHiringManagerDragActiveId(null);
+    if (!over || active.id === over.id) return;
+    setModalHiringManagerOrder((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, []);
+
+  const handleSaveHiringManagerFields = useCallback(() => {
+    const newOrder = modalHiringManagerOrder.filter((k) => modalHiringManagerVisible[k]);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(HIRING_MANAGER_STORAGE_KEY, JSON.stringify(newOrder));
+    }
+    setVisibleFields((prev) => ({ ...prev, hiringManager: newOrder }));
+    setEditingPanel(null);
+  }, [modalHiringManagerOrder, modalHiringManagerVisible]);
 
   // Function to fetch job data with better error handling
   const fetchJob = async (id: string) => {
@@ -4210,7 +4340,7 @@ export default function JobView() {
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">
-                Edit Fields - {editingPanel === "jobDetails" ? "Job Details" : editingPanel}
+                Edit Fields - {editingPanel === "jobDetails" ? "Job Details" : editingPanel === "details" ? "Details" : editingPanel === "hiringManager" ? "Hiring Manager" : editingPanel}
               </h2>
               <button
                 onClick={handleCloseEditModal}
@@ -4283,6 +4413,144 @@ export default function JobView() {
                     </button>
                     <button
                       onClick={handleSaveJobDetailsFields}
+                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </>
+              ) : editingPanel === "details" ? (
+                <>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Drag to reorder. Toggle visibility with the checkbox. Changes apply to all job records.
+                  </p>
+                  <DndContext
+                    collisionDetection={closestCorners}
+                    onDragStart={(e) => setDetailsDragActiveId(e.active.id as string)}
+                    onDragEnd={handleDetailsDragEnd}
+                    onDragCancel={() => setDetailsDragActiveId(null)}
+                    sensors={sensors}
+                    modifiers={[restrictToVerticalAxis]}
+                  >
+                    <SortableContext
+                      items={modalDetailsOrder}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
+                        {modalDetailsOrder.map((key) => {
+                          const entry = detailsFieldCatalog.find((f) => f.key === key);
+                          if (!entry) return null;
+                          return (
+                            <SortableJobDetailsFieldRow
+                              key={entry.key}
+                              id={entry.key}
+                              label={entry.label}
+                              checked={!!modalDetailsVisible[entry.key]}
+                              onToggle={() =>
+                                setModalDetailsVisible((prev) => ({
+                                  ...prev,
+                                  [entry.key]: !prev[entry.key],
+                                }))
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                    </SortableContext>
+                    <DragOverlay dropAnimation={dropAnimationConfig}>
+                      {detailsDragActiveId ? (() => {
+                        const entry = detailsFieldCatalog.find((f) => f.key === detailsDragActiveId);
+                        if (!entry) return null;
+                        return (
+                          <SortableJobDetailsFieldRow
+                            id={entry.key}
+                            label={entry.label}
+                            checked={!!modalDetailsVisible[entry.key]}
+                            onToggle={() => {}}
+                            isOverlay
+                          />
+                        );
+                      })() : null}
+                    </DragOverlay>
+                  </DndContext>
+                  <div className="flex justify-end gap-2 pt-4 mt-4 border-t">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveDetailsFields}
+                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                    >
+                      Save
+                    </button>
+                  </div>
+                </>
+              ) : editingPanel === "hiringManager" ? (
+                <>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Drag to reorder. Toggle visibility with the checkbox. Changes apply to all job records.
+                  </p>
+                  <DndContext
+                    collisionDetection={closestCorners}
+                    onDragStart={(e) => setHiringManagerDragActiveId(e.active.id as string)}
+                    onDragEnd={handleHiringManagerDragEnd}
+                    onDragCancel={() => setHiringManagerDragActiveId(null)}
+                    sensors={sensors}
+                    modifiers={[restrictToVerticalAxis]}
+                  >
+                    <SortableContext
+                      items={modalHiringManagerOrder}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
+                        {modalHiringManagerOrder.map((key) => {
+                          const entry = hiringManagerFieldCatalog.find((f) => f.key === key);
+                          if (!entry) return null;
+                          return (
+                            <SortableJobDetailsFieldRow
+                              key={entry.key}
+                              id={entry.key}
+                              label={entry.label}
+                              checked={!!modalHiringManagerVisible[entry.key]}
+                              onToggle={() =>
+                                setModalHiringManagerVisible((prev) => ({
+                                  ...prev,
+                                  [entry.key]: !prev[entry.key],
+                                }))
+                              }
+                            />
+                          );
+                        })}
+                      </div>
+                    </SortableContext>
+                    <DragOverlay dropAnimation={dropAnimationConfig}>
+                      {hiringManagerDragActiveId ? (() => {
+                        const entry = hiringManagerFieldCatalog.find((f) => f.key === hiringManagerDragActiveId);
+                        if (!entry) return null;
+                        return (
+                          <SortableJobDetailsFieldRow
+                            id={entry.key}
+                            label={entry.label}
+                            checked={!!modalHiringManagerVisible[entry.key]}
+                            onToggle={() => {}}
+                            isOverlay
+                          />
+                        );
+                      })() : null}
+                    </DragOverlay>
+                  </DndContext>
+                  <div className="flex justify-end gap-2 pt-4 mt-4 border-t">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleSaveHiringManagerFields}
                       className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
                     >
                       Save
