@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 
 interface ActionOption {
@@ -17,6 +17,21 @@ interface ActionDropdownProps {
     optionClassName?: string;
 }
 
+function getScrollParents(element: HTMLElement | null): HTMLElement[] {
+    const parents: HTMLElement[] = [];
+    let el = element?.parentElement ?? null;
+    while (el) {
+        const style = getComputedStyle(el);
+        const overflowY = style.overflowY;
+        const overflowX = style.overflowX;
+        if (['auto', 'scroll', 'overlay'].includes(overflowY) || ['auto', 'scroll', 'overlay'].includes(overflowX)) {
+            parents.push(el);
+        }
+        el = el.parentElement;
+    }
+    return parents;
+}
+
 export default function ActionDropdown({
     label = 'Actions',
     options,
@@ -30,10 +45,27 @@ export default function ActionDropdown({
     const dropdownRef = useRef<HTMLDivElement>(null);
     const buttonRef = useRef<HTMLButtonElement>(null);
     const menuRef = useRef<HTMLDivElement>(null);
+    const optionsLengthRef = useRef(options.length);
+    optionsLengthRef.current = options.length;
 
     const toggleDropdown = () => {
         setIsOpen(prev => !prev);
     };
+
+    const updateMenuPosition = useCallback(() => {
+        if (!buttonRef.current) return;
+        const buttonRect = buttonRef.current.getBoundingClientRect();
+        const menuHeight = (optionsLengthRef.current * 40) + 16;
+        const menuWidth = 160;
+        const spaceBelow = window.innerHeight - buttonRect.bottom;
+        const spaceAbove = buttonRect.top;
+        const openUpward = spaceBelow < menuHeight && spaceAbove > menuHeight;
+        const top = openUpward ? buttonRect.top - menuHeight - 4 : buttonRect.bottom + 4;
+        let left = buttonRect.left;
+        if (left + menuWidth > window.innerWidth) left = window.innerWidth - menuWidth;
+        if (left < 0) left = 0;
+        setMenuPosition({ top, left });
+    }, []);
 
     // Close when clicking outside
     useEffect(() => {
@@ -52,7 +84,7 @@ export default function ActionDropdown({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Position menu in viewport (portal) so it is never clipped by overflow
+    // Position menu in viewport (portal) and keep it aligned with button on scroll/resize
     useLayoutEffect(() => {
         if (!isOpen) {
             setMenuPosition(null);
@@ -60,23 +92,21 @@ export default function ActionDropdown({
         }
         if (!buttonRef.current || typeof document === 'undefined') return;
 
-        const buttonRect = buttonRef.current.getBoundingClientRect();
-        const menuHeight = (options.length * 40) + 16; // approximate menu height
-        const menuWidth = 160;
-        const spaceBelow = window.innerHeight - buttonRect.bottom;
-        const spaceAbove = buttonRect.top;
+        updateMenuPosition();
 
-        const openUpward = spaceBelow < menuHeight && spaceAbove > menuHeight;
-        const top = openUpward
-            ? buttonRect.top - menuHeight - 4
-            : buttonRect.bottom + 4;
-        let left = buttonRect.left;
-        // Keep menu in viewport horizontally
-        if (left + menuWidth > window.innerWidth) left = window.innerWidth - menuWidth;
-        if (left < 0) left = 0;
+        const scrollParents = getScrollParents(buttonRef.current);
+        const handleScrollOrResize = () => updateMenuPosition();
 
-        setMenuPosition({ top, left });
-    }, [isOpen, options.length]);
+        window.addEventListener('scroll', handleScrollOrResize, true);
+        window.addEventListener('resize', handleScrollOrResize);
+        scrollParents.forEach((el) => el.addEventListener('scroll', handleScrollOrResize));
+
+        return () => {
+            window.removeEventListener('scroll', handleScrollOrResize, true);
+            window.removeEventListener('resize', handleScrollOrResize);
+            scrollParents.forEach((el) => el.removeEventListener('scroll', handleScrollOrResize));
+        };
+    }, [isOpen, updateMenuPosition]);
 
     const handleOptionClick = (option: ActionOption) => {
         if (option.disabled) return;
