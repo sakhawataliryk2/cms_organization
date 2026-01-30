@@ -449,7 +449,7 @@ export default function OrganizationView() {
     replaceGeneralContactComments: false,
     additionalReferences: "",
     scheduleNextAction: "None",
-    emailNotification: "Internal User",
+    emailNotification: [] as string[],
   });
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
@@ -3209,7 +3209,7 @@ export default function OrganizationView() {
               noteForm.replaceGeneralContactComments,
             additional_references: noteForm.additionalReferences,
             schedule_next_action: noteForm.scheduleNextAction,
-            email_notification: noteForm.emailNotification,
+            email_notification: Array.isArray(noteForm.emailNotification) ? noteForm.emailNotification : (noteForm.emailNotification ? [noteForm.emailNotification] : []),
           }),
         }
       );
@@ -3262,9 +3262,8 @@ export default function OrganizationView() {
         replaceGeneralContactComments: false,
         additionalReferences: "",
         scheduleNextAction: "None",
-        emailNotification: "Internal User",
+        emailNotification: [],
       });
-      // setShowAddNote(false);j
       setAboutSearchQuery("");
       setValidationErrors({});
       setShowAddNote(false);
@@ -3311,7 +3310,7 @@ export default function OrganizationView() {
       replaceGeneralContactComments: false,
       additionalReferences: "",
       scheduleNextAction: "None",
-      emailNotification: "Internal User",
+      emailNotification: [],
     });
     setAboutSearchQuery("");
     setValidationErrors({});
@@ -5456,7 +5455,7 @@ export default function OrganizationView() {
 
       {/* Add Note Modal */}
       {showAddNote && (
-        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-100">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <div className="flex items-center space-x-2">
@@ -5550,7 +5549,8 @@ export default function OrganizationView() {
                 {/* About Section - Required, Multiple References */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    About / Reference {noteForm.aboutReferences ? (
+                    About / Reference{" "}
+                    {(noteForm.aboutReferences && noteForm.aboutReferences.length > 0) ? (
                       <span className="text-green-500">✓</span>
                     ) : (
                       <span className="text-red-500">*</span>
@@ -5580,14 +5580,13 @@ export default function OrganizationView() {
                       </div>
                     )}
 
-                    {/* Search Input */}
+                    {/* Search Input for References */}
                     <div className="relative">
-                      {
-                        noteForm.aboutReferences.length !== 0 &&
-                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                          Additional References
+                      {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
+                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                          Add Additional References
                         </label>
-                      }
+                      )}
                       {/* <label className="block text-sm font-medium text-gray-700 mb-1">
                         Additional References
                       </label> */}
@@ -5719,7 +5718,7 @@ export default function OrganizationView() {
                   )}
                 </div> */}
 
-                {/* Email Notification Section - Internal Users Only */}
+                {/* Email Notification Section - Multi-select (matches Jobs) */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
                     <span className="mr-2">📧</span>
@@ -5731,23 +5730,72 @@ export default function OrganizationView() {
                         Loading users...
                       </div>
                     ) : (
-                      <select
-                        value={noteForm.emailNotification}
-                        onChange={(e) =>
-                          setNoteForm((prev) => ({
-                            ...prev,
-                            emailNotification: e.target.value,
-                          }))
-                        }
-                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="Internal User">Internal User</option>
-                        {users.map((user) => (
-                          <option key={user.id} value={user.email || user.name}>
-                            {user.name || user.email} {user.email && `(${user.email})`}
-                          </option>
+                      <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 max-h-48 overflow-y-auto p-2 bg-white">
+                        {users.length === 0 ? (
+                          <div className="text-gray-500 text-sm p-2 text-center">
+                            No internal users found
+                          </div>
+                        ) : (
+                          <div className="space-y-1">
+                            {users.map((user) => (
+                              <label
+                                key={user.id}
+                                className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={noteForm.emailNotification.includes(user.email || user.name)}
+                                  onChange={() => {
+                                    const value = user.email || user.name;
+                                    setNoteForm((prev) => {
+                                      const current = prev.emailNotification;
+                                      if (current.includes(value)) {
+                                        return {
+                                          ...prev,
+                                          emailNotification: current.filter((v) => v !== value),
+                                        };
+                                      } else {
+                                        return {
+                                          ...prev,
+                                          emailNotification: [...current, value],
+                                        };
+                                      }
+                                    });
+                                  }}
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                                />
+                                <span className="text-sm text-gray-700">
+                                  {user.name || user.email} {user.email && `(${user.email})`}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {noteForm.emailNotification.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {noteForm.emailNotification.map((val) => (
+                          <span
+                            key={val}
+                            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                          >
+                            {val}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNoteForm((prev) => ({
+                                  ...prev,
+                                  emailNotification: prev.emailNotification.filter((v) => v !== val),
+                                }));
+                              }}
+                              className="ml-1 text-blue-600 hover:text-blue-800"
+                            >
+                              ×
+                            </button>
+                          </span>
                         ))}
-                      </select>
+                      </div>
                     )}
                   </div>
                   <p className="mt-1 text-xs text-gray-500">

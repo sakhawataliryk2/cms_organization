@@ -1771,7 +1771,7 @@ Best regards`;
             );
           }
         } else {
-          // Fallback default actions
+          // Fallback default actions (same as organization)
           setActionFields([
             { id: 'Outbound Call', field_label: 'Outbound Call', field_name: 'Outbound Call' },
             { id: 'Inbound Call', field_label: 'Inbound Call', field_name: 'Inbound Call' },
@@ -1781,11 +1781,6 @@ Best regards`;
             { id: 'Client Visit', field_label: 'Client Visit', field_name: 'Client Visit' },
           ]);
         }
-        // Sort by sort_order if available
-        const sortedFields = fields.sort((a: any, b: any) =>
-          (a.sort_order || 0) - (b.sort_order || 0)
-        );
-        setActionFields(sortedFields);
       }
     } catch (err) {
       console.error("Error fetching action fields:", err);

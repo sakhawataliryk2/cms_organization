@@ -2098,7 +2098,7 @@ export default function TaskView() {
                 </div>
             )}
 
-            {/* Add Note Modal */}
+            {/* Add Note Modal - Jobs-style layout (Note Text only; backend supports text only) */}
             {showAddNote && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                     <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
@@ -2116,71 +2116,24 @@ export default function TaskView() {
                         </div>
                         <div className="p-6">
                             <div className="space-y-4">
-                                {/* Note Text Area */}
+                                {/* Note Text Area - Required */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Note Text
+                                        Note Text{" "}
+                                        {noteForm.text.length > 0 ? (
+                                            <span className="text-green-500">✓</span>
+                                        ) : (
+                                            <span className="text-red-500">*</span>
+                                        )}
                                     </label>
                                     <textarea
                                         value={noteForm.text}
                                         onChange={(e) => setNoteForm(prev => ({ ...prev, text: e.target.value }))}
+                                        autoFocus
                                         placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
                                         className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                                         rows={6}
                                     />
-                                </div>
-
-                                {/* About Section */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        About
-                                    </label>
-                                    <div className="relative">
-                                        <div className="flex items-center border border-gray-300 rounded p-2 bg-white">
-                                            <div className="w-6 h-6 rounded-full bg-orange-400 mr-2 flex-shrink-0"></div>
-                                            <span className="flex-1 text-sm">{noteForm.about}</span>
-                                            <button
-                                                onClick={() => setNoteForm(prev => ({ ...prev, about: '' }))}
-                                                className="ml-2 text-gray-500 hover:text-gray-700 text-xs"
-                                            >
-                                                CLEAR ALL X
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Additional References Section */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Additional References
-                                    </label>
-                                    <div className="relative">
-                                        <input
-                                            type="text"
-                                            value={noteForm.additionalReferences}
-                                            onChange={(e) => setNoteForm(prev => ({ ...prev, additionalReferences: e.target.value }))}
-                                            placeholder="Reference other records using #"
-                                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
-                                        />
-                                        <span className="absolute right-2 top-2 text-gray-400 text-sm">Q</span>
-                                    </div>
-                                </div>
-
-                                {/* Email Notification Section */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                                        <span className="mr-2">📧</span>
-                                        Email Notification
-                                    </label>
-                                    <div className="relative">
-                                        <input
-                                            type="text"
-                                            value={noteForm.emailNotification}
-                                            onChange={(e) => setNoteForm(prev => ({ ...prev, emailNotification: e.target.value }))}
-                                            placeholder="Internal User"
-                                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                        />
-                                    </div>
                                 </div>
                             </div>
 

@@ -1591,7 +1591,7 @@ export default function JobView() {
     }
   }, [showAddNote]);
 
-  // Fetch action fields (custom fields from Jobs field management)
+  // Fetch action fields: use field500 (field_500/actions/action) when present, else all custom fields
   const fetchActionFields = async () => {
     setIsLoadingActionFields(true);
     try {
@@ -1606,19 +1606,61 @@ export default function JobView() {
       });
       if (response.ok) {
         const data = await response.json();
-        // Get custom fields from the response - handle both response structures
         const fields = data.customFields || data.fields || [];
-        // Sort by sort_order if available
-        const sortedFields = fields.sort((a: any, b: any) =>
-          (a.sort_order || 0) - (b.sort_order || 0)
+        const fieldNamesToCheck = ['field_500', 'actions', 'action'];
+        const field500 = (fields as any[]).find(
+          (f: any) =>
+            fieldNamesToCheck.includes(f.field_name?.toLowerCase()) ||
+            fieldNamesToCheck.includes(f.field_label?.toLowerCase())
         );
-        setActionFields(sortedFields);
+        if (field500 && field500.options) {
+          let options = field500.options;
+          if (typeof options === 'string') {
+            try {
+              options = JSON.parse(options);
+            } catch { }
+          }
+          if (Array.isArray(options)) {
+            setActionFields(
+              options.map((opt: any) => ({
+                id: opt.value ?? opt,
+                field_label: opt.label ?? opt.value ?? opt,
+                field_name: opt.value ?? opt,
+              }))
+            );
+          } else if (typeof options === 'object') {
+            setActionFields(
+              Object.entries(options).map(([key, value]) => ({
+                id: key,
+                field_label: String(value),
+                field_name: key,
+              }))
+            );
+          } else {
+            setActionFieldsFromAllFields(fields);
+          }
+        } else {
+          setActionFieldsFromAllFields(fields);
+        }
       }
     } catch (err) {
       console.error("Error fetching action fields:", err);
     } finally {
       setIsLoadingActionFields(false);
     }
+  };
+
+  const setActionFieldsFromAllFields = (fields: any[]) => {
+    const sorted = [...(fields || [])].sort(
+      (a: any, b: any) => (a.sort_order || 0) - (b.sort_order || 0)
+    );
+    setActionFields(
+      sorted.map((f: any) => ({
+        id: f.field_name ?? f.id,
+        field_label: f.field_label ?? f.field_name ?? '',
+        field_name: f.field_name ?? f.field_label ?? '',
+      }))
+    );
   };
 
   // Close reference dropdown when clicking outside
@@ -5013,7 +5055,7 @@ export default function JobView() {
 
       {/* Add Note Modal */}
       {showAddNote && (
-        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <div className="flex items-center space-x-2">
@@ -5049,9 +5091,6 @@ export default function JobView() {
                     className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={6}
                   />
-                  {noteForm.text.length < 1 &&
-                    <span className="text-green-500">Note Text is required</span>
-                  }
                 </div>
 
                 {/* Action Dropdown */}

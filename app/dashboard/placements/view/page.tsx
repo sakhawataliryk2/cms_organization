@@ -2203,35 +2203,6 @@ export default function PlacementView() {
         </button>
       </div>
 
-      {/* Add Note Form */}
-      {showAddNote && (
-        <div className="mb-6 p-4 bg-gray-50 rounded border">
-          <h3 className="font-medium mb-2">Add New Note</h3>
-          <textarea
-            value={newNote}
-            onChange={(e) => setNewNote(e.target.value)}
-            placeholder="Enter your note here..."
-            className="w-full p-2 border rounded mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            rows={4}
-          />
-          <div className="flex justify-end space-x-2">
-            <button
-              onClick={() => setShowAddNote(false)}
-              className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleAddNote}
-              className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-              disabled={!newNote.trim()}
-            >
-              Save Note
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* Notes List */}
       {isLoadingNotes ? (
         <div className="flex justify-center py-4">
@@ -3207,6 +3178,63 @@ export default function PlacementView() {
         {/* History Tab */}
         {activeTab === "history" && renderHistoryTab()}
       </div>
+
+      {/* Add Note Modal - Jobs-style layout (Note Text only; backend supports text only) */}
+      {showAddNote && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <div className="flex items-center space-x-2">
+                <Image src="/file.svg" alt="Note" width={20} height={20} />
+                <h2 className="text-lg font-semibold">Add Note</h2>
+              </div>
+              <button
+                onClick={() => { setShowAddNote(false); setNewNote(""); }}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Note Text{" "}
+                    {newNote.length > 0 ? (
+                      <span className="text-green-500">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
+                  </label>
+                  <textarea
+                    value={newNote}
+                    onChange={(e) => setNewNote(e.target.value)}
+                    autoFocus
+                    placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
+                    className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={6}
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
+                <button
+                  onClick={() => { setShowAddNote(false); setNewNote(""); }}
+                  className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium"
+                >
+                  CANCEL
+                </button>
+                <button
+                  onClick={handleAddNote}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  disabled={!newNote.trim()}
+                >
+                  SAVE
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showFileDetailsModal && pendingFiles.length > 0 && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 bg-opacity-50">

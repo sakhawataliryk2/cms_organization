@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
-import { matchesRecordId, parseRecordId } from '@/lib/recordIdFormatter';
+import { parseRecordId } from '@/lib/recordIdFormatter';
 
 // Global search across all entities
 export async function GET(request: NextRequest) {
@@ -27,13 +27,38 @@ export async function GET(request: NextRequest) {
         }
 
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-        const searchTerm = query.trim().toLowerCase();
+        const trimmedQuery = query.trim();
+        // Split into terms so "o 54" → ["o", "54"]: a record must match ALL terms (in ID or in title/other fields)
+        const terms = trimmedQuery.split(/\s+/).filter(Boolean);
         
-        // Parse prefixed ID if present (e.g., "J8" -> {id: 8, type: 'job'})
-        const parsedId = parseRecordId(query.trim());
+        // Parse prefixed ID if present (e.g., "O54", "O 54" -> {id: 54, type: 'organization'})
+        const parsedId = parseRecordId(trimmedQuery);
+
+        // When user searches by prefixed ID (O54, J8, JS123, etc.), fetch that record by ID so it always appears
+        const backendPathByType: Record<string, string> = {
+            job: '/api/jobs',
+            lead: '/api/leads',
+            jobSeeker: '/api/job-seekers',
+            organization: '/api/organizations',
+            task: '/api/tasks',
+            hiringManager: '/api/hiring-managers',
+            placement: '/api/placements',
+        };
+        const fetchByIdPromise = parsedId && backendPathByType[parsedId.type]
+            ? fetch(`${apiUrl}${backendPathByType[parsedId.type]}/${parsedId.id}`, {
+                headers: { 'Authorization': `Bearer ${token}` },
+            })
+                .then(async (res) => {
+                    if (!res.ok) return { type: parsedId!.type, data: null };
+                    const data = await res.json();
+                    const single = data.organization ?? data.job ?? data.lead ?? data.jobSeeker ?? data.task ?? data.hiringManager ?? data.placement ?? data;
+                    return { type: parsedId!.type, data: single };
+                })
+                .catch(() => ({ type: parsedId!.type, data: null }))
+            : null;
 
         // Search across all entities in parallel
-        const [jobsRes, leadsRes, jobSeekersRes, organizationsRes, tasksRes, hiringManagersRes, placementsRes] = await Promise.allSettled([
+        const [jobsRes, leadsRes, jobSeekersRes, organizationsRes, tasksRes, hiringManagersRes, placementsRes, byIdRes] = await Promise.allSettled([
             // Jobs - fetch all and filter
             fetch(`${apiUrl}/api/jobs`, {
                 headers: {
@@ -86,7 +111,9 @@ export async function GET(request: NextRequest) {
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
-            }).then(res => res.ok ? res.json() : { placements: [] }).catch(() => ({ placements: [] }))
+            }).then(res => res.ok ? res.json() : { placements: [] }).catch(() => ({ placements: [] })),
+            // Prefixed-ID lookup (e.g. O54, J8) – ensures the exact record is always included
+            ...(fetchByIdPromise ? [fetchByIdPromise] : [Promise.resolve(null)])
         ]);
 
         const results: any = {
@@ -99,39 +126,33 @@ export async function GET(request: NextRequest) {
             placements: []
         };
 
-        // Helper function to check if a value matches search term
-        const matchesSearch = (value: any): boolean => {
-            if (!value && value !== 0) return false; // Allow 0 as a valid value
-            const strValue = String(value).toLowerCase();
-            return strValue.includes(searchTerm);
+        // Require ALL terms to appear in a single value (used by recordMatchesAllTerms across fields)
+        // Record matches text if every term appears in at least one of the given fields
+        const recordMatchesAllTerms = (record: any, fieldKeys: string[]): boolean => {
+            if (terms.length === 0) return false;
+            return terms.every((term) =>
+                fieldKeys.some((key) =>
+                    String(record[key] ?? '').toLowerCase().includes(term.toLowerCase())
+                )
+            );
         };
-        
-        // Helper function to check if a record ID matches (with prefix support)
+        // Helper: record ID matches prefixed ID (e.g. O 54 → org 54) or id string contains all terms
         const matchesId = (id: any, type: 'job' | 'jobSeeker' | 'organization' | 'lead' | 'task' | 'placement' | 'hiringManager'): boolean => {
-            if (!id && id !== 0) return false;
-            
-            // If parsed ID exists and matches this type, check if IDs match
-            if (parsedId && parsedId.type === type && parsedId.id === Number(id)) {
-                return true;
-            }
-            
-            // Also check regular string matching
-            return matchesSearch(id);
+            if (id === undefined || id === null) return id === 0;
+            if (parsedId && parsedId.type === type && parsedId.id === Number(id)) return true;
+            if (terms.length === 0) return false;
+            const idStr = String(id).toLowerCase();
+            return terms.every((t) => idStr.includes(t.toLowerCase()));
         };
 
-        // Process jobs results
+        // Process jobs results: match prefixed ID (e.g. J8) OR all terms in id/title/other fields
+        const jobFields = ['job_title', 'title', 'company_name', 'organization_name', 'location', 'description', 'id'];
         if (jobsRes.status === 'fulfilled') {
             try {
                 const data = jobsRes.value;
                 const jobs = data.jobs || data || [];
-                results.jobs = jobs.filter((job: any) => 
-                    matchesSearch(job.job_title) ||
-                    matchesSearch(job.title) ||
-                    matchesSearch(job.company_name) ||
-                    matchesSearch(job.organization_name) ||
-                    matchesSearch(job.location) ||
-                    matchesSearch(job.description) ||
-                    matchesId(job.id, 'job')
+                results.jobs = jobs.filter((job: any) =>
+                    matchesId(job.id, 'job') || recordMatchesAllTerms(job, jobFields)
                 );
             } catch (e) {
                 console.error('Error processing jobs results:', e);
@@ -139,19 +160,13 @@ export async function GET(request: NextRequest) {
         }
 
         // Process leads results
+        const leadFields = ['name', 'first_name', 'last_name', 'company_name', 'email', 'phone', 'id'];
         if (leadsRes.status === 'fulfilled') {
             try {
                 const data = leadsRes.value;
                 const leads = data.leads || data || [];
-                // If leads is an array, filter it; otherwise use as-is
                 results.leads = Array.isArray(leads) ? leads.filter((lead: any) =>
-                    matchesSearch(lead.name) ||
-                    matchesSearch(lead.first_name) ||
-                    matchesSearch(lead.last_name) ||
-                    matchesSearch(lead.company_name) ||
-                    matchesSearch(lead.email) ||
-                    matchesSearch(lead.phone) ||
-                    matchesId(lead.id, 'lead')
+                    matchesId(lead.id, 'lead') || recordMatchesAllTerms(lead, leadFields)
                 ) : leads;
             } catch (e) {
                 console.error('Error processing leads results:', e);
@@ -159,18 +174,13 @@ export async function GET(request: NextRequest) {
         }
 
         // Process job seekers results
+        const jobSeekerFields = ['first_name', 'last_name', 'name', 'email', 'phone', 'title', 'id'];
         if (jobSeekersRes.status === 'fulfilled') {
             try {
                 const data = jobSeekersRes.value;
                 const jobSeekers = data.jobSeekers || data || [];
                 results.jobSeekers = jobSeekers.filter((js: any) =>
-                    matchesSearch(js.first_name) ||
-                    matchesSearch(js.last_name) ||
-                    matchesSearch(js.name) ||
-                    matchesSearch(js.email) ||
-                    matchesSearch(js.phone) ||
-                    matchesSearch(js.title) ||
-                    matchesId(js.id, 'jobSeeker')
+                    matchesId(js.id, 'jobSeeker') || recordMatchesAllTerms(js, jobSeekerFields)
                 );
             } catch (e) {
                 console.error('Error processing job seekers results:', e);
@@ -178,17 +188,13 @@ export async function GET(request: NextRequest) {
         }
 
         // Process organizations results
+        const orgFields = ['name', 'website', 'phone', 'address', 'overview', 'id'];
         if (organizationsRes.status === 'fulfilled') {
             try {
                 const data = organizationsRes.value;
                 const organizations = data.organizations || data || [];
                 results.organizations = organizations.filter((org: any) =>
-                    matchesSearch(org.name) ||
-                    matchesSearch(org.website) ||
-                    matchesSearch(org.phone) ||
-                    matchesSearch(org.address) ||
-                    matchesSearch(org.overview) ||
-                    matchesId(org.id, 'organization')
+                    matchesId(org.id, 'organization') || recordMatchesAllTerms(org, orgFields)
                 );
             } catch (e) {
                 console.error('Error processing organizations results:', e);
@@ -196,16 +202,13 @@ export async function GET(request: NextRequest) {
         }
 
         // Process tasks results
+        const taskFields = ['title', 'task_title', 'description', 'notes', 'id'];
         if (tasksRes.status === 'fulfilled') {
             try {
                 const data = tasksRes.value;
                 const tasks = data.tasks || data || [];
                 results.tasks = tasks.filter((task: any) =>
-                    matchesSearch(task.title) ||
-                    matchesSearch(task.task_title) ||
-                    matchesSearch(task.description) ||
-                    matchesSearch(task.notes) ||
-                    matchesId(task.id, 'task')
+                    matchesId(task.id, 'task') || recordMatchesAllTerms(task, taskFields)
                 );
             } catch (e) {
                 console.error('Error processing tasks results:', e);
@@ -213,18 +216,13 @@ export async function GET(request: NextRequest) {
         }
 
         // Process hiring managers results
+        const hmFields = ['name', 'first_name', 'last_name', 'email', 'phone', 'organization_name', 'id'];
         if (hiringManagersRes.status === 'fulfilled') {
             try {
                 const data = hiringManagersRes.value;
                 const hiringManagers = data.hiringManagers || data.hiring_managers || data || [];
                 results.hiringManagers = (Array.isArray(hiringManagers) ? hiringManagers : []).filter((hm: any) =>
-                    matchesSearch(hm.name) ||
-                    matchesSearch(hm.first_name) ||
-                    matchesSearch(hm.last_name) ||
-                    matchesSearch(hm.email) ||
-                    matchesSearch(hm.phone) ||
-                    matchesSearch(hm.organization_name) ||
-                    matchesId(hm.id, 'hiringManager')
+                    matchesId(hm.id, 'hiringManager') || recordMatchesAllTerms(hm, hmFields)
                 );
             } catch (e) {
                 console.error('Error processing hiring managers results:', e);
@@ -232,19 +230,31 @@ export async function GET(request: NextRequest) {
         }
 
         // Process placements results
+        const placementFields = ['job_title', 'jobSeekerName', 'job_seeker_name', 'status', 'id'];
         if (placementsRes.status === 'fulfilled') {
             try {
                 const data = placementsRes.value;
                 const placements = data.placements || data || [];
                 results.placements = (Array.isArray(placements) ? placements : []).filter((placement: any) =>
-                    matchesSearch(placement.job_title) ||
-                    matchesSearch(placement.jobSeekerName) ||
-                    matchesSearch(placement.job_seeker_name) ||
-                    matchesSearch(placement.status) ||
-                    matchesId(placement.id, 'placement')
+                    matchesId(placement.id, 'placement') || recordMatchesAllTerms(placement, placementFields)
                 );
             } catch (e) {
                 console.error('Error processing placements results:', e);
+            }
+        }
+
+        // When user searched by prefixed ID (O54, J8, O 54, etc.), ensure that exact record is in results
+        const resultsKeyByType: Record<string, keyof typeof results> = {
+            organization: 'organizations', job: 'jobs', lead: 'leads', jobSeeker: 'jobSeekers',
+            task: 'tasks', hiringManager: 'hiringManagers', placement: 'placements',
+        };
+        if (byIdRes?.status === 'fulfilled' && byIdRes.value?.data) {
+            const { type, data } = byIdRes.value;
+            const key = resultsKeyByType[type];
+            if (key) {
+                const arr = results[key];
+                const exists = Array.isArray(arr) && arr.some((r: any) => Number(r?.id) === Number(data?.id));
+                if (!exists) (results as any)[key] = [data, ...(Array.isArray(arr) ? arr : [])];
             }
         }
 
