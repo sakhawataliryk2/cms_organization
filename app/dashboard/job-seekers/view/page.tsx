@@ -443,7 +443,7 @@ export default function JobSeekerView() {
     replaceGeneralContactComments: boolean;
     additionalReferences: string;
     scheduleNextAction: string;
-    emailNotification: string;
+    emailNotification: string[];
   }>({
     text: "",
     action: "",
@@ -464,7 +464,7 @@ export default function JobSeekerView() {
     replaceGeneralContactComments: false,
     additionalReferences: "",
     scheduleNextAction: "None",
-    emailNotification: "Internal User",
+    emailNotification: [],
   });
 
   // Validation state
@@ -2638,7 +2638,7 @@ Best regards`;
           noteForm.replaceGeneralContactComments,
         additional_references: noteForm.additionalReferences,
         schedule_next_action: noteForm.scheduleNextAction,
-        email_notification: noteForm.emailNotification,
+        email_notification: Array.isArray(noteForm.emailNotification) ? noteForm.emailNotification : (noteForm.emailNotification ? [noteForm.emailNotification] : []),
       };
 
       console.log("Adding note for job seeker:", jobSeekerId);
@@ -2694,7 +2694,7 @@ Best regards`;
         replaceGeneralContactComments: false,
         additionalReferences: "",
         scheduleNextAction: "None",
-        emailNotification: "Internal User",
+        emailNotification: [],
       });
 
       setShowAddNote(false);
@@ -2724,13 +2724,25 @@ Best regards`;
       about: jobSeeker
         ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
         : "",
-      aboutReferences: [], // ✅ REQUIRED
+      aboutReferences: jobSeeker
+        ? [
+          {
+            id: jobSeeker.id,
+            type: "Job Seeker",
+            display: `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`,
+            value: formatRecordId(jobSeeker.id, "jobSeeker"),
+          },
+        ]
+        : [],
       copyNote: "No",
       replaceGeneralContactComments: false,
       additionalReferences: "",
       scheduleNextAction: "None",
-      emailNotification: "Internal User",
+      emailNotification: [],
     });
+    setAboutSearchQuery("");
+    setShowAboutDropdown(false);
+    setAboutSuggestions([]);
   };
 
 
@@ -5709,9 +5721,9 @@ Best regards`;
         </div>
       )}
 
-      {/* Add Note Modal */}
+      {/* Add Note Modal - Jobs-style layout */}
       {showAddNote && (
-        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <div className="flex items-center space-x-2">
@@ -5730,7 +5742,7 @@ Best regards`;
                 {/* Note Text Area */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Note Text  {" "}
+                    Note Text{" "}
                     {noteForm.text.length > 0 ? (
                       <span className="text-green-500">✓</span>
                     ) : (
@@ -5752,7 +5764,7 @@ Best regards`;
                 {/* Action Dropdown */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Action  {" "}
+                    Action{" "}
                     {noteForm.action ? (
                       <span className="text-green-500">✓</span>
                     ) : (
@@ -5760,9 +5772,8 @@ Best regards`;
                     )}
                   </label>
                   {isLoadingActionFields ? (
-                    <div className="flex items-center space-x-2 text-sm text-gray-500">
-                      <div className="animate-spin rounded-full h-4 w-4 border-t-2 border-b-2 border-blue-500"></div>
-                      <span>Loading actions...</span>
+                    <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                      Loading actions...
                     </div>
                   ) : (
                     <select
@@ -5770,7 +5781,10 @@ Best regards`;
                       onChange={(e) =>
                         setNoteForm((prev) => ({ ...prev, action: e.target.value }))
                       }
-                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className={`w-full p-2 border rounded focus:outline-none focus:ring-2 ${validationErrors.action
+                        ? "border-red-500 focus:ring-red-500"
+                        : "border-gray-300 focus:ring-blue-500"
+                        }`}
                     >
                       <option value="">Select Action</option>
                       {actionFields.map((field) => (
@@ -5783,117 +5797,124 @@ Best regards`;
                       ))}
                     </select>
                   )}
+                  {validationErrors.action && (
+                    <p className="mt-1 text-sm text-red-500">{validationErrors.action}</p>
+                  )}
                 </div>
 
-                {/* About Section */}
+                {/* About / Reference - Jobs-style (tags + search + suggestions) */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    About
+                    About / Reference{" "}
+                    {(noteForm.aboutReferences && noteForm.aboutReferences.length > 0) ? (
+                      <span className="text-green-500">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
                   </label>
-                  <div className="relative">
-                    <div className="flex items-center border border-gray-300 rounded p-2 bg-white">
-                      <div className="w-6 h-6 rounded-full bg-orange-400 mr-2 flex-shrink-0"></div>
-                      <span className="flex-1 text-sm">{noteForm.about}</span>
-                      <button
-                        onClick={() =>
-                          setNoteForm((prev) => ({ ...prev, about: "" }))
-                        }
-                        className="ml-2 text-gray-500 hover:text-gray-700 text-xs"
-                      >
-                        CLEAR ALL X
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Action Section */}
-                {/* <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Action
-                  </label>
-                  <div className="border border-gray-300 rounded p-3 bg-gray-50">
-                    <div className="font-medium mb-3">Copy Note</div>
-                    <div className="flex space-x-2 mb-3">
-                      <button
-                        type="button"
-                        onClick={() => setNoteForm(prev => ({ ...prev, copyNote: 'No' }))}
-                        className={`px-4 py-2 rounded text-sm ${
-                          noteForm.copyNote === 'No'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
-                        }`}
-                      >
-                        No
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setNoteForm(prev => ({ ...prev, copyNote: 'Yes' }))}
-                        className={`px-4 py-2 rounded text-sm ${
-                          noteForm.copyNote === 'Yes'
-                            ? 'bg-blue-500 text-white'
-                            : 'bg-white border border-gray-300 text-gray-700 hover:bg-gray-100'
-                        }`}
-                      >
-                        Yes
-                      </button>
-                    </div>
-                    {noteForm.copyNote === 'Yes' && (
-                      <div className="mt-2">
-                        <label className="flex items-center space-x-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={noteForm.replaceGeneralContactComments}
-                            onChange={(e) => setNoteForm(prev => ({ ...prev, replaceGeneralContactComments: e.target.checked }))}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          />
-                          <span className="text-sm text-gray-700">
-                            Replace the General Contact Comments with this note?
+                  <div className="relative" ref={aboutInputRef}>
+                    {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
+                        {noteForm.aboutReferences.map((ref, index) => (
+                          <span
+                            key={`${ref.type}-${ref.id}-${index}`}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
+                          >
+                            <FiUsers className="w-4 h-4" />
+                            {ref.display}
+                            <button
+                              type="button"
+                              onClick={() => removeAboutReference(index)}
+                              className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
+                              title="Remove"
+                            >
+                              ×
+                            </button>
                           </span>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="relative">
+                      {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
+                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                          Add Additional References
                         </label>
+                      )}
+                      <input
+                        type="text"
+                        value={aboutSearchQuery}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setAboutSearchQuery(value);
+                          if (value.trim().length >= 2) searchAboutReferences(value);
+                        }}
+                        onFocus={() => {
+                          if (aboutSearchQuery.trim().length >= 2) {
+                            setShowAboutDropdown(true);
+                          }
+                        }}
+                        placeholder={
+                          noteForm.aboutReferences && noteForm.aboutReferences.length === 0
+                            ? "Search and select records (e.g., Job, Org, Lead, Placement)..."
+                            : "Type to search more references..."
+                        }
+                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 pr-8 ${validationErrors.about
+                          ? "border-red-500 focus:ring-red-500"
+                          : "border-gray-300 focus:ring-blue-500"
+                          }`}
+                      />
+                      <span className="absolute right-2 top-2 text-gray-400 text-sm">Q</span>
+                    </div>
+
+                    {validationErrors.about && (
+                      <p className="mt-1 text-sm text-red-500">{validationErrors.about}</p>
+                    )}
+
+                    {showAboutDropdown && (
+                      <div
+                        data-about-dropdown
+                        className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
+                      >
+                        {isLoadingAboutSearch ? (
+                          <div className="p-3 text-sm text-gray-500 text-center">Searching...</div>
+                        ) : aboutSuggestions.length > 0 ? (
+                          aboutSuggestions.map((suggestion, idx) => (
+                            <button
+                              key={`${suggestion.type}-${suggestion.id}-${idx}`}
+                              type="button"
+                              onClick={() => handleAboutReferenceSelect(suggestion)}
+                              className="w-full text-left px-4 py-2 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none border-b border-gray-100 last:border-b-0"
+                            >
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900">{suggestion.display}</div>
+                                  <div className="text-xs text-gray-500">{suggestion.type}</div>
+                                </div>
+                                <span className="text-xs text-blue-600 font-medium">{suggestion.value}</span>
+                              </div>
+                            </button>
+                          ))
+                        ) : aboutSearchQuery.trim().length >= 2 ? (
+                          <div className="p-3 text-sm text-gray-500 text-center">No references found</div>
+                        ) : null}
                       </div>
                     )}
                   </div>
-                </div> */}
-
-                {/* Additional References Section */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Additional References
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={noteForm.additionalReferences}
-                      onChange={(e) =>
-                        setNoteForm((prev) => ({
-                          ...prev,
-                          additionalReferences: e.target.value,
-                        }))
-                      }
-                      placeholder="Reference other records using #"
-                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
-                    />
-                    <span className="absolute right-2 top-2 text-gray-400 text-sm">
-                      Q
-                    </span>
-                  </div>
                 </div>
 
-                {/* Schedule Next Action Section */}
+                {/* Schedule Next Action - Job Seeker specific */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     Schedule Next Action
                   </label>
-                  <div className="flex space-x-2">
+                  <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
                       onClick={() =>
-                        setNoteForm((prev) => ({
-                          ...prev,
-                          scheduleNextAction: "None",
-                        }))
+                        setNoteForm((prev) => ({ ...prev, scheduleNextAction: "None" }))
                       }
-                      className={`px-4 py-2 rounded text-sm ${noteForm.scheduleNextAction === "None"
+                      className={`px-4 py-2 rounded text-sm font-medium ${noteForm.scheduleNextAction === "None"
                         ? "bg-blue-500 text-white"
                         : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
                         }`}
@@ -5903,12 +5924,9 @@ Best regards`;
                     <button
                       type="button"
                       onClick={() =>
-                        setNoteForm((prev) => ({
-                          ...prev,
-                          scheduleNextAction: "Appointment",
-                        }))
+                        setNoteForm((prev) => ({ ...prev, scheduleNextAction: "Appointment" }))
                       }
-                      className={`px-4 py-2 rounded text-sm ${noteForm.scheduleNextAction === "Appointment"
+                      className={`px-4 py-2 rounded text-sm font-medium ${noteForm.scheduleNextAction === "Appointment"
                         ? "bg-blue-500 text-white"
                         : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
                         }`}
@@ -5918,12 +5936,9 @@ Best regards`;
                     <button
                       type="button"
                       onClick={() =>
-                        setNoteForm((prev) => ({
-                          ...prev,
-                          scheduleNextAction: "Task",
-                        }))
+                        setNoteForm((prev) => ({ ...prev, scheduleNextAction: "Task" }))
                       }
-                      className={`px-4 py-2 rounded text-sm ${noteForm.scheduleNextAction === "Task"
+                      className={`px-4 py-2 rounded text-sm font-medium ${noteForm.scheduleNextAction === "Task"
                         ? "bg-blue-500 text-white"
                         : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
                         }`}
@@ -5933,25 +5948,127 @@ Best regards`;
                   </div>
                 </div>
 
-                {/* Email Notification Section */}
+                {/* Copy Note - Job Seeker specific */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Copy Note
+                  </label>
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNoteForm((prev) => ({ ...prev, copyNote: "No" }))
+                      }
+                      className={`px-4 py-2 rounded text-sm font-medium ${noteForm.copyNote === "No"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
+                        }`}
+                    >
+                      No
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNoteForm((prev) => ({ ...prev, copyNote: "Yes" }))
+                      }
+                      className={`px-4 py-2 rounded text-sm font-medium ${noteForm.copyNote === "Yes"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-100"
+                        }`}
+                    >
+                      Yes
+                    </button>
+                  </div>
+                  {noteForm.copyNote === "Yes" && (
+                    <label className="flex items-center gap-2 p-2 rounded bg-gray-50 border border-gray-200 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={noteForm.replaceGeneralContactComments}
+                        onChange={(e) =>
+                          setNoteForm((prev) => ({
+                            ...prev,
+                            replaceGeneralContactComments: e.target.checked,
+                          }))
+                        }
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">
+                        Replace the General Contact Comments with this note?
+                      </span>
+                    </label>
+                  )}
+                </div>
+
+                {/* Email Notification - Multi-select (matches Jobs) */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
                     <span className="mr-2">📧</span>
                     Email Notification
                   </label>
                   <div className="relative">
-                    <input
-                      type="text"
-                      value={noteForm.emailNotification}
-                      onChange={(e) =>
-                        setNoteForm((prev) => ({
-                          ...prev,
-                          emailNotification: e.target.value,
-                        }))
-                      }
-                      placeholder="Internal User"
-                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                    {isLoadingUsers ? (
+                      <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                        Loading users...
+                      </div>
+                    ) : (
+                      <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 max-h-48 overflow-y-auto p-2 bg-white">
+                        {users.length === 0 ? (
+                          <div className="text-gray-500 text-sm p-2 text-center">No internal users found</div>
+                        ) : (
+                          <div className="space-y-1">
+                            {users.map((user) => (
+                              <label
+                                key={user.id}
+                                className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={noteForm.emailNotification.includes(user.email || user.name)}
+                                  onChange={() => {
+                                    const value = user.email || user.name;
+                                    setNoteForm((prev) => {
+                                      const current = prev.emailNotification;
+                                      if (current.includes(value)) {
+                                        return { ...prev, emailNotification: current.filter((v) => v !== value) };
+                                      }
+                                      return { ...prev, emailNotification: [...current, value] };
+                                    });
+                                  }}
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                                />
+                                <span className="text-sm text-gray-700">
+                                  {user.name || user.email} {user.email && `(${user.email})`}
+                                </span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {noteForm.emailNotification.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {noteForm.emailNotification.map((val) => (
+                          <span
+                            key={val}
+                            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                          >
+                            {val}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNoteForm((prev) => ({
+                                  ...prev,
+                                  emailNotification: prev.emailNotification.filter((v) => v !== val),
+                                }));
+                              }}
+                              className="ml-1 text-blue-600 hover:text-blue-800"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
