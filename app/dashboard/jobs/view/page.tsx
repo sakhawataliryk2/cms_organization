@@ -341,7 +341,7 @@ const JOB_DETAILS_STORAGE_KEY = "jobsJobDetailsFields";
 const DETAILS_DEFAULT_FIELDS = ["status", "priority", "employmentType", "startDate", "worksite", "dateAdded", "jobBoardStatus", "owner"];
 const DETAILS_STORAGE_KEY = "jobsDetailsFields";
 
-const HIRING_MANAGER_DEFAULT_FIELDS = ["name", "phone", "email"];
+const HIRING_MANAGER_DEFAULT_FIELDS = ["status", "organization", "department", "email", "email2", "mobilePhone", "directLine", "reportsTo", "linkedinUrl", "dateAdded", "owner", "address"];
 const HIRING_MANAGER_STORAGE_KEY = "jobsHiringManagerFields";
 
 export default function JobView() {
@@ -981,6 +981,10 @@ export default function JobView() {
 
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
+  const [hiringManagerAvailableFields, setHiringManagerAvailableFields] = useState<any[]>([]);
+  const [isLoadingHiringManagerFields, setIsLoadingHiringManagerFields] = useState(false);
+  const [jobHiringManager, setJobHiringManager] = useState<any>(null);
+  const [isLoadingJobHiringManager, setIsLoadingJobHiringManager] = useState(false);
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
     jobDetails: JOB_DETAILS_DEFAULT_FIELDS,
     details: [
@@ -993,7 +997,7 @@ export default function JobView() {
       "jobBoardStatus",
       "owner",
     ],
-    hiringManager: ["name", "phone", "email"],
+    hiringManager: HIRING_MANAGER_DEFAULT_FIELDS,
     recentNotes: ["notes"],
   });
 
@@ -1384,41 +1388,80 @@ export default function JobView() {
 
   const renderHiringManagerPanel = () => {
     if (!job) return null;
+    const hm = jobHiringManager;
+    const customObj = hm?.customFields || {};
+    const customFieldDefs = (hiringManagerAvailableFields || []).filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden);
+
+    const getCustomValue = (rawKey: string) => {
+      for (const fieldDef of customFieldDefs) {
+        if (String(fieldDef.field_key || fieldDef.api_name || "").toLowerCase() === rawKey.toLowerCase()) {
+          const v = customObj[rawKey] ?? customObj[fieldDef.field_name];
+          if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+        }
+        if (fieldDef.field_name && (customObj[fieldDef.field_name] !== undefined || customObj[rawKey] !== undefined)) {
+          const val = customObj[rawKey] ?? customObj[fieldDef.field_name];
+          if (val !== undefined && val !== null && String(val).trim() !== "") return String(val);
+        }
+      }
+      return customObj[rawKey] !== undefined && customObj[rawKey] !== null && String(customObj[rawKey]).trim() !== ""
+        ? String(customObj[rawKey]) : null;
+    };
+
+    const renderHiringManagerDetailsRow = (key: string) => {
+      const label = hiringManagerFieldCatalog.find((f) => f.key === key)?.label || key;
+      const LabelCell = () => (
+        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+      );
+      if (!hm) return null;
+      switch (key) {
+        case "status":
+          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.status || "-"}</div></div>);
+        case "organization":
+          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm text-blue-600">{hm.organization?.name || "-"}</div></div>);
+        case "department":
+          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.department || "-"}</div></div>);
+        case "email":
+          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.email && hm.email !== "(Not provided)" ? <a href={`mailto:${hm.email}`} className="text-blue-600 hover:underline">{hm.email}</a> : "-"}</div></div>);
+        case "email2":
+          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.email2 && hm.email2 !== "(Not provided)" ? <a href={`mailto:${hm.email2}`} className="text-blue-600 hover:underline">{hm.email2}</a> : "-"}</div></div>);
+        case "mobilePhone":
+          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.mobilePhone && hm.mobilePhone !== "(Not provided)" ? <a href={`tel:${hm.mobilePhone}`} className="text-blue-600 hover:underline">{hm.mobilePhone}</a> : "-"}</div></div>);
+        case "directLine":
+          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.directLine && hm.directLine !== "(Not provided)" ? <a href={`tel:${hm.directLine}`} className="text-blue-600 hover:underline">{hm.directLine}</a> : "-"}</div></div>);
+        case "reportsTo":
+          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.reportsTo || "-"}</div></div>);
+        case "linkedinUrl":
+          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.linkedinUrl && hm.linkedinUrl !== "Not provided" ? <a href={hm.linkedinUrl.startsWith("http") ? hm.linkedinUrl : `https://${hm.linkedinUrl}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{hm.linkedinUrl}</a> : "-"}</div></div>);
+        case "dateAdded":
+          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.dateAdded || "-"}</div></div>);
+        case "owner":
+          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.owner || "-"}</div></div>);
+        case "address":
+          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.address || "-"}</div></div>);
+        default: {
+          const cv = getCustomValue(key);
+          const val = cv ?? (hm as any)[key];
+          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{val !== undefined && val !== null && String(val).trim() !== "" ? String(val) : "-"}</div></div>);
+        }
+      }
+    };
+
     return (
       <PanelWithHeader
         title="Hiring Manager"
         onEdit={() => handleEditPanel("hiringManager")}
       >
         <div className="space-y-0 border border-gray-200 rounded">
-          {visibleFields.hiringManager.includes("name") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                Name:
-              </div>
-              <div className="flex-1 p-2 text-blue-600">
-                {job.hiringManager.name}
-              </div>
+          {isLoadingJobHiringManager ? (
+            <div className="p-4 text-center text-gray-500 text-sm">Loading hiring manager…</div>
+          ) : !hm ? (
+            <div className="p-4 text-center text-gray-500 text-sm">
+              {job.hiringManager?.name ? `${job.hiringManager.name} — full details unavailable` : "No hiring manager selected for this job."}
             </div>
-          )}
-          {visibleFields.hiringManager.includes("phone") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                Phone:
-              </div>
-              <div className="flex-1 p-2">
-                {job.hiringManager.phone}
-              </div>
-            </div>
-          )}
-          {visibleFields.hiringManager.includes("email") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                Email:
-              </div>
-              <div className="flex-1 p-2 text-blue-600">
-                {job.hiringManager.email}
-              </div>
-            </div>
+          ) : (visibleFields.hiringManager || []).length === 0 ? (
+            <div className="p-4 text-center text-gray-500 text-sm">No fields visible. Use the edit icon to show fields.</div>
+          ) : (
+            (visibleFields.hiringManager || []).map((key) => renderHiringManagerDetailsRow(key))
           )}
         </div>
       </PanelWithHeader>
@@ -1504,6 +1547,42 @@ export default function JobView() {
     );
   };
 
+  // Same field catalog as Hiring Manager view Details panel (from Hiring Manager modify page)
+  const hiringManagerFieldCatalog = useMemo(() => {
+    const standard: { key: string; label: string }[] = [
+      { key: "status", label: "Status" },
+      { key: "organization", label: "Organization" },
+      { key: "department", label: "Department" },
+      { key: "email", label: "Email" },
+      { key: "email2", label: "Email 2" },
+      { key: "mobilePhone", label: "Mobile Phone" },
+      { key: "directLine", label: "Direct Line" },
+      { key: "reportsTo", label: "Reports To" },
+      { key: "linkedinUrl", label: "LinkedIn URL" },
+      { key: "dateAdded", label: "Date Added" },
+      { key: "owner", label: "Owner" },
+      { key: "address", label: "Address" },
+    ];
+    const customFromDefs = (hiringManagerAvailableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
+    const standardKeys = new Set(standard.map((s) => s.key));
+    const customFromHM = Object.keys(jobHiringManager?.customFields || {})
+      .filter((k) => !keysFromDefs.has(k) && !standardKeys.has(k))
+      .map((k) => ({ key: k, label: k }));
+    const all = [...standard, ...customFromDefs, ...customFromHM];
+    const seen = new Set<string>();
+    return all.filter((f) => {
+      if (seen.has(f.key)) return false;
+      seen.add(f.key);
+      return true;
+    });
+  }, [hiringManagerAvailableFields, jobHiringManager?.customFields]);
+
   const renderPanel = useCallback((panelId: string, isOverlay = false) => {
     if (panelId === "jobDetails") {
       return (
@@ -1534,7 +1613,7 @@ export default function JobView() {
       );
     }
     return null;
-  }, [job, visibleFields, notes, availableFields]); // Dependencies for inner renderers
+  }, [job, jobHiringManager, visibleFields, notes, availableFields, hiringManagerFieldCatalog, hiringManagerAvailableFields]); // Dependencies for inner renderers
 
   // ... (useHeaderConfig hook already exists below)
 
@@ -1616,15 +1695,129 @@ export default function JobView() {
     }
   }, [jobId]);
 
+  // Fetch hiring manager fields (for Hiring Manager panel - same as Hiring Manager modify page)
+  const fetchHiringManagerFields = async () => {
+    setIsLoadingHiringManagerFields(true);
+    try {
+      const response = await fetch("/api/admin/field-management/hiring-managers");
+      if (response.ok) {
+        const data = await response.json();
+        const fields = data.customFields || data.fields || data.data?.fields || [];
+        setHiringManagerAvailableFields(Array.isArray(fields) ? fields : []);
+      }
+    } catch (err) {
+      console.error("Error fetching hiring manager fields:", err);
+    } finally {
+      setIsLoadingHiringManagerFields(false);
+    }
+  };
+
+  // Resolve hiring manager ID from job (stored in custom_fields via Hiring Manager lookup field)
+  const getJobHiringManagerId = (): string | null => {
+    if (!job?.customFields || !availableFields.length) return null;
+    const hmField = availableFields.find((f: any) => {
+      const label = String(f.field_label || "").trim().toLowerCase();
+      return label === "hiring manager" || label.includes("hiring manager");
+    });
+    if (!hmField) return null;
+    const key = hmField.field_name || hmField.field_key;
+    if (!key) return null;
+    const val = job.customFields[key];
+    if (val == null || val === "") return null;
+    return String(val);
+  };
+
+  // Fetch full hiring manager for the job (same data/structure as Hiring Manager view page)
+  const fetchJobHiringManager = async (hmId: string) => {
+    setIsLoadingJobHiringManager(true);
+    setJobHiringManager(null);
+    console.log("Fetching!")
+    try {
+      const response = await fetch(`/api/hiring-managers/${hmId}`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+      if (!response.ok) return;
+      const data = await response.json();
+      const hm = data.hiringManager;
+      if (!hm) return;
+      const customFields = typeof hm.custom_fields === "string"
+        ? (() => { try { return JSON.parse(hm.custom_fields); } catch { return {}; } })()
+        : hm.custom_fields || {};
+      setJobHiringManager({
+        id: hm.id,
+        firstName: hm.first_name || "",
+        lastName: hm.last_name || "",
+        fullName: hm.full_name || `${hm.last_name || ""}, ${hm.first_name || ""}`.replace(/^,\s*|,\s*$/g, "").trim() || "—",
+        title: hm.title || "Not specified",
+        phone: hm.phone || "(Not provided)",
+        mobilePhone: hm.mobile_phone || "(Not provided)",
+        directLine: hm.direct_line || "(Not provided)",
+        email: hm.email || "(Not provided)",
+        email2: hm.email2 || "",
+        organization: {
+          id: hm.organization_id,
+          name: hm.organization_name || hm.organization_name_from_org || "Not specified",
+        },
+        status: hm.status || "Active",
+        department: hm.department || "Not specified",
+        reportsTo: hm.reports_to || "Not specified",
+        owner: hm.owner || "Not assigned",
+        linkedinUrl: hm.linkedin_url || "Not provided",
+        dateAdded: hm.date_added ? new Date(hm.date_added).toLocaleDateString() : (hm.created_at ? new Date(hm.created_at).toLocaleDateString() : "Unknown"),
+        address: hm.address || "No address provided",
+        customFields,
+      });
+    } catch (err) {
+      console.error("Error fetching job hiring manager:", err);
+    } finally {
+      setIsLoadingJobHiringManager(false);
+    }
+  };
+
   // Fetch available fields after job is loaded
   useEffect(() => {
     if (job && jobId) {
       fetchAvailableFields();
+      fetchHiringManagerFields();
       // Update note form about field when job is loaded
       setNoteForm((prev) => ({ ...prev, about: `${job.id} ${job.title}` }));
       fetchDocuments(jobId);
     }
   }, [job, jobId]);
+
+  // Fetch full hiring manager when job has hiring manager ID (from custom_fields or hiring_manager column)
+  useEffect(() => {
+    if (!job) return;
+    const hmId = (() => {
+      // 1) Try custom_fields ( Hiring Manager lookup field )
+      if (availableFields.length > 0) {
+        const hmField = availableFields.find((f: any) => {
+          const label = String(f.field_label || "").trim().toLowerCase();
+          return label === "hiring manager" || label.includes("hiring manager");
+        });
+        if (hmField) {
+          const key = hmField.field_name || hmField.field_key;
+          const val = job.customFields?.[key];
+          if (val != null && val !== "") return String(val);
+        }
+      }
+      // 2) Fallback: job.hiring_manager may store ID (e.g. "21") when backend stores ID instead of name
+      const hmRaw = job.hiringManager?.name ?? (job as any).hiring_manager;
+      const str = String(hmRaw || "").trim();
+      if (/^\d+$/.test(str)) return str;
+      return null;
+    })();
+    if (hmId) {
+      fetchJobHiringManager(hmId);
+    } else {
+      setJobHiringManager(null);
+    }
+  }, [job, availableFields]);
 
   // Fetch users for email notification
   useEffect(() => {
@@ -2098,15 +2291,6 @@ export default function JobView() {
     []
   );
 
-  const hiringManagerFieldCatalog = useMemo(
-    () => [
-      { key: "name", label: "Name" },
-      { key: "phone", label: "Phone" },
-      { key: "email", label: "Email" },
-    ],
-    []
-  );
-
   useEffect(() => {
     if (editingPanel !== "details") return;
     const current = visibleFields.details || [];
@@ -2120,6 +2304,12 @@ export default function JobView() {
       catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
     );
   }, [editingPanel, visibleFields.details, detailsFieldCatalog]);
+
+  useEffect(() => {
+    if (editingPanel === "hiringManager" && hiringManagerAvailableFields.length === 0) {
+      fetchHiringManagerFields();
+    }
+  }, [editingPanel]);
 
   useEffect(() => {
     if (editingPanel !== "hiringManager") return;
@@ -2577,6 +2767,7 @@ export default function JobView() {
         emailNotification: [],
       });
       setValidationErrors({});
+      fetchNotes(jobId);
       setShowAddNote(false);
 
       // Refresh history
@@ -3460,7 +3651,7 @@ export default function JobView() {
                               if (beforeCfVal !== afterCfVal) {
                                 changes.push(
                                   <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                                    <span className="font-semibold text-gray-700 min-w-[120px]">Custom Field ({cfKey}):</span>
+                                    <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
                                     <div className="flex flex-wrap gap-2 items-center">
                                       <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
                                         {formatValue(beforeCfVal)}
@@ -4549,6 +4740,9 @@ export default function JobView() {
                   <p className="text-sm text-gray-600 mb-3">
                     Drag to reorder. Toggle visibility with the checkbox. Changes apply to all job records.
                   </p>
+                  {isLoadingHiringManagerFields ? (
+                    <div className="py-8 text-center text-gray-500">Loading hiring manager fields…</div>
+                  ) : (
                   <DndContext
                     collisionDetection={closestCorners}
                     onDragStart={(e) => setHiringManagerDragActiveId(e.active.id as string)}
@@ -4598,6 +4792,7 @@ export default function JobView() {
                       })() : null}
                     </DragOverlay>
                   </DndContext>
+                  )}
                   <div className="flex justify-end gap-2 pt-4 mt-4 border-t">
                     <button
                       onClick={handleCloseEditModal}
@@ -4687,9 +4882,18 @@ export default function JobView() {
                             { key: "owner", label: "User Owner" },
                           ],
                           hiringManager: [
-                            { key: "name", label: "Name" },
-                            { key: "phone", label: "Phone" },
+                            { key: "status", label: "Status" },
+                            { key: "organization", label: "Organization" },
+                            { key: "department", label: "Department" },
                             { key: "email", label: "Email" },
+                            { key: "email2", label: "Email 2" },
+                            { key: "mobilePhone", label: "Mobile Phone" },
+                            { key: "directLine", label: "Direct Line" },
+                            { key: "reportsTo", label: "Reports To" },
+                            { key: "linkedinUrl", label: "LinkedIn URL" },
+                            { key: "dateAdded", label: "Date Added" },
+                            { key: "owner", label: "Owner" },
+                            { key: "address", label: "Address" },
                           ],
                           recentNotes: [{ key: "notes", label: "Notes" }],
                         };

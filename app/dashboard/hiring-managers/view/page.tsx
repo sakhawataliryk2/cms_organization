@@ -3756,7 +3756,7 @@ export default function HiringManagerView() {
                               if (beforeCfVal !== afterCfVal) {
                                 changes.push(
                                   <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                                    <span className="font-semibold text-gray-700 min-w-[120px]">Custom Field ({cfKey}):</span>
+                                    <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
                                     <div className="flex flex-wrap gap-2 items-center">
                                       <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
                                         {formatValue(beforeCfVal)}

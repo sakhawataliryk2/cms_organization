@@ -44,6 +44,7 @@ import {
   togglePinnedRecord,
 } from "@/lib/pinnedRecords";
 import DocumentViewer from "@/components/DocumentViewer";
+import { FiSearch } from "react-icons/fi";
 
 // Default header fields for Organizations module - defined outside component to ensure stable reference
 const ORG_DEFAULT_HEADER_FIELDS = ["phone", "website"];
@@ -4032,7 +4033,7 @@ export default function OrganizationView() {
                               if (beforeCfVal !== afterCfVal) {
                                 changes.push(
                                   <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                                    <span className="font-semibold text-gray-700 min-w-[120px]">Custom Field ({cfKey}):</span>
+                                    <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
                                     <div className="flex flex-wrap gap-2 items-center">
                                       <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
                                         {formatValue(beforeCfVal)}
@@ -5585,12 +5586,12 @@ export default function OrganizationView() {
                     )}
 
                     {/* Search Input for References */}
-                    <div className="relative">
                       {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
                         <label className="block text-xs font-medium text-gray-500 mb-1">
                           Add Additional References
                         </label>
                       )}
+                    <div className="relative">
                       {/* <label className="block text-sm font-medium text-gray-700 mb-1">
                         Additional References
                       </label> */}
@@ -5617,8 +5618,8 @@ export default function OrganizationView() {
                           : "border-gray-300 focus:ring-blue-500"
                           }`}
                       />
-                      <span className="absolute right-2 top-2 text-gray-400 text-sm">
-                        Q
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                        <FiSearch className="w-4 h-4" />
                       </span>
                     </div>
 
