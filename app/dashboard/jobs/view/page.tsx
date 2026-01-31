@@ -44,6 +44,7 @@ import {
   PINNED_RECORDS_CHANGED_EVENT,
   togglePinnedRecord,
 } from "@/lib/pinnedRecords";
+import DocumentViewer from "@/components/DocumentViewer";
 
 // SortablePanel helper
 function SortablePanel({ id, children, isOverlay = false }: { id: string; children: React.ReactNode; isOverlay?: boolean }) {
@@ -427,6 +428,11 @@ export default function JobView() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [showAddNote, setShowAddNote] = useState(false);
   const [noteTypeFilter, setNoteTypeFilter] = useState<string>("");
+  // Publish / distribute job (LinkedIn, Job Board) — works without credentials; completes when credentials are added
+  const [showPublishModal, setShowPublishModal] = useState(false);
+  const [publishTargets, setPublishTargets] = useState<{ linkedin: boolean; job_board: boolean }>({ linkedin: false, job_board: true });
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [publishMessage, setPublishMessage] = useState<string | null>(null);
 
   const [documents, setDocuments] = useState<Array<any>>([]);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
@@ -2582,6 +2588,49 @@ export default function JobView() {
     }
   };
 
+  // Publish / distribute job (LinkedIn, Job Board) — works without credentials; completes when credentials are added
+  const handlePublishSubmit = async () => {
+    if (!jobId) return;
+    const targets: string[] = [];
+    if (publishTargets.linkedin) targets.push("linkedin");
+    if (publishTargets.job_board) targets.push("job_board");
+    if (targets.length === 0) {
+      setPublishMessage("Select at least one destination.");
+      return;
+    }
+    setIsPublishing(true);
+    setPublishMessage(null);
+    try {
+      const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+      const res = await fetch(`/api/jobs/${jobId}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ targets }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setPublishMessage(data.message || "Failed to publish.");
+        return;
+      }
+      setPublishMessage(data.message || "Request sent.");
+      if (data.success && data.jobBoardStatus != null) setJob((prev: any) => (prev ? { ...prev, jobBoardStatus: data.jobBoardStatus } : prev));
+      setTimeout(() => {
+        setShowPublishModal(false);
+        setPublishMessage(null);
+      }, 2500);
+    } catch (e) {
+      setPublishMessage(e instanceof Error ? e.message : "An error occurred.");
+    } finally {
+      setIsPublishing(false);
+    }
+  };
+
+  const handleClosePublishModal = () => {
+    setShowPublishModal(false);
+    setPublishMessage(null);
+    setPublishTargets({ linkedin: false, job_board: true });
+  };
+
   // Close add note modal
   const handleCloseAddNoteModal = () => {
     setShowAddNote(false);
@@ -2769,6 +2818,10 @@ export default function JobView() {
       setActiveTab("notes");
     } else if (action === "add-tearsheet") {
       setShowAddTearsheetModal(true);
+    } else if (action === "publish") {
+      setShowPublishModal(true);
+      setPublishMessage(null);
+      setPublishTargets({ linkedin: false, job_board: true });
     }
   };
 
@@ -3963,12 +4016,15 @@ export default function JobView() {
                   </p>
                 </div>
                 {selectedDocument.file_path ? (
-                  <div className="flex-1 min-h-[60vh] rounded border overflow-hidden bg-gray-100">
-                    <iframe
-                      src={selectedDocument.file_path}
-                      title={selectedDocument.document_name}
-                      className="w-full h-full min-h-[60vh] border-0"
-                      sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                  <div className="flex-1 min-h-[60vh] flex flex-col">
+                    <DocumentViewer
+                      filePath={selectedDocument.file_path}
+                      mimeType={selectedDocument.mime_type}
+                      documentName={selectedDocument.document_name}
+                      className="flex-1"
+                      onOpenInNewTab={() =>
+                        window.open(selectedDocument.file_path, "_blank")
+                      }
                     />
                   </div>
                 ) : (
@@ -5617,6 +5673,71 @@ export default function JobView() {
                   SAVE
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Distribute job modal (LinkedIn, Job Board) — works without credentials; completes when credentials are added */}
+      {showPublishModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Distribute job</h2>
+              <button
+                onClick={handleClosePublishModal}
+                className="p-1 rounded hover:bg-gray-200"
+                type="button"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="p-6">
+              <p className="text-sm text-gray-600 mb-4">
+                Choose where to post this job. When credentials are added in Settings, posting will be enabled and the same action will complete distribution.
+              </p>
+              <div className="space-y-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={publishTargets.linkedin}
+                    onChange={(e) => setPublishTargets((p) => ({ ...p, linkedin: e.target.checked }))}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium">LinkedIn</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={publishTargets.job_board}
+                    onChange={(e) => setPublishTargets((p) => ({ ...p, job_board: e.target.checked }))}
+                    className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium">Job Board(s)</span>
+                </label>
+              </div>
+              {publishMessage && (
+                <p className="mt-4 text-sm text-gray-700 bg-gray-50 p-3 rounded border border-gray-200">
+                  {publishMessage}
+                </p>
+              )}
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t bg-gray-50">
+              <button
+                onClick={handleClosePublishModal}
+                className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium"
+                type="button"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePublishSubmit}
+                disabled={isPublishing || (!publishTargets.linkedin && !publishTargets.job_board)}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                type="button"
+              >
+                {isPublishing ? "Publishing…" : "Publish"}
+              </button>
             </div>
           </div>
         </div>

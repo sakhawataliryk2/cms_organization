@@ -235,6 +235,7 @@ export default function JobSeekerList() {
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
   const favoritesMenuRef = useRef<HTMLDivElement>(null);
+  const favoritesMenuMobileRef = useRef<HTMLDivElement>(null);
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
   const [favoriteName, setFavoriteName] = useState("");
   const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
@@ -504,16 +505,15 @@ export default function JobSeekerList() {
   // Close favorites menu on outside click
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (
-        favoritesMenuRef.current &&
-        !favoritesMenuRef.current.contains(event.target as Node)
-      ) {
-        setFavoritesMenuOpen(false);
-      }
+      if (!favoritesMenuOpen) return;
+      const target = event.target as Node;
+      const inDesktop = favoritesMenuRef.current?.contains(target);
+      const inMobile = favoritesMenuMobileRef.current?.contains(target);
+      if (!inDesktop && !inMobile) setFavoritesMenuOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+  }, [favoritesMenuOpen]);
 
   const persistFavorites = (updatedFavorites: JobSeekersFavorite[]) => {
     setFavorites(updatedFavorites);
@@ -830,114 +830,82 @@ export default function JobSeekerList() {
 
   return (
     <div className="bg-white rounded-lg shadow">
-      {/* Header */}
-      <div className="flex justify-between items-center p-4 border-b border-gray-200">
-        <h1 className="text-xl font-bold">Job Seekers</h1>
-        <div className="flex items-center space-x-4">
+      {/* Header - responsive: mobile = title+add row, then full-width Favorites, Columns */}
+      <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center">
+        <div className="flex justify-between items-center gap-4">
+          <h1 className="text-xl font-bold">Job Seekers</h1>
+          <button onClick={handleAddJobSeeker} className="md:hidden px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" /></svg>
+            Add Job Seeker
+          </button>
+        </div>
+
+        <div className="hidden md:flex items-center space-x-4">
           {selectedJobSeekers.length > 0 && (
-            <button
-              onClick={deleteSelectedJobSeekers}
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5 mr-1"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-                  clipRule="evenodd"
-                />
-              </svg>
+            <button onClick={deleteSelectedJobSeekers} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
               Delete Selected ({selectedJobSeekers.length})
             </button>
           )}
-
-
-          {/* Favorites Dropdown */}
-          <div className="relative" ref={favoritesMenuRef}>
-            <button
-              onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)}
-              className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
-            >
+          <div ref={favoritesMenuRef} className="relative">
+            <button onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2 bg-white">
               <FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} />
-              <span className="max-w-[100px] truncate">
-                {selectedFavoriteId
-                  ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites"
-                  : "Favorites"}
-              </span>
+              <span className="max-w-[100px] truncate">{selectedFavoriteId ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites" : "Favorites"}</span>
               <FiChevronDown />
             </button>
-
             {favoritesMenuOpen && (
               <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
                 <div className="p-2 border-b border-gray-100">
-                  <button
-                    onClick={handleOpenSaveFavoriteModal}
-                    className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors font-medium flex items-center gap-2"
-                  >
-                    <FiStar className="text-blue-500" />
-                    Save Current Search
-                  </button>
+                  <button onClick={handleOpenSaveFavoriteModal} className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors font-medium flex items-center gap-2"><FiStar className="text-blue-500" /> Save Current Search</button>
                 </div>
-
                 <div className="max-h-60 overflow-y-auto py-1">
-                  {favorites.length === 0 ? (
-                    <p className="text-xs text-gray-400 text-center py-4">
-                      No saved favorites yet
-                    </p>
-                  ) : (
-                    favorites.map((fav) => (
-                      <div
-                        key={fav.id}
-                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""
-                          }`}
-                        onClick={() => applyFavorite(fav)}
-                      >
-                        <span className="text-sm text-gray-700 truncate flex-1">
-                          {fav.name}
-                        </span>
-                        <button
-                          onClick={(e) => handleDeleteFavorite(e, fav.id)}
-                          className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
-                          title="Delete favorite"
-                        >
-                          <FiX size={14} />
-                        </button>
-                      </div>
-                    ))
-                  )}
+                  {favorites.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">No saved favorites yet</p> : favorites.map((fav) => (
+                    <div key={fav.id} className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""}`} onClick={() => applyFavorite(fav)}>
+                      <span className="text-sm text-gray-700 truncate flex-1">{fav.name}</span>
+                      <button onClick={(e) => handleDeleteFavorite(e, fav.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1" title="Delete favorite"><FiX size={14} /></button>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
           </div>
-
-          <button
-            onClick={() => setShowColumnModal(true)}
-            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
-          >
-            Columns
-          </button>
-          <button
-            onClick={handleAddJobSeeker}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 mr-1"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
-                clipRule="evenodd"
-              />
-            </svg>
+          <button onClick={() => setShowColumnModal(true)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">Columns</button>
+          <button onClick={handleAddJobSeeker} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" /></svg>
             Add Job Seeker
           </button>
+        </div>
+
+        {selectedJobSeekers.length > 0 && (
+          <div className="w-full md:hidden">
+            <button onClick={deleteSelectedJobSeekers} className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center justify-center gap-2">Delete Selected ({selectedJobSeekers.length})</button>
+          </div>
+        )}
+        <div className="w-full md:hidden" ref={favoritesMenuMobileRef}>
+          <div className="relative">
+            <button onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-between gap-2 bg-white">
+              <span className="flex items-center gap-2"><FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} /><span className="truncate">{selectedFavoriteId ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites" : "Favorites"}</span></span>
+              <FiChevronDown className="shrink-0" />
+            </button>
+            {favoritesMenuOpen && (
+              <div className="absolute left-0 right-0 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                <div className="p-2 border-b border-gray-100">
+                  <button onClick={handleOpenSaveFavoriteModal} className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors font-medium flex items-center gap-2"><FiStar className="text-blue-500" /> Save Current Search</button>
+                </div>
+                <div className="max-h-60 overflow-y-auto py-1">
+                  {favorites.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">No saved favorites yet</p> : favorites.map((fav) => (
+                    <div key={fav.id} className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""}`} onClick={() => applyFavorite(fav)}>
+                      <span className="text-sm text-gray-700 truncate flex-1">{fav.name}</span>
+                      <button onClick={(e) => handleDeleteFavorite(e, fav.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1" title="Delete favorite"><FiX size={14} /></button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="w-full md:hidden">
+          <button onClick={() => setShowColumnModal(true)} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center">Columns</button>
         </div>
       </div>
 

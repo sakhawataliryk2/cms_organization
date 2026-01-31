@@ -22,6 +22,7 @@ import {
   PINNED_RECORDS_CHANGED_EVENT,
   togglePinnedRecord,
 } from "@/lib/pinnedRecords";
+import DocumentViewer from "@/components/DocumentViewer";
 // Drag and drop imports
 import {
   DndContext,
@@ -3804,36 +3805,30 @@ Best regards`;
   }
 
   return (
-    <div className="bg-gray-200 min-h-screen p-2">
+    <div className="bg-gray-200 min-h-screen p-2 sm:p-4 min-w-0">
       {/* Header with job seeker name and buttons */}
-      <div className="bg-gray-400 p-2 flex items-center">
-        <div className="flex items-center">
-          <div className="bg-blue-200 border border-blue-300 p-1 mr-2">
-            {/* <Image
-              src="/file.svg"
-              alt="Job Seeker"
-              width={24}
-              height={24}
-            /> */}
+      <div className="bg-gray-400 p-2 sm:p-3 flex items-center min-w-0">
+        <div className="flex items-center min-w-0 flex-1">
+          <div className="bg-blue-200 border border-blue-300 p-1 mr-2 shrink-0">
             <FiUsers size={20} />
           </div>
-          <h1 className="text-xl font-semibold text-gray-700">
+          <h1 className="text-base sm:text-xl font-semibold text-gray-700 truncate min-w-0">
             {formatRecordId(jobSeeker.id, "jobSeeker")} {jobSeeker.fullName}
           </h1>
         </div>
       </div>
 
-      <div className="bg-white border-b border-gray-300 px-3 py-2">
-        <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
+      <div className="bg-white border-b border-gray-300 px-3 py-2 sm:px-4">
+        <div className="flex flex-col lg:flex-row justify-between items-start gap-3 sm:gap-4">
           {/* LEFT: dynamic fields */}
-          <div className="flex flex-wrap gap-x-10 gap-y-2 flex-1 min-w-0">
+          <div className="flex flex-wrap gap-x-6 sm:gap-x-10 gap-y-2 flex-1 min-w-0">
             {headerFields.length === 0 ? (
               <span className="text-sm text-gray-500">
                 No header fields selected
               </span>
             ) : (
               headerFields.map((key) => (
-                <div key={key} className="min-w-[140px]">
+                <div key={key} className="min-w-[120px] sm:min-w-[140px]">
                   <div className="text-xs text-gray-500">
                     {labelForHeaderKey(key)}
                   </div>
@@ -3857,7 +3852,7 @@ Best regards`;
           </div>
 
           {/* RIGHT: pencil + existing actions */}
-          <div className="flex items-center space-x-2 shrink-0">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               onClick={() => setShowHeaderFieldModal(true)}
               className="p-2 hover:bg-gray-200 rounded text-gray-600 hover:text-gray-900"
@@ -3921,12 +3916,13 @@ Best regards`;
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex bg-gray-300 mt-1 border-b border-gray-400 px-2">
+      {/* Navigation Tabs - scroll horizontally on small screens */}
+      <div className="flex bg-gray-300 mt-1 border-b border-gray-400 px-2 overflow-x-auto">
+        <div className="flex shrink-0 gap-0.5">
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            className={`px-4 py-2 ${activeTab === tab.id
+            className={`px-3 sm:px-4 py-2 text-sm sm:text-base whitespace-nowrap ${activeTab === tab.id
               ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
               : "text-gray-700 hover:bg-gray-200"
               }`}
@@ -3944,17 +3940,18 @@ Best regards`;
             {tab.label}
           </button>
         ))}
+        </div>
       </div>
 
-      {/* Quick Action Buttons */}
-      <div className="flex bg-gray-300 p-2 space-x-2">
+      {/* Quick Action Buttons - wrap on small screens */}
+      <div className="flex bg-gray-300 p-2 flex-wrap gap-2">
         {quickTabs.map((action) => (
           <button
             key={action.id}
             className={`${activeQuickTab === action.id
               ? "bg-white text-blue-600 font-medium"
               : "bg-white text-gray-700 hover:bg-gray-100"
-              } px-4 py-1 rounded-full shadow`}
+              } px-3 sm:px-4 py-1 rounded-full shadow text-sm sm:text-base`}
             onClick={() => setActiveQuickTab(action.id)}
           >
             {action.label} ({action.count})
@@ -3963,10 +3960,10 @@ Best regards`;
       </div>
 
       {/* Main Content Area */}
-      <div className="p-4">
-        <div className="grid grid-cols-7 gap-4">
+      <div className="p-2 sm:p-4 min-w-0">
+        <div className="grid grid-cols-1 lg:grid-cols-7 gap-4">
           {activeTab === "summary" && (
-            <div className="col-span-7 relative w-full">
+            <div className="col-span-1 lg:col-span-7 relative w-full min-w-0">
               {/* Pinned side drawer */}
               {/* {isPinned && (
                 <div className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"} border-l border-gray-300`}>
@@ -4037,13 +4034,13 @@ Best regards`;
                     onDragEnd={handlePanelDragEnd}
                     onDragCancel={handlePanelDragCancel}
                   >
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="min-w-0">
                         <DroppableContainer id="left" items={columns.left}>
                           {columns.left.map((id) => renderPanel(id))}
                         </DroppableContainer>
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <DroppableContainer id="right" items={columns.right}>
                           {columns.right.map((id) => renderPanel(id))}
                         </DroppableContainer>
@@ -4060,22 +4057,22 @@ Best regards`;
 
           {/* Notes Tab */}
           {activeTab === "notes" && (
-            <div className="col-span-7">{renderNotesTab()}</div>
+            <div className="col-span-1 lg:col-span-7 min-w-0">{renderNotesTab()}</div>
           )}
 
           {/* History Tab */}
           {activeTab === "history" && (
-            <div className="col-span-7">{renderHistoryTab()}</div>
+            <div className="col-span-1 lg:col-span-7 min-w-0">{renderHistoryTab()}</div>
           )}
 
           {/* Modify Tab */}
           {activeTab === "modify" && (
-            <div className="col-span-7">{renderModifyTab()}</div>
+            <div className="col-span-1 lg:col-span-7 min-w-0">{renderModifyTab()}</div>
           )}
 
           {/* Docs Tab */}
           {activeTab === "docs" && (
-            <div className="col-span-7">
+            <div className="col-span-1 lg:col-span-7 min-w-0">
               <div className="bg-white p-4 rounded shadow-sm">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-lg font-semibold">Job Seeker Documents</h2>
@@ -4237,9 +4234,9 @@ Best regards`;
                 ) : documentError ? (
                   <div className="text-red-500 py-2">{documentError}</div>
                 ) : filteredAndSortedDocuments.length > 0 ? (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto -mx-2 sm:mx-0">
                     <DndContext collisionDetection={closestCorners} onDragEnd={handleDocumentColumnDragEnd}>
-                      <table className="w-full border-collapse">
+                      <table className="w-full border-collapse min-w-[600px]">
                         <thead>
                           <tr className="bg-gray-100 border-b">
                             <th className="text-left p-3 font-medium">Actions</th>
@@ -4385,12 +4382,15 @@ Best regards`;
                           </p>
                         </div>
                         {selectedDocument.file_path ? (
-                          <div className="flex-1 min-h-[60vh] rounded border overflow-hidden bg-gray-100">
-                            <iframe
-                              src={selectedDocument.file_path}
-                              title={selectedDocument.document_name || selectedDocument.name || "Document"}
-                              className="w-full h-full min-h-[60vh] border-0"
-                              sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                          <div className="flex-1 min-h-[60vh] flex flex-col">
+                            <DocumentViewer
+                              filePath={selectedDocument.file_path}
+                              mimeType={selectedDocument.mime_type}
+                              documentName={selectedDocument.document_name || selectedDocument.name}
+                              className="flex-1"
+                              onOpenInNewTab={() =>
+                                window.open(selectedDocument.file_path, "_blank")
+                              }
                             />
                           </div>
                         ) : (
@@ -4407,7 +4407,7 @@ Best regards`;
           )}
 
           {activeTab === "references" && (
-            <div className="col-span-7">
+            <div className="col-span-1 lg:col-span-7 min-w-0">
               <div className="bg-white p-4 rounded shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold">References</h2>
@@ -4482,7 +4482,7 @@ Best regards`;
           )}
 
           {activeTab === "applications" && (
-            <div className="col-span-7">
+            <div className="col-span-1 lg:col-span-7 min-w-0">
               <div className="bg-white p-4 rounded shadow-sm">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-lg font-semibold">Applications</h2>
@@ -4591,7 +4591,7 @@ Best regards`;
           )}
 
           {activeTab === "onboarding" && (
-            <div className="col-span-7">
+            <div className="col-span-1 lg:col-span-7 min-w-0">
               <OnboardingTab jobSeeker={jobSeeker} />
             </div>
           )}
@@ -5723,8 +5723,8 @@ Best regards`;
 
       {/* Add Note Modal - Jobs-style layout */}
       {showAddNote && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-2 sm:p-4">
+          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-2 sm:mx-4 my-4 sm:my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <div className="flex items-center space-x-2">
                 <Image src="/file.svg" alt="Note" width={20} height={20} />

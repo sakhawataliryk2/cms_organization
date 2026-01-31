@@ -758,10 +758,17 @@ const {
 
   return (
     <div className="bg-white rounded-lg shadow">
-      {/* Header */}
-      <div className="flex justify-between items-center p-4 border-b border-gray-200">
-        <h1 className="text-xl font-bold">Leads</h1>
-        <div className="flex items-center space-x-4">
+      {/* Header - responsive: mobile = title+add row, then full-width Favorites, Columns */}
+      <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center">
+        <div className="flex justify-between items-center gap-4">
+          <h1 className="text-xl font-bold">Leads</h1>
+          <button onClick={handleAddLead} className="md:hidden px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center shrink-0">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" /></svg>
+            Add Lead
+          </button>
+        </div>
+
+        <div className="hidden md:flex items-center space-x-4">
           {selectedLeads.length > 0 && (
             <button
               onClick={deleteSelectedLeads}

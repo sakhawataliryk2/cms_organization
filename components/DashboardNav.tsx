@@ -39,6 +39,7 @@ import {
   FiX,
   FiLogOut,
   FiUpload,
+  FiMenu,
 } from "react-icons/fi";
 import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { FaRegUserCircle } from "react-icons/fa";
@@ -160,6 +161,7 @@ export default function DashboardNav() {
 
   const [showTbiQuickTab, setShowTbiQuickTab] = useState(false);
   const [currentUrl, setCurrentUrl] = useState<string>("");
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const addMenuRef = useRef<HTMLDivElement>(null);
@@ -640,8 +642,16 @@ export default function DashboardNav() {
 
   return (
     <>
-      {/* Top Navigation Bar */}
-      <div className="fixed top-0 left-0 right-0 z-10 pl-60 pr-4">
+      {/* Mobile sidebar backdrop */}
+      <div
+        className="fixed inset-0 bg-black/50 z-20 md:hidden transition-opacity"
+        style={{ opacity: isSidebarOpen ? 1 : 0, pointerEvents: isSidebarOpen ? "auto" : "none" }}
+        onClick={() => setIsSidebarOpen(false)}
+        aria-hidden={!isSidebarOpen}
+      />
+
+      {/* Top Navigation Bar - full width on mobile, offset by sidebar on desktop */}
+      <div className="fixed top-0 left-0 right-0 z-10 pl-4 md:pl-60 pr-2 sm:pr-4">
         {/* Chrome-style tab strip (shown after clicking T.B.I) */}
         {hasQuickTabs && (
           <div className="sd-tabs sd-tabs-bar">
@@ -708,8 +718,17 @@ export default function DashboardNav() {
           </div>
         )}
 
-        <div className="h-12 bg-slate-800 flex items-center justify-between">
-          <div className="flex items-center ml-4 space-x-4">
+        <div className="h-12 bg-slate-800 flex items-center justify-between gap-2 min-w-0">
+          <div className="flex items-center gap-2 sm:gap-4 min-w-0 flex-1">
+            {/* Hamburger - mobile only */}
+            <button
+              type="button"
+              className="md:hidden p-2 -ml-1 text-gray-300 hover:text-white hover:bg-slate-700 rounded"
+              onClick={() => setIsSidebarOpen(true)}
+              aria-label="Open menu"
+            >
+              <FiMenu size={22} />
+            </button>
             {isSearchOpen ? (
               <div className="relative" ref={searchRef}>
                 <form onSubmit={handleSearch} className="flex items-center">
@@ -717,7 +736,7 @@ export default function DashboardNav() {
                     <input
                       type="text"
                       placeholder="Search all records..."
-                      className="bg-slate-700 text-white pl-8 pr-8 py-1 rounded w-96 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      className="bg-slate-700 text-white pl-8 pr-8 py-1 rounded w-full min-w-0 max-w-64 sm:max-w-80 md:w-96 focus:outline-none focus:ring-1 focus:ring-blue-500"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       autoFocus
@@ -735,7 +754,7 @@ export default function DashboardNav() {
 
                 {/* Global search results dropdown */}
                 {searchQuery.trim() && searchQuery.trim().length >= 1 && (
-                  <div className="absolute top-full left-0 mt-1 w-96 bg-slate-800 rounded shadow-lg z-30 max-h-96 overflow-y-auto">
+                  <div className="absolute top-full left-0 mt-1 w-full min-w-0 max-w-[min(24rem,100vw-2rem)] md:w-96 bg-slate-800 rounded shadow-lg z-30 max-h-96 overflow-y-auto">
                     {isSearching ? (
                       <div className="px-4 py-8 text-center">
                         <div className="text-gray-400 text-sm">
@@ -1035,21 +1054,21 @@ export default function DashboardNav() {
 
           {/* User profile with dropdown - Top Right */}
           {user && (
-            <div className="pr-6 relative" ref={userMenuRef}>
-              <div className="flex items-center space-x-2">
-                <div className="flex items-center text-gray-300 hover:bg-slate-700 hover:text-white py-2 px-4 rounded">
+            <div className="pr-2 sm:pr-6 relative shrink-0" ref={userMenuRef}>
+              <div className="flex items-center gap-1 sm:space-x-2">
+                <div className="hidden sm:flex items-center text-gray-300 hover:bg-slate-700 hover:text-white py-2 px-4 rounded">
                   <FiMessageSquare className="mr-2" />
                   Messages
                 </div>
 
                 <button
-                  className="flex items-center space-x-2 text-gray-300 hover:text-white"
+                  className="flex items-center space-x-2 text-gray-300 hover:text-white min-w-0"
                   onClick={toggleUserMenu}
                 >
-                  <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center text-white font-medium text-sm">
+                  <div className="w-8 h-8 rounded-full bg-slate-600 flex items-center justify-center text-white font-medium text-sm shrink-0">
                     {user.name.charAt(0)}
                   </div>
-                  <span className="text-sm font-medium">{user.name}</span>
+                  <span className="text-sm font-medium truncate max-w-[100px] sm:max-w-none">{user.name}</span>
                 </button>
               </div>
 
@@ -1084,28 +1103,34 @@ export default function DashboardNav() {
         </div>
       </div>
 
-      {/* Side Navigation */}
-      <div className="fixed top-0 left-0 bottom-0 w-60 bg-slate-800 text-white z-20 flex flex-col">
-        {/* Logo area */}
-        <div className="h-12 flex items-center px-4 my-4">
-          <span className="text-sm font-semibold ">
+      {/* Side Navigation - drawer on mobile, fixed on md+ */}
+      <div
+        className={`fixed top-0 left-0 bottom-0 w-60 bg-slate-800 text-white z-30 flex flex-col transition-transform duration-200 ease-out md:translate-x-0 ${
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        {/* Logo area + close on mobile */}
+        <div className="h-12 flex items-center justify-between px-4 my-4 shrink-0">
+          <span className="text-sm font-semibold">
             Complete Staffing Solutions
           </span>
+          <button
+            type="button"
+            className="md:hidden p-2 text-gray-300 hover:text-white hover:bg-slate-700 rounded"
+            onClick={() => setIsSidebarOpen(false)}
+            aria-label="Close menu"
+          >
+            <FiX size={20} />
+          </button>
         </div>
 
         {/* Navigation links - always show all items, not filtered by search */}
-        <div className="overflow-y-auto">
+        <div className="flex-1 min-h-0">
           {filteredNavItems.map((item) => (
             <Link
               key={item.path}
               href={item.path}
-              onClick={() => {
-                // Optional: Close search when navigating to an item
-                // if (isSearchOpen) {
-                //   setSearchQuery("");
-                //   setIsSearchOpen(false);
-                // }
-              }}
+              onClick={() => setIsSidebarOpen(false)}
               className={`flex items-center py-2 px-4 ${isNavItemActive(item.path)
                   ? "bg-blue-600 text-white"
                   : "text-gray-300 hover:bg-slate-700"
@@ -1123,12 +1148,13 @@ export default function DashboardNav() {
         <div className="grow"></div>
 
         {/* T.B.I Button - Static, always visible */}
-        <div className="p-4 border-t border-slate-700">
+        <div className="p-4 border-t border-slate-700 shrink-0">
           <button
             type="button"
             className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold text-2xl rounded transition-colors"
             onClick={() => {
               openTbiQuickTab();
+              setIsSidebarOpen(false);
             }}
           >
             T.B.I
@@ -1136,12 +1162,12 @@ export default function DashboardNav() {
         </div>
 
         {/* Footer with "Upload CSV" button - always visible */}
-        <div className="p-4 border-t border-slate-700">
+        <div className="p-4 border-t border-slate-700 shrink-0">
           <div className="flex justify-between items-center">
             <span className="text-blue-300 text-sm">Upload CSV</span>
             <button
               className="text-white bg-slate-700 p-1 rounded hover:bg-slate-600"
-              onClick={() => router.push('/dashboard/admin?upload=true')}
+              onClick={() => { router.push('/dashboard/admin?upload=true'); setIsSidebarOpen(false); }}
             >
               <FiUpload size={16} />
             </button>

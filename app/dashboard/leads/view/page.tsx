@@ -11,6 +11,7 @@ import { FiTarget } from "react-icons/fi";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 // Drag and drop imports
+import DocumentViewer from "@/components/DocumentViewer";
 import {
   DndContext,
   closestCorners,
@@ -2814,12 +2815,15 @@ export default function LeadView() {
                       </p>
                     </div>
                     {selectedDocument.file_path ? (
-                      <div className="flex-1 min-h-[60vh] rounded border overflow-hidden bg-gray-100">
-                        <iframe
-                          src={selectedDocument.file_path}
-                          title={selectedDocument.document_name}
-                          className="w-full h-full min-h-[60vh] border-0"
-                          sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                      <div className="flex-1 min-h-[60vh] flex flex-col">
+                        <DocumentViewer
+                          filePath={selectedDocument.file_path}
+                          mimeType={selectedDocument.mime_type}
+                          documentName={selectedDocument.document_name}
+                          className="flex-1"
+                          onOpenInNewTab={() =>
+                            window.open(selectedDocument.file_path, "_blank")
+                          }
                         />
                       </div>
                     ) : (

@@ -43,6 +43,7 @@ import {
   PINNED_RECORDS_CHANGED_EVENT,
   togglePinnedRecord,
 } from "@/lib/pinnedRecords";
+import DocumentViewer from "@/components/DocumentViewer";
 
 // Default header fields for Organizations module - defined outside component to ensure stable reference
 const ORG_DEFAULT_HEADER_FIELDS = ["phone", "website"];
@@ -5122,12 +5123,15 @@ export default function OrganizationView() {
                       </p>
                     </div>
                     {selectedDocument.file_path ? (
-                      <div className="flex-1 min-h-[60vh] rounded border overflow-hidden bg-gray-100">
-                        <iframe
-                          src={selectedDocument.file_path}
-                          title={selectedDocument.document_name}
-                          className="w-full h-full min-h-[60vh] border-0"
-                          sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+                      <div className="overflow-y-auto flex-1 min-h-[60vh] flex flex-col">
+                        <DocumentViewer
+                          filePath={selectedDocument.file_path}
+                          mimeType={selectedDocument.mime_type}
+                          documentName={selectedDocument.document_name}
+                          className="flex-1"
+                          onOpenInNewTab={() =>
+                            window.open(selectedDocument.file_path, "_blank")
+                          }
                         />
                       </div>
                     ) : (

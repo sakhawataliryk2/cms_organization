@@ -272,6 +272,7 @@ export default function JobList() {
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
   const favoritesMenuRef = useRef<HTMLDivElement>(null);
+  const favoritesMenuMobileRef = useRef<HTMLDivElement>(null);
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
   const [favoriteName, setFavoriteName] = useState("");
   const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
@@ -292,10 +293,10 @@ export default function JobList() {
   useEffect(() => {
     const onDocMouseDown = (e: MouseEvent) => {
       if (!favoritesMenuOpen) return;
-      if (!favoritesMenuRef.current) return;
-      if (!favoritesMenuRef.current.contains(e.target as Node)) {
-        setFavoritesMenuOpen(false);
-      }
+      const target = e.target as Node;
+      const inDesktop = favoritesMenuRef.current?.contains(target);
+      const inMobile = favoritesMenuMobileRef.current?.contains(target);
+      if (!inDesktop && !inMobile) setFavoritesMenuOpen(false);
     };
 
     document.addEventListener("mousedown", onDocMouseDown);
@@ -792,71 +793,48 @@ export default function JobList() {
 
   return (
     <div className="bg-white rounded-lg shadow">
-      {/* Header */}
-      <div className="flex justify-between items-center p-4 border-b border-gray-200">
-        <h1 className="text-xl font-bold">Jobs</h1>
-        <div className="flex space-x-4">
-          {/* Favorites Dropdown */}
-          <div className="relative" ref={favoritesMenuRef}>
+      {/* Header - responsive: mobile = title+add row, then full-width Favorites, Columns */}
+      <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center">
+        <div className="flex justify-between items-center gap-4">
+          <h1 className="text-xl font-bold">Jobs</h1>
+          <button
+            onClick={handleAddJob}
+            className="md:hidden px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center shrink-0"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
+            </svg>
+            Add Job
+          </button>
+        </div>
+
+        <div className="hidden md:flex space-x-4">
+          <div ref={favoritesMenuRef} className="relative">
             <button
               onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)}
               className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
             >
               <FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} />
               <span className="max-w-[100px] truncate">
-                {selectedFavoriteId
-                  ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites"
-                  : "Favorites"}
+                {selectedFavoriteId ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites" : "Favorites"}
               </span>
               <FiChevronDown />
             </button>
-
             {favoritesMenuOpen && (
               <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
                 <div className="p-2 border-b border-gray-100">
-                  <button
-                    onClick={handleOpenSaveFavoriteModal}
-                    className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors font-medium flex items-center gap-2"
-                  >
-                    <FiStar className="text-blue-500" />
-                    Save Current Search
+                  <button onClick={handleOpenSaveFavoriteModal} className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors font-medium flex items-center gap-2">
+                    <FiStar className="text-blue-500" /> Save Current Search
                   </button>
                 </div>
-
                 <div className="max-h-60 overflow-y-auto py-1">
                   {favorites.length === 0 ? (
-                    <p className="text-xs text-gray-400 text-center py-4">
-                      No saved favorites yet
-                    </p>
+                    <p className="text-xs text-gray-400 text-center py-4">No saved favorites yet</p>
                   ) : (
                     favorites.map((fav) => (
-                      <div
-                        key={fav.id}
-                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""
-                          }`}
-                        onClick={() => {
-                          setSelectedFavoriteId(fav.id);
-                          applyFavorite(fav);
-                          setFavoritesMenuOpen(false);
-                        }}
-                      >
-                        <span className="text-sm text-gray-700 truncate flex-1">
-                          {fav.name}
-                        </span>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const updated = favorites.filter((f) => f.id !== fav.id);
-                            persistFavorites(updated);
-                            if (selectedFavoriteId === fav.id) {
-                              setSelectedFavoriteId("");
-                            }
-                          }}
-                          className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
-                          title="Delete favorite"
-                        >
-                          <FiX size={14} />
-                        </button>
+                      <div key={fav.id} className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""}`} onClick={() => { setSelectedFavoriteId(fav.id); applyFavorite(fav); setFavoritesMenuOpen(false); }}>
+                        <span className="text-sm text-gray-700 truncate flex-1">{fav.name}</span>
+                        <button onClick={(e) => { e.stopPropagation(); const updated = favorites.filter((f) => f.id !== fav.id); persistFavorites(updated); if (selectedFavoriteId === fav.id) setSelectedFavoriteId(""); }} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1" title="Delete favorite"><FiX size={14} /></button>
                       </div>
                     ))
                   )}
@@ -864,73 +842,63 @@ export default function JobList() {
               </div>
             )}
           </div>
-
           {selectedJobs.length > 0 && (
             <>
-              <button
-                onClick={exportJobsToXML}
-                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 mr-1"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
-                    clipRule="evenodd"
-                  />
-                </svg>
+              <button onClick={exportJobsToXML} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
                 Export to XML ({selectedJobs.length})
               </button>
-              <button
-                onClick={deleteSelectedJobs}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center"
-              >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 mr-1"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-                    clipRule="evenodd"
-                  />
-                </svg>
+              <button onClick={deleteSelectedJobs} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
                 Delete Selected ({selectedJobs.length})
               </button>
             </>
           )}
-
-          <button
-            onClick={() => setShowColumnModal(true)}
-            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
-          >
-            Columns
-          </button>
-
-          <button
-            onClick={handleAddJob}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 mr-1"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
-                clipRule="evenodd"
-              />
-            </svg>
+          <button onClick={() => setShowColumnModal(true)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">Columns</button>
+          <button onClick={handleAddJob} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" /></svg>
             Add Job
           </button>
+        </div>
+
+        <div className="w-full md:hidden" ref={favoritesMenuMobileRef}>
+          <div className="relative">
+            <button onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-between gap-2 bg-white">
+              <span className="flex items-center gap-2">
+                <FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} />
+                <span className="truncate">{selectedFavoriteId ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites" : "Favorites"}</span>
+              </span>
+              <FiChevronDown className="shrink-0" />
+            </button>
+            {favoritesMenuOpen && (
+              <div className="absolute left-0 right-0 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                <div className="p-2 border-b border-gray-100">
+                  <button onClick={handleOpenSaveFavoriteModal} className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors font-medium flex items-center gap-2"><FiStar className="text-blue-500" /> Save Current Search</button>
+                </div>
+                <div className="max-h-60 overflow-y-auto py-1">
+                  {favorites.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">No saved favorites yet</p> : favorites.map((fav) => (
+                    <div key={fav.id} className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""}`} onClick={() => { setSelectedFavoriteId(fav.id); applyFavorite(fav); setFavoritesMenuOpen(false); }}>
+                      <span className="text-sm text-gray-700 truncate flex-1">{fav.name}</span>
+                      <button onClick={(e) => { e.stopPropagation(); const updated = favorites.filter((f) => f.id !== fav.id); persistFavorites(updated); if (selectedFavoriteId === fav.id) setSelectedFavoriteId(""); }} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1" title="Delete favorite"><FiX size={14} /></button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+        {selectedJobs.length > 0 && (
+          <>
+            <div className="w-full md:hidden">
+              <button onClick={exportJobsToXML} className="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center justify-center gap-2">Export to XML ({selectedJobs.length})</button>
+            </div>
+            <div className="w-full md:hidden">
+              <button onClick={deleteSelectedJobs} className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center justify-center gap-2">Delete Selected ({selectedJobs.length})</button>
+            </div>
+          </>
+        )}
+        <div className="w-full md:hidden">
+          <button onClick={() => setShowColumnModal(true)} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center">Columns</button>
         </div>
       </div>
 

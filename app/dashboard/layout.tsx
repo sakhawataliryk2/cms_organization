@@ -35,9 +35,9 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
             {/* DashboardNav includes the side nav and top bar */}
             <DashboardNav />
 
-            {/* Main content */}
+            {/* Main content - full width on mobile/tablet, margin for sidebar on desktop */}
             <div
-                className="ml-60 p-6"
+                className="ml-0 md:ml-60 p-3 sm:p-4 md:p-6 min-w-0"
                 style={{ paddingTop: "var(--dashboard-top-offset, 48px)" }}
             >
                 {children}

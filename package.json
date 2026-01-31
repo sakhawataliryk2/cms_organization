@@ -20,6 +20,7 @@
     "@vercel/blob": "^2.0.1",
     "bcrypt": "^5.1.1",
     "cookies-next": "^4.1.1",
+    "docx-preview": "^0.3.7",
     "jose": "^5.2.3",
     "jsonwebtoken": "^9.0.2",
     "jszip": "^3.10.1",
