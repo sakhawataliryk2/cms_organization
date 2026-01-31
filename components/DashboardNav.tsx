@@ -1144,9 +1144,6 @@ export default function DashboardNav() {
           ))}
         </div>
 
-        {/* Flexible spacer */}
-        <div className="grow"></div>
-
         {/* T.B.I Button - Static, always visible */}
         <div className="p-4 border-t border-slate-700 shrink-0">
           <button
