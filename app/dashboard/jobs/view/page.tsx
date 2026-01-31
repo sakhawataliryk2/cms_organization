@@ -254,7 +254,7 @@ function SortableColumnHeader({
             <FiArrowDown size={14} />
           )}
         </button>
-        
+
         {/* Filter Toggle */}
         <button
           ref={filterToggleRef}
@@ -456,7 +456,7 @@ export default function JobView() {
   const [fileDetailsName, setFileDetailsName] = useState("");
   const [fileDetailsType, setFileDetailsType] = useState("General");
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   // Document editing state
   const [editingDocument, setEditingDocument] = useState<any | null>(null);
   const [showEditDocumentModal, setShowEditDocumentModal] = useState(false);
@@ -1084,7 +1084,7 @@ export default function JobView() {
         if (Array.isArray(parsed) && parsed.length > 0) {
           setVisibleFields((prev) => ({ ...prev, details: parsed }));
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     const savedHm = localStorage.getItem(HIRING_MANAGER_STORAGE_KEY);
     if (savedHm) {
@@ -1093,7 +1093,7 @@ export default function JobView() {
         if (Array.isArray(parsed) && parsed.length > 0) {
           setVisibleFields((prev) => ({ ...prev, hiringManager: parsed }));
         }
-      } catch (_) {}
+      } catch (_) { }
     }
   }, []);
 
@@ -4644,7 +4644,7 @@ export default function JobView() {
                             id={entry.key}
                             label={entry.label}
                             checked={!!modalJobDetailsVisible[entry.key]}
-                            onToggle={() => {}}
+                            onToggle={() => { }}
                             isOverlay
                           />
                         );
@@ -4713,7 +4713,7 @@ export default function JobView() {
                             id={entry.key}
                             label={entry.label}
                             checked={!!modalDetailsVisible[entry.key]}
-                            onToggle={() => {}}
+                            onToggle={() => { }}
                             isOverlay
                           />
                         );
@@ -4743,55 +4743,55 @@ export default function JobView() {
                   {isLoadingHiringManagerFields ? (
                     <div className="py-8 text-center text-gray-500">Loading hiring manager fields…</div>
                   ) : (
-                  <DndContext
-                    collisionDetection={closestCorners}
-                    onDragStart={(e) => setHiringManagerDragActiveId(e.active.id as string)}
-                    onDragEnd={handleHiringManagerDragEnd}
-                    onDragCancel={() => setHiringManagerDragActiveId(null)}
-                    sensors={sensors}
-                    modifiers={[restrictToVerticalAxis]}
-                  >
-                    <SortableContext
-                      items={modalHiringManagerOrder}
-                      strategy={verticalListSortingStrategy}
+                    <DndContext
+                      collisionDetection={closestCorners}
+                      onDragStart={(e) => setHiringManagerDragActiveId(e.active.id as string)}
+                      onDragEnd={handleHiringManagerDragEnd}
+                      onDragCancel={() => setHiringManagerDragActiveId(null)}
+                      sensors={sensors}
+                      modifiers={[restrictToVerticalAxis]}
                     >
-                      <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
-                        {modalHiringManagerOrder.map((key) => {
-                          const entry = hiringManagerFieldCatalog.find((f) => f.key === key);
+                      <SortableContext
+                        items={modalHiringManagerOrder}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
+                          {modalHiringManagerOrder.map((key) => {
+                            const entry = hiringManagerFieldCatalog.find((f) => f.key === key);
+                            if (!entry) return null;
+                            return (
+                              <SortableJobDetailsFieldRow
+                                key={entry.key}
+                                id={entry.key}
+                                label={entry.label}
+                                checked={!!modalHiringManagerVisible[entry.key]}
+                                onToggle={() =>
+                                  setModalHiringManagerVisible((prev) => ({
+                                    ...prev,
+                                    [entry.key]: !prev[entry.key],
+                                  }))
+                                }
+                              />
+                            );
+                          })}
+                        </div>
+                      </SortableContext>
+                      <DragOverlay dropAnimation={dropAnimationConfig}>
+                        {hiringManagerDragActiveId ? (() => {
+                          const entry = hiringManagerFieldCatalog.find((f) => f.key === hiringManagerDragActiveId);
                           if (!entry) return null;
                           return (
                             <SortableJobDetailsFieldRow
-                              key={entry.key}
                               id={entry.key}
                               label={entry.label}
                               checked={!!modalHiringManagerVisible[entry.key]}
-                              onToggle={() =>
-                                setModalHiringManagerVisible((prev) => ({
-                                  ...prev,
-                                  [entry.key]: !prev[entry.key],
-                                }))
-                              }
+                              onToggle={() => { }}
+                              isOverlay
                             />
                           );
-                        })}
-                      </div>
-                    </SortableContext>
-                    <DragOverlay dropAnimation={dropAnimationConfig}>
-                      {hiringManagerDragActiveId ? (() => {
-                        const entry = hiringManagerFieldCatalog.find((f) => f.key === hiringManagerDragActiveId);
-                        if (!entry) return null;
-                        return (
-                          <SortableJobDetailsFieldRow
-                            id={entry.key}
-                            label={entry.label}
-                            checked={!!modalHiringManagerVisible[entry.key]}
-                            onToggle={() => {}}
-                            isOverlay
-                          />
-                        );
-                      })() : null}
-                    </DragOverlay>
-                  </DndContext>
+                        })() : null}
+                      </DragOverlay>
+                    </DndContext>
                   )}
                   <div className="flex justify-end gap-2 pt-4 mt-4 border-t">
                     <button

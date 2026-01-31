@@ -1180,7 +1180,7 @@ const TearsheetsPage = () => {
                     processedRows.map((r) => (
                       <tr key={r.id} className="hover:bg-gray-50">
                         <td className="px-6 py-3 text-sm">
-                          <div className="min-w-[120px]">
+                          <div className="flex items-center gap-2 min-w-[120px]">
                             <button
                               type="button"
                               onClick={() => handleTogglePinnedTearsheet(r)}
