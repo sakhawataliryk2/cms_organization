@@ -3129,7 +3129,7 @@ export default function PlacementView() {
       )}
 
       <div className="p-4">
-        {activeTab === "modify" && handleModifyClick()}
+        {activeTab === "modify" && renderModifyTab()}
 
         {/* Notes Tab */}
         {activeTab === "notes" && renderNotesTab()}
