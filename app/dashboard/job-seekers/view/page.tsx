@@ -3596,7 +3596,7 @@ Best regards`;
         </div>
         </>
       ) : (
-        <p className="text-gray-500 italic">No history records available</p>
+        <p className="text-gray-500 italic">No Job Seeker history records available</p>
       )}
     </div>
   );
