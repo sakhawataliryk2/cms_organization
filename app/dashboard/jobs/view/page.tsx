@@ -4016,7 +4016,7 @@ export default function JobView() {
                   </p>
                 </div>
                 {selectedDocument.file_path ? (
-                  <div className="flex-1 min-h-[60vh] flex flex-col">
+                  <div className="overflow-y-auto flex-1 min-h-[60vh] flex flex-col">
                     <DocumentViewer
                       filePath={selectedDocument.file_path}
                       mimeType={selectedDocument.mime_type}
