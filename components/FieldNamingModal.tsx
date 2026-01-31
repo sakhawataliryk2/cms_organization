@@ -1,6 +1,5 @@
 // components/FieldNamingModal.tsx
-import { useState } from 'react';
-import { FiInfo, FiX } from 'react-icons/fi';
+import { FiX } from 'react-icons/fi';
 
 interface FieldNamingModalProps {
     isOpen: boolean;

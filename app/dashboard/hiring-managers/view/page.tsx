@@ -44,6 +44,7 @@ import {
   togglePinnedRecord,
 } from "@/lib/pinnedRecords";
 import DocumentViewer from "@/components/DocumentViewer";
+import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
 
 // Default header fields for Hiring Managers module - defined outside component to ensure stable reference
 const HIRING_MANAGER_DEFAULT_HEADER_FIELDS = ["phone", "email"];
@@ -218,6 +219,7 @@ export default function HiringManagerView() {
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const historyFilters = useHistoryFilters(history);
   const [showAddNote, setShowAddNote] = useState(false);
 
   // Documents state
@@ -725,7 +727,7 @@ export default function HiringManagerView() {
             return String(fk) === key;
           });
           const fieldLabel = fieldDef?.field_label || fieldDef?.field_name || key;
-          const fieldValue = customObj[key] || "-";
+          const fieldValue = customObj[fieldLabel] || "-";
           return (
             <div key={key} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
@@ -800,7 +802,7 @@ export default function HiringManagerView() {
             return String(fk) === key;
           });
           const fieldLabel = fieldDef?.field_label || fieldDef?.field_name || key;
-          const fieldValue = customObj[key] || "-";
+          const fieldValue = customObj[fieldLabel] || "-";
           return (
             <div key={key} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
@@ -3698,8 +3700,17 @@ export default function HiringManagerView() {
       ) : historyError ? (
         <div className="text-red-500 py-2">{historyError}</div>
       ) : history.length > 0 ? (
-        <div className="space-y-4">
-          {history.map((item) => {
+        <>
+          <HistoryTabFilters
+            sortOrder={historyFilters.sortOrder}
+            onSortOrderChange={historyFilters.setSortOrder}
+            userFilter={historyFilters.userFilter}
+            onUserFilterChange={historyFilters.setUserFilter}
+            uniqueUsers={historyFilters.uniqueUsers}
+            disabled={isLoadingHistory}
+          />
+          <div className="space-y-4">
+          {historyFilters.filteredAndSorted.map((item) => {
             // Format the history entry based on action type
             let actionDisplay = "";
             let detailsDisplay: React.ReactNode = "";
@@ -3838,6 +3849,7 @@ export default function HiringManagerView() {
             );
           })}
         </div>
+        </>
       ) : (
         <p className="text-gray-500 italic">No history records available</p>
       )}
@@ -4328,7 +4340,10 @@ export default function HiringManagerView() {
                         );
                         const fieldLabel =
                           field?.field_label || field?.field_name || fieldKey;
-                        const fieldValue = hiringManager.customFields[fieldKey];
+                          console.log("Field Label", fieldLabel);
+                          console.log("Field Value", hiringManager.customFields);
+                        const fieldValue = hiringManager.customFields[fieldLabel];
+                        console.log("Field Value", fieldValue);
                         return (
                           <div
                             key={fieldKey}

@@ -23,6 +23,7 @@ import {
   togglePinnedRecord,
 } from "@/lib/pinnedRecords";
 import DocumentViewer from "@/components/DocumentViewer";
+import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
 // Drag and drop imports
 import {
   DndContext,
@@ -427,6 +428,7 @@ export default function JobSeekerView() {
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const historyFilters = useHistoryFilters(history);
   const [showAddNote, setShowAddNote] = useState(false);
 
   // Tasks state
@@ -3443,8 +3445,17 @@ Best regards`;
       ) : historyError ? (
         <div className="text-red-500 py-2">{historyError}</div>
       ) : history.length > 0 ? (
-        <div className="space-y-4">
-          {history.map((item) => {
+        <>
+          <HistoryTabFilters
+            sortOrder={historyFilters.sortOrder}
+            onSortOrderChange={historyFilters.setSortOrder}
+            userFilter={historyFilters.userFilter}
+            onUserFilterChange={historyFilters.setUserFilter}
+            uniqueUsers={historyFilters.uniqueUsers}
+            disabled={isLoadingHistory}
+          />
+          <div className="space-y-4">
+          {historyFilters.filteredAndSorted.map((item) => {
             // Format the history entry based on action type
             let actionDisplay = "";
             let detailsDisplay: React.ReactNode = "";
@@ -3583,6 +3594,7 @@ Best regards`;
             );
           })}
         </div>
+        </>
       ) : (
         <p className="text-gray-500 italic">No history records available</p>
       )}

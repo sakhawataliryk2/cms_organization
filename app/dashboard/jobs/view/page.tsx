@@ -45,6 +45,7 @@ import {
   togglePinnedRecord,
 } from "@/lib/pinnedRecords";
 import DocumentViewer from "@/components/DocumentViewer";
+import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
 
 // SortablePanel helper
 function SortablePanel({ id, children, isOverlay = false }: { id: string; children: React.ReactNode; isOverlay?: boolean }) {
@@ -426,6 +427,7 @@ export default function JobView() {
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const historyFilters = useHistoryFilters(history);
   const [showAddNote, setShowAddNote] = useState(false);
   const [noteTypeFilter, setNoteTypeFilter] = useState<string>("");
   // Publish / distribute job (LinkedIn, Job Board) — works without credentials; completes when credentials are added
@@ -3593,8 +3595,17 @@ export default function JobView() {
       ) : historyError ? (
         <div className="text-red-500 py-2">{historyError}</div>
       ) : history.length > 0 ? (
-        <div className="space-y-4">
-          {history.map((item) => {
+        <>
+          <HistoryTabFilters
+            sortOrder={historyFilters.sortOrder}
+            onSortOrderChange={historyFilters.setSortOrder}
+            userFilter={historyFilters.userFilter}
+            onUserFilterChange={historyFilters.setUserFilter}
+            uniqueUsers={historyFilters.uniqueUsers}
+            disabled={isLoadingHistory}
+          />
+          <div className="space-y-4">
+          {historyFilters.filteredAndSorted.map((item) => {
             // Format the history entry based on action type
             let actionDisplay = "";
             let detailsDisplay: React.ReactNode = "";
@@ -3733,6 +3744,7 @@ export default function JobView() {
             );
           })}
         </div>
+        </>
       ) : (
         <p className="text-gray-500 italic">No history records available</p>
       )}
