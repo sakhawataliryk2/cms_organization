@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import LoadingScreen from '@/components/LoadingScreen';
 import DashboardNav from '@/components/DashboardNav';
+import { AuthFetchInterceptor } from '@/components/AuthFetchInterceptor';
 
 interface DashboardLayoutProps {
     children: ReactNode;
@@ -32,6 +33,8 @@ export default function DashboardLayout({ children }: DashboardLayoutProps) {
 
     return (
         <div className="min-h-screen bg-gray-100">
+            {/* Intercepts 401 responses and redirects to login when cookies are cleared */}
+            <AuthFetchInterceptor />
             {/* DashboardNav includes the side nav and top bar */}
             <DashboardNav />
 

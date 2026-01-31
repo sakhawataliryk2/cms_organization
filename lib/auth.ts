@@ -1,7 +1,7 @@
 import { getCookie, setCookie, deleteCookie } from 'cookies-next';
 import { jwtVerify } from 'jose';
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 
 export interface UserData {
     id: string;
@@ -141,27 +141,30 @@ export const refreshTokenIfNeeded = async (): Promise<void> => {
 // Custom hook for authentication protection
 export function useAuth() {
     const router = useRouter();
+    const pathname = usePathname();
 
     useEffect(() => {
-        // Check authentication status
+        // Check authentication status on every pathname change (client-side navigation)
+        // This handles the case when cookies are cleared while on a cached page
         if (typeof window !== 'undefined') {
             const isLoggedIn = isAuthenticated();
 
             if (!isLoggedIn) {
                 // Store current path for redirect after login if needed
                 const currentPath = window.location.pathname;
-                if (currentPath !== '/auth/login' && currentPath !== '/auth/signup') {
-                    const redirectUrl = encodeURIComponent(currentPath);
-                    router.push(`/auth/login?redirect=${redirectUrl}`);
-                } else {
-                    router.push('/auth/login');
+                if (currentPath !== '/auth/login' && currentPath !== '/auth/signup' && !currentPath.startsWith('/job-seeker-portal')) {
+                    const redirectUrl = encodeURIComponent(window.location.pathname + window.location.search);
+                    // Use window.location for full reload - ensures middleware runs and clears any cached state
+                    window.location.href = `/auth/login?redirect=${redirectUrl}`;
+                } else if (!currentPath.startsWith('/job-seeker-portal')) {
+                    window.location.href = '/auth/login';
                 }
             } else {
                 // If logged in, refresh token if needed
                 refreshTokenIfNeeded();
             }
         }
-    }, [router]);
+    }, [pathname, router]);
 
     // Return user data for convenience
     return { user: getUser(), isAuthenticated: isAuthenticated() };
