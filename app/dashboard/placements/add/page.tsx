@@ -116,16 +116,16 @@ export default function AddPlacement() {
     }
   }, [customFields, setCustomFieldValues]);
 
-  // Fetch placement when in edit mode
+  // Fetch placement when in edit mode (wait for customFields to load so mapping works)
   useEffect(() => {
-    if (placementId && !hasFetchedRef.current && !customFieldsLoading && customFields.length > 0) {
+    if (placementId && !hasFetchedRef.current && !customFieldsLoading) {
       hasFetchedRef.current = true;
       fetchPlacement(placementId);
     }
     if (!placementId) {
       hasFetchedRef.current = false;
     }
-  }, [placementId, customFieldsLoading, customFields.length, fetchPlacement]);
+  }, [placementId, customFieldsLoading, fetchPlacement]);
 
   const fetchJobSeekers = async () => {
     setIsLoadingJobSeekers(true);

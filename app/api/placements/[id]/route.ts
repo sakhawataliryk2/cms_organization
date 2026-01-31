@@ -89,6 +89,8 @@ export async function PUT(
         const { id } = await params;
         const body = await request.json();
 
+        console.log("Update request body:", body);
+
         // Get the token from cookies
         const cookieStore = await cookies();
         const token = cookieStore.get('token')?.value;

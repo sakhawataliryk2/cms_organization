@@ -359,10 +359,8 @@ export default function PlacementView() {
   const placementId = searchParams.get("id");
 
   const [placement, setPlacement] = useState<any>(null);
-  const [originalData, setOriginalData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
 
   // Pinned record (bookmarks bar) state
   const [isRecordPinned, setIsRecordPinned] = useState(false);
@@ -645,9 +643,6 @@ export default function PlacementView() {
 
   // Current active tab
   const [activeTab, setActiveTab] = useState("summary");
-
-  // Editable fields in Modify tab
-  const [editableFields, setEditableFields] = useState<any>({});
 
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
@@ -982,23 +977,12 @@ export default function PlacementView() {
     setEditingPanel(null);
   };
 
-  // Initialize editable fields when placement data is loaded
-  useEffect(() => {
-    if (placement) {
-      // Flatten placement data for editing
-      const flattenedData = {
-        candidate: placement.jobSeekerName || '',
-        job: placement.jobTitle || '',
-        status: placement.status || '',
-        startDate: placement.startDate || '',
-        endDate: placement.endDate || '',
-        salary: placement.salary || '',
-        owner: placement.owner || '',
-      };
-      setEditableFields(flattenedData);
-      setOriginalData(flattenedData);
+  // Handle modify button click - redirect to add page in edit mode (same as Organizations/Jobs)
+  const handleModifyClick = () => {
+    if (placementId) {
+      router.push(`/dashboard/placements/add?id=${placementId}`);
     }
-  }, [placement]);
+  };
 
   // Function to fetch placement data
   const fetchPlacementData = async (id: string) => {
@@ -1048,6 +1032,12 @@ export default function PlacementView() {
         }
       }
 
+      // Format dates as YYYY-MM-DD for input type="date" compatibility
+      const toDateInput = (val: string | null | undefined) => {
+        if (!val) return '';
+        const d = new Date(val);
+        return isNaN(d.getTime()) ? '' : d.toISOString().slice(0, 10);
+      };
       const formattedPlacement = {
         id: data.placement.id,
         jobSeekerId: data.placement.jobSeekerId || data.placement.job_seeker_id || '',
@@ -1055,9 +1045,9 @@ export default function PlacementView() {
         jobId: data.placement.jobId || data.placement.job_id || '',
         jobTitle: data.placement.jobTitle || data.placement.job_title || data.placement.job_name || 'Unknown Job',
         status: data.placement.status || 'Active',
-        startDate: data.placement.startDate ? new Date(data.placement.startDate).toLocaleDateString() : (data.placement.start_date ? new Date(data.placement.start_date).toLocaleDateString() : ''),
-        endDate: data.placement.endDate ? new Date(data.placement.endDate).toLocaleDateString() : (data.placement.end_date ? new Date(data.placement.end_date).toLocaleDateString() : ''),
-        salary: data.placement.salary || '',
+        startDate: toDateInput(data.placement.startDate || data.placement.start_date) || '',
+        endDate: toDateInput(data.placement.endDate || data.placement.end_date) || '',
+        salary: data.placement.salary ?? '',
         owner: data.placement.owner || data.placement.owner_name || '',
         dateAdded: data.placement.createdAt ? new Date(data.placement.createdAt).toLocaleDateString() : (data.placement.created_at ? new Date(data.placement.created_at).toLocaleDateString() : ''),
         lastContactDate: data.placement.last_contact_date ? new Date(data.placement.last_contact_date).toLocaleDateString() : 'Never contacted',
@@ -2135,124 +2125,19 @@ export default function PlacementView() {
     }
   };
 
-  // Render modify tab content
+  // Render modify tab content - redirect to add page for editing (same pattern as Organizations/Jobs)
   const renderModifyTab = () => (
     <div className="bg-white p-4 rounded shadow-sm">
       <h2 className="text-lg font-semibold mb-4">Modify Placement</h2>
-      <div className="space-y-4">
-        <div className="flex items-center">
-          <label className="w-48 font-medium">Candidate:</label>
-          <input
-            type="text"
-            value={editableFields.candidate || ''}
-            onChange={(e) => setEditableFields({ ...editableFields, candidate: e.target.value })}
-            className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-            placeholder="Candidate name"
-          />
-        </div>
-        <div className="flex items-center">
-          <label className="w-48 font-medium">Job:</label>
-          <input
-            type="text"
-            value={editableFields.job || ''}
-            onChange={(e) => setEditableFields({ ...editableFields, job: e.target.value })}
-            className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-            placeholder="Job title"
-          />
-        </div>
-        <div className="flex items-center">
-          <label className="w-48 font-medium">Status:</label>
-          <select
-            value={editableFields.status || ''}
-            onChange={(e) => setEditableFields({ ...editableFields, status: e.target.value })}
-            className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-          >
-            <option value="Pending">Pending</option>
-            <option value="Active">Active</option>
-            <option value="Completed">Completed</option>
-            <option value="Terminated">Terminated</option>
-            <option value="On Hold">On Hold</option>
-          </select>
-        </div>
-        <div className="flex items-center">
-          <label className="w-48 font-medium">Start Date:</label>
-          <input
-            type="date"
-            value={editableFields.startDate || ''}
-            onChange={(e) => setEditableFields({ ...editableFields, startDate: e.target.value })}
-            className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-          />
-        </div>
-        <div className="flex items-center">
-          <label className="w-48 font-medium">End Date:</label>
-          <input
-            type="date"
-            value={editableFields.endDate || ''}
-            onChange={(e) => setEditableFields({ ...editableFields, endDate: e.target.value })}
-            className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-          />
-        </div>
-        <div className="flex items-center">
-          <label className="w-48 font-medium">Salary:</label>
-          <input
-            type="text"
-            value={editableFields.salary || ''}
-            onChange={(e) => setEditableFields({ ...editableFields, salary: e.target.value })}
-            className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-            placeholder="Salary"
-          />
-        </div>
-        <div className="flex items-center">
-          <label className="w-48 font-medium">Owner:</label>
-          <input
-            type="text"
-            value={editableFields.owner || ''}
-            onChange={(e) => setEditableFields({ ...editableFields, owner: e.target.value })}
-            className="flex-1 p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-            placeholder="Owner"
-          />
-        </div>
-        <div className="flex justify-end space-x-2 mt-6">
-          <button
-            onClick={() => {
-              setEditableFields(originalData);
-            }}
-            className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={async () => {
-              setIsSaving(true);
-              try {
-                const response = await fetch(`/api/placements/${placementId}`, {
-                  method: "PUT",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify(editableFields),
-                });
-
-                if (!response.ok) {
-                  throw new Error("Failed to update placement");
-                }
-
-                await fetchPlacementData(placementId!);
-                alert("Placement updated successfully");
-              } catch (err) {
-                console.error("Error updating placement:", err);
-                alert("Failed to update placement");
-              } finally {
-                setIsSaving(false);
-              }
-            }}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-            disabled={isSaving}
-          >
-            {isSaving ? "Saving..." : "Save Changes"}
-          </button>
-        </div>
-      </div>
+      <p className="text-gray-600 mb-4">
+        Click the button below to edit this placement&apos;s details including custom fields.
+      </p>
+      <button
+        onClick={handleModifyClick}
+        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+      >
+        Modify Placement
+      </button>
     </div>
   );
 
@@ -3244,10 +3129,7 @@ export default function PlacementView() {
       )}
 
       <div className="p-4">
-        {/* Display content based on active tab */}
-
-        {/* Modify Tab */}
-        {activeTab === "modify" && renderModifyTab()}
+        {activeTab === "modify" && handleModifyClick()}
 
         {/* Notes Tab */}
         {activeTab === "notes" && renderNotesTab()}
