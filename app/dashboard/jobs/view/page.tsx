@@ -46,6 +46,7 @@ import {
 } from "@/lib/pinnedRecords";
 import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
+import { sendCalendarInvite, type CalendarEvent } from "@/lib/office365";
 
 // SortablePanel helper
 function SortablePanel({ id, children, isOverlay = false }: { id: string; children: React.ReactNode; isOverlay?: boolean }) {
@@ -435,6 +436,22 @@ export default function JobView() {
   const [publishTargets, setPublishTargets] = useState<{ linkedin: boolean; job_board: boolean }>({ linkedin: false, job_board: true });
   const [isPublishing, setIsPublishing] = useState(false);
   const [publishMessage, setPublishMessage] = useState<string | null>(null);
+
+  // Calendar appointment modal state (used after Add Note → SAVE & Schedule Appointment)
+  const [showAppointmentModal, setShowAppointmentModal] = useState(false);
+  const [appointmentForm, setAppointmentForm] = useState({
+    date: "",
+    time: "",
+    type: "",
+    description: "",
+    location: "",
+    duration: 30,
+    attendees: [] as string[],
+    sendInvites: true,
+  });
+  const [isSavingAppointment, setIsSavingAppointment] = useState(false);
+  const [appointmentUsers, setAppointmentUsers] = useState<any[]>([]);
+  const [isLoadingAppointmentUsers, setIsLoadingAppointmentUsers] = useState(false);
 
   const [documents, setDocuments] = useState<Array<any>>([]);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
@@ -1212,6 +1229,13 @@ export default function JobView() {
     window.addEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
     return () => window.removeEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
   }, [job]);
+
+  // Fetch users for appointment attendees when appointment modal opens
+  useEffect(() => {
+    if (showAppointmentModal) {
+      fetchAppointmentUsers();
+    }
+  }, [showAppointmentModal]);
 
   const renderJobDetailsPanel = () => {
     if (!job) return null;
@@ -2673,7 +2697,8 @@ export default function JobView() {
   };
 
   // Handle adding a new note with validation
-  const handleAddNote = async () => {
+  // afterSave: when 'appointment' or 'task', opens that scheduler after saving the note
+  const handleAddNote = async (afterSave?: "appointment" | "task") => {
     if (!jobId) return;
 
     // Clear previous validation errors
@@ -2775,9 +2800,147 @@ export default function JobView() {
       // Refresh history
       fetchHistory(jobId);
       alert("Note added successfully");
+
+      // Open appointment scheduler or task scheduler as requested
+      if (afterSave === "appointment") {
+        setShowAppointmentModal(true);
+      } else if (afterSave === "task") {
+        router.push(`/dashboard/tasks/add?relatedEntity=job&relatedEntityId=${jobId}`);
+      }
     } catch (err) {
       console.error("Error adding note:", err);
       alert(err instanceof Error ? err.message : "Failed to add note. Please try again.");
+    }
+  };
+
+  // Fetch users for appointment attendees
+  const fetchAppointmentUsers = async () => {
+    setIsLoadingAppointmentUsers(true);
+    try {
+      const response = await fetch("/api/users/active", {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setAppointmentUsers(data.users || []);
+      }
+    } catch (err) {
+      console.error("Error fetching appointment users:", err);
+    } finally {
+      setIsLoadingAppointmentUsers(false);
+    }
+  };
+
+  // Handle appointment submission (from Jobs Add Note flow)
+  const handleAppointmentSubmit = async () => {
+    if (!appointmentForm.date || !appointmentForm.time || !appointmentForm.type) {
+      alert("Please fill in all required fields (Date, Time, Type)");
+      return;
+    }
+
+    if (!jobId) {
+      alert("Job ID is missing");
+      return;
+    }
+
+    setIsSavingAppointment(true);
+
+    try {
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+
+      const response = await fetch("/api/planner/appointments", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          date: appointmentForm.date,
+          time: appointmentForm.time,
+          type: appointmentForm.type,
+          description: appointmentForm.description,
+          location: appointmentForm.location,
+          duration: appointmentForm.duration,
+          jobId: jobId,
+          job: job?.title || `${formatRecordId(job?.id, "job")} ${job?.title || ""}`.trim(),
+          client: job?.organization_name || job?.client || "",
+          attendees: appointmentForm.attendees,
+          sendInvites: appointmentForm.sendInvites,
+        }),
+      });
+
+      if (!response.ok) {
+        let errorMessage = "Failed to create appointment";
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData.message || errorData.error || `HTTP ${response.status}: ${response.statusText}`;
+        } catch (e) {
+          errorMessage = `HTTP ${response.status}: ${response.statusText || "Failed to create appointment"}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const data = await response.json();
+
+      // Send calendar invites if requested
+      if (appointmentForm.sendInvites && appointmentForm.attendees.length > 0) {
+        try {
+          const [hours, minutes] = appointmentForm.time.split(":");
+          const appointmentDate = new Date(appointmentForm.date);
+          appointmentDate.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+
+          const endDate = new Date(appointmentDate);
+          endDate.setMinutes(endDate.getMinutes() + appointmentForm.duration);
+
+          const calendarEvent: CalendarEvent = {
+            subject: `${appointmentForm.type} - ${job?.title || `Job ${jobId}`}`,
+            start: {
+              dateTime: appointmentDate.toISOString(),
+              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            },
+            end: {
+              dateTime: endDate.toISOString(),
+              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            },
+            body: {
+              contentType: "Text",
+              content: appointmentForm.description || `Appointment: ${appointmentForm.type}`,
+            },
+            location: appointmentForm.location ? { displayName: appointmentForm.location } : undefined,
+          };
+
+          await sendCalendarInvite(calendarEvent, appointmentForm.attendees);
+        } catch (inviteError) {
+          console.error("Error sending calendar invites:", inviteError);
+          alert("Appointment created, but calendar invites failed to send. Please send manually.");
+        }
+      }
+
+      alert("Appointment created successfully!");
+      setShowAppointmentModal(false);
+      setAppointmentForm({
+        date: "",
+        time: "",
+        type: "",
+        description: "",
+        location: "",
+        duration: 30,
+        attendees: [],
+        sendInvites: true,
+      });
+    } catch (err) {
+      console.error("Error creating appointment:", err);
+      alert(err instanceof Error ? err.message : "Failed to create appointment. Please try again.");
+    } finally {
+      setIsSavingAppointment(false);
     }
   };
 
@@ -5873,7 +6036,7 @@ export default function JobView() {
               </div>
 
               {/* Form Actions */}
-              <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
+              <div className="flex flex-wrap justify-end gap-2 mt-6 pt-4 border-t">
                 <button
                   onClick={handleCloseAddNoteModal}
                   className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium"
@@ -5881,14 +6044,275 @@ export default function JobView() {
                   CANCEL
                 </button>
                 <button
-                  onClick={handleAddNote}
+                  onClick={() => handleAddNote()}
                   className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
                   disabled={!noteForm.text.trim() || !noteForm.action}
                   title="Save Note"
                 >
                   SAVE
                 </button>
+                <button
+                  onClick={() => handleAddNote("appointment")}
+                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  disabled={!noteForm.text.trim() || !noteForm.action}
+                  title="Save Note and open Appointment Scheduler"
+                >
+                  SAVE & Schedule Appointment
+                </button>
+                <button
+                  onClick={() => handleAddNote("task")}
+                  className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  disabled={!noteForm.text.trim() || !noteForm.action}
+                  title="Save Note and open Task Scheduler"
+                >
+                  SAVE & Add Task
+                </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add Appointment Modal (opens after SAVE & Schedule Appointment from Add Note) */}
+      {showAppointmentModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 overflow-y-auto">
+          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Create Calendar Appointment</h2>
+              <button
+                onClick={() => {
+                  setShowAppointmentModal(false);
+                  setAppointmentForm({
+                    date: "",
+                    time: "",
+                    type: "",
+                    description: "",
+                    location: "",
+                    duration: 30,
+                    attendees: [],
+                    sendInvites: true,
+                  });
+                }}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Date <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="date"
+                  value={appointmentForm.date}
+                  onChange={(e) =>
+                    setAppointmentForm((prev) => ({ ...prev, date: e.target.value }))
+                  }
+                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Time <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="time"
+                  value={appointmentForm.time}
+                  onChange={(e) =>
+                    setAppointmentForm((prev) => ({ ...prev, time: e.target.value }))
+                  }
+                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Duration (minutes)
+                </label>
+                <input
+                  type="number"
+                  value={appointmentForm.duration}
+                  onChange={(e) =>
+                    setAppointmentForm((prev) => ({
+                      ...prev,
+                      duration: parseInt(e.target.value) || 30,
+                    }))
+                  }
+                  min={15}
+                  step={15}
+                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Appointment Type <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={appointmentForm.type}
+                  onChange={(e) =>
+                    setAppointmentForm((prev) => ({ ...prev, type: e.target.value }))
+                  }
+                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
+                >
+                  <option value="">Select type</option>
+                  <option value="Interview">Interview</option>
+                  <option value="Meeting">Meeting</option>
+                  <option value="Phone Call">Phone Call</option>
+                  <option value="Follow-up">Follow-up</option>
+                  <option value="Assessment">Assessment</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description
+                </label>
+                <textarea
+                  value={appointmentForm.description}
+                  onChange={(e) =>
+                    setAppointmentForm((prev) => ({ ...prev, description: e.target.value }))
+                  }
+                  rows={4}
+                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter appointment description..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Location
+                </label>
+                <input
+                  type="text"
+                  value={appointmentForm.location}
+                  onChange={(e) =>
+                    setAppointmentForm((prev) => ({ ...prev, location: e.target.value }))
+                  }
+                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Enter location or video link..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Attendees (will receive calendar invite)
+                </label>
+                {isLoadingAppointmentUsers ? (
+                  <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                    Loading users...
+                  </div>
+                ) : (
+                  <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500">
+                    <div className="max-h-48 overflow-y-auto p-2">
+                      {appointmentUsers.length === 0 ? (
+                        <div className="text-gray-500 text-sm p-2">No users available</div>
+                      ) : (
+                        appointmentUsers.map((user) => (
+                          <label
+                            key={user.id}
+                            className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={appointmentForm.attendees.includes(user.email || user.id)}
+                              onChange={(e) => {
+                                const email = user.email || user.id;
+                                if (e.target.checked) {
+                                  setAppointmentForm((prev) => ({
+                                    ...prev,
+                                    attendees: [...prev.attendees, email],
+                                  }));
+                                } else {
+                                  setAppointmentForm((prev) => ({
+                                    ...prev,
+                                    attendees: prev.attendees.filter((a) => a !== email),
+                                  }));
+                                }
+                              }}
+                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                            />
+                            <span className="text-sm text-gray-700">
+                              {user.name || user.email || `User #${user.id}`}
+                            </span>
+                          </label>
+                        ))
+                      )}
+                    </div>
+                    {appointmentForm.attendees.length > 0 && (
+                      <div className="border-t border-gray-300 p-2 bg-gray-50">
+                        <div className="text-xs text-gray-600 mb-1">
+                          Selected: {appointmentForm.attendees.length} attendee(s)
+                        </div>
+                        <div className="flex flex-wrap gap-1">
+                          {appointmentForm.attendees.map((email) => (
+                            <span
+                              key={email}
+                              className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                            >
+                              {email}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAppointmentForm((prev) => ({
+                                    ...prev,
+                                    attendees: prev.attendees.filter((a) => a !== email),
+                                  }));
+                                }}
+                                className="ml-1 text-blue-600 hover:text-blue-800"
+                              >
+                                ×
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="send-invites-job"
+                  checked={appointmentForm.sendInvites}
+                  onChange={(e) =>
+                    setAppointmentForm((prev) => ({ ...prev, sendInvites: e.target.checked }))
+                  }
+                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                />
+                <label htmlFor="send-invites-job" className="text-sm text-gray-700">
+                  Send calendar invites to attendees
+                </label>
+              </div>
+            </div>
+            <div className="flex justify-end space-x-2 p-4 border-t">
+              <button
+                onClick={() => {
+                  setShowAppointmentModal(false);
+                  setAppointmentForm({
+                    date: "",
+                    time: "",
+                    type: "",
+                    description: "",
+                    location: "",
+                    duration: 30,
+                    attendees: [],
+                    sendInvites: true,
+                  });
+                }}
+                className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                disabled={isSavingAppointment}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleAppointmentSubmit}
+                disabled={isSavingAppointment}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:opacity-50"
+              >
+                {isSavingAppointment ? "Saving…" : "Save Appointment"}
+              </button>
             </div>
           </div>
         </div>

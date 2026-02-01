@@ -2662,25 +2662,44 @@ Best regards`;
       console.log("Response status:", response.status);
       console.log("Response ok:", response.ok);
 
-      // Get response as text first for debugging
+      // Get response as text first so we can handle non-JSON (e.g. HTML error pages)
       const responseText = await response.text();
-      let data;
+      let data: { note?: unknown; message?: string; error?: string } | null = null;
 
       try {
-        data = JSON.parse(responseText);
+        if (responseText.trim()) data = JSON.parse(responseText);
       } catch (parseError) {
-        console.error("Error parsing response:", parseError);
-        console.error("Raw response:", responseText);
-        throw new Error("Invalid response format from server");
+        if (response.ok) {
+          console.error("Error parsing response:", parseError);
+          console.error("Raw response:", responseText);
+          throw new Error("Server returned an invalid response. Please try again.");
+        }
+        // Non-OK response with non-JSON body (e.g. HTML error page)
+        const message =
+          response.status === 401
+            ? "Session expired or not authorized. Please sign in again."
+            : response.status >= 500
+              ? "Server error. Please try again later."
+              : "Failed to add note. Please try again.";
+        throw new Error(message);
       }
 
       if (!response.ok) {
-        throw new Error(data.message || data.error || "Failed to add note");
+        const message =
+          (data && (data.message || data.error)) ||
+          (response.status === 401
+            ? "Session expired or not authorized. Please sign in again."
+            : "Failed to add note");
+        throw new Error(message);
+      }
+
+      if (!data) {
+        throw new Error("Server returned an empty response. Please try again.");
       }
 
       // Add the new note to the list
       // Handle both response structures: { note } or { success: true, note }
-      const newNote = data.note || data;
+      const newNote = data.note ?? data;
       if (newNote) {
         setNotes([newNote, ...notes]);
       }

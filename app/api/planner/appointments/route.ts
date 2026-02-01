@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
             type: body.type,
             client: body.client || '',
             job: body.job || '',
+            job_id: body.jobId || null,
             job_seeker_id: body.jobSeekerId || null,
             hiring_manager_id: body.hiringManagerId || null,
             organization_id: body.organizationId || null,
