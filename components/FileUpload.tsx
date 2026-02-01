@@ -101,6 +101,12 @@ export default function FileUpload({ isOpen, onClose }: FileUploadProps) {
                 <div className="flex justify-between items-center p-4 border-b">
                     <h2 className="text-xl font-semibold">Upload Resume/CV</h2>
                     <button
+                        onKeyDown={(e) => {
+                            if (e.key === 'escape' || e.key === ' ') {
+                                e.stopPropagation();
+                                onClose();
+                            }
+                        }}
                         onClick={onClose}
                         className="text-gray-500 hover:text-gray-700"
                     >
@@ -165,11 +171,23 @@ export default function FileUpload({ isOpen, onClose }: FileUploadProps) {
                         <button
                             onClick={onClose}
                             className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                            onKeyDown={(e) => {
+                                if (e.key === 'escape' || e.key === ' ') {
+                                    e.stopPropagation();
+                                    onClose();
+                                }
+                            }}
                         >
                             Cancel
                         </button>
                         <button
                             onClick={handleUpload}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter' || e.key === ' ') {
+                                    e.stopPropagation();
+                                    onClose();
+                                }
+                            }}
                             disabled={!file}
                             className={`px-4 py-2 rounded ${file
                                 ? 'bg-blue-500 text-white hover:bg-blue-600'

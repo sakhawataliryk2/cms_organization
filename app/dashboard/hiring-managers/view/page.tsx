@@ -202,11 +202,33 @@ function SortableOrganizationDetailsFieldRow({
   );
 }
 
+const HM_VIEW_TAB_IDS = ["summary", "modify", "history", "notes", "docs", "active-applicants", "opportunities", "quotes", "invoices"];
+
 export default function HiringManagerView() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const hiringManagerId = searchParams.get("id");
-  const [activeTab, setActiveTab] = useState("summary");
+  const tabFromUrl = searchParams.get("tab");
+
+  const [activeTab, setActiveTabState] = useState(() =>
+    tabFromUrl && HM_VIEW_TAB_IDS.includes(tabFromUrl) ? tabFromUrl : "summary"
+  );
+
+  const setActiveTab = (tabId: string) => {
+    setActiveTabState(tabId);
+    const params = new URLSearchParams(searchParams.toString());
+    if (tabId === "summary") params.delete("tab");
+    else params.set("tab", tabId);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
+
+  useEffect(() => {
+    if (tabFromUrl && HM_VIEW_TAB_IDS.includes(tabFromUrl) && tabFromUrl !== activeTab) {
+      setActiveTabState(tabFromUrl);
+    } else if (!tabFromUrl && activeTab !== "summary") {
+      setActiveTabState("summary");
+    }
+  }, [tabFromUrl]);
 
   // Hiring manager data
   const [hiringManager, setHiringManager] = useState<any>(null);
@@ -583,7 +605,8 @@ export default function HiringManagerView() {
       hiringManager.fullName ||
       hiringManager.name ||
       `${formatRecordId(hiringManager.id, "hiringManager")}`;
-    const url = `/dashboard/hiring-managers/view?id=${hiringManager.id}`;
+    let url = `/dashboard/hiring-managers/view?id=${hiringManager.id}`;
+    if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
 
     const res = togglePinnedRecord({ key, label, url });
     if (res.action === "limit") {

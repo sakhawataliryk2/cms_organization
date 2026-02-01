@@ -214,10 +214,33 @@ function SortableTaskOverviewFieldRow({
     );
 }
 
+const TASK_VIEW_TAB_IDS = ['summary', 'modify', 'history', 'notes'];
+
 export default function TaskView() {
     const router = useRouter();
     const searchParams = useSearchParams();
-    const [activeTab, setActiveTab] = useState('summary');
+    const taskId = searchParams.get('id');
+    const tabFromUrl = searchParams.get('tab');
+
+    const [activeTab, setActiveTabState] = useState(() =>
+        tabFromUrl && TASK_VIEW_TAB_IDS.includes(tabFromUrl) ? tabFromUrl : 'summary'
+    );
+
+    const setActiveTab = (tabId: string) => {
+        setActiveTabState(tabId);
+        const params = new URLSearchParams(searchParams.toString());
+        if (tabId === 'summary') params.delete('tab');
+        else params.set('tab', tabId);
+        router.replace(`?${params.toString()}`, { scroll: false });
+    };
+
+    useEffect(() => {
+        if (tabFromUrl && TASK_VIEW_TAB_IDS.includes(tabFromUrl) && tabFromUrl !== activeTab) {
+            setActiveTabState(tabFromUrl);
+        } else if (!tabFromUrl && activeTab !== 'summary') {
+            setActiveTabState('summary');
+        }
+    }, [tabFromUrl]);
 
     // Add states for task data
     const [task, setTask] = useState<any>(null);
@@ -255,8 +278,6 @@ export default function TaskView() {
         visibility: 'Existing' // 'New' or 'Existing'
     });
     const [isSavingTearsheet, setIsSavingTearsheet] = useState(false);
-
-    const taskId = searchParams.get('id');
 
     // =====================
     // HEADER FIELDS (Top Row)
@@ -1517,7 +1538,8 @@ export default function TaskView() {
         if (!task) return;
         const key = buildPinnedKey("task", task.id);
         const label = task.title || `${formatRecordId(task.id, "task")}`;
-        const url = `/dashboard/tasks/view?id=${task.id}`;
+        let url = `/dashboard/tasks/view?id=${task.id}`;
+        if (activeTab && activeTab !== 'summary') url += `&tab=${activeTab}`;
 
         const res = togglePinnedRecord({ key, label, url });
         if (res.action === "limit") {

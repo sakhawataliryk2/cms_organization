@@ -355,10 +355,13 @@ function SortablePlacementDetailsFieldRow({
   );
 }
 
+const PLACEMENT_VIEW_TAB_IDS = ["summary", "modify", "notes", "docs", "history"];
+
 export default function PlacementView() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const placementId = searchParams.get("id");
+  const tabFromUrl = searchParams.get("tab");
 
   const [placement, setPlacement] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -680,7 +683,8 @@ export default function PlacementView() {
     if (!placement) return;
     const key = buildPinnedKey("placement", placement.id);
     const label = String(placement.jobSeekerName || placement.jobTitle || placement.id);
-    const url = `/dashboard/placements/view?id=${placement.id}`;
+    let url = `/dashboard/placements/view?id=${placement.id}`;
+    if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
 
     const res = togglePinnedRecord({ key, label, url });
     if (res.action === "limit") {
@@ -700,8 +704,26 @@ export default function PlacementView() {
     return () => window.removeEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
   }, [placement]);
 
-  // Current active tab
-  const [activeTab, setActiveTab] = useState("summary");
+  // Current active tab (sync with ?tab= URL param for shareable links)
+  const [activeTab, setActiveTabState] = useState(() =>
+    tabFromUrl && PLACEMENT_VIEW_TAB_IDS.includes(tabFromUrl) ? tabFromUrl : "summary"
+  );
+
+  const setActiveTab = (tabId: string) => {
+    setActiveTabState(tabId);
+    const params = new URLSearchParams(searchParams.toString());
+    if (tabId === "summary") params.delete("tab");
+    else params.set("tab", tabId);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
+
+  useEffect(() => {
+    if (tabFromUrl && PLACEMENT_VIEW_TAB_IDS.includes(tabFromUrl) && tabFromUrl !== activeTab) {
+      setActiveTabState(tabFromUrl);
+    } else if (!tabFromUrl && activeTab !== "summary") {
+      setActiveTabState("summary");
+    }
+  }, [tabFromUrl]);
 
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);

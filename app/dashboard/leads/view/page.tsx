@@ -207,10 +207,13 @@ const WEBSITE_JOBS_STORAGE_KEY = "leadsWebsiteJobsFields";
 const OUR_JOBS_DEFAULT_FIELDS = ['jobs'];
 const OUR_JOBS_STORAGE_KEY = "leadsOurJobsFields";
 
+const LEAD_VIEW_TAB_IDS = ["summary", "modify", "notes", "history", "quotes", "invoices", "contacts", "docs", "opportunities"];
+
 export default function LeadView() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const leadId = searchParams.get("id");
+  const tabFromUrl = searchParams.get("tab");
 
   const [lead, setLead] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -269,14 +272,33 @@ export default function LeadView() {
   });
   const [isSavingTearsheet, setIsSavingTearsheet] = useState(false);
 
-  // Current active tab
-  const [activeTab, setActiveTab] = useState("summary");
+  // Current active tab (sync with ?tab= URL param for shareable links)
+  const [activeTab, setActiveTabState] = useState(() =>
+    tabFromUrl && LEAD_VIEW_TAB_IDS.includes(tabFromUrl) ? tabFromUrl : "summary"
+  );
+
+  const setActiveTab = (tabId: string) => {
+    setActiveTabState(tabId);
+    const params = new URLSearchParams(searchParams.toString());
+    if (tabId === "summary") params.delete("tab");
+    else params.set("tab", tabId);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
+
+  useEffect(() => {
+    if (tabFromUrl && LEAD_VIEW_TAB_IDS.includes(tabFromUrl) && tabFromUrl !== activeTab) {
+      setActiveTabState(tabFromUrl);
+    } else if (!tabFromUrl && activeTab !== "summary") {
+      setActiveTabState("summary");
+    }
+  }, [tabFromUrl]);
 
   const handleTogglePinnedRecord = () => {
     if (!lead) return;
     const key = buildPinnedKey("lead", lead.id);
     const label = lead.fullName || String(lead.id);
-    const url = `/dashboard/leads/view?id=${lead.id}`;
+    let url = `/dashboard/leads/view?id=${lead.id}`;
+    if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
 
     const res = togglePinnedRecord({ key, label, url });
     if (res.action === "limit") {

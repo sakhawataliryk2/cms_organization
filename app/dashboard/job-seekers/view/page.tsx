@@ -360,12 +360,33 @@ const OVERVIEW_DEFAULT_FIELDS = [
 ];
 const OVERVIEW_STORAGE_KEY = "jobSeekersOverviewFields";
 
+const JOBSEEKER_VIEW_TAB_IDS = ["summary", "modify", "history", "notes", "docs", "references", "applications", "onboarding"];
+
 export default function JobSeekerView() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const jobSeekerId = searchParams.get("id");
+  const tabFromUrl = searchParams.get("tab");
 
-  const [activeTab, setActiveTab] = useState("summary");
+  const [activeTab, setActiveTabState] = useState(() =>
+    tabFromUrl && JOBSEEKER_VIEW_TAB_IDS.includes(tabFromUrl) ? tabFromUrl : "summary"
+  );
+
+  const setActiveTab = (tabId: string) => {
+    setActiveTabState(tabId);
+    const params = new URLSearchParams(searchParams.toString());
+    if (tabId === "summary") params.delete("tab");
+    else params.set("tab", tabId);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
+
+  useEffect(() => {
+    if (tabFromUrl && JOBSEEKER_VIEW_TAB_IDS.includes(tabFromUrl) && tabFromUrl !== activeTab) {
+      setActiveTabState(tabFromUrl);
+    } else if (!tabFromUrl && activeTab !== "summary") {
+      setActiveTabState("summary");
+    }
+  }, [tabFromUrl]);
   const [activeQuickTab, setActiveQuickTab] = useState("prescreen");
 
   const [applications, setApplications] = useState<any[]>([]);
@@ -1367,7 +1388,8 @@ Best regards`;
     if (!jobSeeker) return;
     const key = buildPinnedKey("jobSeeker", jobSeeker.id);
     const label = jobSeeker.fullName || `${formatRecordId(jobSeeker.id, "jobSeeker")}`;
-    const url = `/dashboard/job-seekers/view?id=${jobSeeker.id}`;
+    let url = `/dashboard/job-seekers/view?id=${jobSeeker.id}`;
+    if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
 
     const res = togglePinnedRecord({ key, label, url });
     if (res.action === "limit") {

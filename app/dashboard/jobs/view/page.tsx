@@ -346,11 +346,33 @@ const DETAILS_STORAGE_KEY = "jobsDetailsFields";
 const HIRING_MANAGER_DEFAULT_FIELDS = ["status", "organization", "department", "email", "email2", "mobilePhone", "directLine", "reportsTo", "linkedinUrl", "dateAdded", "owner", "address"];
 const HIRING_MANAGER_STORAGE_KEY = "jobsHiringManagerFields";
 
+const JOB_VIEW_TAB_IDS = ["summary", "modify", "history", "notes", "docs"];
+
 export default function JobView() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const jobId = searchParams.get("id");
-  const [activeTab, setActiveTab] = useState("summary");
+  const tabFromUrl = searchParams.get("tab");
+
+  const [activeTab, setActiveTabState] = useState(() =>
+    tabFromUrl && JOB_VIEW_TAB_IDS.includes(tabFromUrl) ? tabFromUrl : "summary"
+  );
+
+  const setActiveTab = (tabId: string) => {
+    setActiveTabState(tabId);
+    const params = new URLSearchParams(searchParams.toString());
+    if (tabId === "summary") params.delete("tab");
+    else params.set("tab", tabId);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
+
+  useEffect(() => {
+    if (tabFromUrl && JOB_VIEW_TAB_IDS.includes(tabFromUrl) && tabFromUrl !== activeTab) {
+      setActiveTabState(tabFromUrl);
+    } else if (!tabFromUrl && activeTab !== "summary") {
+      setActiveTabState("summary");
+    }
+  }, [tabFromUrl]);
   const [activeQuickTab, setActiveQuickTab] = useState("applied");
   const [quickTabCounts, setQuickTabCounts] = useState({
     applied: 0,
@@ -1210,7 +1232,8 @@ export default function JobView() {
     if (!job) return;
     const key = buildPinnedKey("job", job.id);
     const label = job.title || `${formatRecordId(job.id, "job")}`;
-    const url = `/dashboard/jobs/view?id=${job.id}`;
+    let url = `/dashboard/jobs/view?id=${job.id}`;
+    if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
 
     const res = togglePinnedRecord({ key, label, url });
     if (res.action === "limit") {

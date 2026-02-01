@@ -350,10 +350,13 @@ function SortableColumnHeader({
   );
 }
 
+const ORG_VIEW_TAB_IDS = ["summary", "modify", "notes", "history", "quotes", "invoices", "contacts", "docs", "opportunities", "jobs"];
+
 export default function OrganizationView() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const hmFilter = searchParams.get("hm");
+  const tabFromUrl = searchParams.get("tab");
 
   const organizationId = searchParams.get("id");
 
@@ -560,8 +563,26 @@ export default function OrganizationView() {
   });
   const [isLoadingSummaryCounts, setIsLoadingSummaryCounts] = useState(false);
 
-  // Current active tab
-  const [activeTab, setActiveTab] = useState("summary");
+  // Current active tab (sync with ?tab= URL param for shareable links)
+  const [activeTab, setActiveTabState] = useState(() =>
+    tabFromUrl && ORG_VIEW_TAB_IDS.includes(tabFromUrl) ? tabFromUrl : "summary"
+  );
+
+  const setActiveTab = (tabId: string) => {
+    setActiveTabState(tabId);
+    const params = new URLSearchParams(searchParams.toString());
+    if (tabId === "summary") params.delete("tab");
+    else params.set("tab", tabId);
+    router.replace(`?${params.toString()}`, { scroll: false });
+  };
+
+  useEffect(() => {
+    if (tabFromUrl && ORG_VIEW_TAB_IDS.includes(tabFromUrl) && tabFromUrl !== activeTab) {
+      setActiveTabState(tabFromUrl);
+    } else if (!tabFromUrl && activeTab !== "summary") {
+      setActiveTabState("summary");
+    }
+  }, [tabFromUrl]);
 
   // Editable fields in Modify tab
   const [editableFields, setEditableFields] = useState<any>({});
@@ -2614,7 +2635,9 @@ export default function OrganizationView() {
     if (!organization) return;
     const key = buildPinnedKey("org", organization.id);
     const label = organization.name || `Organization ${organization.id}`;
-    const url = `/dashboard/organizations/view?id=${organization.id}`;
+    let url = `/dashboard/organizations/view?id=${organization.id}`;
+    if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
+    if (hmFilter) url += `&hm=${encodeURIComponent(hmFilter)}`;
 
     const res = togglePinnedRecord({ key, label, url });
     if (res.action === "limit") {
