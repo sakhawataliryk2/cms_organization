@@ -9,7 +9,9 @@ import Image from "next/image";
 import ActionDropdown from "@/components/ActionDropdown";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import LoadingScreen from "@/components/LoadingScreen";
-import { FiBriefcase, FiLock, FiUnlock } from "react-icons/fi";
+import { FiBriefcase, FiLock, FiUnlock, FiSearch } from "react-icons/fi";
+import { HiOutlineOfficeBuilding } from "react-icons/hi";
+import { formatRecordId } from "@/lib/recordIdFormatter";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import {
@@ -370,6 +372,9 @@ export default function PlacementView() {
     Array<{
       id: string;
       text: string;
+      action?: string;
+      about_references?: unknown;
+      aboutReferences?: unknown;
       created_at: string;
       created_by_name: string;
     }>
@@ -381,7 +386,61 @@ export default function PlacementView() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const historyFilters = useHistoryFilters(history);
   const [showAddNote, setShowAddNote] = useState(false);
-  const [newNote, setNewNote] = useState("");
+  const [noteActionFilter, setNoteActionFilter] = useState<string>("");
+  const [noteAuthorFilter, setNoteAuthorFilter] = useState<string>("");
+  const [noteSortKey, setNoteSortKey] = useState<"date" | "action" | "author">("date");
+  const [noteSortDir, setNoteSortDir] = useState<"asc" | "desc">("desc");
+  const sortedFilteredNotes = useMemo(() => {
+    let out = [...notes];
+    if (noteActionFilter) {
+      out = out.filter((n) => (n.action || "") === noteActionFilter);
+    }
+    if (noteAuthorFilter) {
+      out = out.filter(
+        (n) => (n.created_by_name || "Unknown User") === noteAuthorFilter
+      );
+    }
+    out.sort((a, b) => {
+      let av: any, bv: any;
+      switch (noteSortKey) {
+        case "action":
+          av = a.action || "";
+          bv = b.action || "";
+          break;
+        case "author":
+          av = a.created_by_name || "";
+          bv = b.created_by_name || "";
+          break;
+        default:
+          av = new Date(a.created_at).getTime();
+          bv = new Date(b.created_at).getTime();
+          break;
+      }
+      if (typeof av === "number" && typeof bv === "number") {
+        return noteSortDir === "asc" ? av - bv : bv - av;
+      }
+      const cmp = String(av).localeCompare(String(bv), undefined, {
+        sensitivity: "base",
+        numeric: true,
+      });
+      return noteSortDir === "asc" ? cmp : -cmp;
+    });
+    return out;
+  }, [notes, noteActionFilter, noteAuthorFilter, noteSortKey, noteSortDir]);
+  const [noteForm, setNoteForm] = useState({
+    text: "",
+    action: "",
+    about: "",
+    aboutReferences: [] as { id: number | string; type: string; display: string; value: string }[],
+  });
+  const [validationErrors, setValidationErrors] = useState<{ action?: string; about?: string; text?: string }>({});
+  const [aboutSearchQuery, setAboutSearchQuery] = useState("");
+  const [aboutSuggestions, setAboutSuggestions] = useState<any[]>([]);
+  const [showAboutDropdown, setShowAboutDropdown] = useState(false);
+  const [actionFields, setActionFields] = useState<any[]>([]);
+  const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
+  const [isLoadingAboutSearch, setIsLoadingAboutSearch] = useState(false);
+  const aboutInputRef = useRef<HTMLDivElement>(null);
 
   const [documents, setDocuments] = useState<Array<any>>([]);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
@@ -1130,6 +1189,347 @@ export default function PlacementView() {
       setIsLoadingHistory(false);
     }
   };
+
+  // Reset note form aboutReferences when placement loads
+  useEffect(() => {
+    if (placement && placementId) {
+      const defaultRef = {
+        id: placement.id,
+        type: "Placement",
+        display: `#${placement.id} ${placement.jobSeekerName || ""} - ${placement.jobTitle || ""}`.trim() || `Placement #${placement.id}`,
+        value: `#${placement.id}`,
+      };
+      setNoteForm((prev) => ({
+        ...prev,
+        about: defaultRef.display,
+        aboutReferences: [defaultRef],
+      }));
+    }
+  }, [placement?.id, placementId]);
+
+  // Fetch action fields for notes (placements field-management or default)
+  useEffect(() => {
+    const fetchActionFieldsForNotes = async () => {
+      setIsLoadingActionFields(true);
+      try {
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        );
+        const response = await fetch("/api/admin/field-management/placements", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (response.ok) {
+          const raw = await response.text();
+          let data: any = {};
+          try {
+            data = JSON.parse(raw);
+          } catch {}
+          const fields = data.customFields || data.fields || data.data?.fields || [];
+          const fieldNamesToCheck = ["field_500", "actions", "action"];
+          const field500 = (fields as any[]).find(
+            (f: any) =>
+              fieldNamesToCheck.includes(f.field_name?.toLowerCase()) ||
+              fieldNamesToCheck.includes(f.field_label?.toLowerCase())
+          );
+          if (field500 && field500.options) {
+            let options = field500.options;
+            if (typeof options === "string") {
+              try {
+                options = JSON.parse(options);
+              } catch {}
+            }
+            if (Array.isArray(options)) {
+              setActionFields(
+                options.map((opt: any) => ({
+                  id: opt.value || opt,
+                  field_label: opt.label || opt.value || opt,
+                  field_name: opt.value || opt,
+                }))
+              );
+            } else if (typeof options === "object") {
+              setActionFields(
+                Object.entries(options).map(([key, value]) => ({
+                  id: key,
+                  field_label: String(value),
+                  field_name: key,
+                }))
+              );
+            }
+          } else {
+            setActionFields([
+              { id: "Outbound Call", field_label: "Outbound Call", field_name: "Outbound Call" },
+              { id: "Inbound Call", field_label: "Inbound Call", field_name: "Inbound Call" },
+              { id: "Left Message", field_label: "Left Message", field_name: "Left Message" },
+              { id: "Email", field_label: "Email", field_name: "Email" },
+              { id: "Appointment", field_label: "Appointment", field_name: "Appointment" },
+              { id: "Client Visit", field_label: "Client Visit", field_name: "Client Visit" },
+            ]);
+          }
+        } else {
+          setActionFields([
+            { id: "Outbound Call", field_label: "Outbound Call", field_name: "Outbound Call" },
+            { id: "Inbound Call", field_label: "Inbound Call", field_name: "Inbound Call" },
+            { id: "Left Message", field_label: "Left Message", field_name: "Left Message" },
+            { id: "Email", field_label: "Email", field_name: "Email" },
+            { id: "Appointment", field_label: "Appointment", field_name: "Appointment" },
+            { id: "Client Visit", field_label: "Client Visit", field_name: "Client Visit" },
+          ]);
+        }
+      } catch (err) {
+        console.error("Error fetching action fields:", err);
+        setActionFields([
+          { id: "Outbound Call", field_label: "Outbound Call", field_name: "Outbound Call" },
+          { id: "Inbound Call", field_label: "Inbound Call", field_name: "Inbound Call" },
+          { id: "Email", field_label: "Email", field_name: "Email" },
+        ]);
+      } finally {
+        setIsLoadingActionFields(false);
+      }
+    };
+    fetchActionFieldsForNotes();
+  }, []);
+
+  // Search for references for About field (same as organization)
+  const searchAboutReferences = async (query: string) => {
+    if (!query || query.trim().length < 2) {
+      setAboutSuggestions([]);
+      setShowAboutDropdown(false);
+      return;
+    }
+    setIsLoadingAboutSearch(true);
+    setShowAboutDropdown(true);
+    try {
+      const searchTerm = query.trim();
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      const headers = { Authorization: `Bearer ${token}` };
+      const [jobsRes, orgsRes, jobSeekersRes, leadsRes, tasksRes, placementsRes, hiringManagersRes] =
+        await Promise.allSettled([
+          fetch("/api/jobs", { headers }),
+          fetch("/api/organizations", { headers }),
+          fetch("/api/job-seekers", { headers }),
+          fetch("/api/leads", { headers }),
+          fetch("/api/tasks", { headers }),
+          fetch("/api/placements", { headers }),
+          fetch("/api/hiring-managers", { headers }),
+        ]);
+      const suggestions: any[] = [];
+      if (jobsRes.status === "fulfilled" && jobsRes.value.ok) {
+        const data = await jobsRes.value.json();
+        const jobs = (data.jobs || []).filter(
+          (job: any) =>
+            job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            job.id?.toString().includes(searchTerm)
+        );
+        jobs.forEach((job: any) => {
+          suggestions.push({
+            id: job.id,
+            type: "Job",
+            display: `${formatRecordId(job.id, "job")} ${job.job_title || "Untitled"}`,
+            value: formatRecordId(job.id, "job"),
+          });
+        });
+      }
+      if (orgsRes.status === "fulfilled" && orgsRes.value.ok) {
+        const data = await orgsRes.value.json();
+        const orgs = (data.organizations || []).filter(
+          (org: any) =>
+            org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            org.id?.toString().includes(searchTerm)
+        );
+        orgs.forEach((org: any) => {
+          suggestions.push({
+            id: org.id,
+            type: "Organization",
+            display: `${formatRecordId(org.id, "organization")} ${org.name || "Unnamed"}`,
+            value: formatRecordId(org.id, "organization"),
+          });
+        });
+      }
+      if (jobSeekersRes.status === "fulfilled" && jobSeekersRes.value.ok) {
+        const data = await jobSeekersRes.value.json();
+        const seekers = (data.jobSeekers || []).filter(
+          (seeker: any) =>
+            seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.id?.toString().includes(searchTerm)
+        );
+        seekers.forEach((seeker: any) => {
+          const name =
+            seeker.full_name ||
+            `${seeker.first_name || ""} ${seeker.last_name || ""}`.trim() ||
+            "Unnamed";
+          suggestions.push({
+            id: seeker.id,
+            type: "Job Seeker",
+            display: `${formatRecordId(seeker.id, "jobSeeker")} ${name}`,
+            value: formatRecordId(seeker.id, "jobSeeker"),
+          });
+        });
+      }
+      if (leadsRes.status === "fulfilled" && leadsRes.value.ok) {
+        const data = await leadsRes.value.json();
+        const leads = (data.leads || []).filter(
+          (lead: any) =>
+            lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            lead.id?.toString().includes(searchTerm)
+        );
+        leads.forEach((lead: any) => {
+          suggestions.push({
+            id: lead.id,
+            type: "Lead",
+            display: `${formatRecordId(lead.id, "lead")} ${lead.name || lead.company_name || "Unnamed"}`,
+            value: formatRecordId(lead.id, "lead"),
+          });
+        });
+      }
+      if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
+        const data = await tasksRes.value.json();
+        const tasks = (data.tasks || []).filter(
+          (task: any) =>
+            task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            task.id?.toString().includes(searchTerm)
+        );
+        tasks.forEach((task: any) => {
+          suggestions.push({
+            id: task.id,
+            type: "Task",
+            display: `#${task.id} ${task.title || "Untitled"}`,
+            value: `#${task.id}`,
+          });
+        });
+      }
+      if (placementsRes.status === "fulfilled" && placementsRes.value.ok) {
+        const data = await placementsRes.value.json();
+        const placements = (data.placements || []).filter(
+          (p: any) =>
+            p.jobTitle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            p.jobSeekerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            p.id?.toString().includes(searchTerm)
+        );
+        placements.forEach((p: any) => {
+          suggestions.push({
+            id: p.id,
+            type: "Placement",
+            display: `#${p.id} ${p.jobSeekerName || "Unnamed"} - ${p.jobTitle || "Untitled"}`,
+            value: `#${p.id}`,
+          });
+        });
+      }
+      if (hiringManagersRes.status === "fulfilled" && hiringManagersRes.value.ok) {
+        const data = await hiringManagersRes.value.json();
+        const hms = (data.hiringManagers || []).filter(
+          (hm: any) =>
+            hm.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.id?.toString().includes(searchTerm)
+        );
+        hms.forEach((hm: any) => {
+          const name =
+            hm.full_name ||
+            `${hm.first_name || ""} ${hm.last_name || ""}`.trim() ||
+            "Unnamed";
+          suggestions.push({
+            id: hm.id,
+            type: "Hiring Manager",
+            display: `${formatRecordId(hm.id, "hiringManager")} ${name}`,
+            value: formatRecordId(hm.id, "hiringManager"),
+          });
+        });
+      }
+      const selectedIds = noteForm.aboutReferences.map((ref) => ref.id);
+      const filtered = suggestions.filter((s) => !selectedIds.includes(s.id));
+      setAboutSuggestions(filtered.slice(0, 10));
+    } catch (err) {
+      console.error("Error searching about references:", err);
+      setAboutSuggestions([]);
+    } finally {
+      setIsLoadingAboutSearch(false);
+    }
+  };
+
+  const handleAboutReferenceSelect = (reference: any) => {
+    setNoteForm((prev) => {
+      const newReferences = [...prev.aboutReferences, reference];
+      return {
+        ...prev,
+        aboutReferences: newReferences,
+        about: newReferences.map((r) => r.display).join(", "),
+      };
+    });
+    setAboutSearchQuery("");
+    setShowAboutDropdown(false);
+    setAboutSuggestions([]);
+  };
+
+  const removeAboutReference = (index: number) => {
+    setNoteForm((prev) => {
+      const newReferences = prev.aboutReferences.filter((_, i) => i !== index);
+      return {
+        ...prev,
+        aboutReferences: newReferences,
+        about: newReferences.length > 0 ? newReferences.map((r) => r.display).join(", ") : "",
+      };
+    });
+  };
+
+  const navigateToReference = (ref: any) => {
+    if (!ref || !ref.id) return;
+    const refType = (ref.type || "").toLowerCase().replace(/\s+/g, "");
+    const refId = ref.id;
+    const routeMap: Record<string, string> = {
+      organization: `/dashboard/organizations/view?id=${refId}`,
+      job: `/dashboard/jobs/view?id=${refId}`,
+      jobseeker: `/dashboard/job-seekers/view?id=${refId}`,
+      lead: `/dashboard/leads/view?id=${refId}`,
+      task: `/dashboard/tasks/view?id=${refId}`,
+      placement: `/dashboard/placements/view?id=${refId}`,
+      hiringmanager: `/dashboard/hiring-managers/view?id=${refId}`,
+    };
+    const route = routeMap[refType];
+    if (route) router.push(route);
+  };
+
+  const handleCloseAddNoteModal = () => {
+    setShowAddNote(false);
+    setAboutSearchQuery("");
+    setValidationErrors({});
+    setShowAboutDropdown(false);
+    if (placement && placementId) {
+      const defaultRef = {
+        id: placement.id,
+        type: "Placement",
+        display: `#${placement.id} ${placement.jobSeekerName || ""} - ${placement.jobTitle || ""}`.trim() || `Placement #${placement.id}`,
+        value: `#${placement.id}`,
+      };
+      setNoteForm({ text: "", action: "", about: defaultRef.display, aboutReferences: [defaultRef] });
+    } else {
+      setNoteForm({ text: "", action: "", about: "", aboutReferences: [] });
+    }
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        aboutInputRef.current &&
+        !aboutInputRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest("[data-about-dropdown]")
+      ) {
+        setShowAboutDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   const fetchDocuments = async (id: string) => {
     setIsLoadingDocuments(true);
@@ -2089,35 +2489,75 @@ export default function PlacementView() {
   };
 
   const handleAddNote = async () => {
-    if (!newNote.trim() || !placementId) return;
-
+    if (!placementId) return;
+    setValidationErrors({});
+    const errors: { action?: string; text?: string } = {};
+    if (!noteForm.action || noteForm.action.trim() === "") {
+      errors.action = "Action is required";
+    }
+    if (!noteForm.text || noteForm.text.trim() === "") {
+      errors.text = "Note text is required";
+    }
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
+      return;
+    }
     try {
+      const aboutData = (noteForm.aboutReferences || []).map((ref) => ({
+        id: ref.id,
+        type: ref.type,
+        display: ref.display,
+        value: ref.value,
+      }));
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
       const response = await fetch(`/api/placements/${placementId}/notes`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
-          text: newNote,
+          text: noteForm.text,
+          action: noteForm.action,
+          about_references: aboutData.length > 0 ? aboutData : undefined,
+          aboutReferences: aboutData.length > 0 ? aboutData : undefined,
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
+        if (errorData.errors) {
+          setValidationErrors(errorData.errors);
+          return;
+        }
         throw new Error(errorData.message || "Failed to add note");
       }
 
       const data = await response.json();
-
-      // Add the new note to the list
       setNotes([data.note, ...notes]);
-
-      // Clear the form
-      setNewNote("");
+      const defaultRef =
+        placement && placementId
+          ? {
+              id: placement.id,
+              type: "Placement",
+              display: `#${placement.id} ${placement.jobSeekerName || ""} - ${placement.jobTitle || ""}`.trim() || `Placement #${placement.id}`,
+              value: `#${placement.id}`,
+            }
+          : null;
+      setNoteForm({
+        text: "",
+        action: "",
+        about: defaultRef ? defaultRef.display : "",
+        aboutReferences: defaultRef ? [defaultRef] : [],
+      });
+      setAboutSearchQuery("");
+      setValidationErrors({});
       setShowAddNote(false);
-
-      // Refresh history
       fetchHistory(placementId);
+      alert("Note added successfully");
     } catch (err) {
       console.error("Error adding note:", err);
       alert(
@@ -2144,47 +2584,207 @@ export default function PlacementView() {
     </div>
   );
 
-  // Render notes tab content
-  const renderNotesTab = () => (
-    <div className="bg-white p-4 rounded shadow-sm">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold">Placement Notes</h2>
-        <button
-          onClick={() => setShowAddNote(true)}
-          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-        >
-          Add Note
-        </button>
-      </div>
+  // Render notes tab content (same structure as organization/jobs notes)
+  const renderNotesTab = () => {
+    const parseAboutReferences = (refs: any) => {
+      if (!refs) return [];
+      if (typeof refs === "string") {
+        try {
+          return JSON.parse(refs);
+        } catch {
+          return [];
+        }
+      }
+      if (Array.isArray(refs)) return refs;
+      return [];
+    };
 
-      {/* Notes List */}
-      {isLoadingNotes ? (
-        <div className="flex justify-center py-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+    return (
+      <div className="bg-white p-4 rounded shadow-sm">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Placement Notes</h2>
+          <button
+            onClick={() => setShowAddNote(true)}
+            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+          >
+            Add Note
+          </button>
         </div>
-      ) : noteError ? (
-        <div className="text-red-500 py-2">{noteError}</div>
-      ) : notes.length > 0 ? (
-        <div className="space-y-4">
-          {notes.map((note) => (
-            <div key={note.id} className="p-3 border rounded hover:bg-gray-50">
-              <div className="flex justify-between items-start mb-2">
-                <span className="font-medium text-blue-600">
-                  {note.created_by_name || "Unknown User"}
-                </span>
-                <span className="text-sm text-gray-500">
-                  {new Date(note.created_at).toLocaleString()}
-                </span>
-              </div>
-              <p className="text-gray-700">{note.text}</p>
-            </div>
-          ))}
+
+        {/* Filters & Sort */}
+        <div className="flex flex-wrap gap-4 items-end mb-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Action</label>
+            <select
+              value={noteActionFilter}
+              onChange={(e) => setNoteActionFilter(e.target.value)}
+              className="p-2 border border-gray-300 rounded text-sm"
+            >
+              <option value="">All Actions</option>
+              {actionFields.map((af) => (
+                <option key={af.id || af.field_name || af.field_label} value={af.field_name || af.field_label}>
+                  {af.field_label || af.field_name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Author</label>
+            <select
+              value={noteAuthorFilter}
+              onChange={(e) => setNoteAuthorFilter(e.target.value)}
+              className="p-2 border border-gray-300 rounded text-sm"
+            >
+              <option value="">All Authors</option>
+              {Array.from(new Set(notes.map((n) => n.created_by_name || "Unknown User"))).map((author) => (
+                <option key={author} value={author}>{author}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Sort By</label>
+            <select
+              value={noteSortKey}
+              onChange={(e) => setNoteSortKey(e.target.value as "date" | "action" | "author")}
+              className="p-2 border border-gray-300 rounded text-sm"
+            >
+              <option value="date">Date</option>
+              <option value="action">Action</option>
+              <option value="author">Author</option>
+            </select>
+          </div>
+          <div>
+            <button
+              onClick={() => setNoteSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+              className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs text-black"
+              title="Toggle Sort Direction"
+            >
+              {noteSortDir === "asc" ? "Asc ↑" : "Desc ↓"}
+            </button>
+          </div>
+          {(noteActionFilter || noteAuthorFilter) && (
+            <button
+              onClick={() => { setNoteActionFilter(""); setNoteAuthorFilter(""); }}
+              className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs"
+            >
+              Clear Filters
+            </button>
+          )}
         </div>
-      ) : (
-        <p className="text-gray-500 italic">No notes have been added yet.</p>
-      )}
-    </div>
-  );
+
+        {isLoadingNotes ? (
+          <div className="flex justify-center py-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        ) : noteError ? (
+          <div className="text-red-500 py-2">{noteError}</div>
+        ) : sortedFilteredNotes.length > 0 ? (
+          <div className="space-y-4">
+            {sortedFilteredNotes.map((note) => {
+              const actionLabel =
+                actionFields.find(
+                  (af) => af.field_name === note.action || af.field_label === note.action
+                )?.field_label || note.action || "General Note";
+              const aboutRefs = parseAboutReferences(
+                (note as any).about_references ?? (note as any).aboutReferences
+              );
+              return (
+                <div id={`note-${note.id}`} key={note.id} className="p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors">
+                  <div className="border-b border-gray-200 pb-3 mb-3">
+                    <div className="flex justify-between items-start">
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-blue-600">
+                            {note.created_by_name || "Unknown User"}
+                          </span>
+                          {actionLabel && (
+                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-medium">
+                              {actionLabel}
+                            </span>
+                          )}
+                          <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded border">
+                            Placement
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {new Date(note.created_at).toLocaleString("en-US", {
+                            month: "2-digit",
+                            day: "2-digit",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            const el = document.getElementById(`note-${note.id}`);
+                            if (el) {
+                              el.scrollIntoView({ behavior: "smooth", block: "center" });
+                              el.classList.add("ring-2", "ring-blue-500");
+                              setTimeout(() => el.classList.remove("ring-2", "ring-blue-500"), 2000);
+                            }
+                          }}
+                          className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                          title="View"
+                        >
+                          View
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  {aboutRefs.length > 0 && (
+                    <div className="mb-3 pb-3 border-b border-gray-100">
+                      <div className="flex items-start gap-2">
+                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide min-w-[80px]">
+                          References:
+                        </span>
+                        <div className="flex flex-wrap gap-2 flex-1">
+                          {aboutRefs.map((ref: any, idx: number) => {
+                            const displayText =
+                              typeof ref === "string"
+                                ? ref
+                                : ref.display || ref.value || `${ref.type} #${ref.id}`;
+                            const refType = typeof ref === "string" ? null : (ref.type || "").toLowerCase().replace(/\s+/g, "");
+                            const refId = typeof ref === "string" ? null : ref.id;
+                            const isClickable = refId && refType;
+                            return (
+                              <button
+                                key={idx}
+                                onClick={() => isClickable && navigateToReference(ref)}
+                                disabled={!isClickable}
+                                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-all ${
+                                  isClickable
+                                    ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer"
+                                    : "bg-gray-100 text-gray-700 border-gray-200 cursor-default"
+                                }`}
+                                title={isClickable ? `View ${refType}` : "Reference not available"}
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                </svg>
+                                {displayText}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="mt-2">
+                    <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{note.text}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-gray-500 italic">No notes have been added yet.</p>
+        )}
+      </div>
+    );
+  };
 
   const renderDocsTab = () => {
     return (
@@ -3150,7 +3750,7 @@ export default function PlacementView() {
         {activeTab === "history" && renderHistoryTab()}
       </div>
 
-      {/* Add Note Modal - Jobs-style layout (Note Text only; backend supports text only) */}
+      {/* Add Note Modal - same as organization/jobs (Action + About/Reference) */}
       {showAddNote && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
@@ -3159,10 +3759,7 @@ export default function PlacementView() {
                 <Image src="/file.svg" alt="Note" width={20} height={20} />
                 <h2 className="text-lg font-semibold">Add Note</h2>
               </div>
-              <button
-                onClick={() => { setShowAddNote(false); setNewNote(""); }}
-                className="p-1 rounded hover:bg-gray-200"
-              >
+              <button onClick={handleCloseAddNoteModal} className="p-1 rounded hover:bg-gray-200">
                 <span className="text-2xl font-bold">×</span>
               </button>
             </div>
@@ -3171,33 +3768,136 @@ export default function PlacementView() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Note Text{" "}
-                    {newNote.length > 0 ? (
-                      <span className="text-green-500">✓</span>
-                    ) : (
-                      <span className="text-red-500">*</span>
-                    )}
+                    {noteForm.text.length > 0 ? <span className="text-green-500">✓</span> : <span className="text-red-500">*</span>}
                   </label>
                   <textarea
-                    value={newNote}
-                    onChange={(e) => setNewNote(e.target.value)}
+                    value={noteForm.text}
+                    onChange={(e) => setNoteForm((prev) => ({ ...prev, text: e.target.value }))}
                     autoFocus
                     placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
                     className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     rows={6}
                   />
+                  {validationErrors.text && (
+                    <p className="mt-1 text-sm text-red-500">{validationErrors.text}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Action{" "}
+                    {noteForm.action ? <span className="text-green-500">✓</span> : <span className="text-red-500">*</span>}
+                  </label>
+                  {isLoadingActionFields ? (
+                    <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">Loading actions...</div>
+                  ) : (
+                    <>
+                      <select
+                        value={noteForm.action}
+                        onChange={(e) => {
+                          setNoteForm((prev) => ({ ...prev, action: e.target.value }));
+                          if (validationErrors.action) setValidationErrors((prev) => ({ ...prev, action: undefined }));
+                        }}
+                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 ${validationErrors.action ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-blue-500"}`}
+                      >
+                        <option value="">Select Action</option>
+                        {actionFields.map((field) => (
+                          <option key={field.id || field.field_name} value={field.field_label || field.field_name}>
+                            {field.field_label || field.field_name}
+                          </option>
+                        ))}
+                      </select>
+                      {validationErrors.action && <p className="mt-1 text-sm text-red-500">{validationErrors.action}</p>}
+                    </>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">About / Reference</label>
+                  <div className="relative" ref={aboutInputRef}>
+                    {noteForm.aboutReferences.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
+                        {noteForm.aboutReferences.map((ref, index) => (
+                          <span
+                            key={`${ref.type}-${ref.id}-${index}`}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
+                          >
+                            <HiOutlineOfficeBuilding className="w-4 h-4" />
+                            {ref.display}
+                            <button
+                              type="button"
+                              onClick={() => removeAboutReference(index)}
+                              className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
+                              title="Remove"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {noteForm.aboutReferences.length > 0 && (
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Add Additional References</label>
+                    )}
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={aboutSearchQuery}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setAboutSearchQuery(value);
+                          searchAboutReferences(value);
+                        }}
+                        onFocus={() => {
+                          if (aboutSearchQuery.trim().length >= 2) setShowAboutDropdown(true);
+                        }}
+                        placeholder={
+                          noteForm.aboutReferences.length === 0
+                            ? "Search and select records (e.g., Job, Lead, Placement)..."
+                            : "Add another reference..."
+                        }
+                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                        <FiSearch className="w-4 h-4" />
+                      </span>
+                    </div>
+                    {showAboutDropdown && (
+                      <div
+                        data-about-dropdown
+                        className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
+                      >
+                        {isLoadingAboutSearch ? (
+                          <div className="p-3 text-center text-gray-500 text-sm">Searching...</div>
+                        ) : aboutSuggestions.length > 0 ? (
+                          aboutSuggestions.map((suggestion, idx) => (
+                            <button
+                              key={`${suggestion.type}-${suggestion.id}-${idx}`}
+                              type="button"
+                              onClick={() => handleAboutReferenceSelect(suggestion)}
+                              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
+                            >
+                              <HiOutlineOfficeBuilding className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-gray-900">{suggestion.display}</div>
+                                <div className="text-xs text-gray-500">{suggestion.type}</div>
+                              </div>
+                            </button>
+                          ))
+                        ) : aboutSearchQuery.trim().length >= 2 ? (
+                          <div className="p-3 text-center text-gray-500 text-sm">No results found</div>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
-                <button
-                  onClick={() => { setShowAddNote(false); setNewNote(""); }}
-                  className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium"
-                >
+                <button onClick={handleCloseAddNoteModal} className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium">
                   CANCEL
                 </button>
                 <button
                   onClick={handleAddNote}
                   className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  disabled={!newNote.trim()}
+                  disabled={!noteForm.text.trim() || !noteForm.action?.trim()}
                 >
                   SAVE
                 </button>
