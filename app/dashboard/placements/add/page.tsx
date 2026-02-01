@@ -379,6 +379,7 @@ export default function AddPlacement() {
               >
                 <option value="Pending">Pending</option>
                 <option value="Active">Active</option>
+                <option value="Approved">Approved</option>
                 <option value="Completed">Completed</option>
                 <option value="Terminated">Terminated</option>
                 <option value="On Hold">On Hold</option>

@@ -412,8 +412,8 @@ export default function AddHiringManager() {
 
   // Auto-populate organization fields when organization data is fetched and custom fields are loaded
   useEffect(() => {
-    // If not creating new HM or if we already have prefilled data logic handling this
-    // We strictly want to react to 'Organization' custom field changes
+    // In edit mode, don't fetch org and overwrite form – we already have HM data loaded
+    if (hiringManagerId) return;
     if (customFields.length === 0) return;
 
     // Find the organization field definition
@@ -453,7 +453,7 @@ export default function AddHiringManager() {
       return () => clearTimeout(timeoutId);
     }
 
-  }, [customFields, customFieldValues, organizationName, formData.organizationId, fetchOrganizationData]);
+  }, [hiringManagerId, customFields, customFieldValues, organizationName, formData.organizationId, fetchOrganizationData]);
 
   // Handle prefilling from URL (existing logic preserved but ensuring it plays nice)
   useEffect(() => {

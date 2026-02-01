@@ -1,9 +1,78 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useEffect } from "react";
+
+type OrganizationRecord = {
+  id: number;
+  name?: string;
+  state?: string;
+  custom_fields?: Record<string, unknown>;
+  [key: string]: unknown;
+};
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
+import { arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+// Excel-like grid: fixed dimensions
+const ROW_LABEL_WIDTH = 190;
+const HEADER_HEIGHT = 44;
+const CELL_WIDTH = 135;
+const ROW_HEIGHT = 40;
+
+const availableHeight = typeof window !== "undefined" ? window.innerHeight - HEADER_HEIGHT * 4.5 : 400;
+const DATA_ROW_COUNT = Math.max(5, Math.floor(availableHeight / ROW_HEIGHT));
+
+function escapeCsvValue(val: string): string {
+  if (/[",\n\r]/.test(val)) return `"${val.replace(/"/g, '""')}"`;
+  return val;
+}
+
+function SortableHeaderCell({
+  id,
+  header,
+}: {
+  id: string;
+  header: string;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    ...(isDragging ? { willChange: "transform" as const } : {}),
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={{ ...style, width: CELL_WIDTH, minWidth: CELL_WIDTH, height: HEADER_HEIGHT }}
+      className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm rounded-t-lg shadow-sm gap-1 transition-transform duration-200 ease-out"
+    >
+      <span className="flex-1 truncate text-center">{header}</span>
+      <span
+        {...attributes}
+        {...listeners}
+        className="cursor-grab active:cursor-grabbing touch-none opacity-80 hover:opacity-100"
+        title="Drag to reorder column"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+          <path d="M7 2a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V4a2 2 0 012-2h2zM15 2a2 2 0 012 2v12a2 2 0 01-2 2h-2a2 2 0 01-2-2V4a2 2 0 012-2h2zM5 4a1 1 0 00-1 1v10a1 1 0 001 1h2a1 1 0 001-1V5a1 1 0 00-1-1H5z" />
+        </svg>
+      </span>
+    </div>
+  );
+}
 
 export default function TbiPage() {
-  // Row labels for the left column
   const rowLabels = [
     "Organization",
     "Hiring Manager",
@@ -11,88 +80,191 @@ export default function TbiPage() {
     "Placements",
     "TimeSheets",
     "Exports",
-    "Receivables",  
-    "Messagesing",
-    "From Office",
+    "Receivables",
+    "Front Office",
   ];
 
-  // Column headers mapping for each row
   const columnHeadersMap: Record<string, string[]> = {
-    "Organization": ["Name", "Oasis Key", "Organization ID", "Phone", "Email"],
-    "Hiring Manager": ["Name", "Email", "Status", "Organization", "Hiring Manager", "ID #", "UserName"],
-    "Job Seeker": ["Name", "Job Seeker ID", "Approved", "Submitted", "Status", "Payroll Cycle", "Phone Number", "Email"],
-    "Placements": ["ID #", "JobSeeker", "Organization", "PO #", "Start Date", "End Date", "Placement Status", "Job Title"],
-    "TimeSheets": ["Name", "JobSeeker ID", "Approved", "Submitted", "Status", "Payroll Cycle", "Phone Number", "Email"],
-    "Exports": ["Export Name", "Date", "Type", "Status", "Records"],
-    "Receivables": ["Invoice #", "Organization", "Amount", "Due Date", "Status"],
-    "Messagesing": ["From", "To", "Subject", "Date", "Status"],
-    "From Office": ["Name", "Email", "Status", "Organization", "Hiring Manager", "ID #", "UserName"],
+    Organization: ["Name", "Oasis Key", "Organization ID", "State"],
+    "Hiring Manager": ["Name", "Email", "Status", "Organization", "Hiring Manager", "ID #", "UserName", "Phone", "Title"],
+    "Job Seeker": ["Name", "Job Seeker ID", "Approved", "Submitted", "Status", "Payroll Cycle", "Phone Number", "Email", "Address", "Skills"],
+    Placements: ["ID #", "JobSeeker", "Organization", "PO #", "Start Date", "End Date", "Placement Status", "Job Title", "Salary", "Fee %", "Notes"],
+    TimeSheets: ["Name", "JobSeeker ID", "Approved", "Submitted", "Status", "Payroll Cycle", "Phone Number", "Email", "Week Ending", "Hours"],
+    Exports: ["Export Name", "Date", "Type", "Status", "Records", "Created By", "File"],
+    Receivables: ["Invoice #", "Organization", "Amount", "Due Date", "Status", "Paid Date", "Notes"],
+    "Front Office": ["Name", "Email", "Status", "Organization", "Hiring Manager", "ID #", "UserName", "Phone", "Title"],
   };
 
-  // Default columns (for initial state or fallback)
   const defaultColumns = [
-    "Job Code",
-    "Regular Hours",
-    "Paid Time Off",
-    "On Call",
-    "Expense",
-    "Organization",
-    "Personal ID",
-    "Status",
-    "FTE",
-    "TIME",
-    "Type",
-    "Total",
-    "Tuesday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-    "Monday",
-    "Time Off",
-    "Vacation",
-    "Sick Time",
+    "Job Code", "Regular Hours", "Paid Time Off", "On Call", "Expense",
+    "Organization", "Personal ID", "Status", "FTE", "TIME", "Type", "Total",
+    "Tuesday", "Friday", "Saturday", "Sunday", "Monday", "Time Off", "Vacation", "Sick Time",
   ];
 
-  // State to track selected row
   const [selectedRow, setSelectedRow] = useState<string | null>(null);
-
-  // Get current column headers based on selected row
+  const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
+  const [showExportMenu, setShowExportMenu] = useState(false);
   const getCurrentColumns = () => {
-    if (selectedRow && columnHeadersMap[selectedRow]) {
-      return columnHeadersMap[selectedRow];
-    }
+    if (selectedRow && columnHeadersMap[selectedRow]) return columnHeadersMap[selectedRow];
     return defaultColumns;
   };
 
-  const columnHeaders = getCurrentColumns();
+  const schemaColumns = getCurrentColumns();
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => [...defaultColumns]);
 
-  // Handle row label click
-  const handleRowClick = (rowLabel: string) => {
-    setSelectedRow(rowLabel);
-  };
+  // Sync column order when view (sidebar) changes so headers match the selected view
+  useEffect(() => {
+    setColumnOrder([...schemaColumns]);
+  }, [selectedRow]);
+
+  const columnHeaders = columnOrder.length > 0 ? columnOrder : schemaColumns;
+  const columnIds = columnHeaders.map((_, i) => `col-${i}`);
+
+  const [tbiOrganizations, setTbiOrganizations] = useState<OrganizationRecord[]>([]);
+  const [tbiOrgsLoading, setTbiOrgsLoading] = useState(false);
+  const [tbiOrgsError, setTbiOrgsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedRow !== "Organization") {
+      setTbiOrganizations([]);
+      return;
+    }
+    let cancelled = false;
+    setTbiOrgsLoading(true);
+    setTbiOrgsError(null);
+    fetch("/api/organizations/with-approved-placements")
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        setTbiOrgsLoading(false);
+        if (data?.success && Array.isArray(data.organizations)) {
+          setTbiOrganizations(data.organizations);
+        } else {
+          setTbiOrganizations([]);
+        }
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setTbiOrgsLoading(false);
+        setTbiOrgsError(err?.message || "Failed to load organizations");
+        setTbiOrganizations([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedRow]);
+
+  function getOrgCellValue(org: OrganizationRecord, header: string): string {
+    const cf = org.custom_fields as Record<string, string> | undefined;
+    switch (header) {
+      case "Name":
+        return org.name ?? "";
+      case "Organization ID":
+        return org.id != null ? String(org.id) : "";
+      case "Oasis Key":
+        return (cf?.["Oasis Key"] ?? cf?.oasis_key ?? "") as string;
+      case "State":
+        return org.state ?? "";
+      default:
+        return (cf?.[header] ?? (org as Record<string, string>)[header] ?? "") as string;
+    }
+  }
+
+  const handleColumnDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = columnIds.indexOf(String(active.id));
+    const newIndex = columnIds.indexOf(String(over.id));
+    if (oldIndex === -1 || newIndex === -1) return;
+    setColumnOrder((prev) => arrayMove(prev, oldIndex, newIndex));
+  }, [columnIds]);
+
+  const handleRowClick = (rowLabel: string) => setSelectedRow(rowLabel);
+
+  const toggleDataRow = useCallback((rowIndex: number) => {
+    setSelectedRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowIndex)) next.delete(rowIndex);
+      else next.add(rowIndex);
+      return next;
+    });
+  }, []);
+
+  const exportSelectedAsCsv = useCallback(() => {
+    const headers = columnHeaders;
+    const headerLine = headers.map(escapeCsvValue).join(",");
+    const sortedRows = Array.from(selectedRows).sort((a, b) => a - b);
+    const dataLines = sortedRows.map((rowIndex) => {
+      if (selectedRow === "Organization" && tbiOrganizations[rowIndex]) {
+        return headers
+          .map((h) => escapeCsvValue(getOrgCellValue(tbiOrganizations[rowIndex], h)))
+          .join(",");
+      }
+      return headers.map(() => "").join(",");
+    });
+    const csv = [headerLine, ...dataLines].join("\r\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `tbi-export-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setShowExportMenu(false);
+  }, [columnHeaders, selectedRows, selectedRow, tbiOrganizations]);
+
+  const containerWidth = typeof window !== "undefined" ? window.innerWidth : 1200;
+  const totalColumns = columnHeaders.length;
+  const extraCellCount = Math.max(0, Math.floor(containerWidth / CELL_WIDTH) - totalColumns);
+  const selectionCount = selectedRows.size;
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Top Header Bar - Dark Blue Grey */}
-      <div className="bg-gray-700 text-white px-6 py-4 flex justify-between items-center shadow-md">
+    <div
+      className="flex flex-col bg-gray-50 -mx-3 -mb-4 -ml-3 md:-mx-6 md:-mb-6 md:-ml-6"
+      style={{
+        height: "calc(100vh - var(--dashboard-top-offset, 48px) - 1rem)",
+        minHeight: 0,
+      }}
+    >
+      {/* Top Header Bar */}
+      <div className="shrink-0 bg-gray-700 text-white px-6 py-4 flex justify-between items-center shadow-md">
         <div className="flex items-center gap-4">
           <h1 className="text-xl font-semibold">Grade Building System</h1>
           <span className="text-sm text-gray-300">v 1.0</span>
           <span className="text-sm text-gray-300">v 1.1</span>
         </div>
-        <div className="flex items-center gap-3">
-          {/* Add New Button - Red */}
-          <button className="bg-red-600 hover:bg-red-700 text-white px-5 py-2 rounded-lg font-medium transition-colors shadow-sm">
-            Add New
-          </button>
-          {/* Menu Button - White */}
+        <div className="flex items-center gap-3 relative">
+          {selectionCount > 0 && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setShowExportMenu((v) => !v)}
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm"
+              >
+                {selectionCount} Selected
+              </button>
+              {showExportMenu && (
+                <>
+                  <div
+                    className="fixed inset-0 z-10"
+                    aria-hidden
+                    onClick={() => setShowExportMenu(false)}
+                  />
+                  <div className="absolute right-0 top-full mt-1 z-20 py-1 bg-white rounded-lg shadow-lg border border-gray-200 min-w-[160px]">
+                    <button
+                      type="button"
+                      onClick={exportSelectedAsCsv}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                    >
+                      Export as CSV
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
           <button className="bg-white hover:bg-gray-100 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm">
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
             </svg>
             Menu
@@ -100,60 +272,100 @@ export default function TbiPage() {
         </div>
       </div>
 
-      {/* Main Grid Container - Scrollable */}
-      <div className="overflow-auto max-h-[calc(100vh-80px)]">
-        {/* Column Headers Row - Sticky */}
-        <div className="flex sticky top-0 z-20">
-          {/* Empty corner cell */}
-          <div className="w-44 bg-gray-700 border-r-2 border-black flex-shrink-0 sticky left-0 z-30"></div>
-          
-          {/* Column Headers - Teal Buttons */}
-          <div className="flex">
-            {columnHeaders.map((header, index) => (
-              <div
-                key={index}
-                className="bg-teal-500 text-white px-3 py-3 border-r border-black min-w-[130px] flex items-center justify-center font-medium text-sm rounded-t-lg shadow-sm"
-              >
-                {header}
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Grid Rows */}
-        <div className="flex flex-col">
+      {/* Sidebar (fixed) + Grid (scrollable) - Excel-like */}
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+        {/* Left: fixed sidebar - row labels only for switching data */}
+        <div
+          className="shrink-0 flex flex-col border-r-2 border-black bg-gray-100"
+          style={{ width: ROW_LABEL_WIDTH, minWidth: ROW_LABEL_WIDTH }}
+        >
+          {/* Corner cell above row labels */}
+          <div
+            className="shrink-0 bg-gray-700 border-b-2 border-black"
+            style={{ height: HEADER_HEIGHT }}
+          />
           {rowLabels.map((rowLabel, rowIndex) => {
             const isSelected = selectedRow === rowLabel;
             return (
-              <div key={rowIndex} className="flex">
-                {/* Row Label (Left Column) - Teal Button, Sticky, Clickable */}
-                <button
-                  onClick={() => handleRowClick(rowLabel)}
-                  className={`w-44 px-3 py-3 border-r-2 border-black border-b border-black flex items-center justify-center font-medium text-sm flex-shrink-0 sticky left-0 z-10 shadow-sm transition-colors cursor-pointer ${
-                    isSelected
-                      ? "bg-teal-600 text-white"
-                      : "bg-teal-500 text-white hover:bg-teal-600"
+              <button
+                key={rowLabel}
+                type="button"
+                onClick={() => handleRowClick(rowLabel)}
+                className={`shrink-0 px-3 py-2 border-b border-black flex items-center justify-center font-medium text-sm cursor-pointer transition-colors shadow-sm text-center ${isSelected ? "bg-teal-600 text-white" : "bg-teal-500 text-white hover:bg-teal-600"
                   }`}
-                >
-                  {rowLabel}
-                </button>
-
-                {/* Grid Cells - Alternating Colors */}
-                <div className="flex">
-                  {columnHeaders.map((_, colIndex) => (
-                    <div
-                      key={colIndex}
-                      className={`min-w-[130px] h-14 border-r border-b border-black flex items-center justify-center text-sm ${
-                        rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"
-                      }`}
-                    >
-                      {/* Empty cell - ready for data input */}
-                    </div>
-                  ))}
-                </div>
-              </div>
+                style={{ height: ROW_HEIGHT }}
+              >
+                {rowLabel}
+              </button>
             );
           })}
+          {/* Fill remaining sidebar space so it doesn't stretch buttons */}
+          <div className="flex-1 min-h-0 bg-gray-100 border-b border-black" />
+        </div>
+
+        {/* Right: scrollable grid - column headers + many data rows */}
+        <div className="flex-1 min-w-0 overflow-auto bg-white">
+          <div className="inline-block min-w-full min-h-full">
+            {/* Sticky column headers row – draggable to reorder */}
+            <DndContext
+              collisionDetection={closestCenter}
+              onDragEnd={handleColumnDragEnd}
+              modifiers={[restrictToHorizontalAxis]}
+            >
+              <SortableContext items={columnIds} strategy={horizontalListSortingStrategy}>
+                <div className="flex sticky top-0 z-20">
+                  {columnHeaders.map((header, index) => (
+                    <SortableHeaderCell
+                      key={columnIds[index]}
+                      id={columnIds[index]}
+                      header={header}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+
+            {/* Many data rows - clickable and selectable; Organization view shows orgs with approved placements */}
+            {tbiOrgsLoading && selectedRow === "Organization" && (
+              <div className="flex items-center justify-center py-8 text-gray-500 text-sm">
+                Loading organizations with approved placements...
+              </div>
+            )}
+            {tbiOrgsError && selectedRow === "Organization" && (
+              <div className="flex items-center justify-center py-4 text-red-600 text-sm">
+                {tbiOrgsError}
+              </div>
+            )}
+
+            {!tbiOrgsLoading && Array.from({ length: DATA_ROW_COUNT }, (_, rowIndex) => {
+              const isRowSelected = selectedRows.has(rowIndex);
+              const org = selectedRow === "Organization" ? tbiOrganizations[rowIndex] : null;
+              return (
+                <div key={rowIndex} className="flex">
+                  {columnHeaders.map((header, colIndex) => {
+                    const cellValue = org ? getOrgCellValue(org, header) : "";
+                    return (
+                      <button
+                        type="button"
+                        key={colIndex}
+                        onClick={() => toggleDataRow(rowIndex)}
+                        className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center text-sm cursor-pointer transition-colors select-none text-left px-1 ${
+                          isRowSelected
+                            ? "bg-teal-200 ring-1 ring-teal-500"
+                            : rowIndex % 2 === 0
+                              ? "bg-white hover:bg-gray-100"
+                              : "bg-gray-50 hover:bg-gray-100"
+                        }`}
+                        style={{ width: CELL_WIDTH, minWidth: CELL_WIDTH, height: ROW_HEIGHT }}
+                      >
+                        <span className="truncate w-full text-center">{cellValue || "\u00A0"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
