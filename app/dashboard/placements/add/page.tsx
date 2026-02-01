@@ -37,6 +37,8 @@ export default function AddPlacement() {
   const [formData, setFormData] = useState({
     job_seeker_id: "",
     job_id: "",
+    organization_id: "" as string | number,
+    organization_name: "",
     status: "Active",
     start_date: "",
     end_date: "",
@@ -97,6 +99,8 @@ export default function AddPlacement() {
       setFormData({
         job_seeker_id: placement.jobSeekerId || placement.job_seeker_id || "",
         job_id: placement.jobId || placement.job_id || "",
+        organization_id: placement.organizationId ?? placement.organization_id ?? "",
+        organization_name: placement.organizationName || placement.organization_name || "",
         status: placement.status || "Active",
         start_date: placement.startDate ? placement.startDate.split('T')[0] : (placement.start_date ? placement.start_date.split('T')[0] : ""),
         end_date: placement.endDate ? placement.endDate.split('T')[0] : (placement.end_date ? placement.end_date.split('T')[0] : ""),
@@ -163,10 +167,20 @@ export default function AddPlacement() {
     >
   ) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    if (name === "job_id") {
+      const job = jobs.find((j) => String(j.id) === value);
+      setFormData((prev) => ({
+        ...prev,
+        job_id: value,
+        organization_id: job?.organization_id ?? job?.organizationId ?? "",
+        organization_name: job?.organization_name ?? job?.organizationName ?? "",
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: value,
+      }));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -181,6 +195,7 @@ export default function AddPlacement() {
       const cleanPayload: Record<string, any> = {
         job_seeker_id: formData.job_seeker_id || null,
         job_id: formData.job_id || null,
+        organization_id: formData.organization_id ? Number(formData.organization_id) : null,
         status: formData.status || "Active",
         start_date: formData.start_date || null,
         end_date: formData.end_date || null,
@@ -336,12 +351,20 @@ export default function AddPlacement() {
                     <option value="">Select a job</option>
                     {jobs.map((job) => (
                       <option key={job.id} value={job.id}>
-                        {job.title || `Job #${job.id}`}
+                        {job.title || job.job_title || `Job #${job.id}`}
                       </option>
                     ))}
                   </select>
                 )}
                 <span className="absolute text-red-500 left-[-10px] top-2">*</span>
+              </div>
+            </div>
+
+            {/* Organization (read-only, filled from selected job) */}
+            <div className="flex items-center">
+              <label className="w-48 font-medium">Organization</label>
+              <div className="flex-1 p-2 border-b border-gray-200 bg-gray-50 text-gray-700 rounded">
+                {formData.organization_name || "—"}
               </div>
             </div>
 

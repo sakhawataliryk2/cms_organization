@@ -53,7 +53,7 @@ import { FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
 const PLACEMENT_DEFAULT_HEADER_FIELDS = ["status", "owner"];
 
 // Constants for Placement Details persistence
-const PLACEMENT_DETAILS_DEFAULT_FIELDS = ['candidate', 'job', 'status', 'startDate', 'endDate', 'salary'];
+const PLACEMENT_DETAILS_DEFAULT_FIELDS = ['candidate', 'job', 'organization', 'status', 'startDate', 'endDate', 'salary'];
 const PLACEMENT_DETAILS_STORAGE_KEY = "placementDetailsFields";
 
 const DETAILS_DEFAULT_FIELDS = ['owner', 'dateAdded', 'lastContactDate'];
@@ -856,6 +856,7 @@ export default function PlacementView() {
     const standard: { key: string; label: string }[] = [
       { key: 'candidate', label: 'Candidate' },
       { key: 'job', label: 'Job' },
+      { key: 'organization', label: 'Organization' },
       { key: 'status', label: 'Status' },
       { key: 'startDate', label: 'Start Date' },
       { key: 'endDate', label: 'End Date' },
@@ -1044,6 +1045,8 @@ export default function PlacementView() {
         jobSeekerName: data.placement.jobSeekerName || data.placement.job_seeker_name || 'Unknown Job Seeker',
         jobId: data.placement.jobId || data.placement.job_id || '',
         jobTitle: data.placement.jobTitle || data.placement.job_title || data.placement.job_name || 'Unknown Job',
+        organizationId: data.placement.organizationId ?? data.placement.organization_id ?? '',
+        organizationName: data.placement.organizationName || data.placement.organization_name || '',
         status: data.placement.status || 'Active',
         startDate: toDateInput(data.placement.startDate || data.placement.start_date) || '',
         endDate: toDateInput(data.placement.endDate || data.placement.end_date) || '',
@@ -2531,6 +2534,13 @@ export default function PlacementView() {
             <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Job:</div>
               <div className="flex-1 p-2 text-blue-600">{placement.jobTitle}</div>
+            </div>
+          );
+        case "organization":
+          return (
+            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Organization:</div>
+              <div className="flex-1 p-2">{placement.organizationName || "—"}</div>
             </div>
           );
         case "status":
