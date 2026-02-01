@@ -46,6 +46,7 @@ import {
 } from "@/lib/pinnedRecords";
 import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
+import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import { sendCalendarInvite, type CalendarEvent } from "@/lib/office365";
 
 // SortablePanel helper
@@ -6406,78 +6407,25 @@ export default function JobView() {
         </div>
       )}
 
-      {showFileDetailsModal && pendingFiles.length > 0 && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 bg-opacity-50">
-          <div className="bg-white rounded shadow-lg p-6 w-full max-w-md">
-            <h3 className="text-lg font-semibold mb-4">Confirm File Details</h3>
-            <div className="space-y-4">
-              {pendingFiles.length === 1 ? (
-                <>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">File Name *</label>
-                    <input
-                      type="text"
-                      value={fileDetailsName}
-                      onChange={(e) => setFileDetailsName(e.target.value)}
-                      className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      placeholder="Enter file name"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium mb-1">Document Type</label>
-                    <select
-                      value={fileDetailsType}
-                      onChange={(e) => setFileDetailsType(e.target.value)}
-                      className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="General">General</option>
-                      <option value="Contract">Contract</option>
-                      <option value="Agreement">Agreement</option>
-                      <option value="Policy">Policy</option>
-                      <option value="Welcome">Welcome</option>
-                    </select>
-                  </div>
-                </>
-              ) : (
-                <div className="bg-gray-50 p-3 rounded border">
-                  <p className="text-sm text-gray-700 font-medium mb-2">
-                    You selected {pendingFiles.length} files
-                  </p>
-                  <ul className="text-sm text-gray-600 space-y-1 max-h-40 overflow-y-auto">
-                    {pendingFiles.map((file) => (
-                      <li key={file.name} className="truncate">
-                        {file.name}
-                      </li>
-                    ))}
-                  </ul>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Each file will use its filename as the document name and "General" as the type.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end space-x-2 mt-6">
-              <button
-                onClick={() => {
-                  setShowFileDetailsModal(false);
-                  setPendingFiles([]);
-                }}
-                className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleConfirmFileDetails}
-                className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm disabled:opacity-50"
-                disabled={pendingFiles.length === 1 && !fileDetailsName.trim()}
-              >
-                Upload
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmFileDetailsModal
+        isOpen={showFileDetailsModal && pendingFiles.length > 0}
+        onClose={() => { setShowFileDetailsModal(false); setPendingFiles([]); }}
+        onConfirm={() => handleConfirmFileDetails()}
+        fileName={fileDetailsName}
+        fileType={fileDetailsType}
+        onFileNameChange={setFileDetailsName}
+        onFileTypeChange={setFileDetailsType}
+        pendingFiles={pendingFiles}
+        documentTypeOptions={[
+          { value: "General", label: "General" },
+          { value: "Contract", label: "Contract" },
+          { value: "Agreement", label: "Agreement" },
+          { value: "Policy", label: "Policy" },
+          { value: "Welcome", label: "Welcome" },
+        ]}
+        confirmButtonText="Upload"
+        zIndex={100}
+      />
 
       {showHeaderFieldModal && (
         <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">

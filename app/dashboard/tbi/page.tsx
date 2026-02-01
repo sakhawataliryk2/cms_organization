@@ -13,6 +13,7 @@ import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { TbGripVertical } from "react-icons/tb";
 
 // Excel-like grid: fixed dimensions
 const ROW_LABEL_WIDTH = 190;
@@ -22,6 +23,37 @@ const ROW_HEIGHT = 40;
 
 const availableHeight = typeof window !== "undefined" ? window.innerHeight - HEADER_HEIGHT * 4.5 : 400;
 const DATA_ROW_COUNT = Math.max(5, Math.floor(availableHeight / ROW_HEIGHT));
+
+const TBI_COLUMN_LAYOUT_KEY = "tbi-column-layout";
+
+function loadColumnLayout(viewKey: string, schemaColumns: string[]): string[] {
+  if (typeof window === "undefined") return [...schemaColumns];
+  try {
+    const raw = localStorage.getItem(TBI_COLUMN_LAYOUT_KEY);
+    if (!raw) return [...schemaColumns];
+    const data = JSON.parse(raw) as Record<string, string[]>;
+    const saved = data[viewKey];
+    if (!Array.isArray(saved) || saved.length === 0) return [...schemaColumns];
+    const schemaSet = new Set(schemaColumns);
+    const validOrder = saved.filter((h) => schemaSet.has(h));
+    const missing = schemaColumns.filter((h) => !validOrder.includes(h));
+    return [...validOrder, ...missing];
+  } catch {
+    return [...schemaColumns];
+  }
+}
+
+function saveColumnLayout(viewKey: string, visibleOrder: string[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = localStorage.getItem(TBI_COLUMN_LAYOUT_KEY);
+    const data = (raw ? JSON.parse(raw) : {}) as Record<string, string[]>;
+    data[viewKey] = visibleOrder;
+    localStorage.setItem(TBI_COLUMN_LAYOUT_KEY, JSON.stringify(data));
+  } catch {
+    // ignore
+  }
+}
 
 function escapeCsvValue(val: string): string {
   if (/[",\n\r]/.test(val)) return `"${val.replace(/"/g, '""')}"`;
@@ -55,7 +87,7 @@ function SortableHeaderCell({
     <div
       ref={setNodeRef}
       style={{ ...style, width: CELL_WIDTH, minWidth: CELL_WIDTH, height: HEADER_HEIGHT }}
-      className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm rounded-t-lg shadow-sm gap-1 transition-transform duration-200 ease-out"
+      className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out"
     >
       <span className="flex-1 truncate text-center">{header}</span>
       <span
@@ -64,9 +96,7 @@ function SortableHeaderCell({
         className="cursor-grab active:cursor-grabbing touch-none opacity-80 hover:opacity-100"
         title="Drag to reorder column"
       >
-        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
-          <path d="M7 2a2 2 0 012 2v12a2 2 0 01-2 2H5a2 2 0 01-2-2V4a2 2 0 012-2h2zM15 2a2 2 0 012 2v12a2 2 0 01-2 2h-2a2 2 0 01-2-2V4a2 2 0 012-2h2zM5 4a1 1 0 00-1 1v10a1 1 0 001 1h2a1 1 0 001-1V5a1 1 0 00-1-1H5z" />
-        </svg>
+        <TbGripVertical size={16} />
       </span>
     </div>
   );
@@ -104,34 +134,65 @@ export default function TbiPage() {
   const [selectedRow, setSelectedRow] = useState<string | null>(null);
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showColumnsMenu, setShowColumnsMenu] = useState(false);
   const getCurrentColumns = () => {
     if (selectedRow && columnHeadersMap[selectedRow]) return columnHeadersMap[selectedRow];
     return defaultColumns;
   };
 
   const schemaColumns = getCurrentColumns();
+  const viewKey = selectedRow ?? "default";
   const [columnOrder, setColumnOrder] = useState<string[]>(() => [...defaultColumns]);
 
-  // Sync column order when view (sidebar) changes so headers match the selected view
+  // Sync column order when view (sidebar) changes: load from localStorage or use schema default
   useEffect(() => {
-    setColumnOrder([...schemaColumns]);
-  }, [selectedRow]);
+    setColumnOrder(loadColumnLayout(viewKey, schemaColumns));
+  }, [viewKey]);
 
-  const columnHeaders = columnOrder.length > 0 ? columnOrder : schemaColumns;
+  // Persist column layout to localStorage when user changes visibility/order (not on view switch)
+  useEffect(() => {
+    const visible = columnOrder.filter((h) => schemaColumns.includes(h));
+    if (visible.length > 0) saveColumnLayout(viewKey, visible);
+  }, [columnOrder]);
+
+  // Visible columns: only those in columnOrder that exist in current schema (keeps order)
+  const columnHeaders = columnOrder.filter((h) => schemaColumns.includes(h));
   const columnIds = columnHeaders.map((_, i) => `col-${i}`);
+
+  const toggleColumnVisibility = useCallback((header: string) => {
+    setColumnOrder((prev) => {
+      const inOrder = prev.filter((h) => schemaColumns.includes(h));
+      const isVisible = inOrder.includes(header);
+      if (isVisible) {
+        if (inOrder.length <= 1) return prev;
+        return inOrder.filter((h) => h !== header);
+      }
+      return [...inOrder, header];
+    });
+  }, [schemaColumns]);
 
   const [tbiOrganizations, setTbiOrganizations] = useState<OrganizationRecord[]>([]);
   const [tbiOrgsLoading, setTbiOrgsLoading] = useState(false);
   const [tbiOrgsError, setTbiOrgsError] = useState<string | null>(null);
+
+  const [tbiOrganizationsCache, setTbiOrganizationsCache] = useState<OrganizationRecord[] | null>(null);
 
   useEffect(() => {
     if (selectedRow !== "Organization") {
       setTbiOrganizations([]);
       return;
     }
+
+    // Use cached data if available
+    if (tbiOrganizationsCache) {
+      setTbiOrganizations(tbiOrganizationsCache);
+      return;
+    }
+
     let cancelled = false;
     setTbiOrgsLoading(true);
     setTbiOrgsError(null);
+
     fetch("/api/organizations/with-approved-placements")
       .then((res) => res.json())
       .then((data) => {
@@ -139,6 +200,7 @@ export default function TbiPage() {
         setTbiOrgsLoading(false);
         if (data?.success && Array.isArray(data.organizations)) {
           setTbiOrganizations(data.organizations);
+          setTbiOrganizationsCache(data.organizations); // cache for future
         } else {
           setTbiOrganizations([]);
         }
@@ -149,10 +211,12 @@ export default function TbiPage() {
         setTbiOrgsError(err?.message || "Failed to load organizations");
         setTbiOrganizations([]);
       });
+
     return () => {
       cancelled = true;
     };
-  }, [selectedRow]);
+  }, [selectedRow, tbiOrganizationsCache]);
+
 
   function getOrgCellValue(org: OrganizationRecord, header: string): string {
     const cf = org.custom_fields as Record<string, string> | undefined;
@@ -263,6 +327,16 @@ export default function TbiPage() {
               )}
             </div>
           )}
+          <button
+            type="button"
+            onClick={() => setShowColumnsMenu(true)}
+            className="bg-white hover:bg-gray-100 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
+              <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
+            </svg>
+            Columns
+          </button>
           <button className="bg-white hover:bg-gray-100 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
@@ -349,13 +423,12 @@ export default function TbiPage() {
                         type="button"
                         key={colIndex}
                         onClick={() => toggleDataRow(rowIndex)}
-                        className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center text-sm cursor-pointer transition-colors select-none text-left px-1 ${
-                          isRowSelected
-                            ? "bg-teal-200 ring-1 ring-teal-500"
-                            : rowIndex % 2 === 0
-                              ? "bg-white hover:bg-gray-100"
-                              : "bg-gray-50 hover:bg-gray-100"
-                        }`}
+                        className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center text-sm cursor-pointer transition-colors select-none text-left px-1 ${isRowSelected
+                          ? "bg-teal-200 ring-1 ring-teal-500"
+                          : rowIndex % 2 === 0
+                            ? "bg-white hover:bg-gray-100"
+                            : "bg-gray-50 hover:bg-gray-100"
+                          }`}
                         style={{ width: CELL_WIDTH, minWidth: CELL_WIDTH, height: ROW_HEIGHT }}
                       >
                         <span className="truncate w-full text-center">{cellValue || "\u00A0"}</span>
@@ -368,6 +441,64 @@ export default function TbiPage() {
           </div>
         </div>
       </div>
+
+      {/* Columns modal – select which columns to show; layout saved to localStorage */}
+      {showColumnsMenu && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          onClick={() => setShowColumnsMenu(false)}
+        >
+          <div
+            className="bg-white rounded-sm shadow-xl max-w-md w-full mx-4 overflow-hidden flex flex-col max-h-[85vh]"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 bg-gray-100 border-b shrink-0">
+              <h3 className="text-lg font-semibold text-gray-900">Columns</h3>
+              <button
+                type="button"
+                onClick={() => setShowColumnsMenu(false)}
+                className="p-1 rounded hover:bg-gray-200 text-gray-600"
+                aria-label="Close"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                </svg>
+              </button>
+            </div>
+            <p className="px-4 pt-2 pb-1 text-sm text-gray-500 shrink-0">
+              Show or hide columns for this view. Your choices are saved automatically.
+            </p>
+            <div className="overflow-y-auto flex-1 min-h-0 py-2">
+              {schemaColumns.map((header) => {
+                const isVisible = columnHeaders.includes(header);
+                return (
+                  <label
+                    key={header}
+                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer text-sm text-gray-800"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isVisible}
+                      onChange={() => toggleColumnVisibility(header)}
+                      className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500"
+                    />
+                    <span className="truncate">{header}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <div className="px-4 py-3 bg-gray-50 border-t flex justify-end shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowColumnsMenu(false)}
+                className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

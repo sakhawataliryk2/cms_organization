@@ -45,6 +45,7 @@ import {
 } from "@/lib/pinnedRecords";
 import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
+import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import { FiSearch } from "react-icons/fi";
 
 // Default header fields for Organizations module - defined outside component to ensure stable reference
@@ -4839,57 +4840,25 @@ export default function OrganizationView() {
             )}
 
             {/* Upload Errors */}
-            {/* File Details Modal */}
-            {showFileDetailsModal && pendingFiles.length > 0 && (
-              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 bg-opacity-50">
-                <div className="bg-white rounded shadow-lg p-6 w-full max-w-md">
-                  <h3 className="text-lg font-semibold mb-4">Confirm File Details</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <label className="block text-sm font-medium mb-1">File Name *</label>
-                      <input
-                        type="text"
-                        value={fileDetailsName}
-                        onChange={(e) => setFileDetailsName(e.target.value)}
-                        className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium mb-1">File Type *</label>
-                      <select
-                        value={fileDetailsType}
-                        onChange={(e) => setFileDetailsType(e.target.value)}
-                        className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="Contract">Contract</option>
-                        <option value="Invoice">Invoice</option>
-                        <option value="Report">Report</option>
-                        <option value="ID">ID</option>
-                        <option value="General">General</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="flex justify-end space-x-2 mt-5">
-                    <button
-                      onClick={() => {
-                        setShowFileDetailsModal(false);
-                        setPendingFiles([]);
-                      }}
-                      className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleConfirmFileDetails}
-                      className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm disabled:opacity-50"
-                      disabled={!fileDetailsName.trim()}
-                    >
-                      Save & Upload
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
+            <ConfirmFileDetailsModal
+              isOpen={showFileDetailsModal && pendingFiles.length > 0}
+              onClose={() => { setShowFileDetailsModal(false); setPendingFiles([]); }}
+              onConfirm={() => handleConfirmFileDetails()}
+              fileName={fileDetailsName}
+              fileType={fileDetailsType}
+              onFileNameChange={setFileDetailsName}
+              onFileTypeChange={setFileDetailsType}
+              pendingFiles={pendingFiles}
+              documentTypeOptions={[
+                { value: "Contract", label: "Contract" },
+                { value: "Invoice", label: "Invoice" },
+                { value: "Report", label: "Report" },
+                { value: "ID", label: "ID" },
+                { value: "General", label: "General" },
+              ]}
+              confirmButtonText="Save & Upload"
+              alwaysShowSingleForm
+            />
 
             {Object.keys(uploadErrors).length > 0 && (
               <div className="mb-4 space-y-2">

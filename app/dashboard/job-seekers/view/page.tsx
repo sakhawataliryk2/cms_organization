@@ -22,6 +22,7 @@ import {
   PINNED_RECORDS_CHANGED_EVENT,
   togglePinnedRecord,
 } from "@/lib/pinnedRecords";
+import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
 // Drag and drop imports
@@ -4654,66 +4655,25 @@ Best regards`;
 
 
 
-      {showFileDetailsModal && (
-        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-lg w-full mx-4">
-            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Document Details</h2>
-              <button
-                onClick={() => setShowFileDetailsModal(false)}
-                className="p-1 rounded hover:bg-gray-200"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
-            <div className="p-6">
-              <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Document Name
-                </label>
-                <input
-                  type="text"
-                  value={fileDetailsName}
-                  onChange={(e) => setFileDetailsName(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded"
-                  placeholder="Enter custom document name"
-                />
-              </div>
-              <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Document Type
-                </label>
-                <select
-                  value={fileDetailsType}
-                  onChange={(e) => setFileDetailsType(e.target.value)}
-                  className="w-full p-2 border border-gray-300 rounded"
-                >
-                  <option value="General">General</option>
-                  <option value="Resume">Resume</option>
-                  <option value="ID">ID</option>
-                  <option value="Contract">Contract</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-
-              <div className="flex justify-end space-x-2">
-                <button
-                  className="px-3 py-1 border rounded"
-                  onClick={() => setShowFileDetailsModal(false)}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-                  onClick={handleConfirmFileDetails}
-                >
-                  Upload
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ConfirmFileDetailsModal
+        isOpen={showFileDetailsModal && pendingFiles.length > 0}
+        onClose={() => { setShowFileDetailsModal(false); setPendingFiles([]); }}
+        onConfirm={() => handleConfirmFileDetails()}
+        fileName={fileDetailsName}
+        fileType={fileDetailsType}
+        onFileNameChange={setFileDetailsName}
+        onFileTypeChange={setFileDetailsType}
+        pendingFiles={pendingFiles}
+        documentTypeOptions={[
+          { value: "General", label: "General" },
+          { value: "Resume", label: "Resume" },
+          { value: "ID", label: "ID" },
+          { value: "Contract", label: "Contract" },
+          { value: "Other", label: "Other" },
+        ]}
+        title="Document Details"
+        confirmButtonText="Upload"
+      />
 
       {/* Onboarding Modal */}
       {/* {showOnboardingModal && (
