@@ -132,9 +132,6 @@ export const refreshTokenIfNeeded = async (): Promise<void> => {
             }
         }
     } catch (error) {
-        // Silently handle all errors to avoid console spam
-        // Errors are already handled by try-catch blocks around JSON parsing
-        // No need to log anything here
     }
 };
 
