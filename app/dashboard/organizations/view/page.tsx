@@ -2374,7 +2374,7 @@ export default function OrganizationView() {
             <div className="space-y-0 border border-gray-200 rounded">
               {(visibleFields.contactInfo || []).map((key) => {
                 const label = getContactInfoLabel(key);
-                const value = getContactInfoValue(key);
+                const value = getContactInfoValue(label);
                 return (
                   <div
                     key={key}

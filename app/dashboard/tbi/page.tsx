@@ -330,14 +330,14 @@ export default function TbiPage() {
           <button
             type="button"
             onClick={() => setShowColumnsMenu(true)}
-            className="bg-white hover:bg-gray-100 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
+            className="bg-white hover:bg-gray-100 text-gray-700 px-4 py-2 rounded-sm flex items-center gap-2 transition-colors shadow-sm"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
               <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
             </svg>
             Columns
           </button>
-          <button className="bg-white hover:bg-gray-100 text-gray-700 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm">
+          <button className="bg-white hover:bg-gray-100 text-gray-700 px-4 py-2 rounded-sm flex items-center gap-2 transition-colors shadow-sm">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
               <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
             </svg>
@@ -388,6 +388,9 @@ export default function TbiPage() {
             >
               <SortableContext items={columnIds} strategy={horizontalListSortingStrategy}>
                 <div className="flex sticky top-0 z-20">
+                  <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: HEADER_HEIGHT }}>
+                    #
+                  </div>
                   {columnHeaders.map((header, index) => (
                     <SortableHeaderCell
                       key={columnIds[index]}
@@ -399,10 +402,12 @@ export default function TbiPage() {
               </SortableContext>
             </DndContext>
 
+
+
             {/* Many data rows - clickable and selectable; Organization view shows orgs with approved placements */}
             {tbiOrgsLoading && selectedRow === "Organization" && (
               <div className="flex items-center justify-center py-8 text-gray-500 text-sm">
-                Loading organizations with approved placements...
+                Loading...
               </div>
             )}
             {tbiOrgsError && selectedRow === "Organization" && (
@@ -416,6 +421,9 @@ export default function TbiPage() {
               const org = selectedRow === "Organization" ? tbiOrganizations[rowIndex] : null;
               return (
                 <div key={rowIndex} className="flex">
+                  <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: ROW_HEIGHT }}>
+                    {rowIndex + 1}
+                  </div>
                   {columnHeaders.map((header, colIndex) => {
                     const cellValue = org ? getOrgCellValue(org, header) : "";
                     return (
