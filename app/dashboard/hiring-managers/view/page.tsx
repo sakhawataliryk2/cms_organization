@@ -5619,9 +5619,6 @@ export default function HiringManagerView() {
                           />
                           <div>
                             <div className="text-sm text-gray-800">{f.label}</div>
-                            <div className="text-xs text-gray-500">
-                              Key: {f.key}
-                            </div>
                           </div>
                         </label>
                       );
@@ -5648,7 +5645,7 @@ export default function HiringManagerView() {
                               {getHeaderFieldLabel(key)}
                             </div>
                             <div className="text-xs text-gray-500">
-                              Key: {key}
+                              Value: {getHeaderFieldValue(key)}
                             </div>
                           </div>
 

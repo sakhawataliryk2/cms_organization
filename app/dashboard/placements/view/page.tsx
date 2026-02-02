@@ -898,12 +898,8 @@ export default function PlacementView() {
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const seen = new Set(fromApi.map((f) => f.key));
-    const fromPlacement = Object.keys(placement?.customFields || {})
-      .filter((k) => !seen.has(k))
-      .map((k) => ({ key: k, label: k }));
-    return [...fromApi, ...fromPlacement];
-  }, [availableFields, placement?.customFields]);
+    return [...fromApi];
+  }, [availableFields]);
 
   // Details panel field catalog: from admin field definitions + record customFields only
   const detailsFieldCatalog = useMemo(() => {
@@ -913,12 +909,8 @@ export default function PlacementView() {
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const seen = new Set(fromApi.map((f) => f.key));
-    const fromPlacement = Object.keys(placement?.customFields || {})
-      .filter((k) => !seen.has(k))
-      .map((k) => ({ key: k, label: k }));
-    return [...fromApi, ...fromPlacement];
-  }, [availableFields, placement?.customFields]);
+    return [...fromApi];
+  }, [availableFields]);
 
   // When catalog loads, if placementDetails/details visible list is empty, default to all catalog keys
   useEffect(() => {
@@ -3172,7 +3164,7 @@ export default function PlacementView() {
             (f: any) => (f.field_name || f.field_label || f.id) === key
           );
           const fieldLabel = field?.field_label || field?.field_name || key;
-          const fieldValue = placement.customFields?.[key] || "-";
+          const fieldValue = placement.customFields?.[fieldLabel] || "-";
           return (
             <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>

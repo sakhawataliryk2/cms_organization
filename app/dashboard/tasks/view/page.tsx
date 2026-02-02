@@ -49,6 +49,22 @@ import { TbGripVertical } from "react-icons/tb";
 // Default header fields for Tasks module - defined outside component to ensure stable reference
 const TASK_DEFAULT_HEADER_FIELDS = ["dueDate", "assignedTo"];
 
+// Standard header field keys -> display labels (when not in API catalog)
+const TASK_HEADER_FIELD_LABELS: Record<string, string> = {
+  dueDate: "Due Date",
+  assignedTo: "Assigned To",
+  priority: "Priority",
+  status: "Status",
+  owner: "Owner",
+  jobSeeker: "Job Seeker",
+  hiringManager: "Hiring Manager",
+  job: "Job",
+  lead: "Lead",
+  dateCreated: "Date Created",
+  createdBy: "Created By",
+  website: "Website",
+};
+
 // Storage keys for Task Details and Task Overview – field lists come from admin (custom field definitions)
 const TASK_DETAILS_STORAGE_KEY = "taskDetailsFields";
 const TASK_OVERVIEW_STORAGE_KEY = "taskOverviewFields";
@@ -318,14 +334,18 @@ export default function TaskView() {
 
     const getHeaderFieldValue = (key: string) => {
         if (!task) return "-";
+        const t = task as Record<string, unknown>;
 
-        // custom fields
+        // custom fields (same resolution order as organization: direct, customFields by rawKey, then by catalog label)
         if (key.startsWith("custom:")) {
             const rawKey = key.replace("custom:", "");
-            const val = task.customFields?.[rawKey];
-            return val === undefined || val === null || val === ""
-                ? "-"
-                : String(val);
+            let v = t[rawKey];
+            if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+            v = task.customFields?.[rawKey];
+            if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+            const field = headerFieldCatalog.find((f) => f.key === key);
+            if (field) v = task.customFields?.[field.label];
+            return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
         }
 
         // standard fields
@@ -359,7 +379,8 @@ export default function TaskView() {
 
     const getHeaderFieldLabel = (key: string) => {
         const found = headerFieldCatalog.find((f) => f.key === key);
-        return found?.label || key;
+        if (found?.label) return found.label;
+        return TASK_HEADER_FIELD_LABELS[key] ?? key;
     };
 
     const toggleHeaderField = (fieldKey: string) => {
@@ -1855,16 +1876,31 @@ export default function TaskView() {
                                 No header fields selected
                             </span>
                         ) : (
-                            headerFields.map((fk) => (
-                                <div key={fk} className="min-w-[140px]">
-                                    <div className="text-xs text-gray-500">
-                                        {getHeaderFieldLabel(fk)}
+                            headerFields.map((fk) => {
+                                const value = getHeaderFieldValue(fk);
+                                const isUrl = value !== "-" && (value.startsWith("http://") || value.startsWith("https://"));
+                                return (
+                                    <div key={fk} className="min-w-[140px]">
+                                        <div className="text-xs text-gray-500">
+                                            {getHeaderFieldLabel(fk)}
+                                        </div>
+                                        {fk === "website" || isUrl ? (
+                                            <a
+                                                href={value.startsWith("http") ? value : `https://${value}`}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="text-sm font-medium text-blue-600 hover:underline"
+                                            >
+                                                {value}
+                                            </a>
+                                        ) : (
+                                            <div className="text-sm font-medium text-gray-900">
+                                                {value}
+                                            </div>
+                                        )}
                                     </div>
-                                    <div className="text-sm font-medium text-gray-900">
-                                        {getHeaderFieldValue(fk)}
-                                    </div>
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </div>
 
