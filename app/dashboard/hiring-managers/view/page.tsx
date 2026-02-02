@@ -708,6 +708,11 @@ export default function HiringManagerView() {
     );
   };
 
+  const getOrganizationDetailLabel = (key: string): string => {
+    const entry = organizationDetailsFieldCatalog.find((f) => f.key === key);
+    return entry?.label ?? key;
+  };
+
   const renderOrganizationPanel = () => {
     if (!hiringManager?.organization) return null;
 
@@ -743,19 +748,14 @@ export default function HiringManagerView() {
         (f: any) => String(f.field_key ?? f.field_name ?? f.api_name ?? f.id) === key
       );
       const label = fieldDef?.field_label ?? fieldDef?.field_name ?? key;
-      const customVal = o.customFields?.[label] ?? o.customFields?.[key];
+      const customVal = o.customFields?.[getOrganizationDetailLabel(label)] ?? o.customFields?.[key];
       if (customVal !== undefined && customVal !== null) return String(customVal);
       return "-";
     };
 
-    const getOrganizationDetailLabel = (key: string): string => {
-      const entry = organizationDetailsFieldCatalog.find((f) => f.key === key);
-      return entry?.label ?? key;
-    };
-
     const renderOrganizationDetailsRow = (key: string) => {
       const label = getOrganizationDetailLabel(key);
-      const value = getOrganizationDetailValue(label);
+      const value = getOrganizationDetailValue(key);
       return (
         <div key={key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
@@ -2685,6 +2685,8 @@ export default function HiringManagerView() {
         } catch { }
       }
 
+      console.log("Current User", currentUser);
+
       // Add note to source hiring manager
       await fetch(`/api/hiring-managers/${hiringManagerId}/notes`, {
         method: "POST",
@@ -2720,7 +2722,8 @@ export default function HiringManagerView() {
           source_organization_id: sourceOrganizationId,
           target_organization_id: targetOrganizationId,
           requested_by: currentUser?.name || currentUser?.id || "Unknown",
-          requested_by_email: currentUser?.email || "",
+          // requested_by_email: currentUser?.email || "",
+          requested_by_email: "nt50616849@gmail.com",
           source_record_number: formatRecordId(Number(sourceOrganizationId), "organization"),
           target_record_number: formatRecordId(targetOrganizationId, "organization"),
         }),

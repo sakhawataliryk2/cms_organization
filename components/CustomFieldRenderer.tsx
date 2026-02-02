@@ -470,12 +470,20 @@ export default function CustomFieldRenderer({
         field.field_name === "minSalary" ||
         field.field_name === "maxSalary"
       ) {
+        // Show formatted number when value is a number (e.g. from API/blur); show raw string while typing so backspace works
+        const displayValue =
+          typeof value === "number" && !Number.isNaN(value)
+            ? formatSalaryValue(value)
+            : value === "" || value === undefined || value === null
+              ? ""
+              : String(value);
+
         return (
           <input
             {...salaryFieldProps}
             type="text" // Text so we can add "$" & commas
-            value={formatSalaryValue(value)}
-            onInput={(e: React.ChangeEvent<HTMLInputElement>) => {
+            value={displayValue}
+            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
               let inputValue = e.target.value.replace(/[^0-9.]/g, ""); // Remove non-numeric except decimal
 
               // Handle multiple decimal points
@@ -495,33 +503,17 @@ export default function CustomFieldRenderer({
                 }
               }
 
-              let number = parseFloat(inputValue);
-
-              if (!isNaN(number) && inputValue !== "") {
-                // Format as $XX,XXX.XX
-                const formatted = number.toLocaleString("en-US", {
-                  style: "currency",
-                  currency: "USD",
-                });
-                e.target.value = formatted;
-                // Call onChange with the numeric value for storage
-                onChange(field.field_name, number);
-              } else if (inputValue === "") {
-                e.target.value = "";
-                onChange(field.field_name, "");
-              }
+              // Store raw string while typing so backspace/editing works; only convert to number on blur
+              onChange(field.field_name, inputValue === "" ? "" : inputValue);
             }}
             onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
-              // Ensure proper formatting on blur
-              let inputValue = e.target.value.replace(/[^0-9.]/g, "");
-              let number = parseFloat(inputValue);
-
-              if (!isNaN(number) && inputValue !== "") {
-                const formatted = number.toLocaleString("en-US", {
-                  style: "currency",
-                  currency: "USD",
-                });
-                e.target.value = formatted;
+              const inputValue = e.target.value.replace(/[^0-9.]/g, "");
+              if (inputValue === "") {
+                onChange(field.field_name, "");
+                return;
+              }
+              const number = parseFloat(inputValue);
+              if (!Number.isNaN(number)) {
                 onChange(field.field_name, number);
               }
             }}

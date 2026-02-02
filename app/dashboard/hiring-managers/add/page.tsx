@@ -538,13 +538,12 @@ export default function AddHiringManager() {
     }
   }, [customFields, organizationName, organizationPhone, organizationAddress, organizationIdFromUrl, hiringManagerId, customFieldValues, handleCustomFieldChange]);
 
-  // Real-time sync: When formFields change, update corresponding custom fields
+  // Sync formData -> custom fields only when formData changes (e.g. user edited a standard form input).
+  // Do NOT depend on customFieldValues: when user edits a custom field, this effect must not re-run
+  // or it would overwrite their edit with the previous formData value.
   useEffect(() => {
     if (customFields.length === 0) return;
 
-    // Map standard field changes to custom fields
-    // NOTE: organizationId is intentionally excluded from this sync
-    // because it has dedicated handling logic in other useEffects
     const fieldMappings: Record<string, string[]> = {
       firstName: ["First Name", "First", "FName"],
       lastName: ["Last Name", "Last", "LName"],
@@ -556,7 +555,6 @@ export default function AddHiringManager() {
       companyPhone: ["Company Phone", "Contact Phone", "Main Phone"],
       status: ["Status", "Current Status"],
       title: ["Title", "Job Title", "Position"],
-      // organizationId: REMOVED - has dedicated handling to prevent field reset
       department: ["Department", "Dept"],
       reportsTo: ["Reports To", "Manager"],
       owner: ["Owner", "Assigned To", "Assigned Owner"],
@@ -571,32 +569,28 @@ export default function AddHiringManager() {
       lastContactDate: ["Last Contact Date", "Last Contact"],
     };
 
-    // Update custom fields when formData changes
     customFields.forEach((field) => {
       const fieldLabel = field.field_label;
-      let shouldUpdate = false;
       let newValue: any = undefined;
 
-      // Check each form field mapping
       Object.entries(fieldMappings).forEach(([formKey, labels]) => {
         if (labels.includes(fieldLabel)) {
           const formValue = formData[formKey as keyof typeof formData];
           if (formValue !== undefined && formValue !== null && formValue !== "") {
-            shouldUpdate = true;
             newValue = formValue;
           }
         }
       });
 
-      // Only update if value is different to prevent infinite loops
-      if (shouldUpdate && newValue !== undefined) {
-        const currentValue = customFieldValues[field.field_name];
-        if (currentValue !== newValue) {
-          handleCustomFieldChange(field.field_name, newValue);
-        }
+      if (newValue !== undefined) {
+        setCustomFieldValues((prev) => {
+          const currentValue = prev[field.field_name];
+          if (currentValue === newValue) return prev;
+          return { ...prev, [field.field_name]: newValue };
+        });
       }
     });
-  }, [formData, customFields, customFieldValues, handleCustomFieldChange]);
+  }, [formData, customFields, setCustomFieldValues]);
 
   // const validateForm = () => {
 
