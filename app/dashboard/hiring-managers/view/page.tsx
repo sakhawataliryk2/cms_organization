@@ -2722,10 +2722,10 @@ export default function HiringManagerView() {
           source_organization_id: sourceOrganizationId,
           target_organization_id: targetOrganizationId,
           requested_by: currentUser?.name || currentUser?.id || "Unknown",
-          // requested_by_email: currentUser?.email || "",
-          requested_by_email: "nt50616849@gmail.com",
+          requested_by_email: currentUser?.email || "",
           source_record_number: formatRecordId(Number(sourceOrganizationId), "organization"),
           target_record_number: formatRecordId(targetOrganizationId, "organization"),
+          context: "hiring_manager",
         }),
       });
 

@@ -1,0 +1,578 @@
+"use client";
+
+import React, { useEffect, useMemo, useState } from "react";
+import { useRouter, useParams } from "next/navigation";
+import { FiX, FiEdit2, FiTrash2, FiArrowLeft } from "react-icons/fi";
+
+interface EmailTemplate {
+  id: number;
+  template_name: string;
+  subject: string;
+  body: string;
+  type: string;
+}
+
+type FormData = Omit<EmailTemplate, "id">;
+
+// Section-specific type options and placeholders
+const SECTION_CONFIG: Record<
+  string,
+  {
+    types: { value: string; label: string }[];
+    placeholders: Record<string, string[]>;
+    required: Record<string, string[]>;
+    defaults: Record<string, { template_name: string; subject: string; body: string }>;
+  }
+> = {
+  "job-seeker": {
+    types: [
+      { value: "ONBOARDING_INTERNAL_SENT", label: "Onboarding - Internal Notification" },
+      { value: "ONBOARDING_JOBSEEKER_FIRST_TIME", label: "Onboarding - Job Seeker (First Time Credentials Sent)" },
+      { value: "ONBOARDING_JOBSEEKER_REPEAT", label: "Onboarding - Job Seeker (Repeat)" },
+    ],
+    placeholders: {
+      ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}"],
+      ONBOARDING_JOBSEEKER_FIRST_TIME: ["{{portalUrl}}", "{{username}}", "{{tempPassword}}"],
+      ONBOARDING_JOBSEEKER_REPEAT: ["{{portalUrl}}"],
+    },
+    required: {
+      ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}"],
+      ONBOARDING_JOBSEEKER_FIRST_TIME: ["{{portalUrl}}", "{{username}}", "{{tempPassword}}"],
+      ONBOARDING_JOBSEEKER_REPEAT: ["{{portalUrl}}"],
+    },
+    defaults: {
+      ONBOARDING_INTERNAL_SENT: {
+        template_name: "Onboarding Internal Notification",
+        subject: "Documents Sent for {{jobSeekerName}}",
+        body:
+          `<div>` +
+          `<p>Hello</p>` +
+          `<p>The documents for <b>Job Seeker {{jobSeekerName}}</b> have been sent for onboarding.</p>` +
+          `<p><b>Documents:</b></p>` +
+          `<ul>{{docsList}}</ul>` +
+          `<p>These were sent by <b>{{sentBy}}</b>.</p>` +
+          `</div>`,
+      },
+      ONBOARDING_JOBSEEKER_FIRST_TIME: {
+        template_name: "Onboarding Job Seeker - First Time",
+        subject: "Onboarding Documents - Portal Access",
+        body:
+          `<div>` +
+          `<p>Hello,</p>` +
+          `<p>You have onboarding documents that are awaiting your submission.</p>` +
+          `<p><b>Portal:</b> <a href="{{portalUrl}}">WEBSITE</a></p>` +
+          `<p><b>Username:</b> {{username}}</p>` +
+          `<p><b>Temporary Password:</b> {{tempPassword}}</p>` +
+          `<p>Please log in and complete your documents.</p>` +
+          `<p>Best Regards,<br/>Complete Staffing Solutions, Inc.</p>` +
+          `</div>`,
+      },
+      ONBOARDING_JOBSEEKER_REPEAT: {
+        template_name: "Onboarding Job Seeker - Repeat",
+        subject: "Onboarding Documents",
+        body:
+          `<div>` +
+          `<p>Hello,</p>` +
+          `<p>You have onboarding documents that are awaiting your submission.</p>` +
+          `<p>Please log into <a href="{{portalUrl}}">WEBSITE</a> to complete your documents. Your username is the email address you received this email to.</p>` +
+          `<p>Best Regards,<br/>Complete Staffing Solutions, Inc.</p>` +
+          `</div>`,
+      },
+    },
+  },
+  organization: {
+    types: [
+      { value: "ORGANIZATION_DELETE_REQUEST", label: "Organization - Delete Request (Payroll)" },
+      { value: "ORGANIZATION_TRANSFER_REQUEST", label: "Organization - Transfer Request (Payroll)" },
+    ],
+    placeholders: {
+      ORGANIZATION_DELETE_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{recordType}}",
+        "{{recordNumber}}",
+        "{{reason}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
+      ORGANIZATION_TRANSFER_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{sourceRecordNumber}}",
+        "{{targetRecordNumber}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
+    },
+    required: {
+      ORGANIZATION_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+      ORGANIZATION_TRANSFER_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+    },
+    defaults: {
+      ORGANIZATION_DELETE_REQUEST: {
+        template_name: "Organization Delete Request",
+        subject: "Delete Request: {{recordType}} {{recordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Delete Request</h2>` +
+          `<p>A delete request has been submitted:</p>` +
+          `<ul>` +
+          `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
+          `<li><strong>Record Type:</strong> {{recordType}}</li>` +
+          `<li><strong>Record Number:</strong> {{recordNumber}}</li>` +
+          `<li><strong>Reason:</strong> {{reason}}</li>` +
+          `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
+          `</ul>` +
+          `<p>Please review and approve or deny this deletion:</p>` +
+          `<p>` +
+          `<a href="{{approvalUrl}}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Deletion</a>` +
+          `<a href="{{denyUrl}}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Deletion</a>` +
+          `</p>` +
+          `</div>`,
+      },
+      ORGANIZATION_TRANSFER_REQUEST: {
+        template_name: "Organization Transfer Request",
+        subject: "Transfer Request: {{sourceRecordNumber}} → {{targetRecordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Organization Transfer Request</h2>` +
+          `<p>A transfer request has been submitted:</p>` +
+          `<ul>` +
+          `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
+          `<li><strong>Source Organization:</strong> {{sourceRecordNumber}}</li>` +
+          `<li><strong>Target Organization:</strong> {{targetRecordNumber}}</li>` +
+          `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
+          `</ul>` +
+          `<p>Please review and approve or deny this transfer:</p>` +
+          `<p>` +
+          `<a href="{{approvalUrl}}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Transfer</a>` +
+          `<a href="{{denyUrl}}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Transfer</a>` +
+          `</p>` +
+          `</div>`,
+      },
+    },
+  },
+  "hiring-manager": {
+    types: [
+      { value: "HIRING_MANAGER_DELETE_REQUEST", label: "Hiring Manager - Delete Request (Payroll)" },
+      { value: "HIRING_MANAGER_TRANSFER_REQUEST", label: "Hiring Manager - Transfer Request (Payroll)" },
+    ],
+    placeholders: {
+      HIRING_MANAGER_DELETE_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{recordType}}",
+        "{{recordNumber}}",
+        "{{reason}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
+      HIRING_MANAGER_TRANSFER_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{sourceRecordNumber}}",
+        "{{targetRecordNumber}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
+    },
+    required: {
+      HIRING_MANAGER_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+      HIRING_MANAGER_TRANSFER_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+    },
+    defaults: {
+      HIRING_MANAGER_DELETE_REQUEST: {
+        template_name: "Hiring Manager Delete Request",
+        subject: "Delete Request: {{recordType}} {{recordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Delete Request (Hiring Manager)</h2>` +
+          `<p>A delete request has been submitted:</p>` +
+          `<ul>` +
+          `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
+          `<li><strong>Record Type:</strong> {{recordType}}</li>` +
+          `<li><strong>Record Number:</strong> {{recordNumber}}</li>` +
+          `<li><strong>Reason:</strong> {{reason}}</li>` +
+          `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
+          `</ul>` +
+          `<p>Please review and approve or deny this deletion:</p>` +
+          `<p>` +
+          `<a href="{{approvalUrl}}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Deletion</a>` +
+          `<a href="{{denyUrl}}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Deletion</a>` +
+          `</p>` +
+          `</div>`,
+      },
+      HIRING_MANAGER_TRANSFER_REQUEST: {
+        template_name: "Hiring Manager Transfer Request",
+        subject: "Transfer Request: {{sourceRecordNumber}} → {{targetRecordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Hiring Manager / Organization Transfer Request</h2>` +
+          `<p>A transfer request has been submitted (hiring manager context):</p>` +
+          `<ul>` +
+          `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
+          `<li><strong>Source Organization:</strong> {{sourceRecordNumber}}</li>` +
+          `<li><strong>Target Organization:</strong> {{targetRecordNumber}}</li>` +
+          `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
+          `</ul>` +
+          `<p>Please review and approve or deny this transfer:</p>` +
+          `<p>` +
+          `<a href="{{approvalUrl}}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Transfer</a>` +
+          `<a href="{{denyUrl}}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Transfer</a>` +
+          `</p>` +
+          `</div>`,
+      },
+    },
+  },
+};
+
+const SECTION_LABELS: Record<string, string> = {
+  "job-seeker": "Job Seeker",
+  organization: "Organization",
+  "hiring-manager": "Hiring Manager",
+};
+
+export default function EmailManagementSectionPage() {
+  const router = useRouter();
+  const params = useParams();
+  const section = (params?.section as string) || "";
+
+  const [templates, setTemplates] = useState<EmailTemplate[]>([]);
+  const [showModal, setShowModal] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const config = SECTION_CONFIG[section];
+  const sectionTypes = useMemo(
+    () => config?.types?.map((t) => t.value) || [],
+    [config]
+  );
+
+  const [formData, setFormData] = useState<FormData>({
+    template_name: "",
+    subject: "",
+    body: "",
+    type: "",
+  });
+
+  useEffect(() => {
+    if (!section || !config) return;
+    fetch("/api/admin/email-management")
+      .then((res) => res.json())
+      .then((data) => {
+        const all = data.templates || [];
+        setTemplates(all.filter((t: EmailTemplate) => sectionTypes.includes(t.type)));
+      })
+      .catch((err) => console.error("Error fetching templates:", err));
+  }, [section, config, sectionTypes]);
+
+  useEffect(() => {
+    if (sectionTypes.length && !formData.type) {
+      setFormData((p) => ({ ...p, type: sectionTypes[0] }));
+    }
+  }, [sectionTypes, formData.type]);
+
+  const apiRequest = async (url: string, method: string, body?: any) => {
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return res.json();
+  };
+
+  const openCreate = () => {
+    setEditingTemplate(null);
+    setFormData({
+      template_name: "",
+      subject: "",
+      body: "",
+      type: sectionTypes[0] || "",
+    });
+    setShowModal(true);
+  };
+
+  const openEdit = (template: EmailTemplate) => {
+    setEditingTemplate(template);
+    setFormData({
+      template_name: template.template_name,
+      subject: template.subject,
+      body: template.body,
+      type: template.type,
+    });
+    setShowModal(true);
+  };
+
+  const insertAtCursor = (text: string) => {
+    const el = document.getElementById("bodyField") as HTMLTextAreaElement | null;
+    if (!el) return;
+    const start = el.selectionStart ?? formData.body.length;
+    const end = el.selectionEnd ?? formData.body.length;
+    const next = formData.body.slice(0, start) + text + formData.body.slice(end);
+    setFormData((p) => ({ ...p, body: next }));
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(start + text.length, start + text.length);
+    });
+  };
+
+  const loadDefault = () => {
+    const d = config?.defaults?.[formData.type];
+    if (!d) return;
+    setFormData((p) => ({
+      ...p,
+      template_name: p.template_name || d.template_name,
+      subject: p.subject || d.subject,
+      body: p.body || d.body,
+    }));
+  };
+
+  const required = config?.required?.[formData.type] || [];
+  const placeholders = config?.placeholders?.[formData.type] || [];
+  const missing = useMemo(() => {
+    const combined = `${formData.subject}\n${formData.body}`;
+    return required.filter((ph) => !combined.includes(ph));
+  }, [formData.type, formData.subject, formData.body, required]);
+
+  const handleDelete = async (id: number) => {
+    await apiRequest(`/api/admin/email-management/${id}`, "DELETE");
+    setTemplates((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      const url = editingTemplate
+        ? `/api/admin/email-management/${editingTemplate.id}`
+        : "/api/admin/email-management";
+      const method = editingTemplate ? "PUT" : "POST";
+      const data = await apiRequest(url, method, formData);
+      setTemplates((prev) =>
+        editingTemplate
+          ? prev.map((t) => (t.id === data.template.id ? data.template : t))
+          : [...prev, data.template]
+      );
+      setShowModal(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const goBack = () => router.push("/dashboard/admin/email-management");
+
+  if (!section || !config) {
+    return (
+      <div className="p-6">
+        <p className="text-gray-600">Invalid section.</p>
+        <button onClick={goBack} className="mt-4 text-blue-600 hover:underline">
+          Back to Email Management
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-6 bg-gray-200 min-h-screen">
+      <div className="flex items-center gap-4 mb-6">
+        <button
+          onClick={goBack}
+          className="flex items-center gap-2 text-gray-700 hover:text-gray-900"
+          type="button"
+        >
+          <FiArrowLeft className="w-5 h-5" />
+          Back
+        </button>
+        <h2 className="text-2xl font-bold text-gray-800">
+          Email Management – {SECTION_LABELS[section] || section}
+        </h2>
+      </div>
+
+      <div className="flex items-center justify-between mb-4">
+        <p className="text-gray-600 text-sm">
+          Use placeholders such as <code className="bg-gray-300 px-1 rounded">{`{{approvalUrl}}`}</code> and{" "}
+          <code className="bg-gray-300 px-1 rounded">{`{{denyUrl}}`}</code> so the client can place approval/deny links anywhere in the template.
+        </p>
+        <button
+          className="bg-blue-600 text-white px-5 py-2 rounded-lg shadow hover:bg-blue-700 transition"
+          onClick={openCreate}
+        >
+          Create New Template
+        </button>
+      </div>
+
+      <table className="min-w-full table-auto border-collapse border border-gray-300 shadow-sm rounded-lg overflow-hidden bg-white">
+        <thead>
+          <tr className="bg-gray-100 text-gray-700">
+            <th className="px-4 py-2 border text-left">Template Name</th>
+            <th className="px-4 py-2 border text-left">Subject</th>
+            <th className="px-4 py-2 border text-left">Type</th>
+            <th className="px-4 py-2 border text-left">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {templates.map((template) => (
+            <tr key={template.id} className="hover:bg-gray-50 transition">
+              <td className="px-4 py-2 border">{template.template_name}</td>
+              <td className="px-4 py-2 border">{template.subject}</td>
+              <td className="px-4 py-2 border">{template.type}</td>
+              <td className="px-4 py-2 border">
+                <div className="flex gap-3">
+                  <button
+                    className="flex items-center gap-1 text-gray-600 hover:text-blue-600 transition"
+                    onClick={() => openEdit(template)}
+                    type="button"
+                  >
+                    <FiEdit2 className="w-4 h-4" />
+                    <span className="sr-only">Edit</span>
+                  </button>
+                  <button
+                    className="flex items-center gap-1 text-gray-600 hover:text-red-600 transition"
+                    onClick={() => handleDelete(template.id)}
+                    type="button"
+                  >
+                    <FiTrash2 className="w-4 h-4" />
+                    <span className="sr-only">Delete</span>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+          {templates.length === 0 && (
+            <tr>
+              <td className="px-4 py-6 text-center text-sm text-gray-500" colSpan={4}>
+                No templates in this section. Create one to get started.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {showModal && (
+        <div className="fixed inset-0 bg-gray-800/60 flex justify-center items-center px-4 z-50">
+          <div className="bg-white p-8 rounded-lg shadow-lg w-[900px] max-w-full relative max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() => setShowModal(false)}
+              className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 transition-colors"
+              aria-label="Close modal"
+              type="button"
+            >
+              <FiX className="w-6 h-6" />
+            </button>
+
+            <div className="flex items-center justify-between gap-3 mb-6 pr-10">
+              <h3 className="text-2xl font-semibold text-gray-800">
+                {editingTemplate ? "Edit Template" : "Create Email Template"}
+              </h3>
+              <button
+                type="button"
+                className="text-sm px-3 py-2 border rounded hover:bg-gray-50"
+                onClick={loadDefault}
+              >
+                Load Default
+              </button>
+            </div>
+
+            {missing.length > 0 && (
+              <div className="mb-5 p-3 rounded border border-yellow-300 bg-yellow-50 text-sm text-yellow-900">
+                Missing placeholders: {missing.join(", ")}. Email may send without dynamic data.
+              </div>
+            )}
+
+            <div className="mb-5">
+              <label className="block text-sm font-medium mb-2 text-gray-700">Type</label>
+              <select
+                className="p-3 border rounded w-full focus:ring-2 focus:ring-blue-500 outline-none"
+                value={formData.type}
+                onChange={(e) => setFormData((p) => ({ ...p, type: e.target.value }))}
+              >
+                {config.types.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              {(formData.type.includes("DELETE_REQUEST") || formData.type.includes("TRANSFER_REQUEST")) && (
+                <div className="mt-2 text-xs text-gray-600">
+                  Use <strong>{`{{approvalUrl}}`}</strong> and <strong>{`{{denyUrl}}`}</strong> anywhere in the body or subject to add approval/deny links.
+                </div>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 mb-5">
+              <div>
+                <label className="block text-sm font-medium mb-2 text-gray-700">Template Name</label>
+                <input
+                  type="text"
+                  className="p-3 border rounded w-full focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={formData.template_name}
+                  onChange={(e) => setFormData((p) => ({ ...p, template_name: e.target.value }))}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-2 text-gray-700">Subject</label>
+                <input
+                  type="text"
+                  className="p-3 border rounded w-full focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={formData.subject}
+                  onChange={(e) => setFormData((p) => ({ ...p, subject: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2 text-gray-700">Body</label>
+              <textarea
+                id="bodyField"
+                className="p-3 border rounded w-full h-[220px] focus:ring-2 focus:ring-blue-500 outline-none"
+                placeholder="Write your email content here..."
+                value={formData.body}
+                onChange={(e) => setFormData((p) => ({ ...p, body: e.target.value }))}
+              />
+            </div>
+
+            <div className="mb-6 text-xs text-gray-600">
+              <div className="font-semibold mb-2">Quick insert:</div>
+              <div className="flex flex-wrap gap-2">
+                {placeholders.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    className="px-2 py-1 border rounded bg-gray-50 hover:bg-gray-100"
+                    onClick={() => insertAtCursor(p)}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3">
+              <button
+                className="bg-gray-500 text-white px-5 py-2 rounded-lg hover:bg-gray-600 transition"
+                onClick={() => setShowModal(false)}
+                type="button"
+                disabled={saving}
+              >
+                Close
+              </button>
+              <button
+                className={`text-white px-5 py-2 rounded-lg shadow transition ${
+                  saving ? "bg-blue-300 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+                }`}
+                onClick={handleSave}
+                type="button"
+                disabled={saving}
+              >
+                {saving ? "Saving..." : "Save Template"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
