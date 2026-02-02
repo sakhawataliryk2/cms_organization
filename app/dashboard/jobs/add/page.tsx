@@ -1207,15 +1207,16 @@ useEffect(() => {
       const customFieldsToSend = getCustomFieldsForSubmission();
       const customFieldsForDB: Record<string, any> = {};
 
-      // Labels in BACKEND_COLUMN_BY_LABEL → top-level columns; all others → custom_fields JSONB
+      // Every form field goes into custom_fields (for both create and edit).
+      // Labels in BACKEND_COLUMN_BY_LABEL also go to top-level columns for API compatibility.
       Object.entries(customFieldsToSend).forEach(([label, value]) => {
         if (value === undefined || value === null) return;
         const column = BACKEND_COLUMN_BY_LABEL[label];
         if (column) {
           payload[column] = value;
-        } else {
-          customFieldsForDB[label] = value;
         }
+        // Always store every field in custom_fields so all fields are persisted there
+        customFieldsForDB[label] = value;
       });
 
       const allowedStatus = ["Open", "On Hold", "Filled", "Closed"];

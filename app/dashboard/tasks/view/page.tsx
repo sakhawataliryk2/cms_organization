@@ -277,6 +277,9 @@ export default function TaskView() {
     });
     const [isSavingTearsheet, setIsSavingTearsheet] = useState(false);
 
+    // Field management – panels driven from admin field definitions (must be before header catalog)
+    const [availableFields, setAvailableFields] = useState<any[]>([]);
+
     // =====================
     // HEADER FIELDS (Top Row)
     // =====================
@@ -294,35 +297,24 @@ export default function TaskView() {
         defaultFields: TASK_DEFAULT_HEADER_FIELDS,
     });
 
-    // Build field list: Standard + Custom (memoized so Task Overview sync effect doesn't re-run every render and overwrite toggles)
     const headerFieldCatalog = useMemo(() => {
-        const standard = [
-            { key: "dueDate", label: "Due Date" },
-            { key: "assignedTo", label: "Assigned To" },
-            { key: "priority", label: "Priority" },
-            { key: "status", label: "Status" },
-            { key: "owner", label: "Owner" },
-            { key: "jobSeeker", label: "Job Seeker" },
-            { key: "hiringManager", label: "Hiring Manager" },
-            { key: "job", label: "Job" },
-            { key: "lead", label: "Lead" },
-            { key: "dateCreated", label: "Date Created" },
-            { key: "createdBy", label: "Created By" },
-        ];
-
-        const taskCustom = Object.keys(task?.customFields || {}).map((k) => ({
-            key: `custom:${k}`,
-            label: k,
-        }));
-
-        const merged = [...standard, ...taskCustom];
         const seen = new Set<string>();
-        return merged.filter((x) => {
-            if (seen.has(x.key)) return false;
-            seen.add(x.key);
-            return true;
-        });
-    }, [task?.customFields]);
+        const fromApi = (availableFields || [])
+            .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+            .map((f: any) => {
+                const k = f.field_name || f.field_key || f.field_label || f.id;
+                return {
+                    key: `custom:${String(k)}`,
+                    label: f.field_label || f.field_name || String(k),
+                };
+            })
+            .filter((x) => {
+                if (seen.has(x.key)) return false;
+                seen.add(x.key);
+                return true;
+            });
+        return fromApi;
+    }, [availableFields]);
 
     const getHeaderFieldValue = (key: string) => {
         if (!task) return "-";
@@ -521,8 +513,7 @@ export default function TaskView() {
         }
     };
 
-    // Field management – panels driven from admin field definitions only
-    const [availableFields, setAvailableFields] = useState<any[]>([]);
+    // Panel visibility state (availableFields declared above with header block)
     const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
         if (typeof window === "undefined") {
             return { taskOverview: [], details: [], recentNotes: ["notes"] };
@@ -610,12 +601,8 @@ export default function TaskView() {
                 key: String(f.field_key || f.api_name || f.field_name || f.id),
                 label: String(f.field_label || f.field_name || f.field_key || f.id),
             }));
-        const seen = new Set(fromApi.map((f) => f.key));
-        const fromTask = Object.keys(task?.customFields || {})
-            .filter((k) => !seen.has(k))
-            .map((k) => ({ key: k, label: k }));
-        return [...fromApi, ...fromTask];
-    }, [availableFields, task?.customFields]);
+        return [...fromApi];
+    }, [availableFields]);
 
     // Task Overview field catalog: from admin field definitions + record customFields only
     const taskOverviewFieldCatalog = useMemo(() => {
@@ -625,12 +612,8 @@ export default function TaskView() {
                 key: String(f.field_key || f.api_name || f.field_name || f.id),
                 label: String(f.field_label || f.field_name || f.field_key || f.id),
             }));
-        const seen = new Set(fromApi.map((f) => f.key));
-        const fromTask = Object.keys(task?.customFields || {})
-            .filter((k) => !seen.has(k))
-            .map((k) => ({ key: k, label: k }));
-        return [...fromApi, ...fromTask];
-    }, [availableFields, task?.customFields]);
+        return [...fromApi];
+    }, [availableFields]);
 
     // When catalog loads, if details/taskOverview visible list is empty, default to all catalog keys
     useEffect(() => {
@@ -1191,8 +1174,15 @@ export default function TaskView() {
                 })
             });
 
+            const responseText = await response.text();
+            let data: { message?: string } = {};
+            try {
+                data = responseText ? JSON.parse(responseText) : {};
+            } catch (_) {}
+
             if (!response.ok) {
-                throw new Error('Failed to update task');
+                const msg = data.message || response.statusText || 'Failed to update task';
+                throw new Error(msg);
             }
 
             // Refresh the task data
@@ -1710,34 +1700,6 @@ export default function TaskView() {
                                     </div>
                                 </div>
                             )}
-
-                            <div className="mb-6">
-                                <h3 className="font-bold text-lg mb-2">Related Records</h3>
-                                <div className="border border-gray-200 rounded">
-                                    <div className="flex border-b border-gray-200 last:border-b-0">
-                                        <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Job Seeker:</div>
-                                        <div className="flex-1 p-2">{task.jobSeeker}</div>
-                                    </div>
-                                    <div className="flex border-b border-gray-200 last:border-b-0">
-                                        <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Hiring Manager:</div>
-                                        <div className="flex-1 p-2">{task.hiringManager}</div>
-                                    </div>
-                                    <div className="flex border-b border-gray-200 last:border-b-0">
-                                        <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Job:</div>
-                                        <div className="flex-1 p-2">{task.job}</div>
-                                    </div>
-                                    <div className="flex border-b border-gray-200 last:border-b-0">
-                                        <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Lead:</div>
-                                        <div className="flex-1 p-2">{task.lead}</div>
-                                    </div>
-                                    {task.placement !== "Not specified" && (
-                                        <div className="flex border-b border-gray-200 last:border-b-0">
-                                            <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">Placement:</div>
-                                            <div className="flex-1 p-2">{task.placement}</div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
 
                             {task.isCompleted && task.completedAt && (
                                 <div className="mb-6">
@@ -2522,7 +2484,9 @@ export default function TaskView() {
                                                     <div className="text-sm font-medium">
                                                         {getHeaderFieldLabel(key)}
                                                     </div>
-                                                    <div className="text-xs text-gray-500">{key}</div>
+                                                    <div className="text-xs text-gray-500">
+                                                        Value: {getHeaderFieldValue(key)}
+                                                    </div>
                                                 </div>
 
                                                 <div className="flex items-center gap-2">

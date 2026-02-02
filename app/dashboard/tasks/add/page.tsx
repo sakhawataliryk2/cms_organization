@@ -28,16 +28,16 @@ interface User {
   email: string;
 }
 
-// Map admin field labels to backend columns; unmapped labels go to custom_fields JSONB
+// Map admin field labels to backend columns (snake_case for API); unmapped labels go to custom_fields only
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
   "Task Title": "title", Title: "title",
   "Description": "description", "Task Description": "description", Details: "description",
   "Owner": "owner",
   "Status": "status", "Current Status": "status", "Task Status": "status",
   "Priority": "priority", "Task Priority": "priority",
-  "Assigned To": "assignedTo", Assigned: "assignedTo", Assignee: "assignedTo",
-  "Due Date": "dueDate", Due: "dueDate",
-  "Due Time": "dueTime", Time: "dueTime",
+  "Assigned To": "assigned_to", Assigned: "assigned_to", Assignee: "assigned_to",
+  "Due Date": "due_date", Due: "due_date",
+  "Due Time": "due_time", Time: "due_time",
 };
 
 export default function AddTask() {
@@ -131,11 +131,12 @@ export default function AddTask() {
     if (!customFields || customFields.length === 0) return;
 
     const ownerField = customFields.find(
-      (f: any) =>
-        String(f.field_label || "").toLowerCase() === "owner" ||
-        String(f.field_name || "").toLowerCase() === "field_17" ||
-        String(f.field_name || "").toLowerCase() === "field17" ||
-        String(f.field_name || "").toLowerCase() === "owner"
+      (f: any) => {
+        const label = String(f.field_label || "").toLowerCase();
+        const name = String(f.field_name || "").toLowerCase();
+        const key = String(f.field_key || "").toLowerCase();
+        return label === "owner" || name === "owner" || name === "field_17" || name === "field17" || key === "owner";
+      }
     );
 
     if (!ownerField?.field_name) return;
@@ -239,6 +240,8 @@ export default function AddTask() {
           "Assigned To": task.assigned_to_name || task.assigned_to || "",
           "Assigned": task.assigned_to_name || task.assigned_to || "",
           "Assignee": task.assigned_to_name || task.assigned_to || "",
+          // Owner variations (for edit form and autopopulate consistency)
+          "Owner": task.owner || task.owner_name || "",
           // Due Date variations
           "Due Date": task.due_date ? task.due_date.split("T")[0] : "",
           "Due": task.due_date ? task.due_date.split("T")[0] : "",
@@ -325,22 +328,46 @@ export default function AddTask() {
 
     try {
       const customFieldsToSend = getCustomFieldsForSubmission();
-      const apiData: any = {};
+      const apiData: Record<string, any> = {};
       const customFieldsForDB: Record<string, any> = {};
 
-      // Labels in BACKEND_COLUMN_BY_LABEL → top-level columns; all others → custom_fields JSONB
+      // Every form field goes into custom_fields (for both create and edit). Same as organizations.
+      // Labels in BACKEND_COLUMN_BY_LABEL also go to top-level columns for API compatibility.
       Object.entries(customFieldsToSend).forEach(([label, value]) => {
         if (value === undefined || value === null) return;
         const column = BACKEND_COLUMN_BY_LABEL[label];
         if (column) {
           apiData[column] = value;
-        } else {
-          customFieldsForDB[label] = value;
         }
+        customFieldsForDB[label] = value;
       });
 
-      // assignedTo: convert user name/option text to numeric user ID
-      const rawAssignedTo = apiData.assignedTo;
+      // Normalize time fields for backend (PostgreSQL TIME type)
+      const timeCol = "due_time";
+      const rawTime = apiData[timeCol];
+      if (rawTime !== undefined && rawTime !== null) {
+        const s = String(rawTime).trim();
+        if (s === "") {
+          delete apiData[timeCol];
+        } else {
+          if (s.includes("T")) {
+            const timePart = s.split("T")[1] || "";
+            const [h, m, sec] = timePart.split(":");
+            if (h != null && m != null) {
+              apiData[timeCol] = `${h.padStart(2, "0")}:${m.padStart(2, "0")}:${(sec || "00").padStart(2, "0")}`;
+            }
+          } else {
+            const timeMatch = s.match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/);
+            if (timeMatch) {
+              const [, h, m, sec] = timeMatch;
+              apiData[timeCol] = `${h!.padStart(2, "0")}:${m!.padStart(2, "0")}:${(sec || "00").padStart(2, "0")}`;
+            }
+          }
+        }
+      }
+
+      // assigned_to: convert user name/option text to numeric user ID
+      const rawAssignedTo = apiData.assigned_to;
       if (rawAssignedTo !== undefined && rawAssignedTo !== null && String(rawAssignedTo).trim() !== "") {
         const value = String(rawAssignedTo).trim();
         let assignedToId: number | null = null;
@@ -361,54 +388,59 @@ export default function AddTask() {
             }
           }
         }
-        apiData.assignedTo = assignedToId;
+        apiData.assigned_to = assignedToId;
       }
 
-      apiData.customFields = customFieldsForDB;
+      apiData.custom_fields = typeof customFieldsForDB === "object" && !Array.isArray(customFieldsForDB) && customFieldsForDB !== null
+        ? JSON.parse(JSON.stringify(customFieldsForDB))
+        : {};
 
       if (relatedEntity && relatedEntityId) {
         const rid = Number(relatedEntityId);
-
         switch (relatedEntity) {
           case "organization":
             apiData.organization_id = rid;
             break;
-
           case "job":
             apiData.job_id = rid;
             break;
-
           case "lead":
             apiData.lead_id = rid;
             break;
-
           case "hiring_manager":
             apiData.hiring_manager_id = rid;
             break;
-
           case "job_seeker":
             apiData.job_seeker_id = rid;
             break;
-
           case "placement":
             apiData.placement_id = rid;
             break;
         }
       }
 
-      console.log("=== TASK SUBMISSION DEBUG ===");
-      console.log("Related Entity:", relatedEntity);
-      console.log("Related Entity ID:", relatedEntityId);
-      console.log("Custom Fields Values:", customFieldValues);
-      console.log("Custom Fields to Send:", customFieldsToSend);
-      console.log("Custom Fields for DB:", customFieldsForDB);
-      console.log("Active Users:", activeUsers);
-      console.log(
-        "Final API Data (camelCase):",
-        JSON.stringify(apiData, null, 2)
-      );
+      delete (apiData as any).customFields;
 
-      const formData = apiData;
+      const cleanPayload: Record<string, any> = {};
+      if (apiData.title !== undefined) cleanPayload.title = apiData.title ?? "";
+      if (apiData.description !== undefined) cleanPayload.description = apiData.description ?? "";
+      if (apiData.owner !== undefined) cleanPayload.owner = apiData.owner ?? "";
+      if (apiData.status !== undefined) cleanPayload.status = apiData.status ?? "Open";
+      if (apiData.priority !== undefined) cleanPayload.priority = apiData.priority ?? "";
+      if (apiData.assigned_to !== undefined) cleanPayload.assigned_to = apiData.assigned_to ?? null;
+      if (apiData.due_date !== undefined) cleanPayload.due_date = apiData.due_date && String(apiData.due_date).trim() !== "" ? apiData.due_date : null;
+      if (apiData.due_time !== undefined) cleanPayload.due_time = apiData.due_time;
+      if (apiData.organization_id !== undefined) cleanPayload.organization_id = apiData.organization_id;
+      if (apiData.job_id !== undefined) cleanPayload.job_id = apiData.job_id;
+      if (apiData.lead_id !== undefined) cleanPayload.lead_id = apiData.lead_id;
+      if (apiData.hiring_manager_id !== undefined) cleanPayload.hiring_manager_id = apiData.hiring_manager_id;
+      if (apiData.job_seeker_id !== undefined) cleanPayload.job_seeker_id = apiData.job_seeker_id;
+      if (apiData.placement_id !== undefined) cleanPayload.placement_id = apiData.placement_id;
+
+      cleanPayload.custom_fields =
+        typeof apiData.custom_fields === "object" && apiData.custom_fields !== null && !Array.isArray(apiData.custom_fields)
+          ? JSON.parse(JSON.stringify(apiData.custom_fields))
+          : {};
 
       const url = isEditMode ? `/api/tasks/${taskId}` : "/api/tasks";
       const method = isEditMode ? "PUT" : "POST";
@@ -422,15 +454,25 @@ export default function AddTask() {
             "$1"
           )}`,
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(cleanPayload),
       });
 
-      const data = await response.json();
+      const responseText = await response.text();
+      let data: { message?: string; error?: string; errors?: string[]; task?: { id: string } } = {};
+      try {
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch (_) {}
 
       if (!response.ok) {
-        throw new Error(
-          data.message || `Failed to ${isEditMode ? "update" : "create"} task`
-        );
+        const msg =
+          data.message ||
+          data.error ||
+          (Array.isArray(data.errors) ? data.errors.join("; ") : null) ||
+          response.statusText ||
+          `Failed to ${isEditMode ? "update" : "create"} task`;
+        setError(msg);
+        setIsSubmitting(false);
+        return;
       }
 
       console.log(
@@ -445,11 +487,8 @@ export default function AddTask() {
         router.push("/dashboard/tasks");
       }
     } catch (error) {
-      console.error(
-        `Error ${isEditMode ? "updating" : "creating"} task:`,
-        error
-      );
-      setError(error instanceof Error ? error.message : "An error occurred");
+      const message = error instanceof Error ? error.message : "An error occurred";
+      setError(message);
     } finally {
       setIsSubmitting(false);
     }

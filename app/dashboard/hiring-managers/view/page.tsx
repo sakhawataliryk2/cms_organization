@@ -409,6 +409,10 @@ export default function HiringManagerView() {
 
   // Field management – panels driven from admin field definitions only
   const [availableFields, setAvailableFields] = useState<any[]>([]);
+  // Organization details: field definitions from admin (organizations entity) and fetched org record
+  const [organizationAvailableFields, setOrganizationAvailableFields] = useState<any[]>([]);
+  const [fetchedOrganization, setFetchedOrganization] = useState<any>(null);
+  const [isLoadingOrganization, setIsLoadingOrganization] = useState(false);
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
     if (typeof window === "undefined") {
       return { details: [], organizationDetails: [], recentNotes: ["notes"] };
@@ -421,13 +425,13 @@ export default function HiringManagerView() {
       try {
         const parsed = JSON.parse(detailsSaved);
         if (Array.isArray(parsed) && parsed.length > 0) details = Array.from(new Set(parsed));
-      } catch (_) {}
+      } catch (_) { }
     }
     if (orgDetailsSaved) {
       try {
         const parsed = JSON.parse(orgDetailsSaved);
         if (Array.isArray(parsed) && parsed.length > 0) organizationDetails = Array.from(new Set(parsed));
-      } catch (_) {}
+      } catch (_) { }
     }
     return { details, organizationDetails, recentNotes: ["notes"] };
   });
@@ -642,6 +646,28 @@ export default function HiringManagerView() {
     return () => window.removeEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
   }, [hiringManager]);
 
+  // Hiring Manager Details field catalog: from admin field definitions + record customFields only (no hardcoded standard)
+  const detailsFieldCatalog = useMemo(() => {
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+    return [...fromApi];
+  }, [availableFields]);
+
+  // Organization Details field catalog: from admin field definitions for organizations + fetched org custom_fields (same as organizations view)
+  const organizationDetailsFieldCatalog = useMemo(() => {
+    const fromApi = (organizationAvailableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: String(f.field_key ?? f.field_name ?? f.api_name ?? f.id),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+    return [...fromApi];
+  }, [organizationAvailableFields]);
+
   // Basic renderPanel (placeholder content for now)
   // Render individual panels
   const renderDetailsPanel = () => {
@@ -655,110 +681,7 @@ export default function HiringManagerView() {
     const renderDetailsRow = (key: string) => {
       // Standard fields
       switch (key) {
-        case "status":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
-              <div className="flex-1 p-2 text-sm">{hiringManager.status || "-"}</div>
-            </div>
-          );
-        case "organization":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Organization:</div>
-              <div className="flex-1 p-2 text-sm text-blue-600">{hiringManager.organization?.name || "-"}</div>
-            </div>
-          );
-        case "department":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Department:</div>
-              <div className="flex-1 p-2 text-sm">{hiringManager.department || "-"}</div>
-            </div>
-          );
-        case "email":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Email:</div>
-              <div className="flex-1 p-2 text-sm">
-                {hiringManager.email && hiringManager.email !== "(Not provided)" ? (
-                  <a href={`mailto:${hiringManager.email}`} className="text-blue-600 hover:underline">{hiringManager.email}</a>
-                ) : "-"}
-              </div>
-            </div>
-          );
-        case "email2":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Email 2:</div>
-              <div className="flex-1 p-2 text-sm">
-                {hiringManager.email2 && hiringManager.email2 !== "(Not provided)" ? (
-                  <a href={`mailto:${hiringManager.email2}`} className="text-blue-600 hover:underline">{hiringManager.email2}</a>
-                ) : "-"}
-              </div>
-            </div>
-          );
-        case "mobilePhone":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Mobile Phone:</div>
-              <div className="flex-1 p-2 text-sm">
-                {hiringManager.mobilePhone && hiringManager.mobilePhone !== "(Not provided)" ? (
-                  <a href={`tel:${hiringManager.mobilePhone}`} className="text-blue-600 hover:underline">{hiringManager.mobilePhone}</a>
-                ) : "-"}
-              </div>
-            </div>
-          );
-        case "directLine":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Direct Line:</div>
-              <div className="flex-1 p-2 text-sm">
-                {hiringManager.directLine && hiringManager.directLine !== "(Not provided)" ? (
-                  <a href={`tel:${hiringManager.directLine}`} className="text-blue-600 hover:underline">{hiringManager.directLine}</a>
-                ) : "-"}
-              </div>
-            </div>
-          );
-        case "reportsTo":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Reports To:</div>
-              <div className="flex-1 p-2 text-sm">{hiringManager.reportsTo || "-"}</div>
-            </div>
-          );
-        case "linkedinUrl":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">LinkedIn URL:</div>
-              <div className="flex-1 p-2 text-sm">
-                {hiringManager.linkedinUrl && hiringManager.linkedinUrl !== "Not provided" ? (
-                  <a href={hiringManager.linkedinUrl.startsWith('http') ? hiringManager.linkedinUrl : `https://${hiringManager.linkedinUrl}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{hiringManager.linkedinUrl}</a>
-                ) : "-"}
-              </div>
-            </div>
-          );
-        case "dateAdded":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
-              <div className="flex-1 p-2 text-sm">{hiringManager.dateAdded || "-"}</div>
-            </div>
-          );
-        case "owner":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Owner:</div>
-              <div className="flex-1 p-2 text-sm">{hiringManager.owner || "-"}</div>
-            </div>
-          );
-        case "address":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Address:</div>
-              <div className="flex-1 p-2 text-sm">{hiringManager.address || "-"}</div>
-            </div>
-          );
+
         default:
           // Custom field
           const fieldDef = customFieldDefs.find((f: any) => {
@@ -787,74 +710,68 @@ export default function HiringManagerView() {
 
   const renderOrganizationPanel = () => {
     if (!hiringManager?.organization) return null;
-    const customObj = hiringManager.customFields || {};
-    const customFieldDefs = (availableFields || []).filter((f: any) => {
-      const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
-      return !isHidden;
-    });
+
+    // Resolve value from fetched organization (same structure as organizations view)
+    const getOrganizationDetailValue = (key: string): string => {
+      if (!fetchedOrganization) return "-";
+      const o = fetchedOrganization as any;
+      console.log("Organization", o);
+      // Standard backend columns (snake_case from API or camelCase)
+      const standard: Record<string, string> = {
+        name: o.name ?? o.Name ?? "",
+        website: o.website ?? o.Website ?? "",
+        contact_phone: o.contact_phone ?? o.contactPhone ?? o.phone ?? "",
+        address: o.address ?? o.Address ?? "",
+        overview: o.overview ?? o.Overview ?? o.about ?? "",
+        status: o.status ?? o.Status ?? "",
+        nicknames: o.nicknames ?? o.Nicknames ?? "",
+        parent_organization: o.parent_organization ?? o.parentOrganization ?? "",
+        contract_on_file: o.contract_on_file ?? o.contractOnFile ?? "",
+        date_contract_signed: o.date_contract_signed ?? o.dateContractSigned ?? "",
+        year_founded: o.year_founded ?? o.yearFounded ?? "",
+        perm_fee: o.perm_fee ?? o.permFee ?? "",
+        num_employees: o.num_employees != null ? String(o.num_employees) : o.numEmployees != null ? String(o.numEmployees) : "",
+        num_offices: o.num_offices != null ? String(o.num_offices) : o.numOffices != null ? String(o.numOffices) : "",
+      };
+      if (standard[key] !== undefined && standard[key] !== null && String(standard[key]).trim() !== "") {
+        return String(standard[key]);
+      }
+      const direct = o[key] ?? o[key?.replace(/(_\w)/g, (m: string) => m[1].toUpperCase())];
+      if (direct !== undefined && direct !== null && String(direct).trim() !== "") return String(direct);
+      // From custom_fields by label (catalog key may be field_name/field_key – resolve to label)
+      const fieldDef = (organizationAvailableFields || []).find(
+        (f: any) => String(f.field_key ?? f.field_name ?? f.api_name ?? f.id) === key
+      );
+      const label = fieldDef?.field_label ?? fieldDef?.field_name ?? key;
+      const customVal = o.customFields?.[label] ?? o.customFields?.[key];
+      if (customVal !== undefined && customVal !== null) return String(customVal);
+      return "-";
+    };
+
+    const getOrganizationDetailLabel = (key: string): string => {
+      const entry = organizationDetailsFieldCatalog.find((f) => f.key === key);
+      return entry?.label ?? key;
+    };
 
     const renderOrganizationDetailsRow = (key: string) => {
-      switch (key) {
-        case "status":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
-              <div className="flex-1 p-2 text-sm">{hiringManager.organization.status || "-"}</div>
-            </div>
-          );
-        case "organizationName":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Organization Name:</div>
-              <div className="flex-1 p-2 text-sm text-blue-600">{hiringManager.organization.name || "-"}</div>
-            </div>
-          );
-        case "organizationPhone":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Phone:</div>
-              <div className="flex-1 p-2 text-sm">{hiringManager.organization.phone || "-"}</div>
-            </div>
-          );
-        case "url":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Website:</div>
-              <div className="flex-1 p-2 text-sm">
-                {hiringManager.organization.url && hiringManager.organization.url !== "https://example.com" ? (
-                  <a href={hiringManager.organization.url.startsWith('http') ? hiringManager.organization.url : `https://${hiringManager.organization.url}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{hiringManager.organization.url}</a>
-                ) : "-"}
-              </div>
-            </div>
-          );
-        case "dateAdded":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
-              <div className="flex-1 p-2 text-sm">{hiringManager.organization.dateAdded || "-"}</div>
-            </div>
-          );
-        default:
-          // Custom field
-          const fieldDef = customFieldDefs.find((f: any) => {
-            const fk = f.field_name || f.field_key || f.api_name || f.id;
-            return String(fk) === key;
-          });
-          const fieldLabel = fieldDef?.field_label || fieldDef?.field_name || key;
-          const fieldValue = customObj[fieldLabel] || "-";
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
-              <div className="flex-1 p-2 text-sm">{String(fieldValue)}</div>
-            </div>
-          );
-      }
+      const label = getOrganizationDetailLabel(key);
+      const value = getOrganizationDetailValue(label);
+      return (
+        <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+          <div className="flex-1 p-2 text-sm">{value}</div>
+        </div>
+      );
     };
 
     return (
       <PanelWithHeader title="Organization Details" onEdit={() => handleEditPanel("organizationDetails")}>
         <div className="space-y-0 border border-gray-200 rounded">
-          {Array.from(new Set(visibleFields.organizationDetails || [])).map((key) => renderOrganizationDetailsRow(key))}
+          {isLoadingOrganization ? (
+            <div className="p-4 text-gray-500 text-sm">Loading organization details...</div>
+          ) : (
+            Array.from(new Set(visibleFields.organizationDetails || [])).map((key: string) => renderOrganizationDetailsRow(key))
+          )}
         </div>
       </PanelWithHeader>
     );
@@ -918,7 +835,7 @@ export default function HiringManagerView() {
       );
     }
     return null;
-  }, [hiringManager, visibleFields, notes, availableFields]);
+  }, [hiringManager, visibleFields, notes, availableFields, organizationDetailsFieldCatalog, fetchedOrganization, isLoadingOrganization, organizationAvailableFields]);
 
   // =====================
   // HEADER FIELDS (Top Row)
@@ -938,65 +855,34 @@ export default function HiringManagerView() {
   });
 
   const buildHeaderFieldCatalog = () => {
-    const standard = [
-      { key: "phone", label: "Phone" },
-      { key: "email", label: "Email" },
-      { key: "mobilePhone", label: "Mobile" },
-      { key: "directLine", label: "Direct Line" },
-      { key: "department", label: "Department" },
-      { key: "organizationName", label: "Organization" },
-      { key: "title", label: "Title" },
-      { key: "linkedinUrl", label: "LinkedIn" },
-      { key: "address", label: "Address" },
-    ];
-
-    const apiCustom = (availableFields.filter(f => f.is_hidden === false) || []).map((f: any) => {
-      const stableKey = f.field_key || f.api_name || f.field_name || f.id;
-      return {
-        key: `custom:${stableKey}`,
-        label: f.field_label || f.field_name || String(stableKey),
-      };
-    });
-
-    console.log("API Custom", apiCustom);
-
-    const hmCustom = Object.keys(hiringManager?.customFields || {}).map((k) => {
-      const found = (availableFields.filter(f => f.is_hidden === false) || []).find((f: any) => {
-        const fk = f.field_key || f.api_name || f.field_name || f.id;
-        return String(fk) === k;
-      });
-      return {
-        key: `custom:${k}`,
-        label: found?.field_label || found?.field_name || k,
-      };
-    });
-
-    console.log("HM Custom", hmCustom)
-
-    const merged = [...standard, ...apiCustom, ...hmCustom];
     const seen = new Set<string>();
-    return merged.filter((x) => {
-      if (seen.has(x.key)) return false;
-      seen.add(x.key);
-      return true;
-    });
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => {
+        const k = f.field_name || f.field_key || f.field_label || f.id;
+        return {
+          key: `custom:${String(k)}`,
+          label: f.field_label || f.field_name || String(k),
+        };
+      })
+      .filter((x) => {
+        if (seen.has(x.key)) return false;
+        seen.add(x.key);
+        return true;
+      });
+    return fromApi;
   };
 
   const headerFieldCatalog = buildHeaderFieldCatalog();
 
   const getHeaderFieldLabel = (key: string) => {
-    const found = headerFieldCatalog.find((f) => f.key === key || f.key === `custom:${key}`);
-    console.log("Found", found);
+    const found = headerFieldCatalog.find((f) => f.key === key);
     return found?.label || key;
   };
 
   const getHeaderFieldValue = (key: string) => {
     if (!hiringManager) return "-";
-
-    // Handle custom fields with prefix
     const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
-
-    console.log("Raw Key", rawKey);
 
     // Helper to get value from custom fields by key or label
     const getCustomValue = (k: string) => {
@@ -1202,10 +1088,11 @@ export default function HiringManagerView() {
     }
   }, [hiringManagerId]);
 
-  // Fetch available fields after hiring manager is loaded
+  // Fetch available fields and organization field definitions after hiring manager is loaded
   useEffect(() => {
     if (hiringManager && hiringManagerId) {
       fetchAvailableFields();
+      fetchOrganizationAvailableFields();
       // Update note form about field when hiring manager is loaded
       setNoteForm((prev) => ({
         ...prev,
@@ -1269,7 +1156,7 @@ export default function HiringManagerView() {
         data.hiringManagerFields ||
         [];
 
-      console.log("HM fields count:", fields.length);
+      console.log("HM fields count:", fields.filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden));
 
       // Save fields for modal/catalog (visibility/order driven by catalog + localStorage)
       setAvailableFields(fields);
@@ -1280,35 +1167,80 @@ export default function HiringManagerView() {
     }
   };
 
-  // Hiring Manager Details field catalog: from admin field definitions + record customFields only (no hardcoded standard)
-  const detailsFieldCatalog = useMemo(() => {
-    const fromApi = (availableFields || [])
-      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
-      .map((f: any) => ({
-        key: String(f.field_name || f.field_key || f.api_name || f.id),
-        label: String(f.field_label || f.field_name || f.field_key || f.id),
-      }));
-    const seen = new Set(fromApi.map((f) => f.key));
-    const fromHM = Object.keys(hiringManager?.customFields || {})
-      .filter((k) => !seen.has(k))
-      .map((k) => ({ key: k, label: k }));
-    return [...fromApi, ...fromHM];
-  }, [availableFields, hiringManager?.customFields]);
+  // Fetch organization field definitions from admin (same as organizations view)
+  const fetchOrganizationAvailableFields = async () => {
+    try {
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      const response = await fetch("/api/admin/field-management/organizations", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json().catch(() => ({}));
+      const fields =
+        data.customFields ||
+        data.fields ||
+        data.data?.customFields ||
+        data.data?.fields ||
+        data.organizationFields ||
+        [];
+      setOrganizationAvailableFields(Array.isArray(fields) ? fields : []);
+    } catch (err) {
+      console.error("Error fetching organization available fields:", err);
+    }
+  };
 
-  // Hiring Manager Organization Details field catalog: from admin field definitions + record customFields only
-  const organizationDetailsFieldCatalog = useMemo(() => {
-    const fromApi = (availableFields || [])
-      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
-      .map((f: any) => ({
-        key: String(f.field_name || f.field_key || f.api_name || f.id),
-        label: String(f.field_label || f.field_name || f.field_key || f.id),
-      }));
-    const seen = new Set(fromApi.map((f) => f.key));
-    const fromHM = Object.keys(hiringManager?.customFields || {})
-      .filter((k) => !seen.has(k))
-      .map((k) => ({ key: k, label: k }));
-    return [...fromApi, ...fromHM];
-  }, [availableFields, hiringManager?.customFields]);
+  // Fetch full organization record by ID (for Organization Details panel)
+  const fetchOrganizationById = useCallback(async (orgId: string) => {
+    if (!orgId) {
+      setFetchedOrganization(null);
+      return;
+    }
+    setIsLoadingOrganization(true);
+    setFetchedOrganization(null);
+    try {
+      const response = await fetch(`/api/organizations/${orgId}`);
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to fetch organization");
+      }
+      const data = await response.json();
+      const org = data.organization;
+      if (!org) {
+        setFetchedOrganization(null);
+        return;
+      }
+      let customFieldsObj: Record<string, any> = {};
+      if (org.custom_fields) {
+        try {
+          customFieldsObj =
+            typeof org.custom_fields === "string"
+              ? JSON.parse(org.custom_fields)
+              : org.custom_fields;
+        } catch (_) { }
+      }
+      setFetchedOrganization({
+        ...org,
+        customFields: customFieldsObj,
+      });
+    } catch (err) {
+      console.error("Error fetching organization by ID:", err);
+      setFetchedOrganization(null);
+    } finally {
+      setIsLoadingOrganization(false);
+    }
+  }, []);
+
+  // Fetch full organization record when hiring manager has an organization ID (for Organization Details panel)
+  useEffect(() => {
+    const orgId = hiringManager?.organization?.id;
+    if (orgId) {
+      fetchOrganizationById(String(orgId));
+    } else {
+      setFetchedOrganization(null);
+    }
+  }, [hiringManager?.organization?.id, fetchOrganizationById]);
 
   // When catalog loads, if details/organizationDetails visible list is empty, default to all catalog keys
   useEffect(() => {
@@ -1432,6 +1364,8 @@ export default function HiringManagerView() {
     setVisibleFields((prev) => ({ ...prev, organizationDetails: newOrder }));
     setEditingPanel(null);
   }, [modalOrganizationDetailsOrder, modalOrganizationDetailsVisible]);
+
+  console.log("Visible Details", visibleFields);
 
   // Handle edit panel click
   const handleEditPanel = (panelId: string) => {
@@ -3715,145 +3649,145 @@ export default function HiringManagerView() {
             disabled={isLoadingHistory}
           />
           <div className="space-y-4">
-          {historyFilters.filteredAndSorted.map((item) => {
-            // Format the history entry based on action type
-            let actionDisplay = "";
-            let detailsDisplay: React.ReactNode = "";
+            {historyFilters.filteredAndSorted.map((item) => {
+              // Format the history entry based on action type
+              let actionDisplay = "";
+              let detailsDisplay: React.ReactNode = "";
 
-            try {
-              const details =
-                typeof item.details === "string"
-                  ? JSON.parse(item.details)
-                  : item.details;
+              try {
+                const details =
+                  typeof item.details === "string"
+                    ? JSON.parse(item.details)
+                    : item.details;
 
-              switch (item.action) {
-                case "CREATE":
-                  actionDisplay = "Hiring Manager Created";
-                  detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
-                    }`;
-                  break;
-                case "UPDATE":
-                  actionDisplay = "Hiring Manager Updated";
-                  if (details && details.before && details.after) {
-                    // Create a list of changes
-                    const changes: React.ReactNode[] = [];
+                switch (item.action) {
+                  case "CREATE":
+                    actionDisplay = "Hiring Manager Created";
+                    detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
+                      }`;
+                    break;
+                  case "UPDATE":
+                    actionDisplay = "Hiring Manager Updated";
+                    if (details && details.before && details.after) {
+                      // Create a list of changes
+                      const changes: React.ReactNode[] = [];
 
-                    // Helper function to format values
-                    const formatValue = (val: any): string => {
-                      if (val === null || val === undefined) return "Empty";
-                      if (typeof val === "object") return JSON.stringify(val);
-                      return String(val);
-                    };
+                      // Helper function to format values
+                      const formatValue = (val: any): string => {
+                        if (val === null || val === undefined) return "Empty";
+                        if (typeof val === "object") return JSON.stringify(val);
+                        return String(val);
+                      };
 
-                    for (const key in details.after) {
-                      // Skip internal fields that might not be relevant to users
-                      if (key === "updated_at") continue;
+                      for (const key in details.after) {
+                        // Skip internal fields that might not be relevant to users
+                        if (key === "updated_at") continue;
 
-                      const beforeVal = details.before[key];
-                      const afterVal = details.after[key];
+                        const beforeVal = details.before[key];
+                        const afterVal = details.after[key];
 
-                      if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
-                        // Special handling for custom_fields
-                        if (key === "custom_fields") {
-                          let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
-                          let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
+                        if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                          // Special handling for custom_fields
+                          if (key === "custom_fields") {
+                            let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
+                            let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
 
-                          // Handle case where custom_fields might be null/undefined
-                          beforeObj = beforeObj || {};
-                          afterObj = afterObj || {};
+                            // Handle case where custom_fields might be null/undefined
+                            beforeObj = beforeObj || {};
+                            afterObj = afterObj || {};
 
-                          if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
-                            const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
+                            if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
+                              const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
 
-                            allKeys.forEach(cfKey => {
-                              const beforeCfVal = beforeObj[cfKey];
-                              const afterCfVal = afterObj[cfKey];
+                              allKeys.forEach(cfKey => {
+                                const beforeCfVal = beforeObj[cfKey];
+                                const afterCfVal = afterObj[cfKey];
 
-                              if (beforeCfVal !== afterCfVal) {
-                                changes.push(
-                                  <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                                    <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
-                                    <div className="flex flex-wrap gap-2 items-center">
-                                      <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                                        {formatValue(beforeCfVal)}
-                                      </span>
-                                      <span className="text-gray-400">→</span>
-                                      <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                                        {formatValue(afterCfVal)}
-                                      </span>
+                                if (beforeCfVal !== afterCfVal) {
+                                  changes.push(
+                                    <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                                      <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
+                                      <div className="flex flex-wrap gap-2 items-center">
+                                        <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                          {formatValue(beforeCfVal)}
+                                        </span>
+                                        <span className="text-gray-400">→</span>
+                                        <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                          {formatValue(afterCfVal)}
+                                        </span>
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              }
-                            });
-                            continue; // Skip the standard field handling for custom_fields
+                                  );
+                                }
+                              });
+                              continue; // Skip the standard field handling for custom_fields
+                            }
                           }
-                        }
 
-                        // Standard fields
-                        const fieldName = key.replace(/_/g, " ");
-                        changes.push(
-                          <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                            <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
-                            <div className="flex flex-wrap gap-2 items-center">
-                              <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                                {formatValue(beforeVal)}
-                              </span>
-                              <span className="text-gray-400">→</span>
-                              <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                                {formatValue(afterVal)}
-                              </span>
+                          // Standard fields
+                          const fieldName = key.replace(/_/g, " ");
+                          changes.push(
+                            <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                              <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
+                              <div className="flex flex-wrap gap-2 items-center">
+                                <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                  {formatValue(beforeVal)}
+                                </span>
+                                <span className="text-gray-400">→</span>
+                                <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                  {formatValue(afterVal)}
+                                </span>
+                              </div>
                             </div>
+                          );
+                        }
+                      }
+
+                      if (changes.length > 0) {
+                        detailsDisplay = (
+                          <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
+                            {changes}
                           </div>
                         );
+                      } else {
+                        detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
                       }
                     }
-
-                    if (changes.length > 0) {
-                      detailsDisplay = (
-                        <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
-                          {changes}
-                        </div>
-                      );
-                    } else {
-                      detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
-                    }
-                  }
-                  break;
-                case "ADD_NOTE":
-                  actionDisplay = "Note Added";
-                  detailsDisplay = details.text || "";
-                  break;
-                default:
-                  actionDisplay = item.action;
-                  detailsDisplay = JSON.stringify(details);
+                    break;
+                  case "ADD_NOTE":
+                    actionDisplay = "Note Added";
+                    detailsDisplay = details.text || "";
+                    break;
+                  default:
+                    actionDisplay = item.action;
+                    detailsDisplay = JSON.stringify(details);
+                }
+              } catch (e) {
+                console.error("Error parsing history details:", e);
+                detailsDisplay = "Error displaying details";
               }
-            } catch (e) {
-              console.error("Error parsing history details:", e);
-              detailsDisplay = "Error displaying details";
-            }
 
-            return (
-              <div
-                key={item.id}
-                className="p-3 border rounded hover:bg-gray-50"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="font-medium text-blue-600">
-                    {actionDisplay}
-                  </span>
-                  <span className="text-sm text-gray-500">
-                    {new Date(item.performed_at).toLocaleString()}
-                  </span>
+              return (
+                <div
+                  key={item.id}
+                  className="p-3 border rounded hover:bg-gray-50"
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="font-medium text-blue-600">
+                      {actionDisplay}
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      {new Date(item.performed_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mb-2">{detailsDisplay}</div>
+                  <div className="text-sm text-gray-600">
+                    By: {item.performed_by_name || "Unknown"}
+                  </div>
                 </div>
-                <div className="mb-2">{detailsDisplay}</div>
-                <div className="text-sm text-gray-600">
-                  By: {item.performed_by_name || "Unknown"}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
         </>
       ) : (
         <p className="text-gray-500 italic">No history records available</p>
@@ -4191,329 +4125,6 @@ export default function HiringManagerView() {
       {/* Disable big static summary */}
       <div className="p-4">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Display content based on active tab */}
-          {false && false /* removed old static summary */ && (
-            <>
-              {/* Left Column - Details */}
-              <PanelWithHeader
-                title="Details"
-                onEdit={() => handleEditPanel("details")}
-              >
-                <div className="space-y-0 border border-gray-200 rounded">
-                  {visibleFields.details.includes("status") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Status:
-                      </div>
-                      <div className="flex-1 p-2">{hiringManager.status}</div>
-                    </div>
-                  )}
-                  {visibleFields.details.includes("organization") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Organization:
-                      </div>
-                      <div className="flex-1 p-2 text-blue-600">
-                        {hiringManager.organization.name}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.details.includes("department") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Department:
-                      </div>
-                      <div className="flex-1 p-2">
-                        {hiringManager.department}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.details.includes("email") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Email:
-                      </div>
-                      <div className="flex-1 p-2 text-blue-600">
-                        {hiringManager.email}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.details.includes("email2") &&
-                    hiringManager.email2 && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Email 2:
-                        </div>
-                        <div className="flex-1 p-2 text-blue-600">
-                          {hiringManager.email2}
-                        </div>
-                      </div>
-                    )}
-                  {visibleFields.details.includes("mobilePhone") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Mobile Phone:
-                      </div>
-                      <a href={`tel:+${hiringManager.mobilePhone}`} className="flex-1 p-2">
-                        {hiringManager.mobilePhone}
-                      </a>
-                    </div>
-                  )}
-                  {visibleFields.details.includes("directLine") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Direct Line:
-                      </div>
-                      <a href={`tel:+${hiringManager.directLine}`} className="flex-1 p-2">
-                        {hiringManager.directLine}
-                      </a>
-                    </div>
-                  )}
-                  {visibleFields.details.includes("reportsTo") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Reports To:
-                      </div>
-                      <div className="flex-1 p-2">
-                        {hiringManager.reportsTo}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.details.includes("linkedinUrl") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        LinkedIn URL:
-                      </div>
-                      <div className="flex-1 p-2 text-blue-600 truncate">
-                        {hiringManager.linkedinUrl !== "Not provided" ? (
-                          <a
-                            href={hiringManager.linkedinUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {hiringManager.linkedinUrl}
-                          </a>
-                        ) : (
-                          "Not provided"
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.details.includes("dateAdded") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Date Added:
-                      </div>
-                      <div className="flex-1 p-2">
-                        {hiringManager.dateAdded}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.details.includes("owner") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Owner:
-                      </div>
-                      <div className="flex-1 p-2">{hiringManager.owner}</div>
-                    </div>
-                  )}
-                  {visibleFields.details.includes("secondaryOwners") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Secondary Owners:
-                      </div>
-                      <div className="flex-1 p-2">
-                        {hiringManager.secondaryOwners}
-                      </div>
-                    </div>
-                  )}
-                  {visibleFields.details.includes("address") && (
-                    <div className="flex border-b border-gray-200 last:border-b-0">
-                      <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                        Address:
-                      </div>
-                      <div className="flex-1 p-2">{hiringManager.address}</div>
-                    </div>
-                  )}
-                  {/* Display custom fields */}
-                  {hiringManager.customFields &&
-                    Object.keys(hiringManager.customFields).map((fieldKey) => {
-                      if (visibleFields.details.includes(fieldKey)) {
-                        const field = availableFields.find(
-                          (f) =>
-                            (f.field_name || f.field_label || f.id) === fieldKey
-                        );
-                        const fieldLabel =
-                          field?.field_label || field?.field_name || fieldKey;
-                          console.log("Field Label", fieldLabel);
-                          console.log("Field Value", hiringManager.customFields);
-                        const fieldValue = hiringManager.customFields[fieldLabel];
-                        console.log("Field Value", fieldValue);
-                        return (
-                          <div
-                            key={fieldKey}
-                            className="flex border-b border-gray-200 last:border-b-0"
-                          >
-                            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                              {fieldLabel}:
-                            </div>
-                            <div className="flex-1 p-2">
-                              {String(fieldValue || "-")}
-                            </div>
-                          </div>
-                        );
-                      }
-                      return null;
-                    })}
-                </div>
-              </PanelWithHeader>
-
-              {/* Right Column - Action Items and Organization Details */}
-              <div className="space-y-4">
-                {/* Upcoming Action Items */}
-                <div className="bg-white rounded shadow">
-                  <div className="border-b border-gray-300 px-4 py-2 font-medium">
-                    Upcoming Action Items
-                  </div>
-                  <div className="p-4 flex justify-center items-center h-40">
-                    <button className="px-6 py-2 bg-blue-500 text-white rounded">
-                      Add Task
-                    </button>
-                  </div>
-                </div>
-
-                {/* Organization Details */}
-                <PanelWithHeader
-                  title="Organization Details"
-                  onEdit={() => handleEditPanel("organizationDetails")}
-                >
-                  <div className="space-y-0 border border-gray-200 rounded">
-                    {visibleFields.organizationDetails.includes("status") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          Status:
-                        </div>
-                        <div className="flex-1 p-2">
-                          {hiringManager.organization.status}
-                        </div>
-                      </div>
-                    )}
-                    {visibleFields.organizationDetails.includes(
-                      "organizationName"
-                    ) && (
-                        <div className="flex border-b border-gray-200 last:border-b-0">
-                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                            Organization Name:
-                          </div>
-                          <div className="flex-1 p-2 text-blue-600">
-                            {hiringManager.organization.name}
-                          </div>
-                        </div>
-                      )}
-                    {visibleFields.organizationDetails.includes(
-                      "organizationPhone"
-                    ) && (
-                        <div className="flex border-b border-gray-200 last:border-b-0">
-                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                            Organization Phone:
-                          </div>
-                          <div className="flex-1 p-2">
-                            {hiringManager.organization.phone}
-                          </div>
-                        </div>
-                      )}
-                    {visibleFields.organizationDetails.includes("url") && (
-                      <div className="flex border-b border-gray-200 last:border-b-0">
-                        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                          URL:
-                        </div>
-                        <div className="flex-1 p-2 text-blue-600 truncate">
-                          <a
-                            href={hiringManager.organization.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                          >
-                            {hiringManager.organization.url}
-                          </a>
-                        </div>
-                      </div>
-                    )}
-                    {visibleFields.organizationDetails.includes(
-                      "dateAdded"
-                    ) && (
-                        <div className="flex border-b border-gray-200 last:border-b-0">
-                          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                            Date Added:
-                          </div>
-                          <div className="flex-1 p-2">
-                            {hiringManager.dateAdded}
-                          </div>
-                        </div>
-                      )}
-                  </div>
-                </PanelWithHeader>
-
-                {/* Recent Notes Section */}
-                <PanelWithHeader
-                  title="Recent Notes"
-                >
-                  <div className="border border-gray-200 rounded">
-                    {visibleFields.recentNotes.includes("notes") && (
-                      <div className="p-2">
-                        <div className="flex justify-end mb-3">
-                          <button
-                            onClick={() => setShowAddNote(true)}
-                            className="text-sm text-blue-600 hover:underline"
-                          >
-                            Add Note
-                          </button>
-                        </div>
-
-                        {/* Notes preview */}
-                        {notes.length > 0 ? (
-                          <div>
-                            {notes.slice(0, 2).map((note) => (
-                              <div
-                                key={note.id}
-                                className="mb-3 pb-3 border-b border-gray-200 last:border-b-0 last:mb-0"
-                              >
-                                <div className="flex justify-between text-sm mb-1">
-                                  <span className="font-medium">
-                                    {note.created_by_name || "Unknown User"}
-                                  </span>
-                                  <span className="text-gray-500">
-                                    {new Date(note.created_at).toLocaleString()}
-                                  </span>
-                                </div>
-                                <p className="text-sm text-gray-700">
-                                  {note.text.length > 100
-                                    ? `${note.text.substring(0, 100)}...`
-                                    : note.text}
-                                </p>
-                              </div>
-                            ))}
-                            {notes.length > 2 && (
-                              <button
-                                onClick={() => setActiveTab("notes")}
-                                className="text-blue-500 text-sm hover:underline"
-                              >
-                                View all {notes.length} notes
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="text-center text-gray-500 p-4">
-                            No notes have been added yet.
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </PanelWithHeader>
-              </div>
-            </>
-          )}
-
           {/* Notes Tab */}
           {activeTab === "notes" && (
             <div className="col-span-2">{renderNotesTab()}</div>
@@ -4636,7 +4247,7 @@ export default function HiringManagerView() {
                               id={detailsDragActiveId}
                               label={field.label}
                               checked={modalDetailsVisible[detailsDragActiveId] || false}
-                              onToggle={() => {}}
+                              onToggle={() => { }}
                               isOverlay
                             />
                           ) : null;
@@ -4704,7 +4315,7 @@ export default function HiringManagerView() {
                               id={organizationDetailsDragActiveId}
                               label={field.label}
                               checked={modalOrganizationDetailsVisible[organizationDetailsDragActiveId] || false}
-                              onToggle={() => {}}
+                              onToggle={() => { }}
                               isOverlay
                             />
                           ) : null;

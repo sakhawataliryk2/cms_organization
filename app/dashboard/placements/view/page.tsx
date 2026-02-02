@@ -776,84 +776,43 @@ export default function PlacementView() {
     defaultFields: PLACEMENT_DEFAULT_HEADER_FIELDS,
   });
 
-  // Build field list: Standard + Custom
   const buildHeaderFieldCatalog = () => {
-    const standard = [
-      { key: "status", label: "Status" },
-      { key: "owner", label: "Owner" },
-      { key: "jobSeekerName", label: "Job Seeker" },
-      { key: "jobTitle", label: "Job Title" },
-      { key: "startDate", label: "Start Date" },
-      { key: "endDate", label: "End Date" },
-      { key: "salary", label: "Salary" },
-      { key: "dateAdded", label: "Date Added" },
-      { key: "lastContactDate", label: "Last Contact Date" },
-    ];
-
-    const apiCustom = (availableFields || []).map((f: any) => {
-      const k = f.field_name || f.field_key || f.field_label || f.id;
-      return {
-        key: `custom:${k}`,
-        label: f.field_label || f.field_name || String(k),
-      };
-    });
-
-    const placementCustom = Object.keys(placement?.customFields || {}).map((k) => ({
-      key: `custom:${k}`,
-      label: k,
-    }));
-
-    const merged = [...standard, ...apiCustom, ...placementCustom];
     const seen = new Set<string>();
-    return merged.filter((x) => {
-      if (seen.has(x.key)) return false;
-      seen.add(x.key);
-      return true;
-    });
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => {
+        const k = f.field_name || f.field_key || f.field_label || f.id;
+        return {
+          key: `custom:${String(k)}`,
+          label: f.field_label || f.field_name || String(k),
+        };
+      })
+      .filter((x) => {
+        if (seen.has(x.key)) return false;
+        seen.add(x.key);
+        return true;
+      });
+    return fromApi;
   };
 
   const headerFieldCatalog = buildHeaderFieldCatalog();
 
-  const getHeaderFieldValue = (key: string) => {
-    if (!placement) return "-";
-
-    // custom fields
-    if (key.startsWith("custom:")) {
-      const rawKey = key.replace("custom:", "");
-      const val = placement.customFields?.[rawKey];
-      return val === undefined || val === null || val === ""
-        ? "-"
-        : String(val);
-    }
-
-    // standard fields
-    switch (key) {
-      case "status":
-        return placement.status || "-";
-      case "owner":
-        return placement.owner || "Unassigned";
-      case "jobSeekerName":
-        return placement.jobSeekerName || "-";
-      case "jobTitle":
-        return placement.jobTitle || "-";
-      case "startDate":
-        return placement.startDate || "-";
-      case "endDate":
-        return placement.endDate || "-";
-      case "salary":
-        return placement.salary || "-";
-      case "dateAdded":
-        return placement.dateAdded || "-";
-      case "lastContactDate":
-        return placement.lastContactDate || "-";
-      default:
-        return "-";
-    }
-  };
-
   const getHeaderFieldLabel = (key: string) => {
     const found = headerFieldCatalog.find((f) => f.key === key);
     return found?.label || key;
+  };
+
+  const getHeaderFieldValue = (key: string) => {
+    if (!placement) return "-";
+    const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+    const p = placement as any;
+    let v = p[rawKey];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+    v = placement.customFields?.[rawKey];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+    const field = headerFieldCatalog.find((f) => f.key === key);
+    if (field) v = placement.customFields?.[field.label];
+    return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
   };
 
   const toggleHeaderField = (fieldKey: string) => {
@@ -3240,31 +3199,31 @@ export default function PlacementView() {
     const customFieldDefs = (availableFields || []).filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden);
     const renderDetailsRow = (key: string, index: number) => {
       switch (key) {
-        case "owner":
-          return (
-            <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Owner:</div>
-              <div className="flex-1 p-2">{placement.owner || "-"}</div>
-            </div>
-          );
-        case "dateAdded":
-          return (
-            <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
-              <div className="flex-1 p-2">{placement.dateAdded || "-"}</div>
-            </div>
-          );
-        case "lastContactDate":
-          return (
-            <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Last Contact:</div>
-              <div className="flex-1 p-2">{placement.lastContactDate ?? "-"}</div>
-            </div>
-          );
+        // case "owner":
+        //   return (
+        //     <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Owner:</div>
+        //       <div className="flex-1 p-2">{placement.owner || "-"}</div>
+        //     </div>
+        //   );
+        // case "dateAdded":
+        //   return (
+        //     <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
+        //       <div className="flex-1 p-2">{placement.dateAdded || "-"}</div>
+        //     </div>
+        //   );
+        // case "lastContactDate":
+        //   return (
+        //     <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Last Contact:</div>
+        //       <div className="flex-1 p-2">{placement.lastContactDate ?? "-"}</div>
+        //     </div>
+        //   );
         default: {
           const field = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
           const fieldLabel = field?.field_label || field?.field_name || key;
-          const fieldValue = placement.customFields?.[key] ?? "-";
+          const fieldValue = placement.customFields?.[fieldLabel] ?? "-";
           return (
             <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
@@ -4276,7 +4235,9 @@ export default function PlacementView() {
                           <div className="text-sm font-medium">
                             {getHeaderFieldLabel(key)}
                           </div>
-                          <div className="text-xs text-gray-500">{key}</div>
+                          <div className="text-xs text-gray-500">
+                            Value: {getHeaderFieldValue(key)}
+                          </div>
                         </div>
 
                         <div className="flex items-center gap-2">

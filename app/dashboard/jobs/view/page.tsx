@@ -1436,7 +1436,7 @@ export default function JobView() {
         default: {
           const field = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
           const fieldLabel = field?.field_label || field?.field_name || key;
-          const fieldValue = job.customFields?.[key] ?? "-";
+          const fieldValue = job.customFields?.[fieldLabel] ?? "-";
           return (
             <div key={key} className="flex border-b border-gray-200 last:border-b-0">
               <LabelCell />
@@ -1508,7 +1508,7 @@ export default function JobView() {
         case "address":
           return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.address || "-"}</div></div>);
         default: {
-          const cv = getCustomValue(key);
+          const cv = getCustomValue(label);
           const val = cv ?? (hm as any)[key];
           return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{val !== undefined && val !== null && String(val).trim() !== "" ? String(val) : "-"}</div></div>);
         }
@@ -1624,12 +1624,12 @@ export default function JobView() {
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const seen = new Set(fromApi.map((f) => f.key));
-    const fromHM = Object.keys(jobHiringManager?.customFields || {})
-      .filter((k) => !seen.has(k))
-      .map((k) => ({ key: k, label: k }));
-    return [...fromApi, ...fromHM];
-  }, [hiringManagerAvailableFields, jobHiringManager?.customFields]);
+    // const seen = new Set(fromApi.map((f) => f.key));
+    // const fromHM = Object.keys(jobHiringManager?.customFields || {})
+    //   .filter((k) => !seen.has(k))
+    //   .map((k) => ({ key: k, label: k }));
+    return [...fromApi];
+  }, [hiringManagerAvailableFields]);
 
   useEffect(() => {
     const keys = hiringManagerFieldCatalog.map((f) => f.key);
@@ -2272,12 +2272,11 @@ export default function JobView() {
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const seen = new Set(fromApi.map((f) => f.key));
-    const fromJob = Object.keys(job?.customFields || {})
-      .filter((k) => !seen.has(k))
-      .map((k) => ({ key: k, label: k }));
-    return [...fromApi, ...fromJob];
-  }, [availableFields, job?.customFields]);
+    // const seen = new Set(fromApi.map((f) => f.key));
+    // const fromJob = Object.keys(job?.customFields || {})
+    //   .map((k) => ({ key: k, label: k }));
+    return [...fromApi];
+  }, [availableFields]);
 
   // Sync Job Details modal state when opening edit for jobDetails
   useEffect(() => {
@@ -2302,12 +2301,12 @@ export default function JobView() {
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const seen = new Set(fromApi.map((f) => f.key));
-    const fromJob = Object.keys(job?.customFields || {})
-      .filter((k) => !seen.has(k))
-      .map((k) => ({ key: k, label: k }));
-    return [...fromApi, ...fromJob];
-  }, [availableFields, job?.customFields]);
+    // const seen = new Set(fromApi.map((f) => f.key));
+    // const fromJob = Object.keys(job?.customFields || {})
+    //   .filter((k) => !seen.has(k))
+    //   .map((k) => ({ key: k, label: k }));
+    return [...fromApi];
+  }, [availableFields]);
 
   // When catalog loads, if jobDetails/details/hiringManager visible list is empty, default to all catalog keys
   useEffect(() => {
@@ -2366,41 +2365,45 @@ export default function JobView() {
     );
   }, [editingPanel, visibleFields.hiringManager, hiringManagerFieldCatalog]);
 
-  // Header fields list builder (standard + custom)
-  const getHeaderFieldOptions = () => {
-    const standard = [
-      {
-        key: "phone",
-        label: "Phone",
-        getValue: () => job?.organization?.phone,
-      },
-      {
-        key: "website",
-        label: "Website",
-        getValue: () => job?.organization?.website,
-      },
-      { key: "status", label: "Status", getValue: () => job?.status },
-      {
-        key: "employmentType",
-        label: "Employment Type",
-        getValue: () => job?.employmentType,
-      },
-      { key: "startDate", label: "Start Date", getValue: () => job?.startDate },
-      {
-        key: "worksite",
-        label: "Worksite Location",
-        getValue: () => job?.worksite,
-      },
-      { key: "owner", label: "Owner", getValue: () => job?.owner },
-    ];
+  const buildHeaderFieldCatalog = () => {
+    const seen = new Set<string>();
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => {
+        const k = f.field_name || f.field_key || f.field_label || f.id;
+        return {
+          key: `custom:${String(k)}`,
+          label: f.field_label || f.field_name || String(k),
+        };
+      })
+      .filter((x) => {
+        if (seen.has(x.key)) return false;
+        seen.add(x.key);
+        return true;
+      });
+    return fromApi;
+  };
 
-    const custom = Object.keys(job?.customFields || {}).map((k) => ({
-      key: `custom:${k}`,
-      label: k,
-      getValue: () => job?.customFields?.[k],
-    }));
+  const headerFieldCatalog = buildHeaderFieldCatalog();
 
-    return [...standard, ...custom];
+  const getHeaderFieldLabel = (key: string) => {
+    const found = headerFieldCatalog.find((f) => f.key === key);
+    return found?.label || key;
+  };
+
+  const getHeaderFieldValue = (key: string) => {
+    if (!job) return "-";
+    const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+    const j = job as any;
+    let v = j[rawKey];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+    if (rawKey === "phone") return String(j?.organization?.phone ?? "(Not provided)");
+    if (rawKey === "website") return String(j?.organization?.website ?? "(Not provided)");
+    v = j.customFields?.[rawKey];
+    if (v !== undefined && v !== null) return String(v);
+    const field = headerFieldCatalog.find((f) => f.key === key);
+    if (field) v = j.customFields?.[field.label];
+    return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
   };
 
   const moveHeaderField = (fromIndex: number, toIndex: number) => {
@@ -4486,51 +4489,33 @@ export default function JobView() {
               </div>
             </div>
 
-            {headerFields.length > 0 &&
-              headerFields.map((key) => {
-                // Skip if the key is "employmentType" since we are showing it explicitly
-                if (key === "employmentType") return null;
-
-                const field = getHeaderFieldOptions().find(
-                  (f) => f.key === key
-                );
-                if (!field) return null;
-
-                const value = field.getValue?.();
-
-                if (key === "website") {
-                  const url = String(value || "");
-                  return (
-                    <div key={key} className="min-w-[140px]">
-                      <div className="text-xs text-gray-500">{field.label}</div>
-
-                      {url && url !== "Not provided" ? (
-                        <a
-                          href={url.startsWith("http") ? url : `https://${url}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm font-medium text-blue-600 hover:underline"
-                        >
-                          {url}
-                        </a>
-                      ) : (
-                        <div className="text-sm font-medium text-gray-900">
-                          Not provided
-                        </div>
-                      )}
-                    </div>
-                  );
-                }
-
-                return (
-                  <div key={key} className="min-w-[140px]">
-                    <div className="text-xs text-gray-500">{field.label}</div>
-                    <div className="text-sm font-medium text-gray-900">
-                      {value ? String(value) : "Not provided"}
-                    </div>
+            {headerFields.length === 0 ? (
+              <span className="text-sm text-gray-500">
+                No header fields selected
+              </span>
+            ) : (
+              headerFields.map((fk) => (
+                <div key={fk} className="min-w-[140px]">
+                  <div className="text-xs text-gray-500">
+                    {getHeaderFieldLabel(fk)}
                   </div>
-                );
-              })}
+                  {(fk === "website" || fk === "custom:website") ? (
+                    <a
+                      href={getHeaderFieldValue(fk)}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-sm font-medium text-blue-600 hover:underline"
+                    >
+                      {getHeaderFieldValue(fk)}
+                    </a>
+                  ) : (
+                    <div className="text-sm font-medium text-gray-900">
+                      {getHeaderFieldValue(fk)}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </div>
 
           {/* RIGHT: actions */}
@@ -6434,47 +6419,52 @@ export default function JobView() {
             <div className="p-6 grid grid-cols-2 gap-6">
               <div>
                 <h3 className="font-medium mb-3">Available Fields</h3>
-                <div className="border rounded p-3 max-h-80 overflow-y-auto space-y-2">
-                  {getHeaderFieldOptions().map((f) => (
-                    <label
-                      key={f.key}
-                      className="flex items-center gap-2 text-sm"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={headerFields.includes(f.key)}
-                        onChange={(e) =>
-                          toggleHeaderField(f.key, e.target.checked)
-                        }
-                        className="w-4 h-4"
-                      />
-                      <span>{f.label}</span>
-                    </label>
-                  ))}
+                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                  {headerFieldCatalog.map((f) => {
+                    const checked = headerFields.includes(f.key);
+                    return (
+                      <label
+                        key={f.key}
+                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setHeaderFields((prev) => {
+                              if (prev.includes(f.key))
+                                return prev.filter((x) => x !== f.key);
+                              return [...prev, f.key];
+                            });
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-800">{f.label}</span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 
               <div>
                 <h3 className="font-medium mb-3">Header Order</h3>
-                <div className="border rounded p-3 max-h-80 overflow-y-auto space-y-3">
-                  {headerFields.map((key, idx) => {
-                    const f = getHeaderFieldOptions().find(
-                      (x) => x.key === key
-                    );
-                    if (!f) return null;
-
-                    return (
+                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                  {headerFields.length === 0 ? (
+                    <div className="text-sm text-gray-500 italic">
+                      No fields selected
+                    </div>
+                  ) : (
+                    headerFields.map((key, idx) => (
                       <div
                         key={key}
-                        className="border rounded p-3 flex items-center justify-between"
+                        className="flex items-center justify-between p-2 border rounded"
                       >
                         <div>
-                          <div className="font-medium">{f.label}</div>
+                          <div className="text-sm font-medium">
+                            {getHeaderFieldLabel(key)}
+                          </div>
                           <div className="text-xs text-gray-500">
-                            Value:{" "}
-                            {f.getValue?.()
-                              ? String(f.getValue?.())
-                              : "(Not provided)"}
+                            Value: {getHeaderFieldValue(key)}
                           </div>
                         </div>
 
@@ -6482,27 +6472,27 @@ export default function JobView() {
                           <button
                             disabled={idx === 0}
                             onClick={() => moveHeaderField(idx, idx - 1)}
-                            className="px-2 py-1 border rounded disabled:opacity-40"
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
                           >
                             ↑
                           </button>
                           <button
                             disabled={idx === headerFields.length - 1}
                             onClick={() => moveHeaderField(idx, idx + 1)}
-                            className="px-2 py-1 border rounded disabled:opacity-40"
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
                           >
                             ↓
                           </button>
                           <button
                             onClick={() => removeHeaderField(key)}
-                            className="px-3 py-1 border rounded"
+                            className="px-3 py-1 border rounded text-xs hover:bg-gray-50"
                           >
                             Remove
                           </button>
                         </div>
                       </div>
-                    );
-                  })}
+                    ))
+                  )}
                 </div>
               </div>
             </div>
@@ -6533,5 +6523,4 @@ export default function JobView() {
       )}
     </div>
   );
-}
 }

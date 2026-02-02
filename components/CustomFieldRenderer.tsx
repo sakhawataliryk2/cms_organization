@@ -1465,13 +1465,16 @@ export function useCustomFields(entityType: string) {
         }
       }
       
-      // Special validation for phone fields (Main Phone, etc.)
-      // Check by both field_type and field_name (Field_5)
+      // Special validation for phone fields (exclude date fields e.g. Start Date)
+      const isDateFieldForPhone =
+        field.field_type === "date" ||
+        field.field_label?.toLowerCase().includes("date");
       const isPhoneField =
-        field.field_type === "phone" ||
-        field.field_label?.toLowerCase().includes("phone") ||
-        field.field_name === "Field_5" || // Main Phone
-        field.field_name === "field_5";
+        !isDateFieldForPhone &&
+        (field.field_type === "phone" ||
+          field.field_label?.toLowerCase().includes("phone") ||
+          field.field_name === "Field_5" ||
+          field.field_name === "field_5");
       if (isPhoneField && trimmed !== "") {
         // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
         // Remove all non-numeric characters to check digit count
@@ -1588,13 +1591,16 @@ export function useCustomFields(entityType: string) {
             }
           }
           
-          // Add specific error message for phone validation failures
-          // Check by both field_type and field_name (Field_5)
+          // Add specific error message for phone validation failures (exclude date fields e.g. Start Date)
+          const isDateField =
+            field.field_type === "date" ||
+            field.field_label?.toLowerCase().includes("date");
           const isPhoneFieldError =
-            field.field_type === "phone" ||
-            field.field_label?.toLowerCase().includes("phone") ||
-            field.field_name === "Field_5" || // Main Phone
-            field.field_name === "field_5";
+            !isDateField &&
+            (field.field_type === "phone" ||
+              field.field_label?.toLowerCase().includes("phone") ||
+              field.field_name === "Field_5" ||
+              field.field_name === "field_5");
           if (isPhoneFieldError && value && String(value).trim() !== "") {
             const trimmed = String(value).trim();
             const digitsOnly = trimmed.replace(/\D/g, "");

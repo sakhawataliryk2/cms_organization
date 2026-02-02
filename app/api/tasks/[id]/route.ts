@@ -95,11 +95,9 @@ export async function PUT(
         const { id } = await params;
         console.log(`Updating task with ID: ${id}`);
 
-        // Get the request body
         const body = await request.json();
         console.log("Update request body:", body);
 
-        // Get the token from cookies
         const cookieStore = await cookies();
         const token = cookieStore.get('token')?.value;
 
@@ -110,7 +108,15 @@ export async function PUT(
             );
         }
 
-        // Make a request to your backend API
+        const customFields = body.custom_fields ?? body.customFields ?? {};
+        const apiData = {
+            ...body,
+            custom_fields: typeof customFields === 'object' && customFields !== null && !Array.isArray(customFields)
+                ? customFields
+                : {},
+        };
+        delete (apiData as Record<string, unknown>).customFields;
+
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
         console.log(`Making PUT request to: ${apiUrl}/api/tasks/${id}`);
 
@@ -120,7 +126,7 @@ export async function PUT(
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify(body)
+            body: JSON.stringify(apiData)
         });
 
         // Log response status

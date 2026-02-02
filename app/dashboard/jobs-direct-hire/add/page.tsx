@@ -894,13 +894,13 @@ export default function AddDirectHireJob() {
       // 2) Custom fields from hook (keys are field_label)
       const customFieldsToSend = getCustomFieldsForSubmission();
   
-      // 3) Build DB customFields object (keep empty strings, skip undefined/null)
+      // 3) Build DB customFields object: every form/custom field goes into custom_fields (create and edit)
       const customFieldsForDB: Record<string, any> = {};
       Object.keys(customFieldsToSend).forEach((k) => {
         const v = customFieldsToSend[k];
         if (v !== undefined && v !== null) customFieldsForDB[k] = v;
       });
-  
+
       // 4) Map custom -> standard
       const mappedJobTitle =
         customFieldsToSend["Job Title"] ||
@@ -929,6 +929,13 @@ export default function AddDirectHireJob() {
       // Use organizationId from URL if available, otherwise use form value
       const finalOrganizationId = organizationIdFromUrl || payload.organizationId || "";
 
+      // Ensure all form fields (including mapped standard ones) are in custom_fields
+      customFieldsForDB["Job Title"] = mappedJobTitle;
+      customFieldsForDB["Hiring Manager"] = mappedHiringManager;
+      customFieldsForDB["Job Description"] = mappedJobDescription;
+      customFieldsForDB["Status"] = mappedStatus;
+      customFieldsForDB["Organization"] = finalOrganizationId;
+
       // 5) Final payload - include entityType for jobs-direct-hire
       const finalPayload: Record<string, any> = {
         ...payload,
@@ -940,7 +947,7 @@ export default function AddDirectHireJob() {
         organizationId: finalOrganizationId,
         // Include entityType to scope this to jobs-direct-hire
         entityType: "jobs-direct-hire",
-        // Use snake_case custom_fields
+        // Use snake_case custom_fields (all form fields included)
         custom_fields: customFieldsForDB,
       };
   

@@ -60,10 +60,18 @@ export async function POST(request: NextRequest) {
             );
         }
 
-        // Log the request data for debugging
-        console.log('Creating task with data:', body);
+        // Build payload with explicit custom_fields (like organizations API)
+        const customFields = body.custom_fields ?? body.customFields ?? {};
+        const apiData = {
+            ...body,
+            custom_fields: typeof customFields === 'object' && customFields !== null && !Array.isArray(customFields)
+                ? customFields
+                : {},
+        };
+        delete (apiData as Record<string, unknown>).customFields;
 
-        // Make a request to your backend API
+        console.log('Creating task with data:', apiData);
+
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
         const response = await fetch(`${apiUrl}/api/tasks`, {
             method: 'POST',
@@ -71,7 +79,7 @@ export async function POST(request: NextRequest) {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify(body)
+            body: JSON.stringify(apiData)
         });
 
         // Log the response status

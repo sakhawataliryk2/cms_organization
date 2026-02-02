@@ -88,10 +88,8 @@ export async function PUT(
     try {
         const { id } = await params;
         const body = await request.json();
-
         console.log("Update request body:", body);
 
-        // Get the token from cookies
         const cookieStore = await cookies();
         const token = cookieStore.get('token')?.value;
 
@@ -102,7 +100,15 @@ export async function PUT(
             );
         }
 
-        // Make a request to your backend API
+        const customFields = body.custom_fields ?? body.customFields ?? {};
+        const apiData = {
+            ...body,
+            custom_fields: typeof customFields === 'object' && customFields !== null && !Array.isArray(customFields)
+                ? customFields
+                : {},
+        };
+        delete (apiData as Record<string, unknown>).customFields;
+
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
         const response = await fetch(`${apiUrl}/api/placements/${id}`, {
             method: 'PUT',
@@ -110,7 +116,7 @@ export async function PUT(
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify(body)
+            body: JSON.stringify(apiData)
         });
 
         const data = await response.json();

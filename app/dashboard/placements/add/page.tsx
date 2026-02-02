@@ -201,50 +201,57 @@ export default function AddPlacement() {
 
     try {
       const customFieldsToSend = getCustomFieldsForSubmission();
-
-      const cleanPayload: Record<string, any> = {
-        job_seeker_id: null,
-        job_id: null,
-        organization_id: null,
-        status: "Active",
-        start_date: null,
-        end_date: null,
-        salary: null,
-        owner: null,
-        internal_email_notification: null,
-        custom_fields: {},
-      };
-
+      const apiData: Record<string, any> = {};
       const customFieldsForDB: Record<string, any> = {};
 
-      // Labels in BACKEND_COLUMN_BY_LABEL → top-level columns; all others → custom_fields JSONB
+      // Every form field goes into custom_fields (for both create and edit). Same as organizations/tasks.
+      // Labels in BACKEND_COLUMN_BY_LABEL also go to top-level columns for API compatibility.
       Object.entries(customFieldsToSend).forEach(([label, value]) => {
         if (value === undefined || value === null) return;
         const column = BACKEND_COLUMN_BY_LABEL[label];
         if (column) {
           if (column === "job_seeker_id" || column === "job_id") {
             const n = Number(value);
-            cleanPayload[column] = !isNaN(n) ? n : null;
+            apiData[column] = !isNaN(n) ? n : null;
           } else if (column === "organization_id") {
-            cleanPayload[column] = value;
+            apiData[column] = value;
           } else {
-            cleanPayload[column] = value;
+            apiData[column] = value;
           }
-        } else {
-          // Field not in map: store in custom_fields so it is never lost
-          customFieldsForDB[label] = value;
         }
+        customFieldsForDB[label] = value;
       });
 
-      if (cleanPayload.job_id != null && jobs.length > 0) {
-        const job = jobs.find((j: any) => String(j.id) === String(cleanPayload.job_id));
+      if (apiData.job_id != null && jobs.length > 0) {
+        const job = jobs.find((j: any) => String(j.id) === String(apiData.job_id));
         if (job) {
           const orgId = job.organization_id ?? job.organizationId ?? job.organization?.id;
-          if (orgId != null) cleanPayload.organization_id = Number(orgId);
+          if (orgId != null) apiData.organization_id = Number(orgId);
         }
       }
 
-      cleanPayload.custom_fields = customFieldsForDB;
+      apiData.custom_fields =
+        typeof customFieldsForDB === "object" && !Array.isArray(customFieldsForDB) && customFieldsForDB !== null
+          ? JSON.parse(JSON.stringify(customFieldsForDB))
+          : {};
+      delete (apiData as any).customFields;
+
+      // Build clean payload with explicit keys and custom_fields last (like organizations/tasks)
+      const cleanPayload: Record<string, any> = {};
+      if (apiData.job_seeker_id !== undefined) cleanPayload.job_seeker_id = apiData.job_seeker_id ?? null;
+      if (apiData.job_id !== undefined) cleanPayload.job_id = apiData.job_id ?? null;
+      if (apiData.organization_id !== undefined) cleanPayload.organization_id = apiData.organization_id ?? null;
+      if (apiData.status !== undefined) cleanPayload.status = apiData.status ?? "Active";
+      if (apiData.start_date !== undefined) cleanPayload.start_date = apiData.start_date && String(apiData.start_date).trim() !== "" ? apiData.start_date : null;
+      if (apiData.end_date !== undefined) cleanPayload.end_date = apiData.end_date && String(apiData.end_date).trim() !== "" ? apiData.end_date : null;
+      if (apiData.salary !== undefined) cleanPayload.salary = apiData.salary ?? null;
+      if (apiData.owner !== undefined) cleanPayload.owner = apiData.owner ?? null;
+      if (apiData.internal_email_notification !== undefined) cleanPayload.internal_email_notification = apiData.internal_email_notification ?? null;
+
+      cleanPayload.custom_fields =
+        typeof apiData.custom_fields === "object" && apiData.custom_fields !== null && !Array.isArray(apiData.custom_fields)
+          ? JSON.parse(JSON.stringify(apiData.custom_fields))
+          : {};
 
       let response;
       if (isEditMode && placementId) {
@@ -262,21 +269,26 @@ export default function AddPlacement() {
       }
 
       const responseText = await response.text();
-      let data: any;
+      let data: { message?: string; error?: string; errors?: string[]; placement?: { id: string } } = {};
       try {
-        data = JSON.parse(responseText);
-      } catch {
-        throw new Error("Invalid response from server");
-      }
+        data = responseText ? JSON.parse(responseText) : {};
+      } catch (_) {}
 
       if (!response.ok) {
-        throw new Error(data.message || `Failed to ${isEditMode ? "update" : "create"} placement`);
+        const msg =
+          data.message ||
+          data.error ||
+          (Array.isArray(data.errors) ? data.errors.join("; ") : null) ||
+          response.statusText ||
+          `Failed to ${isEditMode ? "update" : "create"} placement`;
+        setError(msg);
+        setIsSubmitting(false);
+        return;
       }
 
       const id = isEditMode ? placementId : data.placement?.id;
       router.push(`/dashboard/placements/view?id=${id}`);
     } catch (err) {
-      console.error(`Error ${isEditMode ? "updating" : "creating"} placement:`, err);
       setError(err instanceof Error ? err.message : "An unexpected error occurred");
     } finally {
       setIsSubmitting(false);

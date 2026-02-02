@@ -168,7 +168,6 @@ type ColumnFilterState = string | null;
 // Sortable Column Header Component for Documents
 function SortableColumnHeader({
   id,
-  columnKey,
   label,
   sortState,
   filterValue,
@@ -616,8 +615,8 @@ export default function OrganizationView() {
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   useEffect(() => {
-    console.log("availableFields:", availableFields);
-    console.log("availableFields count:", availableFields?.length);
+    console.log("availableFields:", availableFields.filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden));
+    console.log("availableFields count:", availableFields.filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)?.length);
   }, [availableFields]);
 
   useEffect(() => {
@@ -646,32 +645,24 @@ export default function OrganizationView() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // Build header field list from admin custom fields only (no hardcoded standard)
   const buildHeaderFieldCatalog = () => {
-    const apiCustom = (availableFields || [])
+    const seen = new Set<string>();
+    const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => {
         const k = f.field_name || f.field_key || f.field_label || f.id;
         return {
-          key: `custom:${k}`,
+          key: `custom:${String(k)}`,
           label: f.field_label || f.field_name || String(k),
         };
+      })
+      .filter((x) => {
+        if (seen.has(x.key)) return false;
+        seen.add(x.key);
+        return true;
       });
-
-    const orgCustom = Object.keys(organization?.customFields || {}).map((k) => ({
-      key: `custom:${k}`,
-      label: k,
-    }));
-
-    const merged = [...apiCustom, ...orgCustom];
-    const seen = new Set<string>();
-    return merged.filter((x) => {
-      if (seen.has(x.key)) return false;
-      seen.add(x.key);
-      return true;
-    });
+    return fromApi;
   };
-
 
   const headerFieldCatalog = buildHeaderFieldCatalog();
 
@@ -1290,22 +1281,22 @@ export default function OrganizationView() {
     }
   };
 
-  // Contact Info panel: catalog from admin field definitions + org customFields only (no hardcoded standard fields)
   const contactInfoFieldCatalog = useMemo(() => {
+    const seenKeys = new Set<string>();
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: String(f.field_key ?? f.field_name ?? f.api_name ?? f.id),
         label: f.field_label || f.field_name || String(f.field_key ?? f.field_name ?? f.api_name ?? f.id),
         fieldType: (f.field_type || f.type) as string | undefined,
-      }));
-    const customKeys = Object.keys(organization?.customFields || {});
-    const seen = new Set(fromApi.map((f) => f.key));
-    const fromOrg = customKeys
-      .filter((k) => !seen.has(k))
-      .map((k) => ({ key: k, label: k, fieldType: undefined as string | undefined }));
-    return [...fromApi, ...fromOrg];
-  }, [availableFields, organization?.customFields]);
+      }))
+      .filter((f) => {
+        if (seenKeys.has(f.key)) return false;
+        seenKeys.add(f.key);
+        return true;
+      });
+    return [...fromApi];
+  }, [availableFields]);
 
   // When catalog loads, if contactInfo visible list is empty, default to all catalog keys so first load shows admin-defined fields
   useEffect(() => {
@@ -1318,13 +1309,16 @@ export default function OrganizationView() {
     });
   }, [contactInfoFieldCatalog]);
 
-  // Initialize modal state when opening Contact Info edit
+  // Initialize modal state when opening Contact Info edit (order has no duplicate keys)
   useEffect(() => {
     if (editingPanel !== "contactInfo") return;
     const current = visibleFields.contactInfo || [];
     const catalogKeys = contactInfoFieldCatalog.map((f) => f.key);
-    const order = [...current.filter((k) => catalogKeys.includes(k)), ...catalogKeys.filter((k) => !current.includes(k))];
-    setModalContactInfoOrder(order);
+    const currentInCatalog = current.filter((k) => catalogKeys.includes(k));
+    const rest = catalogKeys.filter((k) => !current.includes(k));
+    const order = [...currentInCatalog, ...rest];
+    const uniqueOrder = Array.from(new Set(order));
+    setModalContactInfoOrder(uniqueOrder);
     setModalContactInfoVisible(
       catalogKeys.reduce<Record<string, boolean>>((acc, k) => {
         acc[k] = current.includes(k);
@@ -1365,17 +1359,6 @@ export default function OrganizationView() {
   // Contact Info modal: toggle visibility for a field
   const toggleModalContactInfoVisible = (key: string) => {
     setModalContactInfoVisible((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
-
-  // Contact Info modal: move field up/down in order (kept for fallback; primary reorder is drag)
-  const moveContactInfoField = (index: number, direction: "up" | "down") => {
-    setModalContactInfoOrder((prev) => {
-      const next = [...prev];
-      const target = direction === "up" ? index - 1 : index + 1;
-      if (target < 0 || target >= next.length) return prev;
-      [next[index], next[target]] = [next[target], next[index]];
-      return next;
-    });
   };
 
   // Contact Info modal: drag end handler for reordering
@@ -2341,7 +2324,7 @@ export default function OrganizationView() {
             <div className="space-y-0 border border-gray-200 rounded">
               {(visibleFields.contactInfo || []).map((key) => {
                 const label = getContactInfoLabel(key);
-                const value = getHeaderFieldValue(key);
+                const value = getHeaderFieldValue(label);
                 const showAsLink = isUrlField(key) && value !== "-";
                 const showNameStyle = isNameField(key);
                 return (
@@ -2594,13 +2577,6 @@ export default function OrganizationView() {
   };
 
   // Toggle pin/pop-out panel
-  // const togglePin = () => {
-  //   setIsPinned(!isPinned);
-  //   if (!isPinned) {
-  //     setIsCollapsed(false);
-  //   }
-  // };
-
   const handleTogglePinnedRecord = () => {
     if (!organization) return;
     const key = buildPinnedKey("org", organization.id);
@@ -4182,53 +4158,6 @@ export default function OrganizationView() {
         </div>
       </div>
 
-      {/* Phone and Website section */}
-      {/* <div className="bg-white border-b border-gray-300 p-3 flex justify-between items-center">
-        <div className="flex space-x-8">
-          <div>
-            <h2 className="text-gray-600">Phone</h2>
-            <p className="font-medium">{organization.phone}</p>
-          </div>
-          <div>
-            <h2 className="text-gray-600">Website</h2>
-            <a
-              href={organization.website}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-medium text-blue-600 hover:underline"
-            >
-              {organization.website}
-            </a>
-          </div>
-        </div>
-        <div className="flex items-center space-x-2">
-          <ActionDropdown label="Actions" options={actionOptions} />
-          <button
-            onClick={handlePrint}
-            className="p-1 hover:bg-gray-200 rounded"
-            aria-label="Print"
-          >
-            <Image src="/print.svg" alt="Print" width={20} height={20} />
-          </button>
-          <button
-            className="p-1 hover:bg-gray-200 rounded"
-            aria-label="Reload"
-            onClick={() =>
-              organizationId && fetchOrganizationData(organizationId)
-            }
-          >
-            <Image src="/reload.svg" alt="Reload" width={20} height={20} />
-          </button>
-          <button
-            onClick={handleGoBack}
-            className="p-1 hover:bg-gray-200 rounded"
-            aria-label="Close"
-          >
-            <Image src="/x.svg" alt="Close" width={20} height={20} />
-          </button>
-        </div>
-      </div> */}
-
       <div className="bg-white border-b border-gray-300 px-3 py-2">
         <div className="flex flex-col lg:flex-row justify-between items-start gap-4">
           {/* LEFT: dynamic fields */}
@@ -4451,17 +4380,6 @@ export default function OrganizationView() {
             );
           })}
         </div>
-        {/* <button
-          onClick={togglePin}
-          className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
-          title={isPinned ? "Unpin panel" : "Pin panel"}
-        >
-          {isPinned ? (
-            <FiLock className="w-5 h-5 text-blue-600" />
-          ) : (
-            <FiUnlock className="w-5 h-5 text-gray-600" />
-          )}
-        </button> */}
       </div>
 
       {/* Main Content Area */}
@@ -4469,80 +4387,6 @@ export default function OrganizationView() {
         {/* Display content based on active tab */}
         {activeTab === "summary" && (
           <div className="relative">
-            {/* Pin/Pop-out Toggle Button */}
-            <div className="absolute top-0 right-0 z-10">
-              {/* <button
-                onClick={togglePin}
-                className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
-                title={isPinned ? "Unpin panel" : "Pin panel"}
-              >
-                {isPinned ? (
-                  <FiLock className="w-5 h-5 text-blue-600" />
-                ) : (
-                  <FiUnlock className="w-5 h-5 text-gray-600" />
-                )}
-              </button> */}
-            </div>
-
-            {/* Floating Panel (when pinned) */}
-            {/* {isPinned && (
-              <div
-                className={`mt-12 fixed right-0 top-0 h-full bg-white shadow-2xl z-50 transition-all duration-300 ${isCollapsed ? "w-12" : "w-1/3"
-                  } border-l border-gray-300`}
-              >
-                <div className="relative">
-
-                  <div className="flex flex-col h-full">
-                    <div className="flex items-center justify-between p-3 border-b border-gray-300 bg-gray-50">
-                      <h3 className="font-semibold text-sm">Overview Summary</h3>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => setIsCollapsed(!isCollapsed)}
-                          className="p-1 hover:bg-gray-200 rounded"
-                          title={isCollapsed ? "Expand" : "Collapse"}
-                        >
-                          {isCollapsed ? "▶" : "◀"}
-                        </button>
-                        <button
-                          onClick={togglePin}
-                          className="p-2 bg-white border border-gray-300 rounded shadow hover:bg-gray-50"
-                          title="Unpin panel"
-                        >
-                          <FiUnlock className="w-5 h-5 text-blue-600 " />
-                        </button>
-                      </div>
-                    </div>
-                    {!isCollapsed && (
-                      <div className="flex-1 overflow-y-auto p-4">
-                        <div id="printable-summary" className="overflow-hidden">
-                          <DndContext modifiers={[restrictToWindowEdges]}
-                            collisionDetection={closestCenter}
-                            onDragStart={handlePanelDragStart}
-                            onDragOver={handlePanelDragOver}
-                            onDragEnd={handlePanelDragEnd}
-                            onDragCancel={handlePanelDragCancel}
-                          >
-                            <div className="flex flex-col gap-4">
-                              <DroppableContainer id="left" items={columns.left}>
-                                {columns.left.map(renderPanel)}
-                              </DroppableContainer>
-                              <DroppableContainer id="right" items={columns.right}>
-                                {columns.right.map(renderPanel)}
-                              </DroppableContainer>
-                            </div>
-                            <DragOverlay>
-                              {activeId ? renderPanelPreview(activeId) : null}
-                            </DragOverlay>
-                          </DndContext>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )} */}
-
-            {/* Regular Summary View (when not pinned) */}
             {!isPinned && (
               <div id="printable-summary" className="overflow-hidden">
                 <DndContext modifiers={[restrictToWindowEdges]}
@@ -5336,49 +5180,57 @@ export default function OrganizationView() {
                         <div className="text-center py-4 text-gray-500">
                           Loading fields...
                         </div>
-                      ) : availableFields.filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden).length > 0 ? (
-                        availableFields
-                          .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
-                          .map((field) => {
-                          const fieldKey =
-                            field.field_key || field.api_name || field.field_name || field.id;
-                          const isVisible =
-                            visibleFields[editingPanel]?.includes(fieldKey) ||
-                            false;
-                          return (
-                            <div
-                              key={field.id || fieldKey}
-                              className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                            >
-                              <div className="flex items-center space-x-2">
-                                <input
-                                  type="checkbox"
-                                  checked={isVisible}
-                                  onChange={() =>
-                                    toggleFieldVisibility(editingPanel, fieldKey)
-                                  }
-                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                />
-                                <label className="text-sm text-gray-700">
-                                  {field.field_label ||
-                                    field.field_name ||
-                                    fieldKey}
-                                </label>
+                      ) : (() => {
+                        const visible = availableFields.filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden);
+                        const seenKeys = new Set<string>();
+                        const deduped = visible.filter((f: any) => {
+                          const key = String(f.field_key ?? f.api_name ?? f.field_name ?? f.id);
+                          if (seenKeys.has(key)) return false;
+                          seenKeys.add(key);
+                          return true;
+                        });
+                        return deduped.length > 0 ? (
+                          deduped.map((field: any) => {
+                            const fieldKey =
+                              field.field_key || field.api_name || field.field_name || field.id;
+                            const isVisible =
+                              visibleFields[editingPanel]?.includes(fieldKey) ||
+                              false;
+                            return (
+                              <div
+                                key={field.id || fieldKey}
+                                className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                              >
+                                <div className="flex items-center space-x-2">
+                                  <input
+                                    type="checkbox"
+                                    checked={isVisible}
+                                    onChange={() =>
+                                      toggleFieldVisibility(editingPanel, fieldKey)
+                                    }
+                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                  />
+                                  <label className="text-sm text-gray-700">
+                                    {field.field_label ||
+                                      field.field_name ||
+                                      fieldKey}
+                                  </label>
+                                </div>
+                                <span className="text-xs text-gray-500">
+                                  {field.field_type || "text"}
+                                </span>
                               </div>
-                              <span className="text-xs text-gray-500">
-                                {field.field_type || "text"}
-                              </span>
-                            </div>
-                          );
-                        })
-                      ) : (
-                        <div className="text-center py-4 text-gray-500">
-                          <p>No custom fields available</p>
-                          <p className="text-xs mt-1">
-                            Fields from the modify page will appear here
-                          </p>
-                        </div>
-                      )}
+                            );
+                          })
+                        ) : (
+                          <div className="text-center py-4 text-gray-500">
+                            <p>No custom fields available</p>
+                            <p className="text-xs mt-1">
+                              Fields from the modify page will appear here
+                            </p>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 
@@ -5403,7 +5255,21 @@ export default function OrganizationView() {
                           ourJobs: [{ key: "jobs", label: "Jobs" }],
                         };
 
-                        const fields = standardFieldsMap[editingPanel] || [];
+                        const availableKeys = new Set(
+                          (availableFields || [])
+                            .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+                            .map((f: any) => String(f.field_key ?? f.api_name ?? f.field_name ?? f.id))
+                        );
+                        const fields = (standardFieldsMap[editingPanel] || []).filter(
+                          (f) => !availableKeys.has(f.key)
+                        );
+                        if (fields.length === 0) {
+                          return (
+                            <div className="text-sm text-gray-500 italic py-2">
+                              All standard fields are covered by custom fields above.
+                            </div>
+                          );
+                        }
                         return fields.map((field) => {
                           const isVisible =
                             visibleFields[editingPanel]?.includes(field.key) ||

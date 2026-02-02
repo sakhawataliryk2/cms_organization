@@ -659,7 +659,7 @@ export default function TaskList() {
         const parsed = JSON.parse(savedOrder);
         if (Array.isArray(parsed) && parsed.length > 0) {
           const validOrder = parsed.filter((key) =>
-            [...DEFAULT_TASK_COLUMNS, ...columnFields].includes(key)
+            [...columnFields].includes(key)
           );
           if (validOrder.length > 0) {
             setColumnFields(validOrder);

@@ -7,8 +7,6 @@ import Image from "next/image";
 import ActionDropdown from "@/components/ActionDropdown";
 import LoadingScreen from "@/components/LoadingScreen";
 import PanelWithHeader from "@/components/PanelWithHeader";
-import { FaLinkedin, FaFacebookSquare } from "react-icons/fa";
-import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, sendCalendarInvite, type EmailMessage, type CalendarEvent } from "@/lib/office365";
 import { FiUsers, FiUpload, FiFile, FiX, FiLock, FiUnlock, FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
 import { BsFillPinAngleFill } from "react-icons/bs";
@@ -558,30 +556,6 @@ export default function JobSeekerView() {
       },
     }),
   }), []);
-  // ===== PENCIL-HEADER-MODAL (Job Seeker Header Fields) =====
-
-  type HeaderFieldDef = {
-    key: string;
-    label: string;
-    type: "standard" | "custom";
-  };
-
-  // Standard fields you want to allow in the header row
-  const STANDARD_HEADER_FIELDS: HeaderFieldDef[] = [
-    { key: "phone", label: "Phone", type: "standard" },
-    { key: "email", label: "Email", type: "standard" },
-    { key: "status", label: "Status", type: "standard" },
-    { key: "currentOrganization", label: "Current Org", type: "standard" },
-    { key: "title", label: "Title", type: "standard" },
-    { key: "mobilePhone", label: "Mobile", type: "standard" },
-    { key: "fullAddress", label: "Address", type: "standard" },
-    { key: "desiredSalary", label: "Desired Salary", type: "standard" },
-    { key: "dateAdded", label: "Date Added", type: "standard" },
-    { key: "lastContactDate", label: "Last Contact", type: "standard" },
-    { key: "owner", label: "Owner", type: "standard" },
-  ];
-
-  // default layout if nothing saved
   const DEFAULT_HEADER_FIELDS = [
     "phone",
     "email",
@@ -602,70 +576,43 @@ export default function JobSeekerView() {
     defaultFields: DEFAULT_HEADER_FIELDS,
   });
 
-  // Build definitions list (standard + custom from availableFields/jobSeeker.customFields)
-  const headerFieldDefs: HeaderFieldDef[] = (() => {
-    const customKeys = new Set<string>();
-
-    // Collect all custom field keys from availableFields (use field_key or api_name as primary identifier)
-    (availableFields || []).forEach((f: any) => {
-      const k = f.field_key || f.api_name || f.field_name || f.id;
-      if (k) customKeys.add(String(k));
-    });
-
-    // Also include any custom keys present on the record
-    if (jobSeeker?.customFields) {
-      Object.keys(jobSeeker.customFields).forEach((k) =>
-        customKeys.add(String(k))
-      );
-    }
-
-    const customDefs: HeaderFieldDef[] = Array.from(customKeys).map((k) => {
-      // Find the field definition by matching field_key, api_name, or field_name
-      const found = (availableFields || []).find((f: any) => {
-        const fk = f.field_key || f.api_name || f.field_name || f.id;
-        return String(fk) === k;
+  const buildHeaderFieldCatalog = () => {
+    const seen = new Set<string>();
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => {
+        const k = f.field_name || f.field_key || f.field_label || f.id;
+        return {
+          key: `custom:${String(k)}`,
+          label: f.field_label || f.field_name || String(k),
+        };
+      })
+      .filter((x) => {
+        if (seen.has(x.key)) return false;
+        seen.add(x.key);
+        return true;
       });
-      const label = found?.field_label || found?.field_name || k;
-      return { key: k, label, type: "custom" };
-    });
+    return fromApi;
+  };
 
-    // keep stable ordering
-    customDefs.sort((a, b) => a.label.localeCompare(b.label));
+  const headerFieldCatalog = buildHeaderFieldCatalog();
 
-    return [...STANDARD_HEADER_FIELDS, ...customDefs];
-  })();
+  const getHeaderFieldLabel = (key: string) => {
+    const found = headerFieldCatalog.find((f) => f.key === key);
+    return found?.label || key;
+  };
 
-
-  const getHeaderValue = (key: string): string => {
+  const getHeaderFieldValue = (key: string): string => {
     if (!jobSeeker) return "-";
-
-
-    // standard keys live on jobSeeker directly
-    const std = (jobSeeker as any)[key];
-    if (std !== undefined && std !== null && String(std).trim() !== "")
-      return String(std);
-
-    // custom keys live in jobSeeker.customFields
-    const custom = jobSeeker.customFields?.[labelForHeaderKey(key)];
-    if (custom !== undefined && custom !== null && String(custom).trim() !== "")
-      return String(custom);
-
-    return "-";
-  };
-
-  const labelForHeaderKey = (key: string) => {
-    const def = headerFieldDefs.find((d) => d.key === key);
-    return def?.label || key;
-  };
-
-  const toggleHeaderField = (key: string) => {
-    setHeaderFields((prev) => {
-      if (prev.includes(key)) {
-        return prev.filter((k) => k !== key);
-      } else {
-        return [...prev, key];
-      }
-    });
+    const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+    const j = jobSeeker as any;
+    let v = j[rawKey];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+    v = jobSeeker.customFields?.[rawKey];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+    const field = headerFieldCatalog.find((f) => f.key === key);
+    if (field) v = jobSeeker.customFields?.[field.label];
+    return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
   };
 
   const moveHeaderField = (key: string, dir: "up" | "down") => {
@@ -1820,11 +1767,11 @@ Best regards`;
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const seen = new Set(fromApi.map((f) => f.key));
-    const fromJS = Object.keys(jobSeeker?.customFields || {})
-      .filter((k) => !seen.has(k))
-      .map((k) => ({ key: k, label: k }));
-    return [...fromApi, ...fromJS];
+    // const seen = new Set(fromApi.map((f) => f.key));
+    // const fromJS = Object.keys(jobSeeker?.customFields || {})
+    //   .filter((k) => !seen.has(k))
+    //   .map((k) => ({ key: k, label: k }));
+    return [...fromApi];
   }, [availableFields, jobSeeker?.customFields]);
 
   // Overview panel field catalog: from admin field definitions + record customFields only
@@ -1836,10 +1783,10 @@ Best regards`;
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
     const seen = new Set(fromApi.map((f) => f.key));
-    const fromJS = Object.keys(jobSeeker?.customFields || {})
-      .filter((k) => !seen.has(k))
-      .map((k) => ({ key: k, label: k }));
-    return [...fromApi, ...fromJS];
+    // const fromJS = Object.keys(jobSeeker?.customFields || {})
+    //   .filter((k) => !seen.has(k))
+    //   .map((k) => ({ key: k, label: k }));
+    return [...fromApi];
   }, [availableFields, jobSeeker?.customFields]);
 
   // When catalog loads, if overview/jobSeekerDetails visible list is empty, default to all catalog keys
@@ -3683,14 +3630,14 @@ Best regards`;
         <div className="space-y-0 border border-gray-200 rounded">
           {visibleFields.overview.map((key) => (
             <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{labelForHeaderKey(key)}:</div>
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{getHeaderFieldLabel(key)}:</div>
               <div className="flex-1 p-2 text-sm">
                 {key === "status" ? (
-                  <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{getHeaderValue(key)}</span>
+                  <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{getHeaderFieldValue(key)}</span>
                 ) : key === "email" ? (
-                  <a href={`mailto:${getHeaderValue(key)}`} className="text-blue-600 hover:underline">{getHeaderValue(key)}</a>
+                  <a href={`mailto:${getHeaderFieldValue(key)}`} className="text-blue-600 hover:underline">{getHeaderFieldValue(key)}</a>
                 ) : (
-                  getHeaderValue(key)
+                  getHeaderFieldValue(key)
                 )}
               </div>
             </div>
@@ -3709,24 +3656,24 @@ Best regards`;
     });
 
     const renderJobSeekerDetailsRow = (key: string) => {
-      // Standard fields - use existing getHeaderValue which handles them correctly
-      const standardKeys = ["status", "currentOrganization", "title", "email", "mobilePhone", "address", "desiredSalary", "dateAdded", "lastContactDate", "owner"];
-      if (standardKeys.includes(key)) {
-        return (
-          <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{labelForHeaderKey(key)}:</div>
-            <div className="flex-1 p-2 text-sm">
-              {key === "status" ? (
-                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{getHeaderValue(key)}</span>
-              ) : key === "email" && getHeaderValue(key) !== "-" ? (
-                <a href={`mailto:${getHeaderValue(key)}`} className="text-blue-600 hover:underline">{getHeaderValue(key)}</a>
-              ) : (
-                getHeaderValue(key)
-              )}
-            </div>
-          </div>
-        );
-      }
+      // Standard fields - use existing getHeaderFieldValue which handles them correctly
+      // const standardKeys = ["status", "currentOrganization", "title", "email", "mobilePhone", "address", "desiredSalary", "dateAdded", "lastContactDate", "owner"];
+      // if (standardKeys.includes(key)) {
+      //   return (
+      //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+      //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{getHeaderFieldLabel(key)}:</div>
+      //       <div className="flex-1 p-2 text-sm">
+      //         {key === "status" ? (
+      //           <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{getHeaderFieldValue(key)}</span>
+      //         ) : key === "email" && getHeaderFieldValue(key) !== "-" ? (
+      //           <a href={`mailto:${getHeaderFieldValue(key)}`} className="text-blue-600 hover:underline">{getHeaderFieldValue(key)}</a>
+      //         ) : (
+      //           getHeaderFieldValue(key)
+      //         )}
+      //       </div>
+      //     </div>
+      //   );
+      // }
       // Custom field
       const field = customFieldDefs.find(
         (f: any) =>
@@ -3864,23 +3811,21 @@ Best regards`;
                 No header fields selected
               </span>
             ) : (
-              headerFields.map((key) => (
-                <div key={key} className="min-w-[120px] sm:min-w-[140px]">
+              headerFields.map((fk) => (
+                <div key={fk} className="min-w-[120px] sm:min-w-[140px]">
                   <div className="text-xs text-gray-500">
-                    {labelForHeaderKey(key)}
+                    {getHeaderFieldLabel(fk)}
                   </div>
-
-                  {/* Special case: email clickable */}
-                  {key === "email" && getHeaderValue("email") !== "-" ? (
+                  {(fk === "email" || fk === "custom:email") && getHeaderFieldValue(fk) !== "-" ? (
                     <a
-                      href={`mailto:${getHeaderValue("email")}`}
+                      href={`mailto:${getHeaderFieldValue(fk)}`}
                       className="text-sm font-medium text-blue-600 hover:underline"
                     >
-                      {getHeaderValue("email")}
+                      {getHeaderFieldValue(fk)}
                     </a>
                   ) : (
                     <div className="text-sm font-medium text-gray-900">
-                      {getHeaderValue(key)}
+                      {getHeaderFieldValue(fk)}
                     </div>
                   )}
                 </div>
@@ -5069,8 +5014,8 @@ Best regards`;
                       </div>
                     ) : (
                       <>
-                        {/* All Standard Fields for Resume (using headerFieldDefs which includes all standard + custom) */}
-                        {headerFieldDefs.map((field) => {
+                        {/* All Standard Fields for Resume (using headerFieldCatalog which includes all standard + custom) */}
+                        {headerFieldCatalog.map((field) => {
                           const isVisible =
                             visibleFields[editingPanel]?.includes(field.key) ||
                             false;
@@ -5092,21 +5037,18 @@ Best regards`;
                                   {field.label}
                                 </label>
                               </div>
-                              <span className="text-xs text-gray-500">
-                                {field.type}
-                              </span>
                             </div>
                           );
                         })}
 
-                        {/* Also include original resume-specific fields if not already in headerFieldDefs */}
+                        {/* Also include original resume-specific fields if not already in headerFieldCatalog */}
                         {(() => {
                           const resumeSpecificFields = [
                             { key: "profile", label: "Profile" },
                             { key: "skills", label: "Skills" },
                             { key: "experience", label: "Work Experience" },
                           ];
-                          const existingKeys = new Set(headerFieldDefs.map(f => f.key));
+                          const existingKeys = new Set(headerFieldCatalog.map(f => f.key));
                           return resumeSpecificFields
                             .filter(f => !existingKeys.has(f.key))
                             .map((field) => {
@@ -6121,26 +6063,26 @@ Best regards`;
                 <h3 className="font-medium mb-3">Available Fields</h3>
 
                 <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
-                  {headerFieldDefs.map((d) => {
-                    const checked = headerFields.includes(d.key);
-
+                  {headerFieldCatalog.map((f) => {
+                    const checked = headerFields.includes(f.key);
                     return (
                       <label
-                        key={d.key}
+                        key={f.key}
                         className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
                       >
                         <input
                           type="checkbox"
                           checked={checked}
                           onChange={() => {
-                            toggleHeaderField(d.key);
+                            setHeaderFields((prev) => {
+                              if (prev.includes(f.key))
+                                return prev.filter((x) => x !== f.key);
+                              return [...prev, f.key];
+                            });
                           }}
                           className="w-4 h-4"
                         />
-                        <div className="flex-1">
-                          <div className="text-sm text-gray-800">{d.label}</div>
-                          <div className="text-xs text-gray-500">{d.type}</div>
-                        </div>
+                        <span className="text-sm text-gray-800">{f.label}</span>
                       </label>
                     );
                   })}
@@ -6164,9 +6106,11 @@ Best regards`;
                       >
                         <div>
                           <div className="text-sm font-medium">
-                            {labelForHeaderKey(key)}
+                            {getHeaderFieldLabel(key)}
                           </div>
-                          <div className="text-xs text-gray-500">{key}</div>
+                          <div className="text-xs text-gray-500">
+                            Value: {getHeaderFieldValue(key)}
+                          </div>
                         </div>
 
                         <div className="flex items-center gap-2">

@@ -519,16 +519,16 @@ export default function AddOrganization() {
       };
       const customFieldsForDB: Record<string, any> = {};
 
-      // Labels in BACKEND_COLUMN_BY_LABEL → top-level columns; all others → custom_fields JSONB
+      // Every form field goes into custom_fields (for both create and edit).
+      // Labels in BACKEND_COLUMN_BY_LABEL also go to top-level columns for API compatibility.
       Object.entries(customFieldsToSend).forEach(([label, value]) => {
         if (value === undefined || value === null) return;
         const column = BACKEND_COLUMN_BY_LABEL[label];
         if (column) {
           apiData[column] = value;
-        } else {
-          // Field not in map: store in custom_fields so it is never lost
-          customFieldsForDB[label] = value;
         }
+        // Always store every field in custom_fields so all fields are persisted there
+        customFieldsForDB[label] = value;
       });
 
       apiData.custom_fields = customFieldsForDB;

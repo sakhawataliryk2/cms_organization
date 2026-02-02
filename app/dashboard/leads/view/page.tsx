@@ -569,9 +569,6 @@ export default function LeadView() {
   const [ourJobsDragActiveId, setOurJobsDragActiveId] = useState<string | null>(null);
 
     // =========================
-  // PENCIL-HEADER-MODAL (Lead Header Fields Row)
-  // =========================
- 
   const {
     headerFields,
     setHeaderFields,
@@ -584,82 +581,47 @@ export default function LeadView() {
     defaultFields: LEAD_DEFAULT_HEADER_FIELDS,
   });
 
-  // Standard fields allowed in header row
-  const standardHeaderFieldDefs: Array<{
-    key: string;
-    label: string;
-    getValue: (l: any) => any;
-    type?: "text" | "email" | "phone" | "badge" | "link";
-  }> = [
-    { key: "phone", label: "Phone", type: "phone", getValue: (l) => l?.phone },
-    { key: "mobilePhone", label: "Mobile", type: "phone", getValue: (l) => l?.mobilePhone },
-    { key: "email", label: "Email", type: "email", getValue: (l) => l?.email },
-    { key: "email2", label: "Email 2", type: "email", getValue: (l) => l?.email2 },
-    { key: "status", label: "Status", type: "badge", getValue: (l) => l?.status },
-    { key: "owner", label: "Owner", type: "text", getValue: (l) => l?.owner },
-    { key: "title", label: "Title", type: "text", getValue: (l) => l?.title },
-    { key: "organizationName", label: "Organization", type: "text", getValue: (l) => l?.organizationName || l?.organizationId },
-    { key: "department", label: "Department", type: "text", getValue: (l) => l?.department },
-    { key: "linkedinUrl", label: "LinkedIn", type: "link", getValue: (l) => l?.linkedinUrl },
-    { key: "lastContactDate", label: "Last Contact", type: "text", getValue: (l) => l?.lastContactDate },
-  ];
-
-  // Custom fields (from lead.customFields) as header-eligible definitions
-  const customHeaderFieldDefs = (lead?.customFields ? Object.keys(lead.customFields) : []).map((fieldKey) => {
-    const meta = availableFields.find(
-      (f) => (f.field_name || f.field_label || f.id) === fieldKey
-    );
-    return {
-      key: fieldKey,
-      label: meta?.field_label || meta?.field_name || fieldKey,
-      type: "text" as const,
-      getValue: (l: any) => l?.customFields?.[fieldKey],
-    };
-  });
-
-  // Combined field defs for modal + rendering
-  const allHeaderFieldDefs = [...standardHeaderFieldDefs, ...customHeaderFieldDefs];
-
-  const getHeaderDef = (key: string) => allHeaderFieldDefs.find((d) => d.key === key);
-
-  const formatHeaderValue = (def: any, value: any) => {
-    const v = value ?? "";
-    if (!v) return "-";
-
-    if (def?.type === "email") {
-      return (
-        <a href={`mailto:${v}`} className="text-blue-600 hover:underline">
-          {v}
-        </a>
-      );
-    }
-    if (def?.type === "phone") {
-      return <span className="font-medium">{v}</span>;
-    }
-    if (def?.type === "badge") {
-      return (
-        <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-xs font-medium">
-          {String(v)}
-        </span>
-      );
-    }
-    if (def?.type === "link") {
-      return (
-        <a href={String(v)} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline">
-          {String(v)}
-        </a>
-      );
-    }
-    return <span className="font-medium">{String(v)}</span>;
+  const buildHeaderFieldCatalog = () => {
+    const seen = new Set<string>();
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => {
+        const k = f.field_name || f.field_key || f.field_label || f.id;
+        return {
+          key: `custom:${String(k)}`,
+          label: f.field_label || f.field_name || String(k),
+        };
+      })
+      .filter((x) => {
+        if (seen.has(x.key)) return false;
+        seen.add(x.key);
+        return true;
+      });
+    return fromApi;
   };
 
-  const toggleHeaderField = (fieldKey: string) => {
-    setHeaderFields((prev) => {
-      if (prev.includes(fieldKey)) {
-        return prev.filter((k) => k !== fieldKey);
-      }
-      return [...prev, fieldKey];
-    });
+  const headerFieldCatalog = buildHeaderFieldCatalog();
+
+  const getHeaderFieldLabel = (key: string) => {
+    const found = headerFieldCatalog.find((f) => f.key === key);
+    return found?.label || key;
+  };
+
+  const getHeaderFieldValue = (key: string) => {
+    if (!lead) return "-";
+    const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+    const l = lead as any;
+    let v = l[rawKey];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+    v = lead.customFields?.[rawKey];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+    const field = headerFieldCatalog.find((f) => f.key === key);
+    if (field) v = lead.customFields?.[field.label];
+    return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
+  };
+
+  const removeHeaderField = (key: string) => {
+    setHeaderFields((prev) => prev.filter((k) => k !== key));
   };
 
   const moveHeaderField = (fieldKey: string, dir: "up" | "down") => {
@@ -736,12 +698,8 @@ export default function LeadView() {
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const seen = new Set(fromApi.map((f) => f.key));
-    const fromLead = Object.keys(lead?.customFields || {})
-      .filter((k) => !seen.has(k))
-      .map((k) => ({ key: k, label: k }));
-    return [...fromApi, ...fromLead];
-  }, [availableFields, lead?.customFields]);
+    return [...fromApi];
+  }, [availableFields]);
 
   // Lead Details field catalog: from admin field definitions + record customFields only
   const detailsFieldCatalog = useMemo(() => {
@@ -751,12 +709,8 @@ export default function LeadView() {
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const seen = new Set(fromApi.map((f) => f.key));
-    const fromLead = Object.keys(lead?.customFields || {})
-      .filter((k) => !seen.has(k))
-      .map((k) => ({ key: k, label: k }));
-    return [...fromApi, ...fromLead];
-  }, [availableFields, lead?.customFields]);
+    return [...fromApi];
+  }, [availableFields]);
 
   // When catalog loads, if contactInfo/details visible list is empty, default to all catalog keys
   useEffect(() => {
@@ -2306,23 +2260,25 @@ export default function LeadView() {
                 No header fields selected
               </span>
             ) : (
-              headerFields.map((key) => {
-                const def = getHeaderDef(key);
-                const value = def
-                  ? def.getValue(lead)
-                  : lead?.customFields?.[key];
-
-                return (
-                  <div key={key} className="min-w-[140px]">
-                    <div className="text-xs text-gray-500">
-                      {def?.label || key}
-                    </div>
-                    <div className="text-sm font-medium text-gray-900">
-                      {formatHeaderValue(def, value)}
-                    </div>
+              headerFields.map((fk) => (
+                <div key={fk} className="min-w-[140px]">
+                  <div className="text-xs text-gray-500">
+                    {getHeaderFieldLabel(fk)}
                   </div>
-                );
-              })
+                  {(fk === "email" || fk === "custom:email") && getHeaderFieldValue(fk) !== "-" ? (
+                    <a
+                      href={`mailto:${getHeaderFieldValue(fk)}`}
+                      className="text-sm font-medium text-blue-600 hover:underline"
+                    >
+                      {getHeaderFieldValue(fk)}
+                    </a>
+                  ) : (
+                    <div className="text-sm font-medium text-gray-900">
+                      {getHeaderFieldValue(fk)}
+                    </div>
+                  )}
+                </div>
+              ))
             )}
           </div>
 
@@ -2973,7 +2929,7 @@ export default function LeadView() {
               <div>
                 <h3 className="font-medium mb-3">Available Fields</h3>
                 <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
-                  {allHeaderFieldDefs.map((f) => {
+                  {headerFieldCatalog.map((f) => {
                     const checked = headerFields.includes(f.key);
                     return (
                       <label
@@ -2983,7 +2939,13 @@ export default function LeadView() {
                         <input
                           type="checkbox"
                           checked={checked}
-                          onChange={() => toggleHeaderField(f.key)}
+                          onChange={() => {
+                            setHeaderFields((prev) =>
+                              prev.includes(f.key)
+                                ? prev.filter((x) => x !== f.key)
+                                : [...prev, f.key]
+                            );
+                          }}
                           className="w-4 h-4"
                         />
                         <span className="text-sm text-gray-800">{f.label}</span>
@@ -3001,18 +2963,18 @@ export default function LeadView() {
                       No fields selected
                     </div>
                   ) : (
-                    headerFields.map((key, idx) => {
-                      const def = getHeaderDef(key);
-                      return (
+                    headerFields.map((key, idx) => (
                         <div
                           key={key}
                           className="flex items-center justify-between p-2 border rounded"
                         >
                           <div>
                             <div className="text-sm font-medium">
-                              {def?.label || key}
+                              {getHeaderFieldLabel(key)}
                             </div>
-                            <div className="text-xs text-gray-500">{key}</div>
+                            <div className="text-xs text-gray-500">
+                              Value: {getHeaderFieldValue(key)}
+                            </div>
                           </div>
 
                           <div className="flex items-center gap-2">
@@ -3032,14 +2994,13 @@ export default function LeadView() {
                             </button>
                             <button
                               className="px-2 py-1 border rounded text-xs hover:bg-gray-50 text-red-600"
-                              onClick={() => toggleHeaderField(key)}
+                              onClick={() => removeHeaderField(key)}
                             >
                               Remove
                             </button>
                           </div>
                         </div>
-                      );
-                    })
+                    ))
                   )}
                 </div>
 
