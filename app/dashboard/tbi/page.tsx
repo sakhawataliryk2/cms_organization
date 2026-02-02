@@ -228,7 +228,7 @@ export default function TbiPage() {
       case "Oasis Key":
         return (cf?.["Oasis Key"] ?? cf?.oasis_key ?? "") as string;
       case "State":
-        return org.state ?? "";
+        return (cf?.["State"] ?? "") as string;
       default:
         return (cf?.[header] ?? (org as Record<string, string>)[header] ?? "") as string;
     }
