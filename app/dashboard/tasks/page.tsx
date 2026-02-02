@@ -303,36 +303,47 @@ export default function TaskList() {
   // Per-column filtering state
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
 
+  const TASK_BACKEND_COLUMN_KEYS = [
+    "completed",
+    "due",
+    "job_seeker",
+    "hiring_manager",
+    "job",
+    "lead",
+    "placement",
+    "owner",
+    "priority",
+    "status",
+    "title",
+    "dateCreated",
+    "createdBy",
+    "assignedTo",
+  ];
+
+  const humanizeTask = (s: string) =>
+    s
+      .replace(/[_\-]+/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .trim();
+
   const taskColumnsCatalog = useMemo(() => {
-    const standard = [
-      { key: "completed", label: "Completed?", sortable: true, filterType: "select" as const },
-      { key: "due", label: "Due Date & Time", sortable: true, filterType: "text" as const },
-      { key: "job_seeker", label: "Job Seeker", sortable: true, filterType: "text" as const },
-      { key: "hiring_manager", label: "Hiring Manager", sortable: true, filterType: "text" as const },
-      { key: "job", label: "Job", sortable: true, filterType: "text" as const },
-      { key: "lead", label: "Lead", sortable: true, filterType: "text" as const },
-      { key: "placement", label: "Placement", sortable: true, filterType: "text" as const },
-      { key: "owner", label: "Owner", sortable: true, filterType: "text" as const },
-      { key: "priority", label: "Priority", sortable: true, filterType: "select" as const },
-      { key: "status", label: "Status", sortable: true, filterType: "select" as const },
-      { key: "title", label: "Title", sortable: true, filterType: "text" as const },
-    ];
-
-    const custom = (availableFields || []).map((f: any) => {
-      const key = f?.field_key || f?.field_name || f?.api_name || f?.id;
-      const rawKey = String(key ?? "").startsWith("custom:")
-        ? String(key).slice("custom:".length)
-        : String(key);
-
-      return {
-        key: `custom:${rawKey}`,
-        label: f?.field_label || f?.field_name || String(key),
-        sortable: false,
-        filterType: "text" as const,
-      };
-    });
-
-    return [...standard, ...custom];
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => {
+        const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
+        const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanizeTask(name) : "");
+        const isBackendCol = name && TASK_BACKEND_COLUMN_KEYS.includes(name);
+        let filterType: "text" | "select" | "number" = "text";
+        if (name === "status" || name === "priority" || name === "completed") filterType = "select";
+        return {
+          key: isBackendCol ? name : `custom:${label || name}`,
+          label: String(label || name),
+          sortable: isBackendCol,
+          filterType,
+        };
+      });
+    return fromApi;
   }, [availableFields]);
 
   const normalizeFields = (payload: any) => {
@@ -390,17 +401,6 @@ export default function TaskList() {
 
     fetchAvailableFields();
   }, []);
-
-  const DEFAULT_TASK_COLUMNS: string[] = [
-    "completed",
-    "due",
-    "job_seeker",
-    "hiring_manager",
-    "job",
-    "lead",
-    "placement",
-    "owner",
-  ];
 
   const getColumnLabel = (key: string) =>
     taskColumnsCatalog.find((c) => c.key === key)?.label ?? key;
@@ -471,8 +471,30 @@ export default function TaskList() {
   } = useHeaderConfig({
     entityType: "TASK",
     configType: "columns",
-    defaultFields: DEFAULT_TASK_COLUMNS,
+    defaultFields: [],
   });
+
+  useEffect(() => {
+    const catalogKeys = taskColumnsCatalog.map((c) => c.key);
+    if (catalogKeys.length === 0) return;
+    const catalogSet = new Set(catalogKeys);
+    const savedOrder = localStorage.getItem("tasksColumnOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validOrder = parsed.filter((k: string) => catalogSet.has(k));
+          if (validOrder.length > 0) {
+            setColumnFields(validOrder);
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
+  }, [taskColumnsCatalog]);
 
   // Favorites State
   const [favorites, setFavorites] = useState<TaskFavorite[]>([]);
@@ -1452,7 +1474,7 @@ export default function TaskList() {
                 <div className="flex justify-end gap-2 mt-4">
                   <button
                     className="px-4 py-2 border rounded hover:bg-gray-50"
-                    onClick={() => setColumnFields(DEFAULT_TASK_COLUMNS)}
+                    onClick={() => setColumnFields(taskColumnsCatalog.map((c) => c.key))}
                   >
                     Reset
                   </button>

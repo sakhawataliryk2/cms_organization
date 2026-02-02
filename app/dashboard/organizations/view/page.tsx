@@ -60,8 +60,7 @@ const ORG_PANEL_TITLES: Record<string, string> = {
   openTasks: "Open Tasks:",
 };
 
-// Default and storage for Organization Contact Info panel (global for all org records)
-const CONTACT_INFO_DEFAULT_FIELDS = ["name", "nickname", "phone", "address", "website"];
+// Storage for Organization Contact Info panel – field list comes from admin (custom field definitions)
 const CONTACT_INFO_STORAGE_KEY = "organizationContactInfoFields";
 
 // Sortable Panel Component with drag handle
@@ -647,31 +646,24 @@ export default function OrganizationView() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
-  // Build field list: Standard + Custom(from Modify page)
+  // Build header field list from admin custom fields only (no hardcoded standard)
   const buildHeaderFieldCatalog = () => {
-    const standard = [
-      { key: "phone", label: "Phone" },
-      { key: "website", label: "Website" },
-      { key: "name", label: "Name" },
-      { key: "nickname", label: "Nickname" },
-      { key: "address", label: "Address" },
-    ];
-
-
-    const apiCustom = (availableFields || []).map((f: any) => {
-      const k = f.field_name || f.field_key || f.field_label || f.id;
-      return {
-        key: `custom:${k}`,
-        label: f.field_label || f.field_name || String(k),
-      };
-    });
+    const apiCustom = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => {
+        const k = f.field_name || f.field_key || f.field_label || f.id;
+        return {
+          key: `custom:${k}`,
+          label: f.field_label || f.field_name || String(k),
+        };
+      });
 
     const orgCustom = Object.keys(organization?.customFields || {}).map((k) => ({
       key: `custom:${k}`,
       label: k,
     }));
 
-    const merged = [...standard, ...apiCustom, ...orgCustom];
+    const merged = [...apiCustom, ...orgCustom];
     const seen = new Set<string>();
     return merged.filter((x) => {
       if (seen.has(x.key)) return false;
@@ -685,31 +677,18 @@ export default function OrganizationView() {
 
   const getHeaderFieldValue = (key: string) => {
     if (!organization) return "-";
-
-    // custom fields
-    if (key.startsWith("custom:")) {
-      const rawKey = key.replace("custom:", "");
-      const val = organization.customFields?.[rawKey];
-      return val === undefined || val === null || val === ""
-        ? "-"
-        : String(val);
-    }
-
-    // standard fields
-    switch (key) {
-      case "phone":
-        return organization.phone || "(Not provided)";
-      case "website":
-        return organization.website || "-";
-      case "name":
-        return organization.name || "-";
-      case "nickname":
-        return organization.nicknames || "-";
-      case "address":
-        return organization.address || "-";
-      default:
-        return "-";
-    }
+    const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+    const o = organization as any;
+    let v = o[rawKey];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+    if (o.contact?.[rawKey] !== undefined) return String(o.contact[rawKey] ?? "-");
+    if (rawKey === "contact_phone" || rawKey === "phone") return String(o.contact_phone ?? o.phone ?? "(Not provided)");
+    if (rawKey === "nickname") return String(o.nicknames ?? o.contact?.nickname ?? "-");
+    v = o.customFields?.[rawKey];
+    if (v !== undefined && v !== null) return String(v);
+    const field = headerFieldCatalog.find((f) => f.key === key);
+    if (field) v = o.customFields?.[field.label];
+    return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
   };
 
   const handleUpdateDocument = async () => {
@@ -773,7 +752,7 @@ export default function OrganizationView() {
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
     if (typeof window === "undefined") {
       return {
-        contactInfo: CONTACT_INFO_DEFAULT_FIELDS,
+        contactInfo: [],
         about: ["about"],
         recentNotes: ["notes"],
         websiteJobs: ["jobs"],
@@ -796,7 +775,7 @@ export default function OrganizationView() {
       } catch (_) {}
     }
     return {
-      contactInfo: CONTACT_INFO_DEFAULT_FIELDS,
+      contactInfo: [],
       about: ["about"],
       recentNotes: ["notes"],
       websiteJobs: ["jobs"],
@@ -1311,29 +1290,33 @@ export default function OrganizationView() {
     }
   };
 
-  // Contact Info panel: full catalog (standard + all custom) for edit modal and display order
+  // Contact Info panel: catalog from admin field definitions + org customFields only (no hardcoded standard fields)
   const contactInfoFieldCatalog = useMemo(() => {
-    const standard: { key: string; label: string }[] = [
-      { key: "name", label: "Name" },
-      { key: "nickname", label: "Nickname" },
-      { key: "phone", label: "Phone" },
-      { key: "address", label: "Address" },
-      { key: "website", label: "Website" },
-    ];
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
-        key: String(f.field_key || f.api_name || f.field_name || f.id),
-        label: f.field_label || f.field_name || String(f.field_key || f.api_name || f.field_name || f.id),
+        key: String(f.field_key ?? f.field_name ?? f.api_name ?? f.id),
+        label: f.field_label || f.field_name || String(f.field_key ?? f.field_name ?? f.api_name ?? f.id),
+        fieldType: (f.field_type || f.type) as string | undefined,
       }));
     const customKeys = Object.keys(organization?.customFields || {});
-    const seen = new Set(standard.map((s) => s.key));
-    fromApi.forEach((f) => seen.add(f.key));
+    const seen = new Set(fromApi.map((f) => f.key));
     const fromOrg = customKeys
       .filter((k) => !seen.has(k))
-      .map((k) => ({ key: k, label: k }));
-    return [...standard, ...fromApi, ...fromOrg];
+      .map((k) => ({ key: k, label: k, fieldType: undefined as string | undefined }));
+    return [...fromApi, ...fromOrg];
   }, [availableFields, organization?.customFields]);
+
+  // When catalog loads, if contactInfo visible list is empty, default to all catalog keys so first load shows admin-defined fields
+  useEffect(() => {
+    const catalogKeys = contactInfoFieldCatalog.map((f) => f.key);
+    if (catalogKeys.length === 0) return;
+    setVisibleFields((prev) => {
+      const current = prev.contactInfo || [];
+      if (current.length > 0) return prev;
+      return { ...prev, contactInfo: catalogKeys };
+    });
+  }, [contactInfoFieldCatalog]);
 
   // Initialize modal state when opening Contact Info edit
   useEffect(() => {
@@ -2340,30 +2323,14 @@ export default function OrganizationView() {
 
   const renderPanel = (panelId: string) => {
     if (panelId === "contactInfo") {
-      const customObj = organization?.customFields || {};
       const getContactInfoLabel = (key: string) =>
         contactInfoFieldCatalog.find((f) => f.key === key)?.label || key;
-      const getContactInfoValue = (key: string) => {
-        switch (key) {
-          case "name":
-            return organization?.contact?.name || organization?.name || "-";
-          case "nickname":
-            return organization?.contact?.nickname || organization?.nicknames || "-";
-          case "phone":
-            return organization?.contact?.phone || organization?.phone || "-";
-          case "address":
-            return organization?.contact?.address || organization?.address || "-";
-          case "website":
-            return organization?.contact?.website || organization?.website || "-";
-          default: {
-            const val = (customObj as any)?.[key];
-            return val === undefined || val === null || String(val).trim() === ""
-              ? "-"
-              : String(val);
-          }
-        }
+      const isUrlField = (key: string) => {
+        const entry = contactInfoFieldCatalog.find((f) => f.key === key);
+        return key === "website" || entry?.fieldType === "url" || entry?.fieldType === "link";
       };
-      const isWebsite = (key: string) => key === "website";
+      const isNameField = (key: string) =>
+        key === "name" || contactInfoFieldCatalog.find((f) => f.key === key)?.label?.toLowerCase() === "name";
 
       return (
         <SortablePanel key={panelId} id={panelId}>
@@ -2374,7 +2341,9 @@ export default function OrganizationView() {
             <div className="space-y-0 border border-gray-200 rounded">
               {(visibleFields.contactInfo || []).map((key) => {
                 const label = getContactInfoLabel(key);
-                const value = getContactInfoValue(label);
+                const value = getHeaderFieldValue(key);
+                const showAsLink = isUrlField(key) && value !== "-";
+                const showNameStyle = isNameField(key);
                 return (
                   <div
                     key={key}
@@ -2384,16 +2353,16 @@ export default function OrganizationView() {
                       {label}:
                     </div>
                     <div className="flex-1 p-2">
-                      {isWebsite(key) && value !== "-" ? (
+                      {showAsLink ? (
                         <a
-                          href={value}
+                          href={value.startsWith("http") ? value : `https://${value}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:underline"
                         >
                           {value}
                         </a>
-                      ) : key === "name" ? (
+                      ) : showNameStyle ? (
                         <span className="text-blue-600">{value}</span>
                       ) : (
                         value
@@ -5367,8 +5336,10 @@ export default function OrganizationView() {
                         <div className="text-center py-4 text-gray-500">
                           Loading fields...
                         </div>
-                      ) : availableFields.length > 0 ? (
-                        availableFields.map((field) => {
+                      ) : availableFields.filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden).length > 0 ? (
+                        availableFields
+                          .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+                          .map((field) => {
                           const fieldKey =
                             field.field_key || field.api_name || field.field_name || field.id;
                           const isVisible =

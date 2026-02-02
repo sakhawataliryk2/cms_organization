@@ -337,28 +337,8 @@ function SortablePanel({ id, children, isOverlay = false }: { id: string; childr
   );
 }
 
-// Move constants outside component to ensure stable reference
-const JOB_SEEKER_DETAILS_DEFAULT_FIELDS = [
-  "status",
-  "currentOrganization",
-  "title",
-  "email",
-  "mobilePhone",
-  "address",
-  "desiredSalary",
-  "dateAdded",
-  "lastContactDate",
-  "owner",
-];
+// Storage keys for Job Seeker Details and Overview – field lists come from admin (custom field definitions)
 const JOB_SEEKER_DETAILS_STORAGE_KEY = "jobSeekersJobSeekerDetailsFields";
-
-const OVERVIEW_DEFAULT_FIELDS = [
-  "status",
-  "currentOrganization",
-  "title",
-  "email",
-  "mobilePhone",
-];
 const OVERVIEW_STORAGE_KEY = "jobSeekersOverviewFields";
 
 const JOBSEEKER_VIEW_TAB_IDS = ["summary", "modify", "history", "notes", "docs", "references", "applications", "onboarding"];
@@ -513,12 +493,29 @@ export default function JobSeekerView() {
   const [actionFields, setActionFields] = useState<any[]>([]);
   const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
 
-  // Field management state
+  // Field management – overview and jobSeekerDetails driven from admin field definitions only
   const [availableFields, setAvailableFields] = useState<any[]>([]);
-  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
-    resume: ["profile", "skills", "experience"],
-    overview: OVERVIEW_DEFAULT_FIELDS,
-    jobSeekerDetails: JOB_SEEKER_DETAILS_DEFAULT_FIELDS,
+  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
+    if (typeof window === "undefined") {
+      return { resume: ["profile", "skills", "experience"], overview: [], jobSeekerDetails: [] };
+    }
+    let overview: string[] = [];
+    let jobSeekerDetails: string[] = [];
+    try {
+      const o = localStorage.getItem(OVERVIEW_STORAGE_KEY);
+      if (o) {
+        const parsed = JSON.parse(o);
+        if (Array.isArray(parsed) && parsed.length > 0) overview = Array.from(new Set(parsed));
+      }
+    } catch (_) {}
+    try {
+      const d = localStorage.getItem(JOB_SEEKER_DETAILS_STORAGE_KEY);
+      if (d) {
+        const parsed = JSON.parse(d);
+        if (Array.isArray(parsed) && parsed.length > 0) jobSeekerDetails = Array.from(new Set(parsed));
+      }
+    } catch (_) {}
+    return { resume: ["profile", "skills", "experience"], overview, jobSeekerDetails };
   });
 
   // ===== Summary layout state =====
@@ -1722,24 +1719,6 @@ Best regards`;
         [];
 
       setAvailableFields(fields);
-
-      const visibleCustomFields = (fields || []).filter((f: any) => {
-        const isHidden = f.is_hidden === true || f.hidden === true || f.isHidden === true;
-        return !isHidden;
-      });
-
-      // Add custom fields to visible fields if they have values
-      const allCustomKeys = (visibleCustomFields || [])
-        .map((f: any) => f.field_key || f.api_name || f.field_name || f.id)
-        .filter(Boolean)
-        .map((k: any) => String(k));
-
-      setVisibleFields((prev) => ({
-        ...prev,
-        jobSeekerDetails: Array.from(
-          new Set([...(prev.jobSeekerDetails || []), ...allCustomKeys])
-        ),
-      }));
     } catch (err) {
       console.error("Error fetching available fields:", err);
     } finally {
@@ -1833,54 +1812,58 @@ Best regards`;
     });
   };
 
-  // Job Seeker Details field catalog: standard + all custom (for edit modal and display order)
+  // Job Seeker Details field catalog: from admin field definitions + record customFields only (no hardcoded standard)
   const jobSeekerDetailsFieldCatalog = useMemo(() => {
-    const standard: { key: string; label: string }[] = [
-      { key: "status", label: "Status" },
-      { key: "currentOrganization", label: "Current Organization" },
-      { key: "title", label: "Title" },
-      { key: "email", label: "Email" },
-      { key: "mobilePhone", label: "Mobile Phone" },
-      { key: "address", label: "Address" },
-      { key: "desiredSalary", label: "Desired Salary" },
-      { key: "dateAdded", label: "Date Added" },
-      { key: "lastContactDate", label: "Last Contact" },
-      { key: "owner", label: "User Owner" },
-    ];
-    const customFromDefs = (availableFields || [])
+    const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
-    const customFromJobSeeker = Object.keys(jobSeeker?.customFields || {})
-      .filter((k) => !keysFromDefs.has(k))
+    const seen = new Set(fromApi.map((f) => f.key));
+    const fromJS = Object.keys(jobSeeker?.customFields || {})
+      .filter((k) => !seen.has(k))
       .map((k) => ({ key: k, label: k }));
-    return [...standard, ...customFromDefs, ...customFromJobSeeker];
+    return [...fromApi, ...fromJS];
   }, [availableFields, jobSeeker?.customFields]);
 
-  // Overview panel field catalog: standard (5) + custom (for edit modal and display order)
+  // Overview panel field catalog: from admin field definitions + record customFields only
   const overviewFieldCatalog = useMemo(() => {
-    const standard: { key: string; label: string }[] = [
-      { key: "status", label: "Status" },
-      { key: "currentOrganization", label: "Current Organization" },
-      { key: "title", label: "Title" },
-      { key: "email", label: "Email" },
-      { key: "mobilePhone", label: "Mobile Phone" },
-    ];
-    const customFromDefs = (availableFields || [])
+    const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
-    const customFromJobSeeker = Object.keys(jobSeeker?.customFields || {})
-      .filter((k) => !keysFromDefs.has(k))
+    const seen = new Set(fromApi.map((f) => f.key));
+    const fromJS = Object.keys(jobSeeker?.customFields || {})
+      .filter((k) => !seen.has(k))
       .map((k) => ({ key: k, label: k }));
-    return [...standard, ...customFromDefs, ...customFromJobSeeker];
+    return [...fromApi, ...fromJS];
   }, [availableFields, jobSeeker?.customFields]);
+
+  // When catalog loads, if overview/jobSeekerDetails visible list is empty, default to all catalog keys
+  useEffect(() => {
+    const keys = jobSeekerDetailsFieldCatalog.map((f) => f.key);
+    if (keys.length > 0) {
+      setVisibleFields((prev) => {
+        const current = prev.jobSeekerDetails || [];
+        if (current.length > 0) return prev;
+        return { ...prev, jobSeekerDetails: keys };
+      });
+    }
+  }, [jobSeekerDetailsFieldCatalog]);
+
+  useEffect(() => {
+    const keys = overviewFieldCatalog.map((f) => f.key);
+    if (keys.length > 0) {
+      setVisibleFields((prev) => {
+        const current = prev.overview || [];
+        if (current.length > 0) return prev;
+        return { ...prev, overview: keys };
+      });
+    }
+  }, [overviewFieldCatalog]);
 
   // Sync Job Seeker Details modal state when opening edit for jobSeekerDetails
   useEffect(() => {

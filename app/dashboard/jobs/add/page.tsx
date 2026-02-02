@@ -14,6 +14,15 @@ import AddressGroupRenderer, {
   getAddressFields,
 } from "@/components/AddressGroupRenderer";
 
+// Map admin field labels to backend columns; unmapped labels go to custom_fields JSONB
+const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
+  "Job Title": "jobTitle", Title: "jobTitle",
+  "Hiring Manager": "hiringManager", "Hiring Manager Name": "hiringManager",
+  "Job Description": "jobDescription", Description: "jobDescription",
+  "Status": "status", "Job Status": "status",
+  "Organization": "organizationId", "Organization Name": "organizationId", Company: "organizationId",
+};
+
 // Define field type for typesafety
 interface FormField {
   id: string;
@@ -1190,68 +1199,33 @@ useEffect(() => {
     setError(null);
   
     try {
-      // 1) Standard fields (visible ones)
       const payload = formFields.reduce((acc, field) => {
         if (field.visible) acc[field.name] = field.value;
         return acc;
       }, {} as Record<string, any>);
-  
-      // 2) Custom fields from hook (keys are field_label)
+
       const customFieldsToSend = getCustomFieldsForSubmission();
-  
-      // 3) Build DB customFields object (keep empty strings, skip undefined/null)
       const customFieldsForDB: Record<string, any> = {};
-      Object.keys(customFieldsToSend).forEach((k) => {
-        const v = customFieldsToSend[k];
-        if (v !== undefined && v !== null) customFieldsForDB[k] = v;
+
+      // Labels in BACKEND_COLUMN_BY_LABEL → top-level columns; all others → custom_fields JSONB
+      Object.entries(customFieldsToSend).forEach(([label, value]) => {
+        if (value === undefined || value === null) return;
+        const column = BACKEND_COLUMN_BY_LABEL[label];
+        if (column) {
+          payload[column] = value;
+        } else {
+          customFieldsForDB[label] = value;
+        }
       });
-  
-      // 4) Map custom -> standard (Organizations style)
-      const mappedJobTitle =
-        customFieldsToSend["Job Title"] ||
-        customFieldsToSend["Title"] ||
-        payload.jobTitle ||
-        "";
-  
-      const mappedHiringManager =
-        customFieldsToSend["Hiring Manager"] ||
-        payload.hiringManager ||
-        "";
-  
-      const mappedJobDescription =
-        customFieldsToSend["Job Description"] ||
-        customFieldsToSend["Description"] ||
-        payload.jobDescription ||
-        "";
-  
-      const mappedStatusRaw =
-        customFieldsToSend["Status"] || payload.status || "Open";
+
       const allowedStatus = ["Open", "On Hold", "Filled", "Closed"];
-      const mappedStatus = allowedStatus.includes(mappedStatusRaw)
-        ? mappedStatusRaw
-        : "Open";
+      const statusRaw = payload.status || "Open";
+      payload.status = allowedStatus.includes(statusRaw) ? statusRaw : "Open";
+      payload.organizationId = organizationIdFromUrl || currentOrganizationId || payload.organizationId || "";
+      payload.jobType = jobType;
+      payload.custom_fields = customFieldsForDB;
 
-      // Use organizationId from URL if available, otherwise use form value
-      const finalOrganizationId =
-        organizationIdFromUrl ||
-        currentOrganizationId ||
-        payload.organizationId ||
-        "";
-
-      // 5) Final payload (✅ Use snake_case custom_fields like Organizations)
-      const finalPayload: Record<string, any> = {
-        ...payload,
-        jobTitle: mappedJobTitle,
-        jobType: jobType,
-        hiringManager: mappedHiringManager,
-        jobDescription: mappedJobDescription,
-        status: mappedStatus,
-        // Ensure organizationId is included (use URL param if available, otherwise form value)
-        organizationId: finalOrganizationId,
-
-        // ✅ Use snake_case custom_fields to match Organizations pattern
-        custom_fields: customFieldsForDB,
-      };
+      const finalPayload: Record<string, any> = payload;
   
       console.log(`${isEditMode ? "Updating" : "Creating"} job payload:`, finalPayload);
   

@@ -356,10 +356,11 @@ export default function HiringManagerList() {
     setSelectedFavoriteId(null);
   };
 
-  const DEFAULT_HM_COLUMNS: string[] = [
+  const HM_BACKEND_COLUMN_KEYS = [
     "full_name",
     "status",
     "title",
+    "organization_name",
     "email",
     "phone",
     "created_by_name",
@@ -441,42 +442,40 @@ export default function HiringManagerList() {
       .trim();
 
   const hmColumnsCatalog = useMemo(() => {
-    const standard = [
-      { key: "full_name", label: "Name", sortable: true, filterType: "text" as const },
-      { key: "status", label: "Status", sortable: true, filterType: "select" as const },
-      { key: "title", label: "Title", sortable: true, filterType: "text" as const },
-      { key: "organization_name", label: "Organization", sortable: true, filterType: "text" as const },
-      { key: "email", label: "Email", sortable: true, filterType: "text" as const },
-      { key: "phone", label: "Phone", sortable: true, filterType: "text" as const },
-      { key: "created_by_name", label: "Owner", sortable: true, filterType: "text" as const },
-      { key: "created_at", label: "Date Added", sortable: true, filterType: "text" as const },
-    ];
-
-    const apiCustom = (availableFields || []).map((f: any) => {
-      const stableKey = f?.field_key || f?.field_name || f?.api_name || f?.id;
-
-      return {
-        key: `custom:${String(stableKey)}`,
-        label: f?.field_label || f?.field_name || String(stableKey),
-        sortable: false,
-        filterType: "text" as const,
-      };
-    });
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => {
+        const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
+        const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanize(name) : "");
+        const isBackendCol = name && HM_BACKEND_COLUMN_KEYS.includes(name);
+        let filterType: "text" | "select" | "number" = "text";
+        if (name === "status") filterType = "select";
+        return {
+          key: isBackendCol ? name : `custom:${label || name}`,
+          label: String(label || name),
+          sortable: isBackendCol,
+          filterType,
+        };
+      });
 
     const customKeySet = new Set<string>();
     (hiringManagers || []).forEach((hm: any) => {
       const cf = hm?.customFields || hm?.custom_fields || {};
       Object.keys(cf).forEach((k) => customKeySet.add(k));
     });
+    const alreadyHaveCustom = new Set(
+      fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
+    );
+    const fromList = Array.from(customKeySet)
+      .filter((k) => !alreadyHaveCustom.has(k))
+      .map((k) => ({
+        key: `custom:${k}`,
+        label: humanize(k),
+        sortable: false,
+        filterType: "text" as const,
+      }));
 
-    const fromList = Array.from(customKeySet).map((k) => ({
-      key: `custom:${k}`,
-      label: humanize(k),
-      sortable: false,
-      filterType: "text" as const,
-    }));
-
-    const merged = [...standard, ...apiCustom, ...fromList];
+    const merged = [...fromApi, ...fromList];
     const seen = new Set<string>();
     return merged.filter((x) => {
       if (seen.has(x.key)) return false;
@@ -536,29 +535,30 @@ export default function HiringManagerList() {
   } = useHeaderConfig({
     entityType: "HIRING_MANAGER",
     configType: "columns",
-    defaultFields: DEFAULT_HM_COLUMNS,
+    defaultFields: [],
   });
 
-  // Load column order from localStorage on mount
   useEffect(() => {
+    const catalogKeys = hmColumnsCatalog.map((c) => c.key);
+    if (catalogKeys.length === 0) return;
+    const catalogSet = new Set(catalogKeys);
     const savedOrder = localStorage.getItem("hiringManagerColumnOrder");
     if (savedOrder) {
       try {
         const parsed = JSON.parse(savedOrder);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // Only use saved order if it contains valid column keys
-          const validOrder = parsed.filter((key) =>
-            [...DEFAULT_HM_COLUMNS, ...columnFields].includes(key)
-          );
+          const validOrder = parsed.filter((k: string) => catalogSet.has(k));
           if (validOrder.length > 0) {
             setColumnFields(validOrder);
+            return;
           }
         }
-      } catch (e) {
-        console.error("Error loading column order:", e);
+      } catch {
+        // ignore
       }
     }
-  }, []);
+    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
+  }, [hmColumnsCatalog]);
 
   // Save column order to localStorage whenever it changes
   useEffect(() => {
@@ -1326,7 +1326,7 @@ export default function HiringManagerList() {
                 <div className="flex justify-end gap-2 mt-4">
                   <button
                     className="px-4 py-2 border rounded hover:bg-gray-50"
-                    onClick={() => setColumnFields(DEFAULT_HM_COLUMNS)}
+                    onClick={() => setColumnFields(hmColumnsCatalog.map((c) => c.key))}
                   >
                     Reset
                   </button>

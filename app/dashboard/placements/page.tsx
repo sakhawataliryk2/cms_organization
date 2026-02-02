@@ -381,38 +381,43 @@ export default function PlacementList() {
     setSelectedFavoriteId(null);
   };
 
-  const DEFAULT_PLACEMENT_COLUMNS: string[] = [
+  const PLACEMENT_BACKEND_COLUMN_KEYS = [
     "candidate",
     "job",
     "status",
     "start_date",
+    "end_date",
+    "salary",
     "owner",
+    "created_at",
+    "created_by",
   ];
 
-  const placementColumnsCatalog = useMemo(() => [
-    // ---------- STANDARD ----------
-    { key: "candidate", label: "Candidate", sortable: true, filterType: "text" as const },
-    { key: "job", label: "Job", sortable: true, filterType: "text" as const },
-    { key: "status", label: "Status", sortable: true, filterType: "select" as const },
-    { key: "start_date", label: "Start Date", sortable: true, filterType: "text" as const },
-    { key: "end_date", label: "End Date", sortable: true, filterType: "text" as const },
-    { key: "salary", label: "Salary", sortable: true, filterType: "text" as const },
-    { key: "owner", label: "Owner", sortable: true, filterType: "text" as const },
-    { key: "created_at", label: "Date Added", sortable: true, filterType: "text" as const },
-    { key: "created_by", label: "Created By", sortable: true, filterType: "text" as const },
+  const humanizePlacement = (s: string) =>
+    s
+      .replace(/[_\-]+/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .trim();
 
-    // ---------- CUSTOM (FROM MODIFY PAGE) ----------
-    ...availableFields.map((f: any) => {
-      const key = f.field_key || f.field_name || f.api_name || f.id;
-
-      return {
-        key: `custom:${String(key)}`,
-        label: f.field_label || f.field_name || String(key),
-        sortable: false,
-        filterType: "text" as const,
-      };
-    }),
-  ], [availableFields]);
+  const placementColumnsCatalog = useMemo(() => {
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => {
+        const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
+        const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanizePlacement(name) : "");
+        const isBackendCol = name && PLACEMENT_BACKEND_COLUMN_KEYS.includes(name);
+        let filterType: "text" | "select" | "number" = "text";
+        if (name === "status") filterType = "select";
+        return {
+          key: isBackendCol ? name : `custom:${label || name}`,
+          label: String(label || name),
+          sortable: isBackendCol,
+          filterType,
+        };
+      });
+    return fromApi;
+  }, [availableFields]);
 
   const getColumnLabel = (key: string) =>
     placementColumnsCatalog.find((c) => c.key === key)?.label ?? key;
@@ -461,8 +466,30 @@ export default function PlacementList() {
   } = useHeaderConfig({
     entityType: "PLACEMENT",
     configType: "columns",
-    defaultFields: DEFAULT_PLACEMENT_COLUMNS,
+    defaultFields: [],
   });
+
+  useEffect(() => {
+    const catalogKeys = placementColumnsCatalog.map((c) => c.key);
+    if (catalogKeys.length === 0) return;
+    const catalogSet = new Set(catalogKeys);
+    const savedOrder = localStorage.getItem("placementsColumnOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validOrder = parsed.filter((k: string) => catalogSet.has(k));
+          if (validOrder.length > 0) {
+            setColumnFields(validOrder);
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
+  }, [placementColumnsCatalog]);
 
   const getColumnInfo = (key: string) =>
     placementColumnsCatalog.find((c) => c.key === key);
@@ -508,26 +535,6 @@ export default function PlacementList() {
       setColumnFields(newOrder);
     }
   };
-
-  // Load column order from localStorage on mount
-  useEffect(() => {
-    const savedOrder = localStorage.getItem("placementsColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const validOrder = parsed.filter((key) =>
-            [...DEFAULT_PLACEMENT_COLUMNS, ...columnFields].includes(key)
-          );
-          if (validOrder.length > 0) {
-            setColumnFields(validOrder);
-          }
-        }
-      } catch (e) {
-        console.error("Error loading column order:", e);
-      }
-    }
-  }, []);
 
   // Save column order to localStorage whenever it changes
   useEffect(() => {
@@ -1238,7 +1245,7 @@ export default function PlacementList() {
                 <div className="flex justify-end gap-2 mt-4">
                   <button
                     className="px-4 py-2 border rounded hover:bg-gray-50"
-                    onClick={() => setColumnFields(DEFAULT_PLACEMENT_COLUMNS)}
+                    onClick={() => setColumnFields(placementColumnsCatalog.map((c) => c.key))}
                   >
                     Reset
                   </button>

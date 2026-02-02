@@ -28,6 +28,18 @@ interface User {
   email: string;
 }
 
+// Map admin field labels to backend columns; unmapped labels go to custom_fields JSONB
+const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
+  "Task Title": "title", Title: "title",
+  "Description": "description", "Task Description": "description", Details: "description",
+  "Owner": "owner",
+  "Status": "status", "Current Status": "status", "Task Status": "status",
+  "Priority": "priority", "Task Priority": "priority",
+  "Assigned To": "assignedTo", Assigned: "assignedTo", Assignee: "assignedTo",
+  "Due Date": "dueDate", Due: "dueDate",
+  "Due Time": "dueTime", Time: "dueTime",
+};
+
 export default function AddTask() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -312,87 +324,46 @@ export default function AddTask() {
     setError(null);
 
     try {
-      // Get custom fields for submission (returns object with field_label as keys)
       const customFieldsToSend = getCustomFieldsForSubmission();
-
-      // Build API payload with camelCase keys as expected by backend
       const apiData: any = {};
+      const customFieldsForDB: Record<string, any> = {};
 
-      // Map custom field labels to camelCase API field names
-      const fieldMappings: Record<string, string[]> = {
-        title: ["Task Title", "Title"],
-        description: ["Description", "Task Description", "Details"],
-        owner: ["Owner"],
-        status: ["Status", "Current Status", "Task Status"],
-        priority: ["Priority", "Task Priority"],
-        assignedTo: ["Assigned To", "Assigned", "Assignee"],
-        dueDate: ["Due Date", "Due"],
-        dueTime: ["Due Time", "Time"],
-      };
+      // Labels in BACKEND_COLUMN_BY_LABEL → top-level columns; all others → custom_fields JSONB
+      Object.entries(customFieldsToSend).forEach(([label, value]) => {
+        if (value === undefined || value === null) return;
+        const column = BACKEND_COLUMN_BY_LABEL[label];
+        if (column) {
+          apiData[column] = value;
+        } else {
+          customFieldsForDB[label] = value;
+        }
+      });
 
-      // Extract standard fields from custom fields using camelCase keys
-      Object.entries(fieldMappings).forEach(([camelKey, labels]) => {
-        for (const label of labels) {
-          const value = customFieldsToSend[label];
-          if (value !== undefined && value !== null && value !== "") {
-            // Handle assignedTo - convert option text or user name to numeric user ID
-            if (camelKey === "assignedTo") {
-              let assignedToId: number | null = null;
-
-              // Strategy 1: Try to find user by exact name match
-              const userByName = activeUsers.find(
-                (u) => u.name === value || u.email === value
-              );
-              if (userByName) {
-                assignedToId = Number(userByName.id);
-              } else {
-                // Strategy 2: If value looks like "Option 2", try to extract number and use as index
-                const optionMatch = value.match(/Option\s*(\d+)/i);
-                if (optionMatch && activeUsers.length > 0) {
-                  const optionNumber = parseInt(optionMatch[1]);
-                  // Option 1 = index 0, Option 2 = index 1, etc.
-                  const userIndex = optionNumber - 1;
-                  if (userIndex >= 0 && userIndex < activeUsers.length) {
-                    assignedToId = Number(activeUsers[userIndex].id);
-                  }
-                } else {
-                  // Strategy 3: Try to parse as number directly (if it's already a user ID)
-                  const parsed = Number(value);
-                  if (!isNaN(parsed) && parsed > 0) {
-                    // Verify it's a valid user ID
-                    const userById = activeUsers.find(
-                      (u) => Number(u.id) === parsed
-                    );
-                    if (userById) {
-                      assignedToId = parsed;
-                    }
-                  }
-                }
-              }
-
-              // Only set assignedTo if we found a valid user ID
-              if (assignedToId !== null) {
-                apiData.assignedTo = assignedToId;
-              }
-              // If we couldn't map it, don't set assignedTo (let backend handle null)
-            } else {
-              apiData[camelKey] = value;
+      // assignedTo: convert user name/option text to numeric user ID
+      const rawAssignedTo = apiData.assignedTo;
+      if (rawAssignedTo !== undefined && rawAssignedTo !== null && String(rawAssignedTo).trim() !== "") {
+        const value = String(rawAssignedTo).trim();
+        let assignedToId: number | null = null;
+        const userByName = activeUsers.find((u) => u.name === value || u.email === value);
+        if (userByName) {
+          assignedToId = Number(userByName.id);
+        } else {
+          const optionMatch = value.match(/Option\s*(\d+)/i);
+          if (optionMatch && activeUsers.length > 0) {
+            const userIndex = parseInt(optionMatch[1], 10) - 1;
+            if (userIndex >= 0 && userIndex < activeUsers.length) {
+              assignedToId = Number(activeUsers[userIndex].id);
             }
-            break; // Use first matching label
+          } else {
+            const parsed = Number(value);
+            if (!isNaN(parsed) && parsed > 0 && activeUsers.some((u) => Number(u.id) === parsed)) {
+              assignedToId = parsed;
+            }
           }
         }
-      });
+        apiData.assignedTo = assignedToId;
+      }
 
-      // Prepare customFields object for database (all custom field values)
-      const customFieldsForDB: Record<string, any> = {};
-      customFields.forEach((field) => {
-        const value = customFieldValues[field.field_name];
-        if (value !== undefined && value !== null && value !== "") {
-          customFieldsForDB[field.field_label] = value;
-        }
-      });
-
-      // Add customFields to API data (backend expects camelCase)
       apiData.customFields = customFieldsForDB;
 
       if (relatedEntity && relatedEntityId) {

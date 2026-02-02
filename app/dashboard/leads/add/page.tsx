@@ -38,6 +38,27 @@ interface User {
   email: string;
 }
 
+// Map admin field labels to backend columns; unmapped labels go to custom_fields JSONB
+const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
+  "First Name": "firstName", First: "firstName", FName: "firstName",
+  "Last Name": "lastName", Last: "lastName", LName: "lastName",
+  "Status": "status", "Lead Status": "status",
+  "Nickname": "nickname", "Nick Name": "nickname",
+  "Title": "title", "Job Title": "title", Position: "title",
+  "Organization": "organizationId", "Organization Name": "organizationId", Company: "organizationId",
+  "Department": "department", Dept: "department",
+  "Reports To": "reportsTo", Manager: "reportsTo",
+  "Owner": "owner", "Assigned To": "owner", "Assigned Owner": "owner",
+  "Secondary Owners": "secondaryOwners", "Secondary Owner": "secondaryOwners",
+  "Email": "email", "Email 1": "email", "Email Address": "email", "E-mail": "email",
+  "Email 2": "email2",
+  "Phone": "phone", "Phone Number": "phone", Telephone: "phone",
+  "Mobile Phone": "mobilePhone", Mobile: "mobilePhone", "Cell Phone": "mobilePhone",
+  "Direct Line": "directLine",
+  "LinkedIn URL": "linkedinUrl", LinkedIn: "linkedinUrl", "LinkedIn Profile": "linkedinUrl",
+  "Address": "address", "Street Address": "address", "Address 1": "address",
+};
+
 export default function AddLead() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -541,141 +562,59 @@ export default function AddLead() {
     setError(null);
 
     try {
-      // Get custom fields for submission (keys are field_label)
       const customFieldsToSend = getCustomFieldsForSubmission();
-
-      // Build DB customFields object (keep empty strings, skip undefined/null)
       const customFieldsForDB: Record<string, any> = {};
-      Object.keys(customFieldsToSend).forEach((k) => {
-        const v = customFieldsToSend[k];
-        if (v !== undefined && v !== null) customFieldsForDB[k] = v;
+
+      const apiDataBase: Record<string, any> = {
+        firstName: "",
+        lastName: "",
+        status: "New Lead",
+        nickname: "",
+        title: "",
+        organizationId: "",
+        organizationName: "",
+        department: "Accounting",
+        reportsTo: "",
+        owner: currentUser?.name || "",
+        secondaryOwners: "",
+        email: "",
+        email2: "",
+        phone: "",
+        mobilePhone: "",
+        directLine: "",
+        linkedinUrl: "",
+        address: "",
+      };
+
+      // Labels in BACKEND_COLUMN_BY_LABEL → top-level columns; all others → custom_fields JSONB
+      Object.entries(customFieldsToSend).forEach(([label, value]) => {
+        if (value === undefined || value === null) return;
+        const column = BACKEND_COLUMN_BY_LABEL[label];
+        if (column) {
+          apiDataBase[column] = value;
+        } else {
+          customFieldsForDB[label] = value;
+        }
       });
 
-      // Extract relationship IDs from custom fields
-      // Field_18 = Contact (Hiring Manager IDs) - comma-separated
-      const contactFieldValue = customFieldValues["Field_18"] || "";
-      const hiringManagerIds = contactFieldValue
-        ? contactFieldValue
-            .toString()
-            .split(",")
-            .map((id: string) => id.trim())
-            .filter((id: string) => id && !isNaN(Number(id)))
-            .map((id: string) => Number(id))
-        : [];
+      apiDataBase.organizationName = apiDataBase.organizationId || apiDataBase.organizationName;
 
-      // Field_20 = Candidate (Job Seeker IDs) - comma-separated
-      const candidateFieldValue = customFieldValues["Field_20"] || "";
-      const jobSeekerIds = candidateFieldValue
-        ? candidateFieldValue
-            .toString()
-            .split(",")
-            .map((id: string) => id.trim())
-            .filter((id: string) => id && !isNaN(Number(id)))
-            .map((id: string) => Number(id))
-        : [];
-
-      // Field_21 = Job (Job IDs) - comma-separated
-      const jobFieldValue = customFieldValues["Field_21"] || "";
-      const jobIds = jobFieldValue
-        ? jobFieldValue
-            .toString()
-            .split(",")
-            .map((id: string) => id.trim())
-            .filter((id: string) => id && !isNaN(Number(id)))
-            .map((id: string) => Number(id))
-        : [];
-
-      // Field_22 = Placement (Placement IDs) - comma-separated
-      const placementFieldValue = customFieldValues["Field_22"] || "";
-      const placementIds = placementFieldValue
-        ? placementFieldValue
-            .toString()
-            .split(",")
-            .map((id: string) => id.trim())
-            .filter((id: string) => id && !isNaN(Number(id)))
-            .map((id: string) => Number(id))
-        : [];
-
-      // Field_23 = Opportunity (Opportunity IDs) - comma-separated
-      const opportunityFieldValue = customFieldValues["Field_23"] || "";
-      const opportunityIds = opportunityFieldValue
-        ? opportunityFieldValue
-            .toString()
-            .split(",")
-            .map((id: string) => id.trim())
-            .filter((id: string) => id && !isNaN(Number(id)))
-            .map((id: string) => Number(id))
-        : [];
-
-      // Extract firstName and lastName from custom fields OR formData (same pattern as jobs)
-      const mappedFirstName =
-        customFieldsToSend["First Name"] ||
-        formData.firstName ||
-        "";
-      
-      const mappedLastName =
-        customFieldsToSend["Last Name"] ||
-        formData.lastName ||
-        "";
-
-      // Map other standard fields from custom fields OR formData
-      const mappedStatus =
-        customFieldsToSend["Status"] || formData.status || "New Lead";
-      const mappedNickname =
-        customFieldsToSend["Nickname"] || formData.nickname || "";
-      const mappedTitle =
-        customFieldsToSend["Title"] || formData.title || "";
-      const mappedOrganizationId =
-        customFieldsToSend["Organization"] || formData.organizationId || "";
-      const mappedDepartment =
-        customFieldsToSend["Department"] || formData.department || "";
-      const mappedReportsTo =
-        customFieldsToSend["Reports To"] || formData.reportsTo || "";
-      const mappedOwner =
-        customFieldsToSend["Owner"] || formData.owner || currentUser?.name || "";
-      const mappedSecondaryOwners =
-        customFieldsToSend["Secondary Owners"] || formData.secondaryOwners || "";
-      const mappedEmail =
-        customFieldsToSend["Email"] || formData.email || "";
-      const mappedEmail2 =
-        customFieldsToSend["Email 2"] || formData.email2 || "";
-      const mappedPhone =
-        customFieldsToSend["Phone"] || formData.phone || "";
-      const mappedMobilePhone =
-        customFieldsToSend["Mobile Phone"] || formData.mobilePhone || "";
-      const mappedDirectLine =
-        customFieldsToSend["Direct Line"] || formData.directLine || "";
-      const mappedLinkedInUrl =
-        customFieldsToSend["LinkedIn URL"] || formData.linkedinUrl || "";
-      const mappedAddress =
-        customFieldsToSend["Address"] || formData.address || "";
+      // Extract relationship IDs from custom fields (Field_18 = Contact, Field_20 = Candidate, etc.)
+      const parseIds = (val: string | undefined): number[] =>
+        !val ? [] : val.toString().split(",").map((id: string) => id.trim()).filter((id: string) => id && !isNaN(Number(id))).map((id: string) => Number(id));
+      const hiringManagerIds = parseIds(customFieldValues["Field_18"]);
+      const jobSeekerIds = parseIds(customFieldValues["Field_20"]);
+      const jobIds = parseIds(customFieldValues["Field_21"]);
+      const placementIds = parseIds(customFieldValues["Field_22"]);
+      const opportunityIds = parseIds(customFieldValues["Field_23"]);
 
       const apiData = {
-        firstName: mappedFirstName,
-        lastName: mappedLastName,
-        status: mappedStatus,
-        nickname: mappedNickname,
-        title: mappedTitle,
-        organizationId: mappedOrganizationId,
-        organizationName: mappedOrganizationId, // In case it's a string name
-        department: mappedDepartment,
-        reportsTo: mappedReportsTo,
-        owner: mappedOwner,
-        secondaryOwners: mappedSecondaryOwners,
-        email: mappedEmail,
-        email2: mappedEmail2,
-        phone: mappedPhone,
-        mobilePhone: mappedMobilePhone,
-        directLine: mappedDirectLine,
-        linkedinUrl: mappedLinkedInUrl,
-        address: mappedAddress,
-        // Relationship IDs extracted from custom fields
+        ...apiDataBase,
         hiringManagerIds: hiringManagerIds.length > 0 ? hiringManagerIds : undefined,
         jobSeekerIds: jobSeekerIds.length > 0 ? jobSeekerIds : undefined,
         jobIds: jobIds.length > 0 ? jobIds : undefined,
         placementIds: placementIds.length > 0 ? placementIds : undefined,
         opportunityIds: opportunityIds.length > 0 ? opportunityIds : undefined,
-        // Use snake_case custom_fields to match backend expectation
         custom_fields: customFieldsForDB,
       };
 

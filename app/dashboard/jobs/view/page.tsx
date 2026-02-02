@@ -338,13 +338,9 @@ function SortableColumnHeader({
 // Move DEFAULT_HEADER_FIELDS outside component to ensure stable reference
 const DEFAULT_HEADER_FIELDS = ["phone", "website"];
 
-const JOB_DETAILS_DEFAULT_FIELDS = ["title", "description", "benefits", "requiredSkills", "salaryRange"];
+// Storage keys for Job Details, Details, Hiring Manager – field lists come from admin (custom field definitions)
 const JOB_DETAILS_STORAGE_KEY = "jobsJobDetailsFields";
-
-const DETAILS_DEFAULT_FIELDS = ["status", "priority", "employmentType", "startDate", "worksite", "dateAdded", "jobBoardStatus", "owner"];
 const DETAILS_STORAGE_KEY = "jobsDetailsFields";
-
-const HIRING_MANAGER_DEFAULT_FIELDS = ["status", "organization", "department", "email", "email2", "mobilePhone", "directLine", "reportsTo", "linkedinUrl", "dateAdded", "owner", "address"];
 const HIRING_MANAGER_STORAGE_KEY = "jobsHiringManagerFields";
 
 const JOB_VIEW_TAB_IDS = ["summary", "modify", "history", "notes", "docs"];
@@ -1027,20 +1023,35 @@ export default function JobView() {
   const [isLoadingHiringManagerFields, setIsLoadingHiringManagerFields] = useState(false);
   const [jobHiringManager, setJobHiringManager] = useState<any>(null);
   const [isLoadingJobHiringManager, setIsLoadingJobHiringManager] = useState(false);
-  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
-    jobDetails: JOB_DETAILS_DEFAULT_FIELDS,
-    details: [
-      "status",
-      "priority",
-      "employmentType",
-      "startDate",
-      "worksite",
-      "dateAdded",
-      "jobBoardStatus",
-      "owner",
-    ],
-    hiringManager: HIRING_MANAGER_DEFAULT_FIELDS,
-    recentNotes: ["notes"],
+  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
+    if (typeof window === "undefined") {
+      return { jobDetails: [], details: [], hiringManager: [], recentNotes: ["notes"] };
+    }
+    let jobDetails: string[] = [];
+    let details: string[] = [];
+    let hiringManager: string[] = [];
+    try {
+      const jd = localStorage.getItem(JOB_DETAILS_STORAGE_KEY);
+      if (jd) {
+        const parsed = JSON.parse(jd);
+        if (Array.isArray(parsed) && parsed.length > 0) jobDetails = Array.from(new Set(parsed));
+      }
+    } catch (_) {}
+    try {
+      const d = localStorage.getItem(DETAILS_STORAGE_KEY);
+      if (d) {
+        const parsed = JSON.parse(d);
+        if (Array.isArray(parsed) && parsed.length > 0) details = Array.from(new Set(parsed));
+      }
+    } catch (_) {}
+    try {
+      const hm = localStorage.getItem(HIRING_MANAGER_STORAGE_KEY);
+      if (hm) {
+        const parsed = JSON.parse(hm);
+        if (Array.isArray(parsed) && parsed.length > 0) hiringManager = Array.from(new Set(parsed));
+      }
+    } catch (_) {}
+    return { jobDetails, details, hiringManager, recentNotes: ["notes"] };
   });
 
   // ===== Summary layout state =====
@@ -1357,80 +1368,88 @@ export default function JobView() {
 
   const renderDetailsPanel = () => {
     if (!job) return null;
-    return (
-      <PanelWithHeader
-        title="Details"
-        onEdit={() => handleEditPanel("details")}
-      >
-        <div className="space-y-0 border border-gray-200 rounded">
-          {visibleFields.details.includes("status") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                Status:
-              </div>
+    const customFieldDefs = (availableFields || []).filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden);
+    const renderDetailsRow = (key: string) => {
+      const label = detailsFieldCatalog.find((f) => f.key === key)?.label || key;
+      const LabelCell = () => (
+        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+      );
+      switch (key) {
+        case "status":
+          return (
+            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+              <LabelCell />
               <div className="flex-1 p-2">
-                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                  {job.status}
-                </span>
+                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{job.status}</span>
               </div>
             </div>
-          )}
-          {visibleFields.details.includes("priority") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                Priority:
-              </div>
-              <div className="flex-1 p-2">{job.priority}</div>
+          );
+        case "priority":
+          return (
+            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+              <LabelCell />
+              <div className="flex-1 p-2">{job.priority ?? "-"}</div>
             </div>
-          )}
-          {visibleFields.details.includes("employmentType") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                Employment Type:
-              </div>
-              <div className="flex-1 p-2">{job.employmentType}</div>
+          );
+        case "employmentType":
+          return (
+            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+              <LabelCell />
+              <div className="flex-1 p-2">{job.employmentType ?? "-"}</div>
             </div>
-          )}
-          {visibleFields.details.includes("startDate") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                Start Date:
-              </div>
-              <div className="flex-1 p-2">{job.startDate}</div>
+          );
+        case "startDate":
+          return (
+            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+              <LabelCell />
+              <div className="flex-1 p-2">{job.startDate ?? "-"}</div>
             </div>
-          )}
-          {visibleFields.details.includes("worksite") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                Worksite Location:
-              </div>
-              <div className="flex-1 p-2">{job.worksite}</div>
+          );
+        case "worksite":
+          return (
+            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+              <LabelCell />
+              <div className="flex-1 p-2">{job.worksite ?? "-"}</div>
             </div>
-          )}
-          {visibleFields.details.includes("dateAdded") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                Date Added:
-              </div>
-              <div className="flex-1 p-2">{job.dateAdded}</div>
+          );
+        case "dateAdded":
+          return (
+            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+              <LabelCell />
+              <div className="flex-1 p-2">{job.dateAdded ?? "-"}</div>
             </div>
-          )}
-          {visibleFields.details.includes("jobBoardStatus") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                Job Board Status:
-              </div>
-              <div className="flex-1 p-2">{job.jobBoardStatus}</div>
+          );
+        case "jobBoardStatus":
+          return (
+            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+              <LabelCell />
+              <div className="flex-1 p-2">{job.jobBoardStatus ?? "-"}</div>
             </div>
-          )}
-          {visibleFields.details.includes("owner") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">
-                User Owner:
-              </div>
-              <div className="flex-1 p-2">{job.owner}</div>
+          );
+        case "owner":
+          return (
+            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+              <LabelCell />
+              <div className="flex-1 p-2">{job.owner ?? "-"}</div>
             </div>
-          )}
+          );
+        default: {
+          const field = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
+          const fieldLabel = field?.field_label || field?.field_name || key;
+          const fieldValue = job.customFields?.[key] ?? "-";
+          return (
+            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+              <LabelCell />
+              <div className="flex-1 p-2">{String(fieldValue)}</div>
+            </div>
+          );
+        }
+      }
+    };
+    return (
+      <PanelWithHeader title="Details" onEdit={() => handleEditPanel("details")}>
+        <div className="space-y-0 border border-gray-200 rounded">
+          {Array.from(new Set(visibleFields.details || [])).map((key) => renderDetailsRow(key))}
         </div>
       </PanelWithHeader>
     );
@@ -1597,41 +1616,31 @@ export default function JobView() {
     );
   };
 
-  // Same field catalog as Hiring Manager view Details panel (from Hiring Manager modify page)
+  // Hiring Manager panel field catalog: from admin (hiring-managers) field definitions + record customFields only
   const hiringManagerFieldCatalog = useMemo(() => {
-    const standard: { key: string; label: string }[] = [
-      { key: "status", label: "Status" },
-      { key: "organization", label: "Organization" },
-      { key: "department", label: "Department" },
-      { key: "email", label: "Email" },
-      { key: "email2", label: "Email 2" },
-      { key: "mobilePhone", label: "Mobile Phone" },
-      { key: "directLine", label: "Direct Line" },
-      { key: "reportsTo", label: "Reports To" },
-      { key: "linkedinUrl", label: "LinkedIn URL" },
-      { key: "dateAdded", label: "Date Added" },
-      { key: "owner", label: "Owner" },
-      { key: "address", label: "Address" },
-    ];
-    const customFromDefs = (hiringManagerAvailableFields || [])
+    const fromApi = (hiringManagerAvailableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
-    const standardKeys = new Set(standard.map((s) => s.key));
-    const customFromHM = Object.keys(jobHiringManager?.customFields || {})
-      .filter((k) => !keysFromDefs.has(k) && !standardKeys.has(k))
+    const seen = new Set(fromApi.map((f) => f.key));
+    const fromHM = Object.keys(jobHiringManager?.customFields || {})
+      .filter((k) => !seen.has(k))
       .map((k) => ({ key: k, label: k }));
-    const all = [...standard, ...customFromDefs, ...customFromHM];
-    const seen = new Set<string>();
-    return all.filter((f) => {
-      if (seen.has(f.key)) return false;
-      seen.add(f.key);
-      return true;
-    });
+    return [...fromApi, ...fromHM];
   }, [hiringManagerAvailableFields, jobHiringManager?.customFields]);
+
+  useEffect(() => {
+    const keys = hiringManagerFieldCatalog.map((f) => f.key);
+    if (keys.length > 0) {
+      setVisibleFields((prev) => {
+        const current = prev.hiringManager || [];
+        if (current.length > 0) return prev;
+        return { ...prev, hiringManager: keys };
+      });
+    }
+  }, [hiringManagerFieldCatalog]);
 
   const renderPanel = useCallback((panelId: string, isOverlay = false) => {
     if (panelId === "jobDetails") {
@@ -2227,43 +2236,8 @@ export default function JobView() {
       const response = await fetch("/api/admin/field-management/jobs");
       if (response.ok) {
         const data = await response.json();
-        console.log("Data", data)
         const fields = data.customFields || [];
-        console.log("Fields", fields)
         setAvailableFields(fields);
-
-
-        // REMOVED: Auto-adding custom fields to visible fields
-        // if (job && job.customFields) {
-        //   const customFieldKeys = Object.keys(job.customFields);
-        //   customFieldKeys.forEach((fieldKey) => {
-        //     if (!visibleFields.jobDetails.includes(fieldKey)) {
-        //       setVisibleFields((prev) => ({
-        //         ...prev,
-        //         jobDetails: [...prev.jobDetails, fieldKey],
-        //       }));
-        //     }
-        //   });
-        // }
-        const visibleCustomFields = fields.filter((f: any) => {
-          const isHidden =
-            f?.is_hidden === true ||
-            f?.hidden === true ||
-            f?.isHidden === true;
-          return !isHidden;
-        });
-
-        const allCustomKeys = visibleCustomFields.map(
-          (f: any) => f.field_name || f.field_key || f.id
-        );
-
-        console.log("All Custom Keys", allCustomKeys)
-
-        setVisibleFields((prev) => ({
-          ...prev,
-          jobDetails: Array.from(new Set([...prev.jobDetails, ...allCustomKeys])),
-        }));
-        console.log("Visible Fields", visibleFields)
       }
     } catch (err) {
       console.error("Error fetching available fields:", err);
@@ -2290,26 +2264,19 @@ export default function JobView() {
     });
   };
 
-  // Job Details field catalog: standard + all custom (for edit modal and display order)
+  // Job Details field catalog: from admin field definitions + record customFields only (no hardcoded standard)
   const jobDetailsFieldCatalog = useMemo(() => {
-    const standard: { key: string; label: string }[] = [
-      { key: "title", label: "Title" },
-      { key: "description", label: "Description" },
-      { key: "benefits", label: "Benefits" },
-      { key: "requiredSkills", label: "Required Skills" },
-      { key: "salaryRange", label: "Salary Range" },
-    ];
-    const customFromDefs = (availableFields || [])
+    const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
-    const customFromJob = Object.keys(job?.customFields || {})
-      .filter((k) => !keysFromDefs.has(k))
+    const seen = new Set(fromApi.map((f) => f.key));
+    const fromJob = Object.keys(job?.customFields || {})
+      .filter((k) => !seen.has(k))
       .map((k) => ({ key: k, label: k }));
-    return [...standard, ...customFromDefs, ...customFromJob];
+    return [...fromApi, ...fromJob];
   }, [availableFields, job?.customFields]);
 
   // Sync Job Details modal state when opening edit for jobDetails
@@ -2327,19 +2294,43 @@ export default function JobView() {
     );
   }, [editingPanel, visibleFields.jobDetails, jobDetailsFieldCatalog]);
 
-  const detailsFieldCatalog = useMemo(
-    () => [
-      { key: "status", label: "Status" },
-      { key: "priority", label: "Priority" },
-      { key: "employmentType", label: "Employment Type" },
-      { key: "startDate", label: "Start Date" },
-      { key: "worksite", label: "Worksite Location" },
-      { key: "dateAdded", label: "Date Added" },
-      { key: "jobBoardStatus", label: "Job Board Status" },
-      { key: "owner", label: "User Owner" },
-    ],
-    []
-  );
+  // Details panel field catalog: from admin field definitions + record customFields only
+  const detailsFieldCatalog = useMemo(() => {
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+    const seen = new Set(fromApi.map((f) => f.key));
+    const fromJob = Object.keys(job?.customFields || {})
+      .filter((k) => !seen.has(k))
+      .map((k) => ({ key: k, label: k }));
+    return [...fromApi, ...fromJob];
+  }, [availableFields, job?.customFields]);
+
+  // When catalog loads, if jobDetails/details/hiringManager visible list is empty, default to all catalog keys
+  useEffect(() => {
+    const keys = jobDetailsFieldCatalog.map((f) => f.key);
+    if (keys.length > 0) {
+      setVisibleFields((prev) => {
+        const current = prev.jobDetails || [];
+        if (current.length > 0) return prev;
+        return { ...prev, jobDetails: keys };
+      });
+    }
+  }, [jobDetailsFieldCatalog]);
+
+  useEffect(() => {
+    const keys = detailsFieldCatalog.map((f) => f.key);
+    if (keys.length > 0) {
+      setVisibleFields((prev) => {
+        const current = prev.details || [];
+        if (current.length > 0) return prev;
+        return { ...prev, details: keys };
+      });
+    }
+  }, [detailsFieldCatalog]);
 
   useEffect(() => {
     if (editingPanel !== "details") return;
@@ -6542,4 +6533,5 @@ export default function JobView() {
       )}
     </div>
   );
+}
 }

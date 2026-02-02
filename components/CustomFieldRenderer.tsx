@@ -11,11 +11,13 @@ interface CustomFieldDefinition {
   field_type: string;
   is_required: boolean;
   is_hidden: boolean;
+  is_read_only?: boolean;
   options?: string[] | string | Record<string, unknown> | null;
   placeholder?: string | null;
   default_value?: string | null;
   sort_order: number;
   lookup_type?: "organizations" | "hiring-managers" | "job-seekers" | "jobs";
+  sub_field_ids?: number[] | string[];
 }
 
 interface CustomFieldRendererProps {
@@ -24,6 +26,10 @@ interface CustomFieldRendererProps {
   onChange: (fieldName: string, value: any) => void;
   className?: string;
   textareaRows?: number;
+  /** All fields for same entity (needed for composite to resolve sub-fields) */
+  allFields?: CustomFieldDefinition[];
+  /** Full values record (needed for composite so sub-fields get values by field_name) */
+  values?: Record<string, any>;
 }
 
 export default function CustomFieldRenderer({
@@ -32,7 +38,10 @@ export default function CustomFieldRenderer({
   onChange,
   className = "w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500",
   textareaRows = 3,
+  allFields = [],
+  values: valuesRecord,
 }: CustomFieldRendererProps) {
+  const readOnly = Boolean((field as any).is_read_only);
   // Track if we've auto-populated the date to prevent infinite loops
   const hasAutoFilledRef = React.useRef(false);
 
@@ -204,10 +213,12 @@ export default function CustomFieldRenderer({
       e: React.ChangeEvent<
         HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
       >
-    ) => onChange(field.field_name, e.target.value),
+    ) => (readOnly ? undefined : onChange(field.field_name, e.target.value)),
     className,
     placeholder: field.placeholder || "",
     required: field.is_required,
+    readOnly,
+    disabled: readOnly,
   };
 
   // Special props for salary fields (without onChange)
@@ -313,8 +324,144 @@ export default function CustomFieldRenderer({
           type="checkbox"
           id={field.field_name}
           checked={value === "true" || value === true}
-          onChange={(e) => onChange(field.field_name, e.target.checked)}
+          onChange={(e) => (readOnly ? undefined : onChange(field.field_name, e.target.checked))}
           className="h-4 w-4"
+          disabled={readOnly}
+        />
+      );
+    case "multiselect":
+    case "multicheckbox": {
+      const selectedValues = Array.isArray(value)
+        ? value.map((v) => String(v))
+        : typeof value === "string" && value.trim() !== ""
+          ? value.split(",").map((v) => v.trim()).filter(Boolean)
+          : [];
+      const count = selectedValues.length;
+      const labelSingular = (field.field_label || "item").toLowerCase().replace(/\s*\(s\)$/, "");
+      const labelPlural = count === 1 ? labelSingular : `${labelSingular}s`;
+      const removeItem = (item: string) => {
+        if (readOnly) return;
+        onChange(
+          field.field_name,
+          selectedValues.filter((v) => v !== item)
+        );
+      };
+      return (
+        <div
+          id={field.field_name}
+          className="w-full p-4 border border-gray-200 rounded-lg bg-white"
+        >
+          {/* Vertical list of checkboxes */}
+          <div className="space-y-3">
+            {normalizedOptions.length === 0 ? (
+              <span className="text-sm text-gray-500">No options configured.</span>
+            ) : (
+              normalizedOptions.map((option) => {
+                const checked = selectedValues.includes(option);
+                return (
+                  <label
+                    key={option}
+                    className="flex items-center gap-3 text-sm text-gray-700 cursor-pointer select-none"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(e) => {
+                        if (readOnly) return;
+                        const next = e.target.checked
+                          ? Array.from(new Set([...selectedValues, option]))
+                          : selectedValues.filter((v) => v !== option);
+                        onChange(field.field_name, next);
+                      }}
+                      className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
+                      disabled={readOnly}
+                    />
+                    <span className="text-gray-700">{option}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
+          {/* Separator */}
+          <div className="border-t border-gray-200 my-4" />
+          {/* Selected count + pill tags */}
+          <div className="space-y-3">
+            <p className="text-sm text-gray-500">
+              Selected: {count} {labelPlural}
+            </p>
+            {count > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {selectedValues.map((item) => (
+                  <span
+                    key={item}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 text-blue-800 text-sm"
+                  >
+                    {item}
+                    {!readOnly && (
+                      <button
+                        type="button"
+                        onClick={() => removeItem(item)}
+                        className="p-0.5 rounded-full hover:bg-blue-100 text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
+                        aria-label={`Remove ${item}`}
+                      >
+                        <span className="sr-only">Remove</span>
+                        <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    )}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+    case "composite": {
+      const subIds = (field as any).sub_field_ids;
+      const ids = Array.isArray(subIds) ? subIds.map(String) : [];
+      const subFields = ids.length > 0 && allFields.length > 0
+        ? ids
+            .map((id) => allFields.find((f) => String(f.id) === String(id)))
+            .filter(Boolean) as CustomFieldDefinition[]
+        : [];
+      if (subFields.length === 0) {
+        return (
+          <div className="text-sm text-gray-500 py-2 border border-dashed border-gray-300 rounded px-2">
+            Configure sub-fields in Admin → Field Mapping (Composite type).
+          </div>
+        );
+      }
+      const record = valuesRecord ?? (typeof value === "object" && value !== null ? value : {});
+      return (
+        <div className="space-y-3 border border-gray-200 rounded p-3 bg-gray-50/50">
+          {subFields.map((sub) => (
+            <div key={sub.id}>
+              <label className="block text-sm font-medium text-gray-700 mb-1">{sub.field_label}</label>
+              <CustomFieldRenderer
+                field={sub}
+                value={record[sub.field_name]}
+                onChange={onChange}
+                className={className}
+                textareaRows={textareaRows}
+                allFields={allFields}
+                values={valuesRecord}
+              />
+            </div>
+          ))}
+        </div>
+      );
+    }
+    case "link":
+    case "url":
+      return (
+        <input
+          {...fieldProps}
+          type="url"
+          pattern="(https?://|www\.).+"
+          title="Please enter a valid URL starting with http://, https://, or www."
+          required={field.is_required}
         />
       );
     case "number": {
@@ -1043,18 +1190,12 @@ export default function CustomFieldRenderer({
         </div>
       );
 
-      case "url":
-        return (
-          <input
-            {...fieldProps}
-            type="url"
-            pattern="(https?://|www\.).+"
-            title="Please enter a valid URL starting with http://, https://, or www."
-            required={field.is_required}
-          />
-        );
     case "file":
-      return (
+      return readOnly ? (
+        <div className="py-2 px-2 border border-gray-200 rounded bg-gray-50 text-gray-700 text-sm">
+          {value && (typeof value === "string" || value?.name) ? (typeof value === "string" ? value : value.name) : "—"}
+        </div>
+      ) : (
         <div>
           <input
             type="file"
@@ -1073,7 +1214,11 @@ export default function CustomFieldRenderer({
         </div>
       );
     case "lookup":
-      return (
+      return readOnly ? (
+        <div className="py-2 px-2 border border-gray-200 rounded bg-gray-50 text-gray-700">
+          {value && String(value).trim() !== "" ? String(value) : "—"}
+        </div>
+      ) : (
         <LookupField
           value={value || ""}
           onChange={(val) => onChange(field.field_name, val)}
@@ -1216,6 +1361,17 @@ export function useCustomFields(entityType: string) {
         Array.isArray(value)
       ) {
         return value.map((v) => String(v).trim()).filter(Boolean).length > 0;
+      }
+      // Multiselect / multicheckbox: value can be array or comma-separated string
+      if (field.field_type === "multiselect" || field.field_type === "multicheckbox") {
+        if (Array.isArray(value)) {
+          return value.map((v) => String(v).trim()).filter(Boolean).length > 0;
+        }
+        const trimmed = String(value).trim();
+        if (trimmed.includes(",")) {
+          return trimmed.split(",").map((v) => v.trim()).filter(Boolean).length > 0;
+        }
+        return trimmed.length > 0;
       }
       const trimmed = String(value).trim();
       

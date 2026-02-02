@@ -241,9 +241,9 @@ export default function JobSeekerList() {
   const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
 
   // =====================
-  // TABLE COLUMNS (Overview List)
+  // TABLE COLUMNS (Overview List) – driven by admin field-management only
   // =====================
-  const JOB_SEEKER_DEFAULT_COLUMNS = [
+  const JS_BACKEND_COLUMN_KEYS = [
     "full_name",
     "email",
     "phone",
@@ -261,29 +261,9 @@ export default function JobSeekerList() {
     isSaving: isSavingColumns,
   } = useHeaderConfig({
     entityType: "JOB_SEEKER",
-    defaultFields: JOB_SEEKER_DEFAULT_COLUMNS,
+    defaultFields: [],
     configType: "columns",
   });
-
-  // Load column order from localStorage on mount
-  useEffect(() => {
-    const savedOrder = localStorage.getItem("jobSeekerColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const validOrder = parsed.filter((key) =>
-            [...JOB_SEEKER_DEFAULT_COLUMNS, ...columnFields].includes(key)
-          );
-          if (validOrder.length > 0) {
-            setColumnFields(validOrder);
-          }
-        }
-      } catch (e) {
-        console.error("Error loading column order:", e);
-      }
-    }
-  }, []);
 
   // Save column order to localStorage whenever it changes
   useEffect(() => {
@@ -397,7 +377,6 @@ export default function JobSeekerList() {
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // ✅ Columns Catalog (Standard + Custom Fields)
   const humanize = (s: string) =>
     s
       .replace(/[_\-]+/g, " ")
@@ -406,40 +385,69 @@ export default function JobSeekerList() {
       .trim();
 
   const columnsCatalog = useMemo(() => {
-    // ✅ 1) Standard columns (fixed)
-    const standard = [
-      { key: "full_name", label: "Name", sortable: true, filterType: "text" as const },
-      { key: "email", label: "Email", sortable: true, filterType: "text" as const },
-      { key: "phone", label: "Phone", sortable: true, filterType: "text" as const },
-      { key: "status", label: "Status", sortable: true, filterType: "select" as const },
-      { key: "last_contact_date", label: "Last Contact", sortable: true, filterType: "text" as const },
-      { key: "owner", label: "Owner", sortable: true, filterType: "text" as const },
-    ];
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => {
+        const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
+        const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanize(name) : "");
+        const isBackendCol = name && JS_BACKEND_COLUMN_KEYS.includes(name);
+        let filterType: "text" | "select" | "number" = "text";
+        if (name === "status") filterType = "select";
+        return {
+          key: isBackendCol ? name : `custom:${label || name}`,
+          label: String(label || name),
+          sortable: isBackendCol,
+          filterType,
+        };
+      });
 
-    // ✅ 2) Custom keys (auto from ALL job seekers list)
     const customKeySet = new Set<string>();
-
     (jobSeekers || []).forEach((js: any) => {
       const cf = js?.customFields || js?.custom_fields || {};
       Object.keys(cf).forEach((k) => customKeySet.add(k));
     });
+    const alreadyHaveCustom = new Set(
+      fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
+    );
+    const fromData = Array.from(customKeySet)
+      .filter((k) => !alreadyHaveCustom.has(k))
+      .map((k) => ({
+        key: `custom:${k}`,
+        label: humanize(k),
+        sortable: false,
+        filterType: "text" as const,
+      }));
 
-    const custom = Array.from(customKeySet).map((k) => ({
-      key: `custom:${k}`,
-      label: humanize(k),
-      sortable: false,
-      filterType: "text" as const,
-    }));
-
-    // ✅ 3) merge + unique
-    const merged = [...standard, ...custom];
+    const merged = [...fromApi, ...fromData];
     const seen = new Set<string>();
     return merged.filter((x) => {
       if (seen.has(x.key)) return false;
       seen.add(x.key);
       return true;
     });
-  }, [jobSeekers]);
+  }, [jobSeekers, availableFields]);
+
+  useEffect(() => {
+    const catalogKeys = columnsCatalog.map((c) => c.key);
+    if (catalogKeys.length === 0) return;
+    const catalogSet = new Set(catalogKeys);
+    const savedOrder = localStorage.getItem("jobSeekerColumnOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validOrder = parsed.filter((k: string) => catalogSet.has(k));
+          if (validOrder.length > 0) {
+            setColumnFields(validOrder);
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
+  }, [columnsCatalog]);
 
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
@@ -1330,7 +1338,7 @@ export default function JobSeekerList() {
                 <div className="flex justify-end gap-2 mt-4">
                   <button
                     className="px-4 py-2 border rounded hover:bg-gray-50"
-                    onClick={() => setColumnFields(JOB_SEEKER_DEFAULT_COLUMNS)}
+                    onClick={() => setColumnFields(columnsCatalog.map((c) => c.key))}
                   >
                     Reset
                   </button>

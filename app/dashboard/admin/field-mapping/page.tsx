@@ -29,11 +29,13 @@ interface CustomField {
   field_type: string;
   is_required: boolean;
   is_hidden: boolean;
+  is_read_only?: boolean;
   sort_order: number;
   options?: string[];
   placeholder?: string;
   default_value?: string;
   lookup_type?: string;
+  sub_field_ids?: number[] | string[];
   created_by_name?: string;
   updated_by_name?: string;
   created_at: string;
@@ -178,6 +180,7 @@ const FieldMapping = () => {
     fieldType: "text",
     isRequired: false,
     isHidden: false,
+    isReadOnly: false,
     sortOrder: 0,
     options: [] as string[],
     placeholder: "",
@@ -187,6 +190,7 @@ const FieldMapping = () => {
       | "hiring-managers"
       | "job-seekers"
       | "jobs",
+    subFieldIds: [] as string[],
   });
   const [editingSortOrder, setEditingSortOrder] = useState<string | null>(null);
   const [tempSortOrder, setTempSortOrder] = useState<number>(0);
@@ -220,11 +224,15 @@ const FieldMapping = () => {
     "datetime",
     "textarea",
     "select",
+    "multiselect",
+    "multicheckbox",
     "checkbox",
     "radio",
     "url",
+    "link",
     "file",
     "lookup",
+    "composite",
   ];
 
   // Load custom fields on component mount
@@ -280,17 +288,20 @@ const FieldMapping = () => {
 
   const handleFieldClick = (field: CustomField) => {
     setSelectedField(field);
+    const subIds = field.sub_field_ids;
     setEditFormData({
       fieldName: field.field_name,
       fieldLabel: field.field_label,
       fieldType: field.field_type,
       isRequired: field.is_required,
       isHidden: field.is_hidden,
+      isReadOnly: Boolean((field as any).is_read_only),
       sortOrder: field.sort_order,
       options: field.options || [],
       placeholder: field.placeholder || "",
       defaultValue: field.default_value || "",
       lookupType: (field as any).lookup_type || "organizations",
+      subFieldIds: Array.isArray(subIds) ? subIds.map(String) : [],
     });
     setShowEditForm(true);
   };
@@ -312,11 +323,13 @@ const FieldMapping = () => {
       fieldType: "text",
       isRequired: false,
       isHidden: false,
+      isReadOnly: false,
       sortOrder: customFields.length * 10,
       options: [],
       placeholder: "",
       defaultValue: "",
       lookupType: "organizations",
+      subFieldIds: [],
     });
     setSelectedField(null);
     setShowAddForm(true);
@@ -357,6 +370,10 @@ const FieldMapping = () => {
               : value,
       };
 
+      // Read-only: when checked, required is auto-disabled
+      if (name === "isReadOnly" && checked === true) {
+        newData.isRequired = false;
+      }
       // Critical: Enforce Hidden & Required mutual exclusivity
       if (name === "isRequired" && checked === true) {
         newData.isHidden = false;
@@ -390,6 +407,7 @@ const FieldMapping = () => {
           fieldType: editFormData.fieldType,
           isRequired: editFormData.isRequired,
           isHidden: editFormData.isHidden,
+          isReadOnly: editFormData.isReadOnly,
           sortOrder: editFormData.sortOrder,
           options:
             editFormData.options.length > 0 ? editFormData.options : null,
@@ -399,6 +417,10 @@ const FieldMapping = () => {
             editFormData.fieldType === "lookup"
               ? editFormData.lookupType
               : null,
+          subFieldIds:
+            editFormData.fieldType === "composite" && editFormData.subFieldIds.length > 0
+              ? editFormData.subFieldIds.map((id) => (typeof id === "string" && /^\d+$/.test(id) ? parseInt(id, 10) : id))
+              : undefined,
         };
 
         console.log("Updating field with data:", apiData);
@@ -421,6 +443,7 @@ const FieldMapping = () => {
           fieldType: editFormData.fieldType,
           isRequired: editFormData.isRequired,
           isHidden: editFormData.isHidden,
+          isReadOnly: editFormData.isReadOnly,
           sortOrder: editFormData.sortOrder,
           options:
             editFormData.options.length > 0 ? editFormData.options : null,
@@ -430,6 +453,10 @@ const FieldMapping = () => {
             editFormData.fieldType === "lookup"
               ? editFormData.lookupType
               : null,
+          subFieldIds:
+            editFormData.fieldType === "composite" && editFormData.subFieldIds.length > 0
+              ? editFormData.subFieldIds.map((id) => (typeof id === "string" && /^\d+$/.test(id) ? parseInt(id, 10) : id))
+              : undefined,
         };
 
         console.log("Creating field with data:", apiData);
@@ -1442,7 +1469,15 @@ const FieldMapping = () => {
                       <option key={option} value={option}>
                         {option === "currency"
                           ? "Currency ($)"
-                          : option.charAt(0).toUpperCase() + option.slice(1)}
+                          : option === "multiselect"
+                            ? "Multi-select"
+                            : option === "multicheckbox"
+                              ? "Multi-checkbox"
+                              : option === "composite"
+                                ? "Composite (sub-fields)"
+                                : option === "link"
+                                  ? "Link / URL"
+                                  : option.charAt(0).toUpperCase() + option.slice(1)}
                       </option>
                     ))}
                   </select>
@@ -1491,7 +1526,9 @@ const FieldMapping = () => {
                 </div>
 
                 {(editFormData.fieldType === "select" ||
-                  editFormData.fieldType === "radio") && (
+                  editFormData.fieldType === "radio" ||
+                  editFormData.fieldType === "multiselect" ||
+                  editFormData.fieldType === "multicheckbox") && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
                         Options (one per line):
@@ -1505,6 +1542,41 @@ const FieldMapping = () => {
                       />
                     </div>
                   )}
+
+                {editFormData.fieldType === "composite" && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Sub-fields (select existing fields to group):
+                    </label>
+                    <p className="text-xs text-gray-500 mb-2">
+                      Choose fields from this entity (e.g. Address, City, State, ZIP) to show together. Each sub-field keeps its own validation and type.
+                    </p>
+                    <select
+                      multiple
+                      value={editFormData.subFieldIds}
+                      onChange={(e) => {
+                        const selected = Array.from(e.target.selectedOptions, (o) => o.value);
+                        setEditFormData((prev) => ({ ...prev, subFieldIds: selected }));
+                      }}
+                      className="w-full px-3 py-2 border rounded min-h-[120px]"
+                    >
+                      {customFields
+                        .filter(
+                          (f) =>
+                            f.field_type !== "composite" &&
+                            (selectedField ? String(f.id) !== String(selectedField.id) : true)
+                        )
+                        .map((f) => (
+                          <option key={f.id} value={String(f.id)}>
+                            {f.field_label} ({f.field_type})
+                          </option>
+                        ))}
+                    </select>
+                    <p className="text-xs text-gray-500 mt-1">
+                      Hold Ctrl/Cmd to select multiple.
+                    </p>
+                  </div>
+                )}
 
                 {editFormData.fieldType === "lookup" && (
                   <div>
@@ -1529,25 +1601,37 @@ const FieldMapping = () => {
                   </div>
                 )}
 
-                <div className="flex items-center space-x-6">
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
                   <label className="flex items-center">
                     <input
                       type="checkbox"
                       name="isRequired"
                       checked={editFormData.isRequired}
                       onChange={handleEditFormChange}
-                      disabled={editFormData.isHidden}
-                      className={`h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${editFormData.isHidden ? "opacity-50 cursor-not-allowed" : ""
+                      disabled={editFormData.isHidden || editFormData.isReadOnly}
+                      className={`h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded ${editFormData.isHidden || editFormData.isReadOnly ? "opacity-50 cursor-not-allowed" : ""
                         }`}
                     />
-                    <span className={`ml-2 text-sm ${editFormData.isHidden ? "text-gray-500" : ""}`}>
+                    <span className={`ml-2 text-sm ${editFormData.isHidden || editFormData.isReadOnly ? "text-gray-500" : ""}`}>
                       Required
                       {editFormData.isHidden && (
-                        <span className="text-xs text-gray-400 block">
-                          (Cannot require hidden fields)
-                        </span>
+                        <span className="text-xs text-gray-400 block">(Cannot require hidden fields)</span>
+                      )}
+                      {editFormData.isReadOnly && !editFormData.isHidden && (
+                        <span className="text-xs text-gray-400 block">(Disabled when Read-only)</span>
                       )}
                     </span>
+                  </label>
+
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      name="isReadOnly"
+                      checked={editFormData.isReadOnly}
+                      onChange={handleEditFormChange}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                    />
+                    <span className="ml-2 text-sm">Read-only</span>
                   </label>
 
                   <label className="flex items-center">
@@ -1563,9 +1647,7 @@ const FieldMapping = () => {
                     <span className={`ml-2 text-sm ${editFormData.isRequired ? "text-gray-500" : ""}`}>
                       Hidden
                       {editFormData.isRequired && (
-                        <span className="text-xs text-gray-400 block">
-                          (Cannot hide required fields)
-                        </span>
+                        <span className="text-xs text-gray-400 block">(Cannot hide required fields)</span>
                       )}
                     </span>
                   </label>

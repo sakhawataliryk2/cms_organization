@@ -257,9 +257,9 @@ export default function OrganizationList() {
   const FAVORITES_STORAGE_KEY = "organizationFavorites";
 
   // =====================
-  // TABLE COLUMNS (Overview List)
+  // TABLE COLUMNS (Overview List) – driven by admin field-management only
   // =====================
-  const ORG_DEFAULT_COLUMNS = [
+  const ORG_BACKEND_COLUMN_KEYS = [
     "name",
     "status",
     "contact_phone",
@@ -277,30 +277,9 @@ export default function OrganizationList() {
     isSaving: isSavingColumns,
   } = useHeaderConfig({
     entityType: "ORGANIZATION",
-    defaultFields: ORG_DEFAULT_COLUMNS,
+    defaultFields: [], // populated from columnsCatalog when ready
     configType: "columns",
   });
-
-  // Load column order from localStorage on mount
-  useEffect(() => {
-    const savedOrder = localStorage.getItem("organizationColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // Only use saved order if it contains valid column keys
-          const validOrder = parsed.filter((key) =>
-            [...ORG_DEFAULT_COLUMNS, ...columnFields].includes(key)
-          );
-          if (validOrder.length > 0) {
-            setColumnFields(validOrder);
-          }
-        }
-      } catch (e) {
-        console.error("Error loading column order:", e);
-      }
-    }
-  }, []);
 
   // Save column order to localStorage whenever it changes
   useEffect(() => {
@@ -462,38 +441,41 @@ export default function OrganizationList() {
       .trim();
 
   const columnsCatalog = useMemo(() => {
-    const standard = [
-      { key: "name", label: "Company Name", sortable: true, filterType: "text" as const },
-      { key: "status", label: "Status", sortable: true, filterType: "select" as const },
-      { key: "contact_phone", label: "Phone Number", sortable: true, filterType: "text" as const },
-      { key: "address", label: "Address", sortable: true, filterType: "text" as const },
-      { key: "job_orders_count", label: "Job Orders", sortable: true, filterType: "number" as const },
-      { key: "placements_count", label: "Placements", sortable: true, filterType: "number" as const },
-    ];
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => {
+        const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
+        const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanize(name) : "");
+        const isBackendCol = name && ORG_BACKEND_COLUMN_KEYS.includes(name);
+        let filterType: "text" | "select" | "number" = "text";
+        if (name === "status") filterType = "select";
+        else if (name === "job_orders_count" || name === "placements_count") filterType = "number";
+        return {
+          key: isBackendCol ? name : `custom:${label || name}`,
+          label: String(label || name),
+          sortable: isBackendCol,
+          filterType,
+        };
+      });
 
     const customKeySet = new Set<string>();
     (organizations || []).forEach((org: any) => {
       const cf = org?.customFields || org?.custom_fields || {};
       Object.keys(cf).forEach((k) => customKeySet.add(k));
     });
-
-    const custom = Array.from(customKeySet).map((k) => {
-      const kNorm = String(k || "").toLowerCase();
-      const fieldDef = availableFields.find((f) => {
-        const nameNorm = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").toLowerCase();
-        const labelNorm = String((f as any)?.field_label ?? (f as any)?.fieldLabel ?? "").toLowerCase();
-        return nameNorm === kNorm || labelNorm === kNorm;
-      });
-      const fieldLabel = (fieldDef as any)?.field_label ?? (fieldDef as any)?.fieldLabel;
-      return {
+    const alreadyHaveCustom = new Set(
+      fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
+    );
+    const fromData = Array.from(customKeySet)
+      .filter((k) => !alreadyHaveCustom.has(k))
+      .map((k) => ({
         key: `custom:${k}`,
-        label: fieldLabel ? String(fieldLabel) : humanize(k),
+        label: humanize(k),
         sortable: false,
         filterType: "text" as const,
-      };
-    });
+      }));
 
-    const merged = [...standard, ...custom];
+    const merged = [...fromApi, ...fromData];
     const seen = new Set<string>();
     return merged.filter((x) => {
       if (seen.has(x.key)) return false;
@@ -501,6 +483,29 @@ export default function OrganizationList() {
       return true;
     });
   }, [organizations, availableFields]);
+
+  // When catalog is ready, default columnFields to all catalog keys if empty (or validate saved)
+  useEffect(() => {
+    const catalogKeys = columnsCatalog.map((c) => c.key);
+    if (catalogKeys.length === 0) return;
+    const catalogSet = new Set(catalogKeys);
+    const savedOrder = localStorage.getItem("organizationColumnOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validOrder = parsed.filter((k: string) => catalogSet.has(k));
+          if (validOrder.length > 0) {
+            setColumnFields(validOrder);
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
+  }, [columnsCatalog]);
 
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
@@ -1426,7 +1431,7 @@ export default function OrganizationList() {
                 <div className="flex justify-end gap-2 mt-4">
                   <button
                     className="px-4 py-2 border rounded hover:bg-gray-50"
-                    onClick={() => setColumnFields(ORG_DEFAULT_COLUMNS)}
+                    onClick={() => setColumnFields(columnsCatalog.map((c) => c.key))}
                   >
                     Reset
                   </button>

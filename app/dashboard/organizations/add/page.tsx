@@ -24,6 +24,34 @@ interface CustomFieldDefinition {
   sort_order: number;
 }
 
+// Map admin field labels to backend organization columns (all fields driven by admin; no hardcoded standard fields)
+const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
+  "Name": "name",
+  "Organization Name": "name",
+  "Organization": "name",
+  "Company": "name",
+  "Nicknames": "nicknames",
+  "Nickname": "nicknames",
+  "Parent Organization": "parent_organization",
+  "Website": "website",
+  "Organization Website": "website",
+  "URL": "website",
+  "Contact Phone": "contact_phone",
+  "Main Phone": "contact_phone",
+  "Address": "address",
+  "Status": "status",
+  "Contract Signed on File": "contract_on_file",
+  "Contract Signed By": "contract_signed_by",
+  "Date Contract Signed": "date_contract_signed",
+  "Year Founded": "year_founded",
+  "Overview": "overview",
+  "Organization Overview": "overview",
+  "About": "overview",
+  "Standard Perm Fee (%)": "perm_fee",
+  "# of Employees": "num_employees",
+  "# of Offices": "num_offices",
+};
+
 export default function AddOrganization() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -63,27 +91,20 @@ export default function AddOrganization() {
     return new Set(addressFields.map((f) => f.id));
   }, [addressFields]);
 
+  // Sub-fields of composite types are rendered inside the composite; skip them as standalone rows
+  const compositeSubFieldIdSet = useMemo(() => {
+    const ids: string[] = [];
+    customFields.forEach((f: any) => {
+      if (f.field_type === "composite" && Array.isArray(f.sub_field_ids)) {
+        f.sub_field_ids.forEach((id: number | string) => ids.push(String(id)));
+      }
+    });
+    return new Set(ids);
+  }, [customFields]);
+
   const addressAnchorId = addressFields?.[0]?.id; // usually Field_20 (Address)
 
-  const [formData, setFormData] = useState({
-    name: "",
-    nicknames: "",
-    parentOrganization: "",
-    website: "",
-    status: "Active",
-    contractOnFile: "No",
-    contractSignedBy: "",
-    dateContractSigned: "",
-    yearFounded: "",
-    overview: "",
-    permFee: "",
-    numEmployees: "",
-    numOffices: "",
-    contactPhone: "",
-    address: "",
-    // Dynamic custom fields will be added here
-    customFields: {} as Record<string, any>,
-  });
+  // All organization fields come from admin field definitions; values live in customFieldValues
 
   // Memoize fetchOrganization to prevent it from being recreated on every render
   const fetchOrganization = useCallback(
@@ -209,28 +230,7 @@ export default function AddOrganization() {
           }))
         );
 
-        setFormData({
-          name: org.name || "",
-          nicknames: org.nicknames || "",
-          parentOrganization: org.parent_organization || "",
-          website: org.website || "",
-          status: org.status || "Active",
-          contractOnFile: org.contract_on_file || "No",
-          contractSignedBy: org.contract_signed_by || "",
-          dateContractSigned: org.date_contract_signed
-            ? org.date_contract_signed.split("T")[0]
-            : "",
-          yearFounded: org.year_founded || "",
-          overview: org.overview || "",
-          permFee: org.perm_fee ? org.perm_fee.toString() : "",
-          numEmployees: org.num_employees ? org.num_employees.toString() : "",
-          numOffices: org.num_offices ? org.num_offices.toString() : "",
-          contactPhone: org.contact_phone || "",
-          address: org.address || "",
-          customFields: existingCustomFields,
-        });
-
-        // Set the mapped custom field values (field_name as keys)
+        // All values live in customFieldValues (field_name as keys)
         setCustomFieldValues(mappedCustomFieldValues);
       } catch (err) {
         console.error("Error fetching organization:", err);
@@ -376,49 +376,6 @@ export default function AddOrganization() {
   // Removed console.logs from component level to prevent excessive logging on every render
   //console.log("Custom Fields:", customFields);
 
-  const handleChange = (
-    e: React.ChangeEvent<
-      HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement
-    >
-  ) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
-
-    // Sync Contract Signed on File (contractOnFile) with Field_8 in customFieldValues if Field_8 exists
-    if (name === "contractOnFile") {
-      const contractSignedOnFileField = customFields.find(
-        (f) =>
-          f.field_name === "Field_8" ||
-          f.field_name === "field_8" ||
-          f.field_name?.toLowerCase() === "field_8" ||
-          (f.field_label === "Contract Signed on File" &&
-            (f.field_name?.includes("8") ||
-              f.field_name?.toLowerCase().includes("field_8")))
-      );
-      if (contractSignedOnFileField) {
-        handleCustomFieldChange(contractSignedOnFileField.field_name, value);
-      }
-    }
-
-    // Sync Contract Signed By (contractSignedBy) with Field_9 in customFieldValues if Field_9 exists
-    if (name === "contractSignedBy") {
-      const contractSignedByField = customFields.find(
-        (f) =>
-          f.field_name === "Field_9" ||
-          f.field_name === "field_9" ||
-          f.field_name?.toLowerCase() === "field_9" ||
-          (f.field_label === "Contract Signed By" &&
-            (f.field_name?.includes("9") ||
-              f.field_name?.toLowerCase().includes("field_9")))
-      );
-      if (contractSignedByField) {
-        handleCustomFieldChange(contractSignedByField.field_name, value);
-      }
-    }
-  };
 
   // const validateForm = () => {
   //   // Validate required standard fields
@@ -513,22 +470,15 @@ export default function AddOrganization() {
             f.field_name?.toLowerCase().includes("field_9")))
     );
 
-    // Check both customFieldValues (Field_8) and formData.contractOnFile
     let contractSignedOnFileValue = "";
     if (contractSignedOnFileField) {
       contractSignedOnFileValue =
         customFieldValues[contractSignedOnFileField.field_name] || "";
     }
-    // Fallback to formData if custom field value is empty
-    if (!contractSignedOnFileValue) {
-      contractSignedOnFileValue = formData.contractOnFile || "";
-    }
 
     if (contractSignedByField) {
       const contractSignedByValue =
-        customFieldValues[contractSignedByField.field_name] ||
-        formData.contractSignedBy ||
-        "";
+        customFieldValues[contractSignedByField.field_name] || "";
 
       // If Contract Signed on File is "Yes", Contract Signed By is required
       if (
@@ -560,39 +510,41 @@ export default function AddOrganization() {
       );
       console.log("=== DEBUG END ===");
 
-      // Map custom fields to standard fields if they exist
-      const name =
-        customFieldsToSend["Organization Name"] ||
-        customFieldsToSend["Name"] ||
-        formData.name ||
-        "Unnamed Organization";
-
-      const website =
-        customFieldsToSend["Website"] ||
-        customFieldsToSend["Organization Website"] ||
-        formData.website ||
-        "";
-
-      const overview =
-        customFieldsToSend["Overview"] ||
-        customFieldsToSend["Organization Overview"] ||
-        customFieldsToSend["About"] ||
-        formData.overview ||
-        "";
-
-      // ✅ Build the API payload
-      // Ensure custom_fields is always a valid object (not integer or other types)
+      // Build API payload from admin-defined fields only: map labels to backend columns or custom_fields
+      const apiData: Record<string, any> = {
+        name: "Unnamed Organization",
+        status: "Active",
+        contract_on_file: "No",
+        custom_fields: {},
+      };
       const customFieldsForDB: Record<string, any> = {};
 
-      // Include all custom fields, even if they're empty strings (but filter out undefined/null)
-      // This ensures all custom field values are saved, including empty ones
-      Object.keys(customFieldsToSend).forEach((key) => {
-        const value = customFieldsToSend[key];
-        // Include all values except undefined and null (allow empty strings)
-        if (value !== undefined && value !== null) {
-          customFieldsForDB[key] = value;
+      // Labels in BACKEND_COLUMN_BY_LABEL → top-level columns; all others → custom_fields JSONB
+      Object.entries(customFieldsToSend).forEach(([label, value]) => {
+        if (value === undefined || value === null) return;
+        const column = BACKEND_COLUMN_BY_LABEL[label];
+        if (column) {
+          apiData[column] = value;
+        } else {
+          // Field not in map: store in custom_fields so it is never lost
+          customFieldsForDB[label] = value;
         }
       });
+
+      apiData.custom_fields = customFieldsForDB;
+      if (!apiData.name || String(apiData.name).trim() === "") {
+        apiData.name = "Unnamed Organization";
+      }
+
+      // Coerce numeric columns
+      if (apiData.num_employees != null) {
+        const n = parseInt(String(apiData.num_employees), 10);
+        apiData.num_employees = !isNaN(n) ? n : null;
+      }
+      if (apiData.num_offices != null) {
+        const n = parseInt(String(apiData.num_offices), 10);
+        apiData.num_offices = !isNaN(n) ? n : null;
+      }
 
       // Auto-populate Owner field (Field_18) if not set (only in create mode)
       // Check both "Owner" label and Field_18 field_name
@@ -660,58 +612,6 @@ export default function AddOrganization() {
             console.error("Error parsing user data from cookie:", e);
           }
         }
-      }
-
-      const apiData: Record<string, any> = {
-        name: name,
-        nicknames: customFieldsToSend["Nicknames"] || formData.nicknames || "",
-        parent_organization:
-          customFieldsToSend["Parent Organization"] ||
-          formData.parentOrganization ||
-          "",
-        website: website,
-        status: customFieldsToSend["Status"] || formData.status || "Active",
-        contract_on_file: formData.contractOnFile || "No",
-        // Check both custom fields and formData for contract_signed_by and date_contract_signed
-        contract_signed_by:
-          customFieldsToSend["Contract Signed By"] ||
-          formData.contractSignedBy ||
-          null,
-        date_contract_signed:
-          customFieldsToSend["Date Contract Signed"] ||
-          formData.dateContractSigned ||
-          null,
-        year_founded:
-          customFieldsToSend["Year Founded"] || formData.yearFounded || "",
-        overview: overview,
-        perm_fee:
-          customFieldsToSend["Standard Perm Fee (%)"] || formData.permFee || "",
-        contact_phone:
-          customFieldsToSend["Contact Phone"] || formData.contactPhone || "",
-        address: customFieldsToSend["Address"] || formData.address || "",
-        // ✅ CRITICAL FIX: Always send custom_fields as a valid JSON object
-        custom_fields: customFieldsForDB,
-      };
-
-      // Handle numeric fields separately to avoid type issues
-      const numEmployees = customFieldsToSend["# of Employees"]
-        ? parseInt(customFieldsToSend["# of Employees"])
-        : formData.numEmployees
-        ? parseInt(formData.numEmployees)
-        : null;
-
-      const numOffices = customFieldsToSend["# of Offices"]
-        ? parseInt(customFieldsToSend["# of Offices"])
-        : formData.numOffices
-        ? parseInt(formData.numOffices)
-        : null;
-
-      // Only add numeric fields if they have valid values
-      if (numEmployees !== null && !isNaN(numEmployees)) {
-        apiData.num_employees = numEmployees;
-      }
-      if (numOffices !== null && !isNaN(numOffices)) {
-        apiData.num_offices = numOffices;
       }
 
       // 🔍 DEBUG: Log the final payload
@@ -1566,6 +1466,11 @@ export default function AddOrganization() {
                     return null;
                   }
 
+                  // skip sub-fields of composite (they render inside the composite)
+                  if (compositeSubFieldIdSet.has(field.id)) {
+                    return null;
+                  }
+
                   // Don't render hidden fields at all (neither label nor input)
                   if (field.is_hidden) return null;
                   const addressFieldIds = addressFields.map((f) => f.id);
@@ -1617,10 +1522,6 @@ export default function AddOrganization() {
                   if (contractSignedOnFileField?.field_name) {
                     contractSignedOnFileValue =
                       customFieldValues[contractSignedOnFileField.field_name] || "";
-                  }
-                  // Fallback to formData if custom field value is empty
-                  if (!contractSignedOnFileValue) {
-                    contractSignedOnFileValue = formData.contractOnFile || "";
                   }
 
                   // Field_9 is conditionally required when Field_8 is "Yes"
@@ -1950,6 +1851,8 @@ const hasValidValue = () => {
                             field={field}
                             value={fieldValue}
                             onChange={handleCustomFieldChange}
+                            allFields={customFields}
+                            values={customFieldValues}
                           />
                         )}
                       </div>

@@ -50,10 +50,8 @@ import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 // Default header fields for Hiring Managers module - defined outside component to ensure stable reference
 const HIRING_MANAGER_DEFAULT_HEADER_FIELDS = ["phone", "email"];
 
-// Constants for Hiring Manager Details and Organization Details persistence
-const HM_DETAILS_DEFAULT_FIELDS = ["status", "organization", "department", "email", "email2", "mobilePhone", "directLine", "reportsTo", "linkedinUrl", "dateAdded", "owner", "address"];
+// Storage keys for Hiring Manager Details and Organization Details – field lists come from admin (custom field definitions)
 const HM_DETAILS_STORAGE_KEY = "hiringManagerDetailsFields";
-const HM_ORGANIZATION_DETAILS_DEFAULT_FIELDS = ["status", "organizationName", "organizationPhone", "url", "dateAdded"];
 const HM_ORGANIZATION_DETAILS_STORAGE_KEY = "hiringManagerOrganizationDetailsFields";
 
 // Droppable Column Container
@@ -409,12 +407,29 @@ export default function HiringManagerView() {
   });
   const [isLoadingSummaryCounts, setIsLoadingSummaryCounts] = useState(false);
 
-  // Field management
+  // Field management – panels driven from admin field definitions only
   const [availableFields, setAvailableFields] = useState<any[]>([]);
-  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
-    details: Array.from(new Set(HM_DETAILS_DEFAULT_FIELDS)),
-    organizationDetails: Array.from(new Set(HM_ORGANIZATION_DETAILS_DEFAULT_FIELDS)),
-    recentNotes: ["notes"],
+  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
+    if (typeof window === "undefined") {
+      return { details: [], organizationDetails: [], recentNotes: ["notes"] };
+    }
+    const detailsSaved = localStorage.getItem(HM_DETAILS_STORAGE_KEY);
+    const orgDetailsSaved = localStorage.getItem(HM_ORGANIZATION_DETAILS_STORAGE_KEY);
+    let details: string[] = [];
+    let organizationDetails: string[] = [];
+    if (detailsSaved) {
+      try {
+        const parsed = JSON.parse(detailsSaved);
+        if (Array.isArray(parsed) && parsed.length > 0) details = Array.from(new Set(parsed));
+      } catch (_) {}
+    }
+    if (orgDetailsSaved) {
+      try {
+        const parsed = JSON.parse(orgDetailsSaved);
+        if (Array.isArray(parsed) && parsed.length > 0) organizationDetails = Array.from(new Set(parsed));
+      } catch (_) {}
+    }
+    return { details, organizationDetails, recentNotes: ["notes"] };
   });
 
   // ===== Summary layout state =====
@@ -1256,26 +1271,8 @@ export default function HiringManagerView() {
 
       console.log("HM fields count:", fields.length);
 
-      // ✅ save fields for modal/catalog (including hidden fields for reference, but we'll filter in UI)
+      // Save fields for modal/catalog (visibility/order driven by catalog + localStorage)
       setAvailableFields(fields);
-
-      // ✅ Only add NON-HIDDEN custom fields to Details panel
-      // Filter out hidden fields before adding to visible fields
-      const visibleCustomFields = fields.filter((f: any) => {
-        const isHidden = f.is_hidden === true || f.hidden === true || f.isHidden === true;
-        return !isHidden;
-      });
-
-      const allCustomKeys = visibleCustomFields.map(
-        (f: any) => f.field_name || f.field_key || f.id
-      );
-
-      console.log("All Custom Keys", allCustomKeys)
-
-      setVisibleFields((prev) => ({
-        ...prev,
-        details: Array.from(new Set([...prev.details, ...allCustomKeys])),
-      }));
     } catch (err) {
       console.error("Error fetching HM available fields:", err);
     } finally {
@@ -1283,74 +1280,58 @@ export default function HiringManagerView() {
     }
   };
 
-  // Hiring Manager Details field catalog: standard + all custom (for edit modal and display order)
+  // Hiring Manager Details field catalog: from admin field definitions + record customFields only (no hardcoded standard)
   const detailsFieldCatalog = useMemo(() => {
-    const standard: { key: string; label: string }[] = [
-      { key: "status", label: "Status" },
-      { key: "organization", label: "Organization" },
-      { key: "department", label: "Department" },
-      { key: "email", label: "Email" },
-      { key: "email2", label: "Email 2" },
-      { key: "mobilePhone", label: "Mobile Phone" },
-      { key: "directLine", label: "Direct Line" },
-      { key: "reportsTo", label: "Reports To" },
-      { key: "linkedinUrl", label: "LinkedIn URL" },
-      { key: "dateAdded", label: "Date Added" },
-      { key: "owner", label: "Owner" },
-      { key: "address", label: "Address" },
-    ];
-    const customFromDefs = (availableFields || [])
+    const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
-    const standardKeys = new Set(standard.map((s) => s.key));
-    const customFromHM = Object.keys(hiringManager?.customFields || {})
-      .filter((k) => !keysFromDefs.has(k) && !standardKeys.has(k))
+    const seen = new Set(fromApi.map((f) => f.key));
+    const fromHM = Object.keys(hiringManager?.customFields || {})
+      .filter((k) => !seen.has(k))
       .map((k) => ({ key: k, label: k }));
-    
-    // Deduplicate by key property
-    const allFields = [...standard, ...customFromDefs, ...customFromHM];
-    const seenKeys = new Set<string>();
-    return allFields.filter((f) => {
-      if (seenKeys.has(f.key)) return false;
-      seenKeys.add(f.key);
-      return true;
-    });
+    return [...fromApi, ...fromHM];
   }, [availableFields, hiringManager?.customFields]);
 
-  // Hiring Manager Organization Details field catalog: standard + all custom (for edit modal and display order)
+  // Hiring Manager Organization Details field catalog: from admin field definitions + record customFields only
   const organizationDetailsFieldCatalog = useMemo(() => {
-    const standard: { key: string; label: string }[] = [
-      { key: "status", label: "Status" },
-      { key: "organizationName", label: "Organization Name" },
-      { key: "organizationPhone", label: "Phone" },
-      { key: "url", label: "Website" },
-      { key: "dateAdded", label: "Date Added" },
-    ];
-    const customFromDefs = (availableFields || [])
+    const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
-    const standardKeys = new Set(standard.map((s) => s.key));
-    const customFromHM = Object.keys(hiringManager?.customFields || {})
-      .filter((k) => !keysFromDefs.has(k) && !standardKeys.has(k))
+    const seen = new Set(fromApi.map((f) => f.key));
+    const fromHM = Object.keys(hiringManager?.customFields || {})
+      .filter((k) => !seen.has(k))
       .map((k) => ({ key: k, label: k }));
-    
-    // Deduplicate by key property
-    const allFields = [...standard, ...customFromDefs, ...customFromHM];
-    const seenKeys = new Set<string>();
-    return allFields.filter((f) => {
-      if (seenKeys.has(f.key)) return false;
-      seenKeys.add(f.key);
-      return true;
-    });
+    return [...fromApi, ...fromHM];
   }, [availableFields, hiringManager?.customFields]);
+
+  // When catalog loads, if details/organizationDetails visible list is empty, default to all catalog keys
+  useEffect(() => {
+    const detailsKeys = detailsFieldCatalog.map((f) => f.key);
+    if (detailsKeys.length > 0) {
+      setVisibleFields((prev) => {
+        const current = prev.details || [];
+        if (current.length > 0) return prev;
+        return { ...prev, details: detailsKeys };
+      });
+    }
+  }, [detailsFieldCatalog]);
+
+  useEffect(() => {
+    const orgKeys = organizationDetailsFieldCatalog.map((f) => f.key);
+    if (orgKeys.length > 0) {
+      setVisibleFields((prev) => {
+        const current = prev.organizationDetails || [];
+        if (current.length > 0) return prev;
+        return { ...prev, organizationDetails: orgKeys };
+      });
+    }
+  }, [organizationDetailsFieldCatalog]);
 
   // Sync Hiring Manager Details modal state when opening edit for details
   useEffect(() => {

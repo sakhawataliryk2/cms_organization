@@ -55,11 +55,8 @@ import { FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
 // Default header fields for Placements module - defined outside component to ensure stable reference
 const PLACEMENT_DEFAULT_HEADER_FIELDS = ["status", "owner"];
 
-// Constants for Placement Details persistence
-const PLACEMENT_DETAILS_DEFAULT_FIELDS = ['candidate', 'job', 'organization', 'status', 'startDate', 'endDate', 'salary'];
+// Storage keys for Placement Details and Details panels – field lists come from admin (custom field definitions)
 const PLACEMENT_DETAILS_STORAGE_KEY = "placementDetailsFields";
-
-const DETAILS_DEFAULT_FIELDS = ['owner', 'dateAdded', 'lastContactDate'];
 const DETAILS_STORAGE_KEY = "placementDetailsPanelFields";
 
 type ColumnSortState = "asc" | "desc" | null;
@@ -726,12 +723,29 @@ export default function PlacementView() {
     }
   }, [tabFromUrl]);
 
-  // Field management state
+  // Field management – panels driven from admin field definitions only
   const [availableFields, setAvailableFields] = useState<any[]>([]);
-  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
-    placementDetails: Array.from(new Set(PLACEMENT_DETAILS_DEFAULT_FIELDS)),
-    details: ['owner', 'dateAdded', 'lastContactDate'],
-    recentNotes: ['notes']
+  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
+    if (typeof window === "undefined") {
+      return { placementDetails: [], details: [], recentNotes: ["notes"] };
+    }
+    let placementDetails: string[] = [];
+    let details: string[] = [];
+    try {
+      const pd = localStorage.getItem(PLACEMENT_DETAILS_STORAGE_KEY);
+      if (pd) {
+        const parsed = JSON.parse(pd);
+        if (Array.isArray(parsed) && parsed.length > 0) placementDetails = Array.from(new Set(parsed));
+      }
+    } catch (_) {}
+    try {
+      const d = localStorage.getItem(DETAILS_STORAGE_KEY);
+      if (d) {
+        const parsed = JSON.parse(d);
+        if (Array.isArray(parsed) && parsed.length > 0) details = Array.from(new Set(parsed));
+      }
+    } catch (_) {}
+    return { placementDetails, details, recentNotes: ["notes"] };
   });
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
@@ -890,22 +904,6 @@ export default function PlacementView() {
         const data = await response.json();
         const fields = data.customFields || [];
         setAvailableFields(fields);
-        
-        // Add custom fields to visible fields if they have values
-        if (placement && placement.customFields) {
-          const customFieldKeys = Object.keys(placement.customFields);
-          customFieldKeys.forEach(fieldKey => {
-            // Add to appropriate panel based on field name
-            if (fieldKey.toLowerCase().includes('candidate') || fieldKey.toLowerCase().includes('job') || fieldKey.toLowerCase().includes('status')) {
-              if (!visibleFields.placementDetails.includes(fieldKey)) {
-                setVisibleFields(prev => ({
-                  ...prev,
-                  placementDetails: [...prev.placementDetails, fieldKey]
-                }));
-              }
-            }
-          });
-        }
       }
     } catch (err) {
       console.error('Error fetching available fields:', err);
@@ -933,38 +931,58 @@ export default function PlacementView() {
     });
   };
 
-  // Placement Details field catalog: standard + all custom (for edit modal and display order)
+  // Placement Details field catalog: from admin field definitions + record customFields only (no hardcoded standard)
   const placementDetailsFieldCatalog = useMemo(() => {
-    const standard: { key: string; label: string }[] = [
-      { key: 'candidate', label: 'Candidate' },
-      { key: 'job', label: 'Job' },
-      { key: 'organization', label: 'Organization' },
-      { key: 'status', label: 'Status' },
-      { key: 'startDate', label: 'Start Date' },
-      { key: 'endDate', label: 'End Date' },
-      { key: 'salary', label: 'Salary' },
-    ];
-    const customFromDefs = (availableFields || [])
+    const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
-    const standardKeys = new Set(standard.map((s) => s.key));
-    const customFromPlacement = Object.keys(placement?.customFields || {})
-      .filter((k) => !keysFromDefs.has(k) && !standardKeys.has(k))
+    const seen = new Set(fromApi.map((f) => f.key));
+    const fromPlacement = Object.keys(placement?.customFields || {})
+      .filter((k) => !seen.has(k))
       .map((k) => ({ key: k, label: k }));
-    
-    // Deduplicate by key property
-    const allFields = [...standard, ...customFromDefs, ...customFromPlacement];
-    const seenKeys = new Set<string>();
-    return allFields.filter((f) => {
-      if (seenKeys.has(f.key)) return false;
-      seenKeys.add(f.key);
-      return true;
-    });
+    return [...fromApi, ...fromPlacement];
   }, [availableFields, placement?.customFields]);
+
+  // Details panel field catalog: from admin field definitions + record customFields only
+  const detailsFieldCatalog = useMemo(() => {
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+    const seen = new Set(fromApi.map((f) => f.key));
+    const fromPlacement = Object.keys(placement?.customFields || {})
+      .filter((k) => !seen.has(k))
+      .map((k) => ({ key: k, label: k }));
+    return [...fromApi, ...fromPlacement];
+  }, [availableFields, placement?.customFields]);
+
+  // When catalog loads, if placementDetails/details visible list is empty, default to all catalog keys
+  useEffect(() => {
+    const keys = placementDetailsFieldCatalog.map((f) => f.key);
+    if (keys.length > 0) {
+      setVisibleFields((prev) => {
+        const current = prev.placementDetails || [];
+        if (current.length > 0) return prev;
+        return { ...prev, placementDetails: keys };
+      });
+    }
+  }, [placementDetailsFieldCatalog]);
+
+  useEffect(() => {
+    const keys = detailsFieldCatalog.map((f) => f.key);
+    if (keys.length > 0) {
+      setVisibleFields((prev) => {
+        const current = prev.details || [];
+        if (current.length > 0) return prev;
+        return { ...prev, details: keys };
+      });
+    }
+  }, [detailsFieldCatalog]);
 
   // Sync Placement Details modal state when opening edit for placementDetails
   useEffect(() => {
@@ -982,15 +1000,6 @@ export default function PlacementView() {
       uniqueCatalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
     );
   }, [editingPanel, visibleFields.placementDetails, placementDetailsFieldCatalog]);
-
-  const detailsFieldCatalog = useMemo(
-    () => [
-      { key: "owner", label: "Owner" },
-      { key: "dateAdded", label: "Date Added" },
-      { key: "lastContactDate", label: "Last Contact" },
-    ],
-    []
-  );
 
   useEffect(() => {
     if (editingPanel !== "details") return;
@@ -3227,27 +3236,48 @@ export default function PlacementView() {
   };
 
   const renderDetailsPanel = () => {
-    return (
-      <PanelWithHeader title="Details:" onEdit={() => handleEditPanel("details")}>
-        <div className="space-y-0 border border-gray-200 rounded">
-          {visibleFields.details.includes("owner") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
+    if (!placement) return null;
+    const customFieldDefs = (availableFields || []).filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden);
+    const renderDetailsRow = (key: string, index: number) => {
+      switch (key) {
+        case "owner":
+          return (
+            <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Owner:</div>
               <div className="flex-1 p-2">{placement.owner || "-"}</div>
             </div>
-          )}
-          {visibleFields.details.includes("dateAdded") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
+          );
+        case "dateAdded":
+          return (
+            <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
               <div className="flex-1 p-2">{placement.dateAdded || "-"}</div>
             </div>
-          )}
-          {visibleFields.details.includes("lastContactDate") && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
+          );
+        case "lastContactDate":
+          return (
+            <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Last Contact:</div>
-              <div className="flex-1 p-2">{placement.lastContactDate}</div>
+              <div className="flex-1 p-2">{placement.lastContactDate ?? "-"}</div>
             </div>
-          )}
+          );
+        default: {
+          const field = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
+          const fieldLabel = field?.field_label || field?.field_name || key;
+          const fieldValue = placement.customFields?.[key] ?? "-";
+          return (
+            <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
+              <div className="flex-1 p-2">{String(fieldValue)}</div>
+            </div>
+          );
+        }
+      }
+    };
+    return (
+      <PanelWithHeader title="Details:" onEdit={() => handleEditPanel("details")}>
+        <div className="space-y-0 border border-gray-200 rounded">
+          {Array.from(new Set(visibleFields.details || [])).map((key, index) => renderDetailsRow(key, index))}
         </div>
       </PanelWithHeader>
     );

@@ -54,6 +54,27 @@ interface User {
   email: string;
 }
 
+// Map admin field labels to backend columns; unmapped labels go to custom_fields JSONB
+const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
+  "First Name": "firstName", First: "firstName", FName: "firstName",
+  "Last Name": "lastName", Last: "lastName", LName: "lastName",
+  "Email": "email", "Email 1": "email", "Email Address": "email", "E-mail": "email",
+  "Phone": "phone", "Phone Number": "phone", Telephone: "phone",
+  "Mobile Phone": "mobilePhone", Mobile: "mobilePhone", "Cell Phone": "mobilePhone",
+  "Address": "address", "Street Address": "address", "Address 1": "address",
+  "City": "city",
+  "State": "state",
+  "ZIP Code": "zip", ZIP: "zip", ZipCode: "zip", "Postal Code": "zip",
+  "Status": "status", "Current Status": "status",
+  "Current Organization": "currentOrganization", "Organization": "currentOrganization",
+  "Title": "title", "Job Title": "title", Position: "title",
+  "Resume Text": "resumeText", "Resume": "resumeText",
+  "Skills": "skills",
+  "Desired Salary": "desiredSalary", "Salary": "desiredSalary",
+  "Owner": "owner", "Assigned To": "owner", "Assigned Owner": "owner",
+  "Date Added": "dateAdded", "Date Created": "dateAdded",
+};
+
 // Multi-value tag input component for Skills field
 interface MultiValueTagInputProps {
   values: string[];
@@ -921,142 +942,66 @@ export default function AddJobSeeker() {
       );
       console.log("=== DEBUG END ===");
 
-      // Create an object with all field values (only visible ones)
-      const formDataObj = formFields.reduce((acc, field) => {
-        if (field.visible && !field.locked) {
-          acc[field.name] = field.value;
-        }
-        return acc;
-      }, {} as Record<string, any>);
+      const apiDataDefaults: Record<string, any> = {
+        firstName: "",
+        lastName: "",
+        email: "",
+        phone: "",
+        mobilePhone: "",
+        address: "",
+        city: "",
+        state: "",
+        zip: "",
+        status: "New lead",
+        currentOrganization: "",
+        title: "",
+        resumeText: "",
+        skills: "",
+        desiredSalary: "",
+        owner: currentUser ? currentUser.name : "",
+        dateAdded: new Date().toISOString().split("T")[0],
+      };
 
-      // ✅ Map custom fields to standard fields if they exist (same pattern as Organizations)
-      const firstName =
-        customFieldsToSend["First Name"] || formDataObj.firstName || "";
-
-      const lastName =
-        customFieldsToSend["Last Name"] || formDataObj.lastName || "";
-
-      const email = customFieldsToSend["Email"] || formDataObj.email || "";
-
-      const phone = customFieldsToSend["Phone"] || formDataObj.phone || "";
-
-      const mobilePhone =
-        customFieldsToSend["Mobile Phone"] || formDataObj.mobilePhone || "";
-
-      const address =
-        customFieldsToSend["Address"] || formDataObj.address || "";
-
-      const city = customFieldsToSend["City"] || formDataObj.city || "";
-
-      const state = customFieldsToSend["State"] || formDataObj.state || "";
-
-      const zip =
-        customFieldsToSend["ZIP Code"] ||
-        customFieldsToSend["ZIP"] ||
-        formDataObj.zip ||
-        "";
-
-      const status =
-        customFieldsToSend["Status"] || formDataObj.status || "New lead";
-
-      const currentOrganization =
-        customFieldsToSend["Current Organization"] ||
-        formDataObj.currentOrganization ||
-        "";
-
-      const title = customFieldsToSend["Title"] || formDataObj.title || "";
-
-      const resumeText =
-        customFieldsToSend["Resume Text"] || formDataObj.resumeText || "";
-
-      const skills = customFieldsToSend["Skills"] || formDataObj.skills || "";
-
-      const desiredSalary =
-        customFieldsToSend["Desired Salary"] || formDataObj.desiredSalary || "";
-
-      const owner =
-        customFieldsToSend["Owner"] ||
-        formDataObj.owner ||
-        (currentUser ? currentUser.name : "");
-
-      const dateAdded =
-        customFieldsToSend["Date Added"] ||
-        formDataObj.dateAdded ||
-        new Date().toISOString().split("T")[0];
-
-      // ✅ Build the API payload (same pattern as Organizations)
-      // Ensure custom_fields is always a valid object (not integer or other types)
       const customFieldsForDB: Record<string, any> = {};
 
-      // Include all custom fields, even if they're empty strings (but filter out undefined/null)
-      Object.keys(customFieldsToSend).forEach((key) => {
-        const value = customFieldsToSend[key];
-        // Include all values except undefined and null (allow empty strings)
-        if (value !== undefined && value !== null) {
-          customFieldsForDB[key] = value;
+      // Labels in BACKEND_COLUMN_BY_LABEL → top-level columns; all others → custom_fields JSONB
+      Object.entries(customFieldsToSend).forEach(([label, value]) => {
+        if (value === undefined || value === null) return;
+        const column = BACKEND_COLUMN_BY_LABEL[label];
+        if (column) {
+          apiDataDefaults[column] = value;
+        } else {
+          customFieldsForDB[label] = value;
         }
       });
 
-      // Auto-populate Field_17 (Owner) if not set (only in create mode)
-      if (!isEditMode) {
-        // Find Field_17 in customFields
-        const ownerField = customFields.find(
-          (f) =>
-            f.field_name === "Field_17" ||
-            f.field_name === "field_17" ||
-            f.field_name?.toLowerCase() === "field_17" ||
-            (f.field_label === "Owner" &&
-              (f.field_name?.includes("17") ||
-                f.field_name?.toLowerCase().includes("field_17")))
-        );
-
-        if (ownerField) {
-          const ownerValue =
-            customFieldsForDB[ownerField.field_label] ||
-            customFieldValues[ownerField.field_name];
-
-          if (!ownerValue || ownerValue.trim() === "") {
-            try {
-              const userCookie = document.cookie.replace(
-                /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
-                "$1"
+      // Auto-populate Owner if not set (only in create mode)
+      if (!isEditMode && (!apiDataDefaults.owner || String(apiDataDefaults.owner).trim() === "")) {
+        try {
+          const userCookie = document.cookie.replace(
+            /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          );
+          if (userCookie) {
+            const userData = JSON.parse(decodeURIComponent(userCookie));
+            if (userData.name) {
+              apiDataDefaults.owner = userData.name;
+              const ownerField = customFields.find(
+                (f) =>
+                  f.field_name === "Field_17" ||
+                  f.field_name === "field_17" ||
+                  (f.field_label === "Owner" && f.field_name?.includes("17"))
               );
-              if (userCookie) {
-                const userData = JSON.parse(decodeURIComponent(userCookie));
-                if (userData.name) {
-                  customFieldsForDB[ownerField.field_label] = userData.name;
-                  console.log(
-                    "Auto-populated Field_17 (Owner) with current user:",
-                    userData.name
-                  );
-                }
-              }
-            } catch (e) {
-              console.error("Error parsing user data from cookie:", e);
+              if (ownerField) customFieldsForDB[ownerField.field_label] = userData.name;
             }
           }
+        } catch (e) {
+          console.error("Error parsing user data from cookie:", e);
         }
       }
 
       const apiData: Record<string, any> = {
-        firstName: firstName,
-        lastName: lastName,
-        email: email,
-        phone: phone,
-        mobilePhone: mobilePhone,
-        address: address,
-        city: city,
-        state: state,
-        zip: zip,
-        status: status,
-        currentOrganization: currentOrganization,
-        title: title,
-        resumeText: resumeText,
-        skills: skills,
-        desiredSalary: desiredSalary,
-        owner: owner,
-        dateAdded: dateAdded,
-        // ✅ CRITICAL: Always send custom_fields as a valid JSON object
+        ...apiDataDefaults,
         custom_fields: customFieldsForDB,
       };
 

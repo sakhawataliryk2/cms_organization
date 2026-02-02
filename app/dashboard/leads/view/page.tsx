@@ -197,15 +197,10 @@ import {
 // Default header fields for Leads module - defined outside component to ensure stable reference
 const LEAD_DEFAULT_HEADER_FIELDS = ["phone", "email"];
 
-// Constants for Lead Contact Info and Details persistence
-const LEAD_CONTACT_INFO_DEFAULT_FIELDS = ['fullName', 'nickname', 'title', 'organizationName', 'department', 'phone', 'mobilePhone', 'email', 'email2', 'fullAddress', 'linkedinUrl'];
+// Storage keys for Lead Contact Info, Details, Website Jobs, Our Jobs – field lists come from admin (custom field definitions)
 const LEAD_CONTACT_INFO_STORAGE_KEY = "leadsContactInfoFields";
-const LEAD_DETAILS_DEFAULT_FIELDS = ['status', 'owner', 'reportsTo', 'dateAdded', 'lastContactDate'];
 const LEAD_DETAILS_STORAGE_KEY = "leadsDetailsFields";
-
-const WEBSITE_JOBS_DEFAULT_FIELDS = ['jobs'];
 const WEBSITE_JOBS_STORAGE_KEY = "leadsWebsiteJobsFields";
-const OUR_JOBS_DEFAULT_FIELDS = ['jobs'];
 const OUR_JOBS_STORAGE_KEY = "leadsOurJobsFields";
 
 const LEAD_VIEW_TAB_IDS = ["summary", "modify", "notes", "history", "quotes", "invoices", "contacts", "docs", "opportunities"];
@@ -516,12 +511,43 @@ export default function LeadView() {
 
     setActiveId(null);
   };
-  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
-    contactInfo: Array.from(new Set(LEAD_CONTACT_INFO_DEFAULT_FIELDS)),
-    details: Array.from(new Set(LEAD_DETAILS_DEFAULT_FIELDS)),
-    recentNotes: ['notes'],
-    websiteJobs: ['jobs'],
-    ourJobs: ['jobs']
+  const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
+    if (typeof window === "undefined") {
+      return { contactInfo: [], details: [], recentNotes: ["notes"], websiteJobs: ["jobs"], ourJobs: ["jobs"] };
+    }
+    let contactInfo: string[] = [];
+    let details: string[] = [];
+    let websiteJobs: string[] = ["jobs"];
+    let ourJobs: string[] = ["jobs"];
+    try {
+      const c = localStorage.getItem(LEAD_CONTACT_INFO_STORAGE_KEY);
+      if (c) {
+        const parsed = JSON.parse(c);
+        if (Array.isArray(parsed) && parsed.length > 0) contactInfo = Array.from(new Set(parsed));
+      }
+    } catch (_) {}
+    try {
+      const d = localStorage.getItem(LEAD_DETAILS_STORAGE_KEY);
+      if (d) {
+        const parsed = JSON.parse(d);
+        if (Array.isArray(parsed) && parsed.length > 0) details = Array.from(new Set(parsed));
+      }
+    } catch (_) {}
+    try {
+      const w = localStorage.getItem(WEBSITE_JOBS_STORAGE_KEY);
+      if (w) {
+        const parsed = JSON.parse(w);
+        if (Array.isArray(parsed) && parsed.length > 0) websiteJobs = Array.from(new Set(parsed));
+      }
+    } catch (_) {}
+    try {
+      const o = localStorage.getItem(OUR_JOBS_STORAGE_KEY);
+      if (o) {
+        const parsed = JSON.parse(o);
+        if (Array.isArray(parsed) && parsed.length > 0) ourJobs = Array.from(new Set(parsed));
+      }
+    } catch (_) {}
+    return { contactInfo, details, recentNotes: ["notes"], websiteJobs, ourJobs };
   });
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
@@ -675,37 +701,6 @@ export default function LeadView() {
         const data = await response.json();
         const fields = data.customFields || [];
         setAvailableFields(fields);
-        
-        // Add custom fields to visible fields if they have values
-        if (lead && lead.customFields) {
-          const customFieldKeys = Object.keys(lead.customFields);
-          customFieldKeys.forEach(fieldKey => {
-            // Add to appropriate panel based on field name
-            if (fieldKey.toLowerCase().includes('contact') || fieldKey.toLowerCase().includes('phone') || fieldKey.toLowerCase().includes('address') || fieldKey.toLowerCase().includes('email')) {
-              setVisibleFields(prev => {
-                const current = prev.contactInfo || [];
-                if (!current.includes(fieldKey)) {
-                  return {
-                    ...prev,
-                    contactInfo: Array.from(new Set([...current, fieldKey]))
-                  };
-                }
-                return prev;
-              });
-            } else if (fieldKey.toLowerCase().includes('status') || fieldKey.toLowerCase().includes('owner') || fieldKey.toLowerCase().includes('date')) {
-              setVisibleFields(prev => {
-                const current = prev.details || [];
-                if (!current.includes(fieldKey)) {
-                  return {
-                    ...prev,
-                    details: Array.from(new Set([...current, fieldKey]))
-                  };
-                }
-                return prev;
-              });
-            }
-          });
-        }
       }
     } catch (err) {
       console.error('Error fetching available fields:', err);
@@ -733,73 +728,58 @@ export default function LeadView() {
     });
   };
 
-  // Lead Contact Info field catalog: standard + all custom (for edit modal and display order)
+  // Lead Contact Info field catalog: from admin field definitions + record customFields only (no hardcoded standard)
   const contactInfoFieldCatalog = useMemo(() => {
-    const standard: { key: string; label: string }[] = [
-      { key: "fullName", label: "Name" },
-      { key: "nickname", label: "Nickname" },
-      { key: "title", label: "Title" },
-      { key: "organizationName", label: "Organization" },
-      { key: "department", label: "Department" },
-      { key: "phone", label: "Phone" },
-      { key: "mobilePhone", label: "Mobile" },
-      { key: "email", label: "Email" },
-      { key: "email2", label: "Email 2" },
-      { key: "fullAddress", label: "Address" },
-      { key: "linkedinUrl", label: "LinkedIn" },
-    ];
-    const customFromDefs = (availableFields || [])
+    const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
-    const standardKeys = new Set(standard.map((s) => s.key));
-    const customFromLead = Object.keys(lead?.customFields || {})
-      .filter((k) => !keysFromDefs.has(k) && !standardKeys.has(k))
+    const seen = new Set(fromApi.map((f) => f.key));
+    const fromLead = Object.keys(lead?.customFields || {})
+      .filter((k) => !seen.has(k))
       .map((k) => ({ key: k, label: k }));
-    
-    // Deduplicate by key property
-    const allFields = [...standard, ...customFromDefs, ...customFromLead];
-    const seenKeys = new Set<string>();
-    return allFields.filter((f) => {
-      if (seenKeys.has(f.key)) return false;
-      seenKeys.add(f.key);
-      return true;
-    });
+    return [...fromApi, ...fromLead];
   }, [availableFields, lead?.customFields]);
 
-  // Lead Details field catalog: standard + all custom (for edit modal and display order)
+  // Lead Details field catalog: from admin field definitions + record customFields only
   const detailsFieldCatalog = useMemo(() => {
-    const standard: { key: string; label: string }[] = [
-      { key: "status", label: "Status" },
-      { key: "owner", label: "Owner" },
-      { key: "reportsTo", label: "Reports To" },
-      { key: "dateAdded", label: "Date Added" },
-      { key: "lastContactDate", label: "Last Contact" },
-    ];
-    const customFromDefs = (availableFields || [])
+    const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
-    const standardKeys = new Set(standard.map((s) => s.key));
-    const customFromLead = Object.keys(lead?.customFields || {})
-      .filter((k) => !keysFromDefs.has(k) && !standardKeys.has(k))
+    const seen = new Set(fromApi.map((f) => f.key));
+    const fromLead = Object.keys(lead?.customFields || {})
+      .filter((k) => !seen.has(k))
       .map((k) => ({ key: k, label: k }));
-    
-    // Deduplicate by key property
-    const allFields = [...standard, ...customFromDefs, ...customFromLead];
-    const seenKeys = new Set<string>();
-    return allFields.filter((f) => {
-      if (seenKeys.has(f.key)) return false;
-      seenKeys.add(f.key);
-      return true;
-    });
+    return [...fromApi, ...fromLead];
   }, [availableFields, lead?.customFields]);
+
+  // When catalog loads, if contactInfo/details visible list is empty, default to all catalog keys
+  useEffect(() => {
+    const keys = contactInfoFieldCatalog.map((f) => f.key);
+    if (keys.length > 0) {
+      setVisibleFields((prev) => {
+        const current = prev.contactInfo || [];
+        if (current.length > 0) return prev;
+        return { ...prev, contactInfo: keys };
+      });
+    }
+  }, [contactInfoFieldCatalog]);
+
+  useEffect(() => {
+    const keys = detailsFieldCatalog.map((f) => f.key);
+    if (keys.length > 0) {
+      setVisibleFields((prev) => {
+        const current = prev.details || [];
+        if (current.length > 0) return prev;
+        return { ...prev, details: keys };
+      });
+    }
+  }, [detailsFieldCatalog]);
 
   // Sync Lead Contact Info modal state when opening edit for contactInfo
   useEffect(() => {

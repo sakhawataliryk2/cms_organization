@@ -28,6 +28,33 @@ interface User {
   email: string;
 }
 
+// Map admin field labels to backend columns; unmapped labels go to custom_fields JSONB
+const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
+  "First Name": "firstName", First: "firstName", FName: "firstName",
+  "Last Name": "lastName", Last: "lastName", LName: "lastName",
+  "Email": "email", "Email 1": "email", "Email Address": "email", "E-mail": "email",
+  "Email 2": "email2",
+  "Phone": "phone", "Phone Number": "phone", Telephone: "phone",
+  "Mobile Phone": "mobilePhone", Mobile: "mobilePhone", "Cell Phone": "mobilePhone",
+  "Direct Line": "directLine",
+  "Company Phone": "companyPhone", "Contact Phone": "companyPhone", "Main Phone": "companyPhone",
+  "Status": "status", "Current Status": "status",
+  "Title": "title", "Job Title": "title", Position: "title",
+  "Organization": "organizationId", "Organization Name": "organizationId", Company: "organizationId",
+  "Department": "department", Dept: "department",
+  "Reports To": "reportsTo", Manager: "reportsTo",
+  "Owner": "owner", "Assigned To": "owner", "Assigned Owner": "owner",
+  "Secondary Owners": "secondaryOwners", "Secondary Owner": "secondaryOwners",
+  "Address": "address", "Street Address": "address", "Address 1": "address",
+  "Address 2": "address2", Suite: "address2", Apt: "address2", Apartment: "address2", Floor: "address2",
+  "City": "city",
+  "State": "state",
+  "ZIP Code": "zipCode", Zip: "zipCode", ZipCode: "zipCode", "Postal Code": "zipCode",
+  "LinkedIn URL": "linkedinUrl", LinkedIn: "linkedinUrl", "LinkedIn Profile": "linkedinUrl",
+  "Nickname": "nickname", "Nick Name": "nickname",
+  "Last Contact Date": "lastContactDate", "Last Contact": "lastContactDate",
+};
+
 export default function AddHiringManager() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -629,100 +656,59 @@ export default function AddHiringManager() {
       // Get custom fields for submission
       const customFieldsToSend = getCustomFieldsForSubmission();
 
-      // Map custom fields to API payload for standard fields
-      // Use organizationId from URL if available, otherwise use form data
+      // Use organizationId from URL if available, otherwise from form/custom fields
       const finalOrganizationId = organizationIdFromUrl || formData.organizationId;
       const finalOrganizationName = organizationName || formData.organizationId;
 
       const apiData: any = {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        status: formData.status,
-        nickname: formData.nickname,
-        title: formData.title,
+        firstName: "",
+        lastName: "",
+        status: "Active",
+        nickname: "",
+        title: "",
         organizationId: finalOrganizationId,
         organizationName: finalOrganizationName,
-        department: formData.department,
-        reportsTo: formData.reportsTo,
-        owner: formData.owner || currentUser?.name || "",
-        secondaryOwners: formData.secondaryOwners,
-        email: formData.email,
-        email2: formData.email2,
-        phone: formData.phone,
-        mobilePhone: formData.mobilePhone,
-        directLine: formData.directLine,
-        companyPhone: formData.companyPhone,
-        linkedinUrl: formData.linkedinUrl,
-        address: formData.address,
-        address2: formData.address2,
-        city: formData.city,
-        state: formData.state,
-        zipCode: formData.zipCode,
-        lastContactDate: formData.lastContactDate,
+        department: "",
+        reportsTo: "",
+        owner: currentUser?.name || "",
+        secondaryOwners: "",
+        email: "",
+        email2: "",
+        phone: "",
+        mobilePhone: "",
+        directLine: "",
+        companyPhone: "",
+        linkedinUrl: "",
+        address: "",
+        address2: "",
+        city: "",
+        state: "",
+        zipCode: "",
+        lastContactDate: "",
       };
 
-      // Map custom fields to standard fields if they exist
-      const fieldMappings: Record<string, string[]> = {
-        firstName: ["First Name", "First", "FName"],
-        lastName: ["Last Name", "Last", "LName"],
-        email: ["Email", "Email 1", "Email Address", "E-mail"],
-        email2: ["Email 2"],
-        phone: ["Phone", "Phone Number", "Telephone"],
-        mobilePhone: ["Mobile Phone", "Mobile", "Cell Phone"],
-        directLine: ["Direct Line"],
-        companyPhone: ["Company Phone", "Contact Phone", "Main Phone"],
-        status: ["Status", "Current Status"],
-        title: ["Title", "Job Title", "Position"],
-        organizationId: ["Organization", "Organization Name", "Company"],
-        department: ["Department", "Dept"],
-        reportsTo: ["Reports To", "Manager"],
-        owner: ["Owner", "Assigned To", "Assigned Owner"],
-        secondaryOwners: ["Secondary Owners", "Secondary Owner"],
-        address: ["Address", "Street Address", "Address 1"],
-        address2: ["Address 2", "Suite", "Apt", "Apartment", "Floor"],
-        city: ["City"],
-        state: ["State"],
-        zipCode: ["ZIP Code", "Zip", "ZipCode", "Postal Code"],
-        linkedinUrl: ["LinkedIn URL", "LinkedIn", "LinkedIn Profile"],
-        nickname: ["Nickname", "Nick Name"],
-        lastContactDate: ["Last Contact Date", "Last Contact"],
-      };
+      const customFieldsForDB: Record<string, any> = {};
 
-      // Override standard fields with custom field values if they exist
-      Object.entries(fieldMappings).forEach(([apiKey, labels]) => {
-        labels.forEach((label) => {
-          const val = customFieldsToSend[label];
-          if (val !== undefined && val !== null && val !== "") {
-            apiData[apiKey] = val;
-          }
-        });
+      // Labels in BACKEND_COLUMN_BY_LABEL → top-level columns; all others → custom_fields JSONB
+      Object.entries(customFieldsToSend).forEach(([label, value]) => {
+        if (value === undefined || value === null) return;
+        const column = BACKEND_COLUMN_BY_LABEL[label];
+        if (column) {
+          apiData[column] = value;
+        } else {
+          customFieldsForDB[label] = value;
+        }
       });
 
-      // --- Normalize organization fields ---------------------------------
-      // If `organizationId` is not a pure number we treat it as a NAME, move it
-      // to organizationName and unset organizationId so backend stores only
-      // the human-readable name.
+      // Normalize organization: if organizationId is not a number, treat as name
       if (apiData.organizationId && isNaN(Number(apiData.organizationId))) {
         apiData.organizationName = apiData.organizationId;
         apiData.organizationId = "";
       }
-
-      // If organizationName is still empty but organizationId is numeric, try to
-      // keep a textual backup so UI reflects changes immediately.
       if (!apiData.organizationName && apiData.organizationId) {
         apiData.organizationName = apiData.organizationId.toString();
       }
 
-      // Prepare custom_fields for database (clean object with all custom field values)
-      const customFieldsForDB: Record<string, any> = {};
-      customFields.forEach((field) => {
-        const value = customFieldValues[field.field_name];
-        if (value !== undefined && value !== null && value !== "") {
-          customFieldsForDB[field.field_label] = value;
-        }
-      });
-
-      // Add customFields to API data
       apiData.customFields = customFieldsForDB;
 
       console.log("Custom Fields to Send:", customFieldsToSend);

@@ -49,10 +49,8 @@ import { TbGripVertical } from "react-icons/tb";
 // Default header fields for Tasks module - defined outside component to ensure stable reference
 const TASK_DEFAULT_HEADER_FIELDS = ["dueDate", "assignedTo"];
 
-// Constants for Task Details and Task Overview persistence
-const TASK_DETAILS_DEFAULT_FIELDS = ["status", "priority", "dueDate", "dueTime", "owner", "assignedTo", "dateCreated", "createdBy"];
+// Storage keys for Task Details and Task Overview – field lists come from admin (custom field definitions)
 const TASK_DETAILS_STORAGE_KEY = "taskDetailsFields";
-const TASK_OVERVIEW_DEFAULT_FIELDS: string[] = [];
 const TASK_OVERVIEW_STORAGE_KEY = "taskOverviewFields";
 
 function DroppableContainer({
@@ -523,12 +521,29 @@ export default function TaskView() {
         }
     };
 
-    // Field management (Hiring Manager style)
+    // Field management – panels driven from admin field definitions only
     const [availableFields, setAvailableFields] = useState<any[]>([]);
-    const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>({
-        taskOverview: Array.from(new Set(TASK_OVERVIEW_DEFAULT_FIELDS)),
-        details: Array.from(new Set(TASK_DETAILS_DEFAULT_FIELDS)),
-        recentNotes: ["notes"],
+    const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
+        if (typeof window === "undefined") {
+            return { taskOverview: [], details: [], recentNotes: ["notes"] };
+        }
+        let taskOverview: string[] = [];
+        let details: string[] = [];
+        try {
+            const to = localStorage.getItem(TASK_OVERVIEW_STORAGE_KEY);
+            if (to) {
+                const parsed = JSON.parse(to);
+                if (Array.isArray(parsed) && parsed.length > 0) taskOverview = Array.from(new Set(parsed));
+            }
+        } catch (_) {}
+        try {
+            const d = localStorage.getItem(TASK_DETAILS_STORAGE_KEY);
+            if (d) {
+                const parsed = JSON.parse(d);
+                if (Array.isArray(parsed) && parsed.length > 0) details = Array.from(new Set(parsed));
+            }
+        } catch (_) {}
+        return { taskOverview, details, recentNotes: ["notes"] };
     });
     const [editingPanel, setEditingPanel] = useState<string | null>(null);
     const [isLoadingFields, setIsLoadingFields] = useState(false);
@@ -587,64 +602,58 @@ export default function TaskView() {
         });
     };
 
-    // Task Details field catalog: standard + all custom (for edit modal and display order)
+    // Task Details field catalog: from admin field definitions + record customFields only (no hardcoded standard)
     const taskDetailsFieldCatalog = useMemo(() => {
-        const standard: { key: string; label: string }[] = [
-            { key: "status", label: "Status" },
-            { key: "priority", label: "Priority" },
-            { key: "dueDate", label: "Due Date" },
-            { key: "dueTime", label: "Due Time" },
-            { key: "owner", label: "Owner" },
-            { key: "assignedTo", label: "Assigned To" },
-            { key: "dateCreated", label: "Date Created" },
-            { key: "createdBy", label: "Created By" },
-        ];
-        const customFromDefs = (availableFields || [])
+        const fromApi = (availableFields || [])
             .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
             .map((f: any) => ({
                 key: String(f.field_key || f.api_name || f.field_name || f.id),
                 label: String(f.field_label || f.field_name || f.field_key || f.id),
             }));
-        const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
-        const standardKeys = new Set(standard.map((s) => s.key));
-        const customFromTask = Object.keys(task?.customFields || {})
-            .filter((k) => !keysFromDefs.has(k) && !standardKeys.has(k))
+        const seen = new Set(fromApi.map((f) => f.key));
+        const fromTask = Object.keys(task?.customFields || {})
+            .filter((k) => !seen.has(k))
             .map((k) => ({ key: k, label: k }));
-        
-        // Deduplicate by key property
-        const allFields = [...standard, ...customFromDefs, ...customFromTask];
-        const seenKeys = new Set<string>();
-        return allFields.filter((f) => {
-            if (seenKeys.has(f.key)) return false;
-            seenKeys.add(f.key);
-            return true;
-        });
+        return [...fromApi, ...fromTask];
     }, [availableFields, task?.customFields]);
 
-    // Task Overview field catalog: standard + all custom (for edit modal and display order)
+    // Task Overview field catalog: from admin field definitions + record customFields only
     const taskOverviewFieldCatalog = useMemo(() => {
-        const standard: { key: string; label: string }[] = headerFieldCatalog.filter((f) => !String(f.key).startsWith("custom:"));
-        const customFromDefs = (availableFields || [])
+        const fromApi = (availableFields || [])
             .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
             .map((f: any) => ({
                 key: String(f.field_key || f.api_name || f.field_name || f.id),
                 label: String(f.field_label || f.field_name || f.field_key || f.id),
             }));
-        const keysFromDefs = new Set(customFromDefs.map((c) => c.key));
-        const standardKeys = new Set(standard.map((s) => s.key));
-        const customFromTask = Object.keys(task?.customFields || {})
-            .filter((k) => !keysFromDefs.has(k) && !standardKeys.has(k))
+        const seen = new Set(fromApi.map((f) => f.key));
+        const fromTask = Object.keys(task?.customFields || {})
+            .filter((k) => !seen.has(k))
             .map((k) => ({ key: k, label: k }));
-        
-        // Deduplicate by key property
-        const allFields = [...standard, ...customFromDefs, ...customFromTask];
-        const seenKeys = new Set<string>();
-        return allFields.filter((f) => {
-            if (seenKeys.has(f.key)) return false;
-            seenKeys.add(f.key);
-            return true;
-        });
-    }, [availableFields, task?.customFields, headerFieldCatalog]);
+        return [...fromApi, ...fromTask];
+    }, [availableFields, task?.customFields]);
+
+    // When catalog loads, if details/taskOverview visible list is empty, default to all catalog keys
+    useEffect(() => {
+        const keys = taskDetailsFieldCatalog.map((f) => f.key);
+        if (keys.length > 0) {
+            setVisibleFields((prev) => {
+                const current = prev.details || [];
+                if (current.length > 0) return prev;
+                return { ...prev, details: keys };
+            });
+        }
+    }, [taskDetailsFieldCatalog]);
+
+    useEffect(() => {
+        const keys = taskOverviewFieldCatalog.map((f) => f.key);
+        if (keys.length > 0) {
+            setVisibleFields((prev) => {
+                const current = prev.taskOverview || [];
+                if (current.length > 0) return prev;
+                return { ...prev, taskOverview: keys };
+            });
+        }
+    }, [taskOverviewFieldCatalog]);
 
     // Sync Task Details modal state when opening edit for details
     useEffect(() => {
