@@ -2135,17 +2135,17 @@ export default function OrganizationView() {
       }
 
       const data = await response.json();
+      toast.success('Document added successfully');
+      fetchDocuments(organizationId);
 
       // Add the new document to the list
       setDocuments([data.document, ...documents]);
 
       // Clear the form
-      toast.success('Document added successfully');
       setNewDocumentName("");
       setNewDocumentType("General");
       setNewDocumentContent("");
       setShowAddDocument(false);
-      fetchDocuments(organizationId);
       fetchSummaryCounts();
     } catch (err) {
       console.error('Error adding document:', err);
@@ -2162,6 +2162,12 @@ export default function OrganizationView() {
         `/api/organizations/${organizationId}/documents/${documentId}`,
         {
           method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
         }
       );
 
