@@ -125,11 +125,8 @@ const SECTION_CONFIG: Record<
           `<li><strong>Reason:</strong> {{reason}}</li>` +
           `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
           `</ul>` +
-          `<p>Please review and approve or deny this deletion:</p>` +
-          `<p>` +
-          `<a href="{{approvalUrl}}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Deletion</a>` +
-          `<a href="{{denyUrl}}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Deletion</a>` +
-          `</p>` +
+          `<p>Please review and approve or deny this deletion. Use the buttons below:</p>` +
+          `<p>{{approvalUrl}} {{denyUrl}}</p>` +
           `</div>`,
       },
       ORGANIZATION_TRANSFER_REQUEST: {
@@ -145,11 +142,8 @@ const SECTION_CONFIG: Record<
           `<li><strong>Target Organization:</strong> {{targetRecordNumber}}</li>` +
           `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
           `</ul>` +
-          `<p>Please review and approve or deny this transfer:</p>` +
-          `<p>` +
-          `<a href="{{approvalUrl}}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Transfer</a>` +
-          `<a href="{{denyUrl}}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Transfer</a>` +
-          `</p>` +
+          `<p>Please review and approve or deny this transfer. Use the buttons below:</p>` +
+          `<p>{{approvalUrl}} {{denyUrl}}</p>` +
           `</div>`,
       },
     },
@@ -199,11 +193,8 @@ const SECTION_CONFIG: Record<
           `<li><strong>Reason:</strong> {{reason}}</li>` +
           `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
           `</ul>` +
-          `<p>Please review and approve or deny this deletion:</p>` +
-          `<p>` +
-          `<a href="{{approvalUrl}}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Deletion</a>` +
-          `<a href="{{denyUrl}}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Deletion</a>` +
-          `</p>` +
+          `<p>Please review and approve or deny this deletion. Use the buttons below:</p>` +
+          `<p>{{approvalUrl}} {{denyUrl}}</p>` +
           `</div>`,
       },
       HIRING_MANAGER_TRANSFER_REQUEST: {
@@ -219,11 +210,8 @@ const SECTION_CONFIG: Record<
           `<li><strong>Target Organization:</strong> {{targetRecordNumber}}</li>` +
           `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
           `</ul>` +
-          `<p>Please review and approve or deny this transfer:</p>` +
-          `<p>` +
-          `<a href="{{approvalUrl}}" style="background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; margin-right: 10px;">Approve Transfer</a>` +
-          `<a href="{{denyUrl}}" style="background-color: #f44336; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Deny Transfer</a>` +
-          `</p>` +
+          `<p>Please review and approve or deny this transfer. Use the buttons below:</p>` +
+          `<p>{{approvalUrl}} {{denyUrl}}</p>` +
           `</div>`,
       },
     },
@@ -393,8 +381,8 @@ export default function EmailManagementSectionPage() {
 
       <div className="flex items-center justify-between mb-4">
         <p className="text-gray-600 text-sm">
-          Use placeholders such as <code className="bg-gray-300 px-1 rounded">{`{{approvalUrl}}`}</code> and{" "}
-          <code className="bg-gray-300 px-1 rounded">{`{{denyUrl}}`}</code> so the client can place approval/deny links anywhere in the template.
+          Use <code className="bg-gray-300 px-1 rounded">{`{{approvalUrl}}`}</code> and{" "}
+          <code className="bg-gray-300 px-1 rounded">{`{{denyUrl}}`}</code> anywhere in the body—they render as full Approve/Deny buttons.
         </p>
         <button
           className="bg-blue-600 text-white px-5 py-2 rounded-lg shadow hover:bg-blue-700 transition"
@@ -497,7 +485,7 @@ export default function EmailManagementSectionPage() {
               </select>
               {(formData.type.includes("DELETE_REQUEST") || formData.type.includes("TRANSFER_REQUEST")) && (
                 <div className="mt-2 text-xs text-gray-600">
-                  Use <strong>{`{{approvalUrl}}`}</strong> and <strong>{`{{denyUrl}}`}</strong> anywhere in the body or subject to add approval/deny links.
+                  Use <strong>{`{{approvalUrl}}`}</strong> and <strong>{`{{denyUrl}}`}</strong> anywhere in the body—they render as full Approve/Deny buttons. In the subject they remain plain URLs.
                 </div>
               )}
             </div>

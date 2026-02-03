@@ -45,6 +45,7 @@ type TearsheetRow = {
   hiring_manager_count: number;
   job_order_count: number;
   lead_count: number;
+  organization_count?: number;
   owner_name?: string | null;
   created_at?: string | null;
   last_opened_at?: string | null;
@@ -240,6 +241,7 @@ const TEARSHEET_DEFAULT_COLUMNS = [
   "hiring_manager_count",
   "job_order_count",
   "lead_count",
+  "organization_count",
   "owner_name",
   "created_at",
   "last_opened_at",
@@ -419,6 +421,7 @@ const TearsheetsPage = () => {
       { key: "hiring_manager_count", label: "Hiring Manager", sortable: true, filterType: "number" as const },
       { key: "job_order_count", label: "Job Order", sortable: true, filterType: "number" as const },
       { key: "lead_count", label: "Lead", sortable: true, filterType: "number" as const },
+      { key: "organization_count", label: "Organization", sortable: true, filterType: "number" as const },
       { key: "owner_name", label: "Owner", sortable: true, filterType: "text" as const },
       { key: "created_at", label: "Date Added", sortable: true, filterType: "text" as const },
       { key: "last_opened_at", label: "Last Date Opened", sortable: true, filterType: "text" as const },
@@ -466,6 +469,7 @@ const TearsheetsPage = () => {
       case "hiring_manager_count": return row.hiring_manager_count;
       case "job_order_count": return row.job_order_count;
       case "lead_count": return row.lead_count;
+      case "organization_count": return row.organization_count ?? 0;
       case "owner_name": return row.owner_name || "-";
       case "created_at": return row.created_at; // Keep raw for sorting
       case "last_opened_at": return row.last_opened_at; // Keep raw for sorting
@@ -541,6 +545,10 @@ const TearsheetsPage = () => {
           >
             {r.lead_count || 0}
           </button>
+        );
+      case "organization_count":
+        return (
+          <span className="text-gray-700">{r.organization_count ?? 0}</span>
         );
       case "owner_name":
         return <span className="text-gray-700">{r.owner_name || "-"}</span>;
@@ -938,11 +946,6 @@ const TearsheetsPage = () => {
     window.print();
   };
 
-  // Handle close
-  const handleClose = () => {
-    router.push('/dashboard');
-  };
-
   // Handle pin toggle
   const handlePinToggle = () => {
     const newPinnedState = !isPinned;
@@ -993,16 +996,16 @@ const TearsheetsPage = () => {
       `}</style>
       <PanelWithHeader title="Tearsheets">
         <div className="bg-white rounded-lg shadow">
-          {/* Header with action icons */}
-          <div className="flex items-center justify-between p-4 border-b border-gray-200 no-print">
+          {/* Header - match other overviews: count on left, actions on right */}
+          <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center no-print">
             <div className="text-sm text-gray-600">
               {isLoading ? "Loading..." : `${rows.length} tearsheet(s)`}
             </div>
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center space-x-4">
               {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
                 <button
                   onClick={handleClearAllFilters}
-                  className="px-3 py-1.5 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-1"
+                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-1"
                 >
                   <FiX size={14} />
                   Clear
@@ -1012,7 +1015,7 @@ const TearsheetsPage = () => {
               <div className="relative">
                 <button
                   onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)}
-                  className="px-3 py-1.5 border border-gray-200 rounded hover:bg-gray-50 flex items-center gap-2 bg-white text-sm"
+                  className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
                 >
                   <FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} />
                   <span className="max-w-[100px] truncate">
@@ -1069,14 +1072,14 @@ const TearsheetsPage = () => {
               <button
                 type="button"
                 onClick={() => setShowColumnModal(true)}
-                className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded border border-gray-200"
+                className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
               >
                 Columns
               </button>
               <button
                 type="button"
                 onClick={fetchTearsheets}
-                className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded border border-gray-200"
+                className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
               >
                 Refresh
               </button>
@@ -1086,13 +1089,6 @@ const TearsheetsPage = () => {
                 title="Print"
               >
                 <FiPrinter size={20} />
-              </button>
-              <button
-                onClick={handleClose}
-                className="p-2 text-gray-600 hover:text-gray-800"
-                title="Close"
-              >
-                <FiX size={20} />
               </button>
             </div>
           </div>
@@ -1301,85 +1297,144 @@ const TearsheetsPage = () => {
           </div>
         </div>
 
-        {/* Column Customization Modal */}
+        {/* Column Customization Modal - match other overviews (Available Columns + Column Order) */}
         {showColumnModal && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100]">
-            <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] flex flex-col">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+            <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
               <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-                <h2 className="text-lg font-semibold text-gray-800">Customize Columns</h2>
+                <h2 className="text-lg font-semibold">Customize Columns</h2>
                 <button
                   onClick={() => setShowColumnModal(false)}
-                  className="p-1 rounded hover:bg-gray-200 text-gray-500"
+                  className="p-1 rounded hover:bg-gray-200"
                 >
-                  <FiX size={24} />
+                  <span className="text-2xl font-bold">×</span>
                 </button>
               </div>
 
-              <div className="p-6 overflow-y-auto flex-1">
-                <p className="text-sm text-gray-500 mb-4">
-                  Select the columns you want to see in the table. You can also drag and drop column headers in the table to reorder them.
-                </p>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {columnsCatalog.map((col) => {
-                    const isChecked = columnFields.includes(col.key);
-                    return (
-                      <label
-                        key={col.key}
-                        className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${
-                          isChecked ? "bg-blue-50 border-blue-200" : "bg-gray-50 border-gray-200 hover:bg-gray-100"
-                        }`}
-                      >
-                        <input
-                          type="checkbox"
-                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                          checked={isChecked}
-                          onChange={() => {
-                            if (isChecked) {
-                              // Don't allow removing all columns
-                              if (columnFields.length > 1) {
-                                setColumnFields(columnFields.filter((f) => f !== col.key));
-                              }
-                            } else {
-                              // Add column - maintaining order if possible or just append
-                              setColumnFields([...columnFields, col.key]);
-                            }
-                          }}
-                        />
-                        <span className="ml-3 text-sm font-medium text-gray-700">{col.label}</span>
-                      </label>
-                    );
-                  })}
+              <div className="p-6 grid grid-cols-2 gap-6">
+                {/* Available Columns */}
+                <div>
+                  <h3 className="font-medium mb-3">Available Columns</h3>
+                  <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                    {columnsCatalog.map((c) => {
+                      const checked = columnFields.includes(c.key);
+                      return (
+                        <label
+                          key={c.key}
+                          className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              setColumnFields((prev) => {
+                                if (prev.includes(c.key))
+                                  return prev.filter((x) => x !== c.key);
+                                return [...prev, c.key];
+                              });
+                            }}
+                            className="w-4 h-4"
+                          />
+                          <span className="text-sm text-gray-800">{c.label}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
 
-              <div className="p-4 border-t bg-gray-50 flex justify-end space-x-3">
-                <button
-                  onClick={() => setShowColumnModal(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded hover:bg-gray-50"
-                >
-                  Close
-                </button>
-                <button
-                  onClick={async () => {
-                    await saveColumnConfig();
-                    setShowColumnModal(false);
-                  }}
-                  disabled={isSavingColumns}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded hover:bg-blue-700 disabled:opacity-50 flex items-center"
-                >
-                  {isSavingColumns ? (
-                    <>
-                      <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                      </svg>
-                      Saving...
-                    </>
-                  ) : (
-                    "Save Preferences"
-                  )}
-                </button>
+                {/* Column Order */}
+                <div>
+                  <h3 className="font-medium mb-3">Column Order</h3>
+                  <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                    {columnFields.length === 0 ? (
+                      <div className="text-sm text-gray-500 italic">
+                        No columns selected
+                      </div>
+                    ) : (
+                      columnFields.map((key, idx) => (
+                        <div
+                          key={key}
+                          className="flex items-center justify-between p-2 border rounded"
+                        >
+                          <div className="text-sm font-medium">
+                            {getColumnLabel(key)}
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                              disabled={idx === 0}
+                              onClick={() => {
+                                setColumnFields((prev) => {
+                                  const copy = [...prev];
+                                  [copy[idx - 1], copy[idx]] = [
+                                    copy[idx],
+                                    copy[idx - 1],
+                                  ];
+                                  return copy;
+                                });
+                              }}
+                            >
+                              ↑
+                            </button>
+
+                            <button
+                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                              disabled={idx === columnFields.length - 1}
+                              onClick={() => {
+                                setColumnFields((prev) => {
+                                  const copy = [...prev];
+                                  [copy[idx], copy[idx + 1]] = [
+                                    copy[idx + 1],
+                                    copy[idx],
+                                  ];
+                                  return copy;
+                                });
+                              }}
+                            >
+                              ↓
+                            </button>
+
+                            <button
+                              className="px-2 py-1 border rounded text-xs hover:bg-red-50 text-red-600 disabled:opacity-40"
+                              disabled={columnFields.length <= 1}
+                              onClick={() =>
+                                setColumnFields((prev) =>
+                                  prev.filter((x) => x !== key)
+                                )
+                              }
+                              title="Remove"
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="flex justify-end gap-2 mt-4">
+                    <button
+                      className="px-4 py-2 border rounded hover:bg-gray-50"
+                      onClick={() => setColumnFields([...TEARSHEET_DEFAULT_COLUMNS])}
+                    >
+                      Reset
+                    </button>
+
+                    <button
+                      className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      disabled={isSavingColumns}
+                      onClick={async () => {
+                        const success = await saveColumnConfig();
+                        if (success) {
+                          setShowColumnModal(false);
+                        }
+                      }}
+                    >
+                      {isSavingColumns ? "Saving..." : "Done"}
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

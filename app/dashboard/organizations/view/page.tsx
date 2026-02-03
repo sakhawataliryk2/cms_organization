@@ -530,14 +530,19 @@ export default function OrganizationView() {
     ? jobs.filter((j: any) => norm(j.hiring_manager) === norm(hmFilter))
     : jobs;
 
-  // Tearsheet modal state
+  // Tearsheet modal state (same as Hiring Manager: New vs Existing)
   const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
   const [tearsheetForm, setTearsheetForm] = useState({
-    selectedTearsheetId: "", // Selected existing tearsheet ID
+    name: "",
+    visibility: "Existing" as "New" | "Existing",
+    selectedTearsheetId: "",
   });
   const [existingTearsheets, setExistingTearsheets] = useState<any[]>([]);
   const [isLoadingTearsheets, setIsLoadingTearsheets] = useState(false);
   const [isSavingTearsheet, setIsSavingTearsheet] = useState(false);
+  const [tearsheetSearchQuery, setTearsheetSearchQuery] = useState("");
+  const [showTearsheetDropdown, setShowTearsheetDropdown] = useState(false);
+  const tearsheetSearchRef = useRef<HTMLDivElement>(null);
 
   // Transfer modal state
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -3356,7 +3361,7 @@ export default function OrganizationView() {
     setValidationErrors({});
   };
 
-  // Fetch existing tearsheets
+  // Fetch existing tearsheets (same as Hiring Manager - show all)
   const fetchExistingTearsheets = async () => {
     setIsLoadingTearsheets(true);
     try {
@@ -3371,11 +3376,7 @@ export default function OrganizationView() {
 
       if (response.ok) {
         const data = await response.json();
-        // Filter to only active/existing tearsheets
-        const activeTearsheets = (data.tearsheets || []).filter(
-          (ts: any) => ts.visibility === "Existing" || !ts.visibility
-        );
-        setExistingTearsheets(activeTearsheets);
+        setExistingTearsheets(data.tearsheets || []);
       } else {
         console.error("Failed to fetch tearsheets:", response.statusText);
         setExistingTearsheets([]);
@@ -3388,12 +3389,44 @@ export default function OrganizationView() {
     }
   };
 
+  // Filtered tearsheets for search dropdown (same as Hiring Manager)
+  const filteredTearsheets =
+    tearsheetSearchQuery.trim() === ""
+      ? existingTearsheets
+      : existingTearsheets.filter((ts: any) =>
+          ts.name.toLowerCase().includes(tearsheetSearchQuery.toLowerCase())
+        );
+
+  const handleTearsheetSelect = (tearsheet: any) => {
+    setTearsheetForm((prev) => ({
+      ...prev,
+      selectedTearsheetId: tearsheet.id.toString(),
+    }));
+    setTearsheetSearchQuery(tearsheet.name);
+    setShowTearsheetDropdown(false);
+  };
+
   // Fetch tearsheets when modal opens
   useEffect(() => {
     if (showAddTearsheetModal) {
       fetchExistingTearsheets();
     }
   }, [showAddTearsheetModal]);
+
+  // Click outside to close tearsheet search dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (tearsheetSearchRef.current && !tearsheetSearchRef.current.contains(event.target as Node)) {
+        setShowTearsheetDropdown(false);
+      }
+    };
+    if (showTearsheetDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+    } else {
+      document.removeEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showTearsheetDropdown]);
 
   // Fetch available organizations for transfer (exclude current organization)
   const fetchAvailableOrganizations = async () => {
@@ -3569,54 +3602,136 @@ export default function OrganizationView() {
     }
   };
 
-  // Handle tearsheet submission - Associate existing tearsheet with organization
+  // Handle tearsheet submission - Create new or add to existing (same logic as Hiring Manager)
+  // For organization: associate all of this org's hiring managers and jobs with the tearsheet
   const handleTearsheetSubmit = async () => {
-    if (!tearsheetForm.selectedTearsheetId) {
-      toast.error("Please select a tearsheet");
-      return;
-    }
-
     if (!organizationId) {
       toast.error("Organization ID is missing");
       return;
     }
 
-    setIsSavingTearsheet(true);
-    try {
-      // Get the selected tearsheet details
-      const selectedTearsheet = existingTearsheets.find(
-        (ts) => ts.id.toString() === tearsheetForm.selectedTearsheetId
-      );
+    const token = document.cookie.replace(
+      /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+      "$1"
+    );
+    const authHeaders = {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    };
 
-      if (!selectedTearsheet) {
-        throw new Error("Selected tearsheet not found");
+    if (tearsheetForm.visibility === "New") {
+      // Create new tearsheet
+      if (!tearsheetForm.name.trim()) {
+        toast.error("Please enter a tearsheet name");
+        return;
       }
 
-      // Note: Since the backend doesn't directly support organization-tearsheet association,
-      // we'll add the organization's related records (hiring managers, jobs) to the tearsheet
-      // This is a workaround until backend supports direct organization association
+      setIsSavingTearsheet(true);
+      try {
+        const createRes = await fetch("/api/tearsheets", {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({
+            name: tearsheetForm.name.trim(),
+            visibility: "Existing",
+          }),
+        });
 
-      // For now, we'll show a success message and close the modal
-      // The actual association logic can be implemented when backend supports it
-      toast.success(`Tearsheet "${selectedTearsheet.name}" has been selected for this organization.`);
+        if (!createRes.ok) {
+          const errorData = await createRes.json().catch(() => ({ message: "Failed to create tearsheet" }));
+          throw new Error(errorData.message || "Failed to create tearsheet");
+        }
 
-      setShowAddTearsheetModal(false);
-      setTearsheetForm({ selectedTearsheetId: "" });
+        const createData = await createRes.json();
+        const tearsheetId = createData.tearsheet?.id;
+        if (!tearsheetId) {
+          throw new Error("Tearsheet created but ID missing");
+        }
 
-      // TODO: Implement actual association when backend API supports it
-      // This might involve:
-      // 1. Adding organization's hiring managers to tearsheet_hiring_managers
-      // 2. Adding organization's jobs to tearsheet_jobs
-      // 3. Or creating a new endpoint for organization-tearsheet association
-    } catch (err) {
-      console.error("Error associating tearsheet:", err);
-      toast.error(
-        err instanceof Error
-          ? err.message
-          : "Failed to associate tearsheet. Please try again."
+        // Associate all organization hiring managers and jobs with the new tearsheet
+        for (const hm of hiringManagers) {
+          await fetch(`/api/tearsheets/${tearsheetId}/associate`, {
+            method: "POST",
+            headers: authHeaders,
+            body: JSON.stringify({ hiring_manager_id: hm.id }),
+          });
+        }
+        for (const job of jobs) {
+          await fetch(`/api/tearsheets/${tearsheetId}/associate`, {
+            method: "POST",
+            headers: authHeaders,
+            body: JSON.stringify({ job_id: job.id }),
+          });
+        }
+
+        toast.success("Tearsheet created and organization contacts/jobs added.");
+        setShowAddTearsheetModal(false);
+        setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
+        setTearsheetSearchQuery("");
+      } catch (err) {
+        console.error("Error creating tearsheet:", err);
+        toast.error(
+          err instanceof Error ? err.message : "Failed to create tearsheet. Please try again."
+        );
+      } finally {
+        setIsSavingTearsheet(false);
+      }
+    } else {
+      // Add to existing tearsheet
+      if (!tearsheetForm.selectedTearsheetId) {
+        toast.error("Please select a tearsheet");
+        return;
+      }
+
+      const selectedTearsheet = existingTearsheets.find(
+        (ts: any) => ts.id.toString() === tearsheetForm.selectedTearsheetId
       );
-    } finally {
-      setIsSavingTearsheet(false);
+      if (!selectedTearsheet) {
+        toast.error("Selected tearsheet not found");
+        return;
+      }
+
+      setIsSavingTearsheet(true);
+      try {
+        const tearsheetId = tearsheetForm.selectedTearsheetId;
+
+        for (const hm of hiringManagers) {
+          const res = await fetch(`/api/tearsheets/${tearsheetId}/associate`, {
+            method: "POST",
+            headers: authHeaders,
+            body: JSON.stringify({ hiring_manager_id: hm.id }),
+          });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.message || errData.error || "Failed to associate hiring managers");
+          }
+        }
+        for (const job of jobs) {
+          const res = await fetch(`/api/tearsheets/${tearsheetId}/associate`, {
+            method: "POST",
+            headers: authHeaders,
+            body: JSON.stringify({ job_id: job.id }),
+          });
+          if (!res.ok) {
+            const errData = await res.json().catch(() => ({}));
+            throw new Error(errData.message || errData.error || "Failed to associate jobs");
+          }
+        }
+
+        toast.success(
+          `Organization's hiring managers and jobs have been added to tearsheet "${selectedTearsheet.name}".`
+        );
+        setShowAddTearsheetModal(false);
+        setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
+        setTearsheetSearchQuery("");
+      } catch (err) {
+        console.error("Error associating tearsheet:", err);
+        toast.error(
+          err instanceof Error ? err.message : "Failed to associate tearsheet. Please try again."
+        );
+      } finally {
+        setIsSavingTearsheet(false);
+      }
     }
   };
 
@@ -6016,17 +6131,18 @@ export default function OrganizationView() {
         </div>
       )}
 
-      {/* Add Tearsheet Modal - Selection Only */}
+      {/* Add Tearsheet Modal - same design as Hiring Manager (New vs Existing) */}
       {showAddTearsheetModal && (
         <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
             {/* Header */}
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold">Select Tearsheet</h2>
+              <h2 className="text-lg font-semibold">Add to Tearsheet</h2>
               <button
                 onClick={() => {
                   setShowAddTearsheetModal(false);
-                  setTearsheetForm({ selectedTearsheetId: "" });
+                  setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
+                  setTearsheetSearchQuery("");
                 }}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -6036,53 +6152,137 @@ export default function OrganizationView() {
 
             {/* Form Content */}
             <div className="p-6 space-y-6">
-              {/* Tearsheet Selection */}
+              {/* Visibility Toggle */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  <span className="text-red-500 mr-1">•</span>
-                  Select Existing Tearsheet
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Option
                 </label>
-                {isLoadingTearsheets ? (
-                  <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
-                    Loading tearsheets...
-                  </div>
-                ) : existingTearsheets.length === 0 ? (
-                  <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
-                    No existing tearsheets available
-                  </div>
-                ) : (
-                  <select
-                    value={tearsheetForm.selectedTearsheetId}
+                <div
+                  className="inline-flex rounded-md border border-gray-300 overflow-hidden"
+                  role="group"
+                >
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setTearsheetForm((prev) => ({
+                        ...prev,
+                        visibility: "New",
+                        selectedTearsheetId: "",
+                      }))
+                    }
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${
+                      tearsheetForm.visibility === "New"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
+                    }`}
+                  >
+                    New Tearsheet
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setTearsheetForm((prev) => ({
+                        ...prev,
+                        visibility: "Existing",
+                        name: "",
+                      }))
+                    }
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${
+                      tearsheetForm.visibility === "Existing"
+                        ? "bg-blue-500 text-white"
+                        : "bg-white text-gray-700 hover:bg-gray-50"
+                    }`}
+                  >
+                    Existing Tearsheet
+                  </button>
+                </div>
+              </div>
+
+              {/* New Tearsheet Name */}
+              {tearsheetForm.visibility === "New" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <span className="text-red-500 mr-1">•</span>
+                    Tearsheet Name
+                  </label>
+                  <input
+                    type="text"
+                    value={tearsheetForm.name}
                     onChange={(e) =>
                       setTearsheetForm((prev) => ({
                         ...prev,
-                        selectedTearsheetId: e.target.value,
+                        name: e.target.value,
                       }))
                     }
+                    placeholder="Enter tearsheet name"
                     className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
-                  >
-                    <option value="">Select a tearsheet...</option>
-                    {existingTearsheets.map((tearsheet) => (
-                      <option key={tearsheet.id} value={tearsheet.id}>
-                        {tearsheet.name}
-                        {tearsheet.owner_name && ` (Owner: ${tearsheet.owner_name})`}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <p className="mt-2 text-xs text-gray-500">
-                  Only existing tearsheets can be selected. New tearsheets must be created from the Tearsheets page.
-                </p>
-              </div>
+                  />
+                </div>
+              )}
+
+              {/* Existing Tearsheet Selection */}
+              {tearsheetForm.visibility === "Existing" && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <span className="text-red-500 mr-1">•</span>
+                    Select Tearsheet
+                  </label>
+                  {isLoadingTearsheets ? (
+                    <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
+                      Loading tearsheets...
+                    </div>
+                  ) : (
+                    <div className="relative" ref={tearsheetSearchRef}>
+                      <input
+                        type="text"
+                        value={tearsheetSearchQuery}
+                        onChange={(e) => {
+                          setTearsheetSearchQuery(e.target.value);
+                          setShowTearsheetDropdown(true);
+                        }}
+                        onFocus={() => setShowTearsheetDropdown(true)}
+                        onClick={() => setShowTearsheetDropdown(true)}
+                        placeholder="Search for a tearsheet..."
+                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      {showTearsheetDropdown && (tearsheetSearchQuery || existingTearsheets.length > 0) && (
+                        <div className="absolute z-[60] w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
+                          {filteredTearsheets.length > 0 ? (
+                            filteredTearsheets.map((ts: any) => (
+                              <button
+                                key={ts.id}
+                                onClick={() => handleTearsheetSelect(ts)}
+                                className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex flex-col"
+                              >
+                                <span className="text-sm font-medium text-gray-900">{ts.name}</span>
+                                {ts.owner_name && (
+                                  <span className="text-xs text-gray-500">Owner: {ts.owner_name}</span>
+                                )}
+                              </button>
+                            ))
+                          ) : (
+                            <div className="p-3 text-center text-gray-500 text-sm">
+                              No matching tearsheets found
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <p className="mt-2 text-xs text-gray-500">
+                    Search and select an existing tearsheet to add this organization&apos;s hiring managers and jobs to it.
+                  </p>
+                </div>
+              )}
             </div>
 
-            {/* Footer Buttons */}
             <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
               <button
                 onClick={() => {
                   setShowAddTearsheetModal(false);
-                  setTearsheetForm({ selectedTearsheetId: "" });
+                  setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
+                  setTearsheetSearchQuery("");
                 }}
                 className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isSavingTearsheet}
@@ -6092,9 +6292,13 @@ export default function OrganizationView() {
               <button
                 onClick={handleTearsheetSubmit}
                 className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
-                disabled={isSavingTearsheet || !tearsheetForm.selectedTearsheetId}
+                disabled={
+                  isSavingTearsheet ||
+                  (tearsheetForm.visibility === "New" && !tearsheetForm.name.trim()) ||
+                  (tearsheetForm.visibility === "Existing" && !tearsheetForm.selectedTearsheetId)
+                }
               >
-                ASSOCIATE
+                {tearsheetForm.visibility === "New" ? "CREATE" : "ASSOCIATE"}
                 <svg
                   className="w-4 h-4 ml-2"
                   fill="none"
