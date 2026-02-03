@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react';
+import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { FiX, FiDownload } from 'react-icons/fi';
 import LoadingScreen from '@/components/LoadingScreen';
@@ -244,7 +245,7 @@ export default function DataUploader() {
         if (e.target.files && e.target.files.length > 0) {
             const file = e.target.files[0];
             if (!file.name.endsWith('.csv')) {
-                alert('Please select a CSV file');
+                toast.error('Please select a CSV file');
                 return;
             }
 
@@ -255,7 +256,7 @@ export default function DataUploader() {
             const { headers, rows } = parseCSV(text);
 
             if (headers.length === 0) {
-                alert('CSV file appears to be empty or invalid');
+                toast.error('CSV file appears to be empty or invalid');
                 return;
             }
 
@@ -278,11 +279,11 @@ export default function DataUploader() {
         }
         if (currentStep === 2) {
             if (!selectedFile) {
-                alert('Please select a CSV file first');
+                toast.error('Please select a CSV file first');
                 return;
             }
             if (csvHeaders.length === 0) {
-                alert('Please upload a valid CSV file');
+                toast.error('Please upload a valid CSV file');
                 return;
             }
             setCurrentStep(3);
@@ -293,7 +294,7 @@ export default function DataUploader() {
             const requiredFields = availableFields.filter(f => f.is_required);
             const unmappedRequired = requiredFields.filter(f => !fieldMappings[f.field_name]);
             if (unmappedRequired.length > 0) {
-                alert(`Please map all required fields: ${unmappedRequired.map(f => f.field_label).join(', ')}`);
+                toast.error(`Please map all required fields: ${unmappedRequired.map(f => f.field_label).join(', ')}`);
                 return;
             }
             // Run validation
@@ -448,7 +449,7 @@ export default function DataUploader() {
             setCurrentStep(6);
         } catch (err) {
             console.error('Error importing data:', err);
-            alert(err instanceof Error ? err.message : 'Failed to import data');
+            toast.error(err instanceof Error ? err.message : 'Failed to import data');
         } finally {
             setIsImporting(false);
         }
@@ -483,7 +484,7 @@ export default function DataUploader() {
             // Fetch available fields for the selected record type
             const entityType = RECORD_TYPE_TO_ENTITY_TYPE[recordType];
             if (!entityType) {
-                alert('Invalid record type');
+                toast.error('Invalid record type');
                 return;
             }
 
@@ -533,7 +534,7 @@ export default function DataUploader() {
             }
 
             if (fields.length === 0) {
-                alert('No fields available for this record type');
+                toast.error('No fields available for this record type');
                 return;
             }
 
@@ -561,7 +562,7 @@ export default function DataUploader() {
             URL.revokeObjectURL(url);
         } catch (err) {
             console.error('Error downloading template:', err);
-            alert('Failed to download template. Please try again.');
+            toast.error('Failed to download template. Please try again.');
         }
     };
 

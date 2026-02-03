@@ -46,6 +46,7 @@ import {
 import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
+import { toast } from "sonner";
 
 // Default header fields for Hiring Managers module - defined outside component to ensure stable reference
 const HIRING_MANAGER_DEFAULT_HEADER_FIELDS = ["phone", "email"];
@@ -240,8 +241,53 @@ export default function HiringManagerView() {
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [historyError, setHistoryError] = useState<string | null>(null);
+  const [noteError, setNoteError] = useState<string | null>(null);
   const historyFilters = useHistoryFilters(history);
   const [showAddNote, setShowAddNote] = useState(false);
+
+  // Note sorting & filtering state (match Organization Notes design)
+  const [noteActionFilter, setNoteActionFilter] = useState<string>("");
+  const [noteAuthorFilter, setNoteAuthorFilter] = useState<string>("");
+  const [noteSortKey, setNoteSortKey] = useState<"date" | "action" | "author">("date");
+  const [noteSortDir, setNoteSortDir] = useState<"asc" | "desc">("desc");
+
+  const sortedFilteredNotes = useMemo(() => {
+    let out = [...notes];
+    if (noteActionFilter) {
+      out = out.filter((n) => (n.action || "") === noteActionFilter);
+    }
+    if (noteAuthorFilter) {
+      out = out.filter(
+        (n) => (n.created_by_name || "Unknown User") === noteAuthorFilter
+      );
+    }
+    out.sort((a, b) => {
+      let av: any, bv: any;
+      switch (noteSortKey) {
+        case "action":
+          av = a.action || "";
+          bv = b.action || "";
+          break;
+        case "author":
+          av = a.created_by_name || "";
+          bv = b.created_by_name || "";
+          break;
+        default:
+          av = new Date(a.created_at).getTime();
+          bv = new Date(b.created_at).getTime();
+          break;
+      }
+      if (typeof av === "number" && typeof bv === "number") {
+        return noteSortDir === "asc" ? av - bv : bv - av;
+      }
+      const cmp = String(av).localeCompare(String(bv), undefined, {
+        sensitivity: "base",
+        numeric: true,
+      });
+      return noteSortDir === "asc" ? cmp : -cmp;
+    });
+    return out;
+  }, [notes, noteActionFilter, noteAuthorFilter, noteSortKey, noteSortDir]);
 
   // Documents state
   const [documents, setDocuments] = useState<Array<any>>([]);
@@ -630,7 +676,7 @@ export default function HiringManagerView() {
 
     const res = togglePinnedRecord({ key, label, url });
     if (res.action === "limit") {
-      window.alert("Maximum 10 pinned records reached");
+      toast.info("Maximum 10 pinned records reached");
     }
   };
 
@@ -1482,7 +1528,7 @@ export default function HiringManagerView() {
   // Fetch notes for the hiring manager
   const fetchNotes = async (id: string) => {
     setIsLoadingNotes(true);
-
+    setNoteError(null);
     try {
       const response = await fetch(`/api/hiring-managers/${id}/notes`, {
         headers: {
@@ -1494,13 +1540,15 @@ export default function HiringManagerView() {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to fetch notes");
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to fetch notes");
       }
 
       const data = await response.json();
       setNotes(data.notes || []);
     } catch (err) {
       console.error("Error fetching notes:", err);
+      setNoteError(err instanceof Error ? err.message : "An error occurred while fetching notes");
     } finally {
       setIsLoadingNotes(false);
     }
@@ -2137,16 +2185,15 @@ export default function HiringManagerView() {
       setShowAddNote(false);
 
       // Refresh history
+      fetchNotes(hiringManagerId);
       fetchHistory(hiringManagerId);
 
-      // Redirect to Summary page
-      setActiveTab("summary");
+      toast.success("Note added successfully");
       setShowAddNote(false);
       setNoteFormErrors({});
-      alert("Note added successfully");
     } catch (err) {
       console.error("Error adding note:", err);
-      alert(err instanceof Error ? err.message : "An error occurred while adding a note");
+      toast.error(err instanceof Error ? err.message : "An error occurred while adding a note");
     }
   };
 
@@ -2352,11 +2399,11 @@ export default function HiringManagerView() {
         fetchDocuments(hiringManagerId);
       } else {
         const data = await response.json();
-        alert(data.message || "Failed to add document");
+        toast.error(data.message || "Failed to add document");
       }
     } catch (err) {
       console.error("Error adding document:", err);
-      alert("An error occurred while adding the document");
+      toast.error("An error occurred while adding the document");
     }
   };
 
@@ -2379,11 +2426,11 @@ export default function HiringManagerView() {
         fetchDocuments(hiringManagerId!);
       } else {
         const data = await response.json();
-        alert(data.message || "Failed to delete document");
+        toast.error(data.message || "Failed to delete document");
       }
     } catch (err) {
       console.error("Error deleting document:", err);
-      alert("An error occurred while deleting the document");
+      toast.error("An error occurred while deleting the document");
     }
   };
 
@@ -2501,14 +2548,14 @@ export default function HiringManagerView() {
   // Handle tearsheet submission
   const handleTearsheetSubmit = async () => {
     if (!hiringManagerId) {
-      alert("Hiring Manager ID is missing");
+      toast.error("Hiring Manager ID is missing");
       return;
     }
 
     if (tearsheetForm.visibility === "New") {
       // Create new tearsheet
       if (!tearsheetForm.name.trim()) {
-        alert("Please enter a tearsheet name");
+        toast.error("Please enter a tearsheet name");
         return;
       }
 
@@ -2537,13 +2584,13 @@ export default function HiringManagerView() {
           throw new Error(errorData.message || "Failed to create tearsheet");
         }
 
-        alert("Tearsheet created successfully!");
+        toast.success("Tearsheet created successfully!");
         setShowAddTearsheetModal(false);
         setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
         setTearsheetSearchQuery("");
       } catch (err) {
         console.error("Error creating tearsheet:", err);
-        alert(
+        toast.error(
           err instanceof Error
             ? err.message
             : "Failed to create tearsheet. Please try again."
@@ -2554,7 +2601,7 @@ export default function HiringManagerView() {
     } else {
       // Associate with existing tearsheet
       if (!tearsheetForm.selectedTearsheetId) {
-        alert("Please select a tearsheet");
+        toast.error("Please select a tearsheet");
         return;
       }
 
@@ -2591,13 +2638,13 @@ export default function HiringManagerView() {
           throw new Error(errorData.error || errorData.message || "Failed to associate tearsheet");
         }
 
-        alert(`Hiring Manager has been associated with tearsheet "${selectedTearsheet.name}".`);
+        toast.success(`Hiring Manager has been associated with tearsheet "${selectedTearsheet.name}".`);
         setShowAddTearsheetModal(false);
         setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
         setTearsheetSearchQuery("");
       } catch (err) {
         console.error("Error associating tearsheet:", err);
-        alert(
+        toast.error(
           err instanceof Error
             ? err.message
             : "Failed to associate tearsheet. Please try again."
@@ -2645,29 +2692,29 @@ export default function HiringManagerView() {
   // Handle transfer submission
   const handleTransferSubmit = async () => {
     if (!transferForm.targetOrganizationId) {
-      alert("Please select a target organization");
+      toast.error("Please select a target organization");
       return;
     }
 
     if (!hiringManagerId) {
-      alert("Hiring Manager ID is missing");
+      toast.error("Hiring Manager ID is missing");
       return;
     }
 
     const sourceOrganizationId = hiringManager?.organization?.id;
     if (!sourceOrganizationId) {
-      alert("Source organization is missing");
+      toast.error("Source organization is missing");
       return;
     }
 
     const targetOrganizationId = Number(transferForm.targetOrganizationId);
     if (!Number.isFinite(targetOrganizationId) || targetOrganizationId <= 0) {
-      alert("Invalid target organization");
+      toast.error("Invalid target organization");
       return;
     }
 
     if (Number(sourceOrganizationId) === targetOrganizationId) {
-      alert("Cannot transfer to the same organization");
+      toast.error("Cannot transfer to the same organization");
       return;
     }
 
@@ -2736,12 +2783,12 @@ export default function HiringManagerView() {
         throw new Error(errorData.message || "Failed to create transfer request");
       }
 
-      alert("Transfer request submitted successfully. Payroll will be notified for approval.");
+      toast.success("Transfer request submitted successfully. Payroll will be notified for approval.");
       setShowTransferModal(false);
       setTransferForm({ targetOrganizationId: "" });
     } catch (err) {
       console.warn("Transfer request failed:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "Failed to submit transfer request. Please try again."
@@ -2787,12 +2834,12 @@ export default function HiringManagerView() {
   // Handle delete request submission
   const handleDeleteRequestSubmit = async () => {
     if (!deleteForm.reason.trim()) {
-      alert("Please enter a reason for deletion");
+      toast.error("Please enter a reason for deletion");
       return;
     }
 
     if (!hiringManagerId) {
-      alert("Hiring Manager ID is missing");
+      toast.error("Hiring Manager ID is missing");
       return;
     }
 
@@ -2839,13 +2886,13 @@ export default function HiringManagerView() {
         throw new Error(errorData.message || "Failed to create delete request");
       }
 
-      alert("Delete request submitted successfully. Payroll will be notified for approval.");
+      toast.success("Delete request submitted successfully. Payroll will be notified for approval.");
       setShowDeleteModal(false);
       setDeleteForm({ reason: "" });
       checkPendingDeleteRequest(); // Refresh delete request status
     } catch (err) {
       console.error("Error submitting delete request:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "Failed to submit delete request. Please try again."
@@ -2858,19 +2905,19 @@ export default function HiringManagerView() {
   // Handle password reset
   const handlePasswordReset = async () => {
     if (!hiringManagerId) {
-      alert("Hiring Manager ID is missing");
+      toast.error("Hiring Manager ID is missing");
       return;
     }
 
     if (!passwordResetForm.email.trim()) {
-      alert("Please enter an email address");
+      toast.error("Please enter an email address");
       return;
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(passwordResetForm.email.trim())) {
-      alert("Please enter a valid email address");
+      toast.error("Please enter a valid email address");
       return;
     }
 
@@ -2901,12 +2948,12 @@ export default function HiringManagerView() {
         throw new Error(errorData.message || "Failed to reset password");
       }
 
-      alert("Password reset processed successfully. An email has been sent if requested.");
+      toast.success("Password reset processed successfully. An email has been sent if requested.");
       setShowPasswordResetModal(false);
       setPasswordResetForm({ email: "", sendEmail: true });
     } catch (err) {
       console.error("Error resetting password:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "Failed to reset password. Please try again."
@@ -3056,14 +3103,14 @@ export default function HiringManagerView() {
 
     // Validate email - check if exists and not placeholder
     if (!email || email.trim() === "" || email === "(Not provided)" || email === "No email provided") {
-      alert("Hiring manager email address is not available. Please add an email address to this record.");
+      toast.error("Hiring manager email address is not available. Please add an email address to this record.");
       return;
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      alert("The email address format is invalid. Please check the email address and try again.");
+      toast.error("The email address format is invalid. Please check the email address and try again.");
       return;
     }
 
@@ -3147,12 +3194,12 @@ export default function HiringManagerView() {
   // Handle appointment submission
   const handleAppointmentSubmit = async () => {
     if (!appointmentForm.date || !appointmentForm.time || !appointmentForm.type) {
-      alert("Please fill in all required fields (Date, Time, Type)");
+      toast.error("Please fill in all required fields (Date, Time, Type)");
       return;
     }
 
     if (!hiringManagerId) {
-      alert("Hiring Manager ID is missing");
+      toast.error("Hiring Manager ID is missing");
       return;
     }
 
@@ -3234,11 +3281,11 @@ export default function HiringManagerView() {
         } catch (inviteError) {
           console.error("Error sending calendar invites:", inviteError);
           // Don't fail the appointment creation if invites fail
-          alert("Appointment created, but calendar invites failed to send. Please send manually.");
+          toast.warning("Appointment created, but calendar invites failed to send. Please send manually.");
         }
       }
 
-      alert("Appointment created successfully!");
+      toast.success("Appointment created successfully!");
       setShowAppointmentModal(false);
       setAppointmentForm({
         date: "",
@@ -3252,7 +3299,7 @@ export default function HiringManagerView() {
       });
     } catch (err) {
       console.error("Error creating appointment:", err);
-      alert(err instanceof Error ? err.message : "Failed to create appointment. Please try again.");
+      toast.error(err instanceof Error ? err.message : "Failed to create appointment. Please try again.");
     } finally {
       setIsSavingAppointment(false);
     }
@@ -3590,45 +3637,219 @@ export default function HiringManagerView() {
     );
   };
 
-  // Render notes tab content
-  const renderNotesTab = () => (
-    <div className="bg-white p-4 rounded shadow-sm">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold">Hiring Manager Notes</h2>
-        <button
-          onClick={() => setShowAddNote(true)}
-          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-        >
-          Add Note
-        </button>
-      </div>
+  // Helper to navigate to a referenced record (match Organization Notes)
+  const navigateToReference = (ref: any) => {
+    if (!ref || !ref.id) return;
+    const refType = (typeof ref === "string" ? null : (ref.type || "").toLowerCase().replace(/\s+/g, "")) as string | null;
+    const refId = typeof ref === "string" ? null : ref.id;
+    if (!refId) return;
+    const routeMap: Record<string, string> = {
+      organization: `/dashboard/organizations/view?id=${refId}`,
+      job: `/dashboard/jobs/view?id=${refId}`,
+      jobseeker: `/dashboard/job-seekers/view?id=${refId}`,
+      lead: `/dashboard/leads/view?id=${refId}`,
+      task: `/dashboard/tasks/view?id=${refId}`,
+      placement: `/dashboard/placements/view?id=${refId}`,
+      hiringmanager: `/dashboard/hiring-managers/view?id=${refId}`,
+    };
+    const route = refType ? routeMap[refType] : null;
+    if (route) router.push(route);
+  };
 
-      {/* Notes List */}
-      {isLoadingNotes ? (
-        <div className="flex justify-center py-4">
-          <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+  // Render notes tab content (standardized to Organization Notes design)
+  const renderNotesTab = () => {
+    const parseAboutReferences = (refs: any) => {
+      if (!refs) return [];
+      if (typeof refs === "string") {
+        try {
+          return JSON.parse(refs);
+        } catch {
+          return [];
+        }
+      }
+      if (Array.isArray(refs)) return refs;
+      return [];
+    };
+
+    return (
+      <div className="bg-white p-4 rounded shadow-sm">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Hiring Manager Notes</h2>
+          <button
+            onClick={() => setShowAddNote(true)}
+            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+          >
+            Add Note
+          </button>
         </div>
-      ) : notes.length > 0 ? (
-        <div className="space-y-4">
-          {notes.map((note) => (
-            <div key={note.id} className="p-3 border rounded hover:bg-gray-50">
-              <div className="flex justify-between items-start mb-2">
-                <span className="font-medium text-blue-600">
-                  {note.created_by_name || "Unknown User"}
-                </span>
-                <span className="text-sm text-gray-500">
-                  {new Date(note.created_at).toLocaleString()}
-                </span>
-              </div>
-              <p className="text-gray-700">{note.text}</p>
-            </div>
-          ))}
+
+        {/* Filters & Sort Controls */}
+        <div className="flex flex-wrap gap-4 items-end mb-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Action</label>
+            <select
+              value={noteActionFilter}
+              onChange={(e) => setNoteActionFilter(e.target.value)}
+              className="p-2 border border-gray-300 rounded text-sm"
+            >
+              <option value="">All Actions</option>
+              {actionFields.map((af) => (
+                <option key={af.id || af.field_name || af.field_label} value={af.field_name || af.field_label}>
+                  {af.field_label || af.field_name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Author</label>
+            <select
+              value={noteAuthorFilter}
+              onChange={(e) => setNoteAuthorFilter(e.target.value)}
+              className="p-2 border border-gray-300 rounded text-sm"
+            >
+              <option value="">All Authors</option>
+              {Array.from(new Set(notes.map((n) => n.created_by_name || "Unknown User"))).map((author) => (
+                <option key={author} value={author}>{author}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Sort By</label>
+            <select
+              value={noteSortKey}
+              onChange={(e) => setNoteSortKey(e.target.value as "date" | "action" | "author")}
+              className="p-2 border border-gray-300 rounded text-sm"
+            >
+              <option value="date">Date</option>
+              <option value="action">Action</option>
+              <option value="author">Author</option>
+            </select>
+          </div>
+          <div>
+            <button
+              onClick={() => setNoteSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+              className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs text-black"
+              title="Toggle Sort Direction"
+            >
+              {noteSortDir === "asc" ? "Asc ↑" : "Desc ↓"}
+            </button>
+          </div>
+          {(noteActionFilter || noteAuthorFilter) && (
+            <button
+              onClick={() => { setNoteActionFilter(""); setNoteAuthorFilter(""); }}
+              className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs"
+            >
+              Clear Filters
+            </button>
+          )}
         </div>
-      ) : (
-        <p className="text-gray-500 italic">No notes have been added yet.</p>
-      )}
-    </div>
-  );
+
+        {/* Notes List */}
+        {isLoadingNotes ? (
+          <div className="flex justify-center py-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        ) : noteError ? (
+          <div className="text-red-500 py-2">{noteError}</div>
+        ) : sortedFilteredNotes.length > 0 ? (
+          <div className="space-y-4">
+            {sortedFilteredNotes.map((note) => {
+              const actionLabel =
+                actionFields.find(
+                  (af) => af.field_name === note.action || af.field_label === note.action
+                )?.field_label || note.action || "General Note";
+              const aboutRefs = parseAboutReferences((note as any).about_references ?? (note as any).aboutReferences);
+
+              return (
+                <div id={`note-${note.id}`} key={note.id} className="p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors">
+                  <div className="border-b border-gray-200 pb-3 mb-3">
+                    <div className="flex justify-between items-start">
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-blue-600">
+                            {note.created_by_name || "Unknown User"}
+                          </span>
+                          {actionLabel && (
+                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-medium">
+                              {actionLabel}
+                            </span>
+                          )}
+                          <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded border">
+                            Hiring Manager
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {new Date(note.created_at).toLocaleString("en-US", {
+                            month: "2-digit",
+                            day: "2-digit",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            const el = document.getElementById(`note-${note.id}`);
+                            if (el) {
+                              el.scrollIntoView({ behavior: "smooth", block: "center" });
+                              el.classList.add("ring-2", "ring-blue-500");
+                              setTimeout(() => el.classList.remove("ring-2", "ring-blue-500"), 2000);
+                            }
+                          }}
+                          className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                          title="View"
+                        >
+                          View
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  {aboutRefs.length > 0 && (
+                    <div className="mb-3 pb-3 border-b border-gray-100">
+                      <div className="flex items-start gap-2">
+                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide min-w-[80px]">
+                          References:
+                        </span>
+                        <div className="flex flex-wrap gap-2 flex-1">
+                          {aboutRefs.map((ref: any, idx: number) => {
+                            const displayText = typeof ref === "string" ? ref : ref.display || ref.value || `${ref.type} #${ref.id}`;
+                            const refType = typeof ref === "string" ? null : (ref.type || "").toLowerCase().replace(/\s+/g, "");
+                            const refId = typeof ref === "string" ? null : ref.id;
+                            const isClickable = !!(refId && refType);
+                            return (
+                              <button
+                                key={idx}
+                                onClick={() => isClickable && navigateToReference(ref)}
+                                disabled={!isClickable}
+                                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-all ${isClickable ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer" : "bg-gray-100 text-gray-700 border-gray-200 cursor-default"}`}
+                                title={isClickable ? `View ${refType}` : "Reference not available"}
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                </svg>
+                                {displayText}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="mt-2">
+                    <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{note.text}</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-gray-500 italic">No notes have been added yet.</p>
+        )}
+      </div>
+    );
+  };
 
   // Render history tab content
   const renderHistoryTab = () => (
@@ -4104,13 +4325,13 @@ export default function HiringManagerView() {
                 onDragEnd={handlePanelDragEnd}
                 onDragCancel={handlePanelDragCancel}
               >
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
+                <div className="grid grid-cols-[1fr_1fr] gap-4">
+                  <div className="min-w-0">
                     <DroppableContainer id="left" items={columns.left}>
                       {columns.left.map((id) => renderPanel(id))}
                     </DroppableContainer>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <DroppableContainer id="right" items={columns.right}>
                       {columns.right.map((id) => renderPanel(id))}
                     </DroppableContainer>

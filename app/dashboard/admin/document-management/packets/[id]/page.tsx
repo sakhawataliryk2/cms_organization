@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { useParams, useRouter } from "next/navigation";
 import { FiChevronRight, FiRefreshCw, FiSearch, FiX } from "react-icons/fi";
 import { TbGripVertical } from "react-icons/tb";
@@ -197,7 +198,7 @@ setSelectedDocs(normalizePacketDocs(docsFromApi));
       setDocSearch("");
       setShowDocDropdown(false);
     } catch (e: any) {
-      alert(e?.message || "Failed to load packet");
+      toast.error(e?.message || "Failed to load packet");
       router.push("/dashboard/admin/document-management/packets");
     } finally {
       setLoading(false);
@@ -297,7 +298,7 @@ setSelectedDocs(normalizePacketDocs(docsFromApi));
     if (packetIdNum <= 0) return;
 
     if (!packetName.trim()) {
-      alert("Packet name is required");
+      toast.error("Packet name is required");
       return;
     }
 
@@ -328,7 +329,7 @@ setSelectedDocs(normalizePacketDocs(docsFromApi));
       // ✅ no alert popup, redirect to list
       router.push("/dashboard/admin/document-management/packets");
     } catch (e: any) {
-      alert(e?.message || "Save failed");
+      toast.error(e?.message || "Save failed");
     } finally {
       setLoading(false);
     }

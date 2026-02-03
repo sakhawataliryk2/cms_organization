@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   FiSearch,
@@ -148,7 +149,7 @@ const DocumentManagementPage = () => {
       setDocs(normalized);
       clampPage(normalized.length, pageSize);
     } catch (e: any) {
-      alert(e.message || "Failed to load documents");
+      toast.error(e.message || "Failed to load documents");
     } finally {
       setLoading(false);
     }
@@ -339,7 +340,7 @@ const DocumentManagementPage = () => {
         file: null,
       });
     } catch (e: any) {
-      alert(e?.message || "Failed to load document details");
+      toast.error(e?.message || "Failed to load document details");
     } finally {
       setLoadingEdit(false);
     }
@@ -364,11 +365,11 @@ const DocumentManagementPage = () => {
 
   const handleCreateOrUpdate = async () => {
     if (!formData.document_name.trim() || !formData.category.trim()) {
-      alert("Please fill in Document Name and Category");
+      toast.error("Please fill in Document Name and Category");
       return;
     }
     if (!editingDoc && !formData.file) {
-      alert("Please upload a PDF file");
+      toast.error("Please upload a PDF file");
       return;
     }
 
@@ -410,7 +411,7 @@ const DocumentManagementPage = () => {
         router.push(`/dashboard/admin/document-management/${newDocId}/editor`);
       }
     } catch (e: any) {
-      alert(e.message || "Failed");
+      toast.error(e.message || "Failed");
     } finally {
       setLoading(false);
     }
@@ -428,7 +429,7 @@ const DocumentManagementPage = () => {
       if (!res.ok || !data?.success) throw new Error(data?.message || "Failed");
       await fetchDocs();
     } catch (e: any) {
-      alert(e.message || "Delete failed");
+      toast.error(e.message || "Delete failed");
     } finally {
       setLoading(false);
     }
@@ -449,7 +450,7 @@ const DocumentManagementPage = () => {
 
       await fetchDocs();
     } catch (e: any) {
-      alert(e?.message || "Archive failed");
+      toast.error(e?.message || "Archive failed");
     } finally {
       setLoading(false);
     }

@@ -48,6 +48,7 @@ import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import { sendCalendarInvite, type CalendarEvent } from "@/lib/office365";
+import { toast } from "sonner";
 
 // SortablePanel helper
 function SortablePanel({ id, children, isOverlay = false }: { id: string; children: React.ReactNode; isOverlay?: boolean }) {
@@ -865,11 +866,11 @@ export default function JobView() {
         fetchDocuments(jobId);
       } else {
         const data = await response.json();
-        alert(data.message || "Failed to add document");
+        toast.error(data.message || "Failed to add document");
       }
     } catch (err) {
       console.error("Error adding document:", err);
-      alert("An error occurred while adding the document");
+      toast.error("An error occurred while adding the document");
     }
   };
 
@@ -895,11 +896,11 @@ export default function JobView() {
         fetchDocuments(jobId);
       } else {
         const data = await response.json();
-        alert(data.message || "Failed to delete document");
+        toast.error(data.message || "Failed to delete document");
       }
     } catch (err) {
       console.error("Error deleting document:", err);
-      alert("An error occurred while deleting the document");
+      toast.error("An error occurred while deleting the document");
     }
   };
 
@@ -921,7 +922,7 @@ export default function JobView() {
       link.click();
       document.body.removeChild(link);
     } else {
-      alert("This document has no file or content to download.");
+      toast.info("This document has no file or content to download.");
     }
   };
 
@@ -965,11 +966,9 @@ export default function JobView() {
       setShowEditDocumentModal(false);
       setEditDocumentName("");
       setEditDocumentType("General");
-
-      alert("Document updated successfully");
     } catch (err) {
       console.error("Error updating document:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "An error occurred while updating the document"
@@ -1249,7 +1248,7 @@ export default function JobView() {
 
     const res = togglePinnedRecord({ key, label, url });
     if (res.action === "limit") {
-      window.alert("Maximum 10 pinned records reached");
+      toast.info("Maximum 10 pinned records reached");
     }
   };
 
@@ -2817,8 +2816,6 @@ export default function JobView() {
 
       // Refresh history
       fetchHistory(jobId);
-      alert("Note added successfully");
-
       // Open appointment scheduler or task scheduler as requested
       if (afterSave === "appointment") {
         setShowAppointmentModal(true);
@@ -2827,7 +2824,7 @@ export default function JobView() {
       }
     } catch (err) {
       console.error("Error adding note:", err);
-      alert(err instanceof Error ? err.message : "Failed to add note. Please try again.");
+      toast.error(err instanceof Error ? err.message : "Failed to add note. Please try again.");
     }
   };
 
@@ -2857,12 +2854,12 @@ export default function JobView() {
   // Handle appointment submission (from Jobs Add Note flow)
   const handleAppointmentSubmit = async () => {
     if (!appointmentForm.date || !appointmentForm.time || !appointmentForm.type) {
-      alert("Please fill in all required fields (Date, Time, Type)");
+      toast.error("Please fill in all required fields (Date, Time, Type)");
       return;
     }
 
     if (!jobId) {
-      alert("Job ID is missing");
+      toast.error("Job ID is missing");
       return;
     }
 
@@ -2938,11 +2935,10 @@ export default function JobView() {
           await sendCalendarInvite(calendarEvent, appointmentForm.attendees);
         } catch (inviteError) {
           console.error("Error sending calendar invites:", inviteError);
-          alert("Appointment created, but calendar invites failed to send. Please send manually.");
+          toast.warning("Appointment created, but calendar invites failed to send. Please send manually.");
         }
       }
 
-      alert("Appointment created successfully!");
       setShowAppointmentModal(false);
       setAppointmentForm({
         date: "",
@@ -2956,7 +2952,7 @@ export default function JobView() {
       });
     } catch (err) {
       console.error("Error creating appointment:", err);
-      alert(err instanceof Error ? err.message : "Failed to create appointment. Please try again.");
+      toast.error(err instanceof Error ? err.message : "Failed to create appointment. Please try again.");
     } finally {
       setIsSavingAppointment(false);
     }
@@ -3341,7 +3337,7 @@ export default function JobView() {
       !placementForm.status ||
       !placementForm.startDate
     ) {
-      alert(
+      toast.error(
         "Please fill in all required fields (Candidate, Status, Start Date)"
       );
       return;
@@ -3398,7 +3394,7 @@ export default function JobView() {
 
       if (!placementId) {
         // fallback: at least close modal + notify
-        alert("Placement created, but missing placement id in response.");
+        toast.warning("Placement created, but missing placement id in response.");
         setShowAddPlacementModal(false);
         return;
       }
@@ -3412,7 +3408,7 @@ export default function JobView() {
       // router.push(`/dashboard/placements/edit?id=${placementId}`);
     } catch (err) {
       console.error("Error creating placement:", err);
-      alert(err instanceof Error ? err.message : "Failed to create placement.");
+      toast.error(err instanceof Error ? err.message : "Failed to create placement.");
     } finally {
       setIsSavingPlacement(false);
     }
@@ -3465,12 +3461,12 @@ export default function JobView() {
   // Handle tearsheet submission
   const handleTearsheetSubmit = async () => {
     if (!tearsheetForm.name.trim()) {
-      alert("Please enter a tearsheet name");
+      toast.error("Please enter a tearsheet name");
       return;
     }
 
     if (!jobId) {
-      alert("Job ID is missing");
+      toast.error("Job ID is missing");
       return;
     }
 
@@ -3500,22 +3496,19 @@ export default function JobView() {
           .catch(() => ({ message: "Failed to create tearsheet" }));
         throw new Error(errorData.message || "Failed to create tearsheet");
       }
-
-      // Success - close modal and reset form
-      alert("Tearsheet created successfully!");
       setShowAddTearsheetModal(false);
       setTearsheetForm({ name: "", visibility: "Existing" });
     } catch (err) {
       console.error("Error creating tearsheet:", err);
       // If API doesn't exist, show a message but don't fail completely
       if (err instanceof Error && err.message.includes("Failed to fetch")) {
-        alert(
+        toast.info(
           "Tearsheet creation feature is being set up. The tearsheet will be created once the API is ready."
         );
         setShowAddTearsheetModal(false);
         setTearsheetForm({ name: "", visibility: "Existing" });
       } else {
-        alert(
+        toast.error(
           err instanceof Error
             ? err.message
             : "Failed to create tearsheet. Please try again."
@@ -3607,22 +3600,20 @@ export default function JobView() {
         <h2 className="text-lg font-semibold">Job Notes</h2>
         <button
           onClick={() => setShowAddNote(true)}
-          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
         >
           Add Note
         </button>
       </div>
 
-      {/* Filter and Sort Controls */}
-      <div className="flex flex-wrap gap-4 mb-6 p-3 bg-gray-50 rounded border border-gray-200">
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-gray-600 uppercase">
-            Action:
-          </label>
+      {/* Filters & Sort Controls (match Organization Notes) */}
+      <div className="flex flex-wrap gap-4 items-end mb-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Action</label>
           <select
             value={noteActionFilter}
             onChange={(e) => setNoteActionFilter(e.target.value)}
-            className="p-2 bg-white border border-gray-300 rounded text-sm min-w-[150px]"
+            className="p-2 border border-gray-300 rounded text-sm"
           >
             <option value="">All Actions</option>
             {actionFields.map((f) => (
@@ -3632,63 +3623,48 @@ export default function JobView() {
             ))}
           </select>
         </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-gray-600 uppercase">
-            User:
-          </label>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Author</label>
           <select
             value={noteAuthorFilter}
             onChange={(e) => setNoteAuthorFilter(e.target.value)}
-            className="p-2 bg-white border border-gray-300 rounded text-sm min-w-[150px]"
+            className="p-2 border border-gray-300 rounded text-sm"
           >
-            <option value="">All Users</option>
+            <option value="">All Authors</option>
             {authors.map((a) => (
-              <option key={a} value={a}>
-                {a}
-              </option>
+              <option key={a} value={a}>{a}</option>
             ))}
           </select>
         </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-xs font-semibold text-gray-600 uppercase">
-            Sort By:
-          </label>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Sort By</label>
           <select
             value={noteSortKey}
             onChange={(e) => setNoteSortKey(e.target.value as any)}
-            className="p-2 bg-white border border-gray-300 rounded text-sm min-w-[120px]"
+            className="p-2 border border-gray-300 rounded text-sm"
           >
             <option value="date">Date</option>
             <option value="action">Action</option>
-            <option value="author">User</option>
+            <option value="author">Author</option>
           </select>
         </div>
-
-        <div className="flex items-end gap-2">
+        <div>
           <button
-            onClick={() =>
-              setNoteSortDir((d) => (d === "asc" ? "desc" : "asc"))
-            }
+            onClick={() => setNoteSortDir((d) => (d === "asc" ? "desc" : "asc"))}
             className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs text-black"
             title="Toggle Sort Direction"
           >
             {noteSortDir === "asc" ? "Asc ↑" : "Desc ↓"}
           </button>
-
-          {(noteActionFilter || noteAuthorFilter) && (
-            <button
-              onClick={() => {
-                setNoteActionFilter("");
-                setNoteAuthorFilter("");
-              }}
-              className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs hover:bg-gray-200"
-            >
-              Clear Filters
-            </button>
-          )}
         </div>
+        {(noteActionFilter || noteAuthorFilter) && (
+          <button
+            onClick={() => { setNoteActionFilter(""); setNoteAuthorFilter(""); }}
+            className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs"
+          >
+            Clear Filters
+          </button>
+        )}
       </div>
 
       {/* Notes List */}
@@ -3701,65 +3677,102 @@ export default function JobView() {
           {sortedFilteredNotes.map((note) => {
             const actionLabel = actionFields.find(
               (af) => af.field_name === note.action || af.field_label === note.action
-            )?.field_label || note.action || "";
-
+            )?.field_label || note.action || "General Note";
             const aboutRefs = parseAboutReferences(note.about || note.about_references);
 
             return (
-              <div key={note.id} className="p-4 border rounded hover:bg-gray-50 bg-white">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-blue-600">
-                        {note.created_by_name || "Unknown User"}
-                      </span>
-                      {actionLabel && (
-                        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-semibold uppercase tracking-wider">
-                          {actionLabel}
+              <div id={`note-${note.id}`} key={note.id} className="p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors">
+                <div className="border-b border-gray-200 pb-3 mb-3">
+                  <div className="flex justify-between items-start">
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-blue-600">
+                          {note.created_by_name || "Unknown User"}
                         </span>
-                      )}
+                        {actionLabel && (
+                          <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-medium">
+                            {actionLabel}
+                          </span>
+                        )}
+                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded border">
+                          Job
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {new Date(note.created_at).toLocaleString("en-US", {
+                          month: "2-digit",
+                          day: "2-digit",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </div>
                     </div>
-                    <span className="text-xs text-gray-500">
-                      {new Date(note.created_at).toLocaleString()}
-                    </span>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          const el = document.getElementById(`note-${note.id}`);
+                          if (el) {
+                            el.scrollIntoView({ behavior: "smooth", block: "center" });
+                            el.classList.add("ring-2", "ring-blue-500");
+                            setTimeout(() => el.classList.remove("ring-2", "ring-blue-500"), 2000);
+                          }
+                        }}
+                        className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                        title="View"
+                      >
+                        View
+                      </button>
+                    </div>
                   </div>
                 </div>
-
                 {aboutRefs.length > 0 && (
-                  <div className="flex flex-wrap gap-2 mb-3 pb-3 border-b border-gray-100">
-                    <span className="text-xs text-gray-500 self-center">About:</span>
-                    {aboutRefs.map((ref: any, idx: number) => (
-                      <button
-                        key={`${ref.type}-${ref.id}-${idx}`}
-                        onClick={() => navigateToReference(ref)}
-                        className="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded text-xs transition-colors"
-                      >
-                        <FiBriefcase className="w-3 h-3 text-gray-500" />
-                        <span>{ref.display || ref.value}</span>
-                      </button>
-                    ))}
+                  <div className="mb-3 pb-3 border-b border-gray-100">
+                    <div className="flex items-start gap-2">
+                      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide min-w-[80px]">
+                        References:
+                      </span>
+                      <div className="flex flex-wrap gap-2 flex-1">
+                        {aboutRefs.map((ref: any, idx: number) => {
+                          const displayText = typeof ref === "string" ? ref : ref.display || ref.value || `${ref.type} #${ref.id}`;
+                          const refType = typeof ref === "string" ? null : (ref.type || "").toLowerCase().replace(/\s+/g, "");
+                          const refId = typeof ref === "string" ? null : ref.id;
+                          const isClickable = !!(refId && refType);
+                          return (
+                            <button
+                              key={`${ref.type}-${ref.id}-${idx}`}
+                              onClick={() => isClickable && navigateToReference(ref)}
+                              disabled={!isClickable}
+                              className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-all ${isClickable ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer" : "bg-gray-100 text-gray-700 border-gray-200 cursor-default"}`}
+                              title={isClickable ? `View ${refType}` : "Reference not available"}
+                            >
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                              </svg>
+                              {displayText}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 )}
-
-                {note.additional_references && !note.about && (
-                  <div className="mb-2 text-xs text-gray-600 italic">
+                {note.additional_references && !note.about && !aboutRefs.length && (
+                  <div className="mb-3 pb-3 border-b border-gray-100 text-xs text-gray-600">
                     References: {note.additional_references}
                   </div>
                 )}
-
-                <p className="text-gray-700 whitespace-pre-wrap text-sm">{note.text}</p>
+                <div className="mt-2">
+                  <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{note.text}</p>
+                </div>
               </div>
             );
           })}
         </div>
       ) : (
-        <div className="text-center py-10 bg-gray-50 rounded border-2 border-dashed border-gray-200">
-          <p className="text-gray-500 italic">
-            {(noteActionFilter || noteAuthorFilter)
-              ? "No notes match your filter criteria."
-              : "No notes have been added yet."}
-          </p>
-        </div>
+        <p className="text-gray-500 italic">
+          {(noteActionFilter || noteAuthorFilter) ? "No notes match your filters." : "No notes have been added yet."}
+        </p>
       )}
     </div>
   );
@@ -4713,13 +4726,13 @@ export default function JobView() {
                     onDragEnd={handlePanelDragEnd}
                     onDragCancel={handlePanelDragCancel}
                   >
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
+                    <div className="grid grid-cols-[1fr_1fr] gap-4">
+                      <div className="min-w-0">
                         <DroppableContainer id="left" items={columns.left}>
                           {columns.left.map((id) => renderPanel(id))}
                         </DroppableContainer>
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <DroppableContainer id="right" items={columns.right}>
                           {columns.right.map((id) => renderPanel(id))}
                         </DroppableContainer>

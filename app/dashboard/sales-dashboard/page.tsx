@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { useAuth } from '@/lib/auth';
 import { FiX, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
 import { useRouter } from 'next/navigation';
@@ -112,10 +113,10 @@ export default function SalesDashboard() {
             // Save logic here - update application stages
             // This would typically make an API call to save the current state
             await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API call
-            alert('Changes saved successfully');
+            toast.success('Changes saved successfully');
         } catch (error) {
             console.error('Error saving:', error);
-            alert('Error saving changes');
+            toast.error('Error saving changes');
         } finally {
             setIsSaving(false);
         }

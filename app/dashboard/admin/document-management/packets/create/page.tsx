@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { FiChevronRight, FiRefreshCw, FiSearch, FiX } from "react-icons/fi";
 import { TbGripVertical } from "react-icons/tb";
@@ -111,12 +112,12 @@ export default function CreatePacketPage() {
   // -------------------------
   const savePacket = async () => {
     if (!packetName.trim()) {
-      alert("Packet name is required");
+      toast.error("Packet name is required");
       return;
     }
 
     if (selectedDocs.length === 0) {
-      alert("Please select at least one document");
+      toast.error("Please select at least one document");
       return;
     }
 
@@ -145,7 +146,7 @@ export default function CreatePacketPage() {
 
       router.push("/dashboard/admin/document-management/packets");
     } catch (e: any) {
-      alert(e?.message || "Create failed");
+      toast.error(e?.message || "Create failed");
     } finally {
       setLoading(false);
     }

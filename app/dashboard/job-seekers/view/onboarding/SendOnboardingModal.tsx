@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 type JobSeeker = {
   id: number;
@@ -145,7 +146,7 @@ export default function SendOnboardingModal({
       .map(Number);
 
     if (chosenPacketIds.length === 0 && chosenDocIds.length === 0) {
-      alert("Select at least 1 packet or document.");
+      toast.error("Select at least 1 packet or document.");
       return;
     }
 

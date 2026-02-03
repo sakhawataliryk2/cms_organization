@@ -47,6 +47,7 @@ import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import { FiSearch } from "react-icons/fi";
+import { toast } from "sonner";
 
 // Default header fields for Organizations module - defined outside component to ensure stable reference
 const ORG_DEFAULT_HEADER_FIELDS = ["phone", "website"];
@@ -716,10 +717,10 @@ export default function OrganizationView() {
       setEditDocumentName("");
       setEditDocumentType("General");
 
-      alert("Document updated successfully");
+      toast.success("Document updated successfully");
     } catch (err) {
       console.error("Error updating document:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "An error occurred while updating the document"
@@ -2145,14 +2146,11 @@ export default function OrganizationView() {
       setShowAddDocument(false);
 
       // Refresh summary counts
+      fetchDocuments(organizationId);
       fetchSummaryCounts();
     } catch (err) {
-      console.error("Error adding document:", err);
-      alert(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while adding a document"
-      );
+      console.error('Error adding document:', err);
+      toast.error(err instanceof Error ? err.message : 'An error occurred while adding a document');
     }
   };
 
@@ -2176,14 +2174,10 @@ export default function OrganizationView() {
       // Remove the document from the list
       setDocuments(documents.filter((doc) => doc.id !== documentId));
 
-      alert("Document deleted successfully");
+      toast.success('Document deleted successfully');
     } catch (err) {
-      console.error("Error deleting document:", err);
-      alert(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while deleting the document"
-      );
+      console.error('Error deleting document:', err);
+      toast.error(err instanceof Error ? err.message : 'An error occurred while deleting the document');
     }
   };
 
@@ -2213,7 +2207,7 @@ export default function OrganizationView() {
       link.click();
       document.body.removeChild(link);
     } else {
-      alert("This document has no file or content to download.");
+      toast.info("This document has no file or content to download.");
     }
   };
 
@@ -2587,7 +2581,7 @@ export default function OrganizationView() {
 
     const res = togglePinnedRecord({ key, label, url });
     if (res.action === "limit") {
-      window.alert("Maximum 10 pinned records reached");
+      toast.info("Maximum 10 pinned records reached");
     }
   };
 
@@ -2635,7 +2629,7 @@ export default function OrganizationView() {
       }
     } catch (err) {
       console.error("Error saving about text:", err);
-      alert("Failed to save about text. Please try again.");
+      toast.error("Failed to save about text. Please try again.");
     }
   };
 
@@ -2901,12 +2895,12 @@ export default function OrganizationView() {
   // Handle delete request submission
   const handleDeleteRequestSubmit = async () => {
     if (!deleteForm.reason.trim()) {
-      alert("Please enter a reason for deletion");
+      toast.error("Please enter a reason for deletion");
       return;
     }
 
     if (!organizationId) {
-      alert("Organization ID is missing");
+      toast.error("Organization ID is missing");
       return;
     }
 
@@ -2985,7 +2979,7 @@ export default function OrganizationView() {
 
       const deleteRequestData = await deleteRequestResponse.json();
 
-      alert(
+      toast.success(
         "Delete request submitted successfully. Payroll will be notified via email."
       );
 
@@ -2999,7 +2993,7 @@ export default function OrganizationView() {
       setDeleteForm({ reason: "" });
     } catch (err) {
       console.error("Error submitting delete request:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "Failed to submit delete request. Please try again."
@@ -3112,10 +3106,10 @@ export default function OrganizationView() {
       // Refresh history after update
       fetchHistory(organizationId);
 
-      alert("Organization updated successfully");
+      toast.success("Organization updated successfully");
     } catch (err) {
       console.error("Error updating organization:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "An error occurred while updating the organization"
@@ -3213,6 +3207,8 @@ export default function OrganizationView() {
       // Add the new note to the list
       setNotes([data.note, ...notes]);
 
+      toast.success("Note added successfully");
+
       // Clear the form
       const defaultAboutRef = organization
         ? [
@@ -3245,14 +3241,12 @@ export default function OrganizationView() {
       setShowAddNote(false);
 
       // Refresh history and summary counts to show the note addition
+      fetchNotes(organizationId);
       fetchHistory(organizationId);
       fetchSummaryCounts();
-
-      // Show success message
-      alert("Note added successfully");
     } catch (err) {
       console.error("Error adding note:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "An error occurred while adding a note"
@@ -3370,17 +3364,17 @@ export default function OrganizationView() {
   // Handle transfer submission
   const handleTransferSubmit = async () => {
     if (!transferForm.targetOrganizationId) {
-      alert("Please select a target organization");
+      toast.error("Please select a target organization");
       return;
     }
 
     if (!organizationId) {
-      alert("Source organization ID is missing");
+      toast.error("Source organization ID is missing");
       return;
     }
 
     if (transferForm.targetOrganizationId === organizationId) {
-      alert("Cannot transfer to the same organization");
+      toast.error("Cannot transfer to the same organization");
       return;
     }
 
@@ -3484,7 +3478,7 @@ export default function OrganizationView() {
 
       const transferData = await transferResponse.json();
 
-      alert(
+      toast.success(
         "Transfer request submitted successfully. Payroll will be notified via email."
       );
 
@@ -3497,7 +3491,7 @@ export default function OrganizationView() {
       setTransferForm({ targetOrganizationId: "" });
     } catch (err) {
       console.error("Error submitting transfer:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "Failed to submit transfer request. Please try again."
@@ -3510,12 +3504,12 @@ export default function OrganizationView() {
   // Handle tearsheet submission - Associate existing tearsheet with organization
   const handleTearsheetSubmit = async () => {
     if (!tearsheetForm.selectedTearsheetId) {
-      alert("Please select a tearsheet");
+      toast.error("Please select a tearsheet");
       return;
     }
 
     if (!organizationId) {
-      alert("Organization ID is missing");
+      toast.error("Organization ID is missing");
       return;
     }
 
@@ -3536,7 +3530,7 @@ export default function OrganizationView() {
 
       // For now, we'll show a success message and close the modal
       // The actual association logic can be implemented when backend supports it
-      alert(`Tearsheet "${selectedTearsheet.name}" has been selected for this organization.`);
+      toast.success(`Tearsheet "${selectedTearsheet.name}" has been selected for this organization.`);
 
       setShowAddTearsheetModal(false);
       setTearsheetForm({ selectedTearsheetId: "" });
@@ -3548,7 +3542,7 @@ export default function OrganizationView() {
       // 3. Or creating a new endpoint for organization-tearsheet association
     } catch (err) {
       console.error("Error associating tearsheet:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "Failed to associate tearsheet. Please try again."
@@ -4396,16 +4390,16 @@ export default function OrganizationView() {
                   onDragEnd={handlePanelDragEnd}
                   onDragCancel={handlePanelDragCancel}
                 >
-                  <div className="grid grid-cols-7 gap-4">
-                    {/* Left Column - 4/7 width */}
-                    <div className="col-span-4">
+                  <div className="grid grid-cols-[1fr_1fr] gap-4">
+                    {/* Left Column - equal width */}
+                    <div className="min-w-0">
                       <DroppableContainer id="left" items={columns.left}>
                         {columns.left.map(renderPanel)}
                       </DroppableContainer>
                     </div>
 
-                    {/* Right Column - 3/7 width */}
-                    <div className="col-span-3">
+                    {/* Right Column - equal width */}
+                    <div className="min-w-0">
                       <DroppableContainer id="right" items={columns.right}>
                         {columns.right.map(renderPanel)}
                       </DroppableContainer>

@@ -23,6 +23,7 @@ import {
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
+import { toast } from "sonner";
 
 import {
   DndContext,
@@ -686,7 +687,7 @@ export default function PlacementView() {
 
     const res = togglePinnedRecord({ key, label, url });
     if (res.action === "limit") {
-      window.alert("Maximum 10 pinned records reached");
+      toast.info("Maximum 10 pinned records reached");
     }
   };
 
@@ -1714,11 +1715,11 @@ export default function PlacementView() {
         fetchDocuments(placementId);
       } else {
         const data = await response.json();
-        alert(data.message || "Failed to add document");
+        toast.error(data.message || "Failed to add document");
       }
     } catch (err) {
       console.error("Error adding document:", err);
-      alert("An error occurred while adding the document");
+      toast.error("An error occurred while adding the document");
     }
   };
 
@@ -1744,11 +1745,11 @@ export default function PlacementView() {
         fetchDocuments(placementId);
       } else {
         const data = await response.json();
-        alert(data.message || "Failed to delete document");
+        toast.error(data.message || "Failed to delete document");
       }
     } catch (err) {
       console.error("Error deleting document:", err);
-      alert("An error occurred while deleting the document");
+      toast.error("An error occurred while deleting the document");
     }
   };
 
@@ -1790,10 +1791,10 @@ export default function PlacementView() {
       setEditDocumentName("");
       setEditDocumentType("General");
 
-      alert("Document updated successfully");
+      toast.success("Document updated successfully");
     } catch (err) {
       console.error("Error updating document:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "An error occurred while updating the document"
@@ -1941,7 +1942,7 @@ export default function PlacementView() {
       link.click();
       document.body.removeChild(link);
     } else {
-      alert("This document has no file or content to download.");
+      toast.info("This document has no file or content to download.");
     }
   };
 
@@ -2079,7 +2080,7 @@ export default function PlacementView() {
   const handleEmailJobSeeker = async () => {
     const jobSeekerId = placement?.jobSeekerId;
     if (!jobSeekerId) {
-      alert("Job Seeker not available for this placement.");
+      toast.error("Job Seeker not available for this placement.");
       return;
     }
 
@@ -2111,7 +2112,7 @@ export default function PlacementView() {
         data?.jobseeker?.email;
 
       if (!email || email === "No email provided") {
-        alert("Job seeker email not available");
+        toast.error("Job seeker email not available");
         return;
       }
 
@@ -2119,14 +2120,14 @@ export default function PlacementView() {
       window.location.href = `mailto:${email}`;
     } catch (err) {
       console.error("Error opening email compose:", err);
-      alert(err instanceof Error ? err.message : "Failed to open email compose");
+      toast.error(err instanceof Error ? err.message : "Failed to open email compose");
     }
   };
 
   const handleEmailBillingContacts = async () => {
     const jobId = placement?.jobId;
     if (!jobId) {
-      alert("Job not available for this placement.");
+      toast.error("Job not available for this placement.");
       return;
     }
 
@@ -2154,7 +2155,7 @@ export default function PlacementView() {
 
       const job = data?.job || data?.job_data || data;
       if (!job) {
-        alert("Billing contact email(s) not available");
+        toast.error("Billing contact email(s) not available");
         return;
       }
 
@@ -2259,7 +2260,7 @@ export default function PlacementView() {
       const uniqueEmails = Array.from(emailSet);
 
       if (uniqueEmails.length === 0) {
-        alert("Billing contact email(s) not available");
+        toast.error("Billing contact email(s) not available");
         return;
       }
 
@@ -2267,14 +2268,14 @@ export default function PlacementView() {
       window.location.href = `mailto:${uniqueEmails.join(";")}`;
     } catch (err) {
       console.error("Error opening email compose:", err);
-      alert(err instanceof Error ? err.message : "Failed to open email compose");
+      toast.error(err instanceof Error ? err.message : "Failed to open email compose");
     }
   };
 
   const handleEmailTimeCardApprovers = async () => {
     const jobId = placement?.jobId;
     if (!jobId) {
-      alert("Job not available for this placement.");
+      toast.error("Job not available for this placement.");
       return;
     }
 
@@ -2302,7 +2303,7 @@ export default function PlacementView() {
 
       const job = data?.job || data?.job_data || data;
       if (!job) {
-        alert("Timecard approver email(s) not available");
+        toast.error("Timecard approver email(s) not available");
         return;
       }
 
@@ -2407,7 +2408,7 @@ export default function PlacementView() {
       const uniqueEmails = Array.from(emailSet);
 
       if (uniqueEmails.length === 0) {
-        alert("Timecard approver email(s) not available");
+        toast.error("Timecard approver email(s) not available");
         return;
       }
 
@@ -2415,7 +2416,7 @@ export default function PlacementView() {
       window.location.href = `mailto:${uniqueEmails.join(";")}`;
     } catch (err) {
       console.error("Error opening email compose:", err);
-      alert(err instanceof Error ? err.message : "Failed to open email compose");
+      toast.error(err instanceof Error ? err.message : "Failed to open email compose");
     }
   };
 
@@ -2463,7 +2464,7 @@ export default function PlacementView() {
       router.push("/dashboard/placements");
     } catch (err) {
       console.error("Error deleting placement:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "An error occurred while deleting the placement"
@@ -2539,15 +2540,12 @@ export default function PlacementView() {
       setAboutSearchQuery("");
       setValidationErrors({});
       setShowAddNote(false);
+      fetchNotes(placementId);
       fetchHistory(placementId);
-      alert("Note added successfully");
+      toast.success('Note added successfully');
     } catch (err) {
-      console.error("Error adding note:", err);
-      alert(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while adding a note"
-      );
+      console.error('Error adding note:', err);
+      toast.error(err instanceof Error ? err.message : 'An error occurred while adding a note');
     }
   };
 
@@ -3721,13 +3719,13 @@ export default function PlacementView() {
                 onDragOver={handlePanelDragOver}
                 onDragEnd={handlePanelDragEnd}
               >
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
+                <div className="grid grid-cols-[1fr_1fr] gap-4">
+                  <div className="min-w-0">
                     <DroppableContainer id="left" items={columns.left}>
                       {columns.left.map((id) => renderPanel(id))}
                     </DroppableContainer>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <DroppableContainer id="right" items={columns.right}>
                       {columns.right.map((id) => renderPanel(id))}
                     </DroppableContainer>

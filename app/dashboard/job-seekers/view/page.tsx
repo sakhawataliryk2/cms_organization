@@ -23,6 +23,7 @@ import {
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
+import { toast } from "sonner";
 // Drag and drop imports
 import {
   DndContext,
@@ -887,7 +888,7 @@ export default function JobSeekerView() {
 
   const handleSendOnboarding = async () => {
     if (!jobSeeker?.email) {
-      alert("Job seeker email is missing");
+      toast.error("Job seeker email is missing");
       return;
     }
 
@@ -914,11 +915,11 @@ export default function JobSeekerView() {
           bodyType: "text",
         };
         await sendEmailViaOffice365(emailMessage);
-        alert("Onboarding documents sent successfully via Office 365!");
+        toast.success("Onboarding documents sent successfully via Office 365!");
         setShowOnboardingModal(false);
         setSelectedDocs({});
       } catch (error: any) {
-        alert(
+        toast.warning(
           `Failed to send via Office 365: ${error.message}. Falling back to mailto.`
         );
         const encodedSubject = encodeURIComponent(subject);
@@ -987,14 +988,14 @@ export default function JobSeekerView() {
 
   const handleSendReferenceForm = async () => {
     if (!referenceEmail || !referenceEmail.trim()) {
-      alert("Please enter a reference email address");
+      toast.error("Please enter a reference email address");
       return;
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(referenceEmail.trim())) {
-      alert("Please enter a valid email address");
+      toast.error("Please enter a valid email address");
       return;
     }
 
@@ -1026,12 +1027,12 @@ Best regards`;
           bodyType: "text",
         };
         await sendEmailViaOffice365(emailMessage);
-        alert("Reference form sent successfully via Office 365!");
+        toast.success("Reference form sent successfully via Office 365!");
         setShowReferenceModal(false);
         setReferenceEmail("");
         setSelectedReferenceDocs({});
       } catch (error: any) {
-        alert(
+        toast.warning(
           `Failed to send via Office 365: ${error.message}. Falling back to mailto.`
         );
         const encodedSubject = encodeURIComponent(subject);
@@ -1099,7 +1100,7 @@ Best regards`;
     if (addReferenceMode === "onboarding") {
       const idx = Number(selectedOnboardingReferenceIndex);
       if (!Number.isFinite(idx) || idx < 0 || idx >= onboardingRefs.length) {
-        alert("Please select an onboarding reference");
+        toast.error("Please select an onboarding reference");
         return;
       }
 
@@ -1114,7 +1115,7 @@ Best regards`;
       };
     } else {
       if (!manualReferenceForm.name.trim()) {
-        alert("Please enter a reference name");
+        toast.error("Please enter a reference name");
         return;
       }
 
@@ -1153,7 +1154,7 @@ Best regards`;
       });
     } catch (err) {
       console.error("Error adding reference:", err);
-      alert(err instanceof Error ? err.message : "Failed to add reference");
+      toast.error(err instanceof Error ? err.message : "Failed to add reference");
     }
   };
 
@@ -1186,7 +1187,7 @@ Best regards`;
       setReferences(Array.isArray(data?.references) ? data.references : []);
     } catch (err) {
       console.error("Error deleting reference:", err);
-      alert(err instanceof Error ? err.message : "Failed to delete reference");
+      toast.error(err instanceof Error ? err.message : "Failed to delete reference");
     }
   };
 
@@ -1338,7 +1339,7 @@ Best regards`;
 
     const res = togglePinnedRecord({ key, label, url });
     if (res.action === "limit") {
-      window.alert("Maximum 10 pinned records reached");
+      toast.info("Maximum 10 pinned records reached");
     }
   };
 
@@ -2180,10 +2181,10 @@ Best regards`;
       // Remove the document from the list
       setDocuments(documents.filter((doc) => doc.id !== documentId));
 
-      alert("Document deleted successfully");
+      toast.success("Document deleted successfully");
     } catch (err) {
       console.error("Error deleting document:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "An error occurred while deleting the document"
@@ -2243,10 +2244,10 @@ Best regards`;
       setEditDocumentName("");
       setEditDocumentType("General");
 
-      alert("Document updated successfully");
+      toast.success("Document updated successfully");
     } catch (err) {
       console.error("Error updating document:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "An error occurred while updating the document"
@@ -2288,10 +2289,10 @@ Best regards`;
       setNewDocumentType("General");
       setNewDocumentContent("");
       fetchDocuments(jobSeekerId);
-      alert("Document added successfully");
+      toast.success("Document added successfully");
     } catch (err) {
       console.error("Error adding document:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "An error occurred while adding the document"
@@ -2679,10 +2680,10 @@ Best regards`;
       fetchNotes(jobSeekerId);
 
       // Show success message
-      alert("Note added successfully");
+      toast.success("Note added successfully");
     } catch (err) {
       console.error("Error adding note:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "An error occurred while adding a note"
@@ -2786,7 +2787,7 @@ Best regards`;
     } else if (action === "email") {
       // Open default email application with mailto link
       if (!jobSeeker?.email || jobSeeker.email === "No email provided") {
-        alert("Job seeker email not available");
+        toast.error("Job seeker email not available");
         return;
       }
 
@@ -2809,12 +2810,12 @@ Best regards`;
   // Handle appointment submission
   const handleAppointmentSubmit = async () => {
     if (!appointmentForm.date || !appointmentForm.time || !appointmentForm.type) {
-      alert("Please fill in all required fields (Date, Time, Type)");
+      toast.error("Please fill in all required fields (Date, Time, Type)");
       return;
     }
 
     if (!jobSeekerId) {
-      alert("Job Seeker ID is missing");
+      toast.error("Job Seeker ID is missing");
       return;
     }
 
@@ -2895,11 +2896,11 @@ Best regards`;
         } catch (inviteError) {
           console.error("Error sending calendar invites:", inviteError);
           // Don't fail the appointment creation if invites fail
-          alert("Appointment created, but calendar invites failed to send. Please send manually.");
+          toast.warning("Appointment created, but calendar invites failed to send. Please send manually.");
         }
       }
 
-      alert("Appointment created successfully!");
+      toast.success("Appointment created successfully!");
       setShowAppointmentModal(false);
       setAppointmentForm({
         date: "",
@@ -2913,7 +2914,7 @@ Best regards`;
       });
     } catch (err) {
       console.error("Error creating appointment:", err);
-      alert(err instanceof Error ? err.message : "Failed to create appointment. Please try again.");
+      toast.error(err instanceof Error ? err.message : "Failed to create appointment. Please try again.");
     } finally {
       setIsSavingAppointment(false);
     }
@@ -2922,12 +2923,12 @@ Best regards`;
   // Handle tearsheet submission
   const handleTearsheetSubmit = async () => {
     if (!tearsheetForm.name.trim()) {
-      alert("Please enter a tearsheet name");
+      toast.error("Please enter a tearsheet name");
       return;
     }
 
     if (!jobSeekerId) {
-      alert("Job Seeker ID is missing");
+      toast.error("Job Seeker ID is missing");
       return;
     }
 
@@ -2956,19 +2957,19 @@ Best regards`;
         throw new Error(errorData.message || "Failed to create tearsheet");
       }
 
-      alert("Tearsheet created successfully!");
+      toast.success("Tearsheet created successfully!");
       setShowAddTearsheetModal(false);
       setTearsheetForm({ name: "", visibility: "Existing" });
     } catch (err) {
       console.error("Error creating tearsheet:", err);
       if (err instanceof Error && err.message.includes("Failed to fetch")) {
-        alert(
+        toast.info(
           "Tearsheet creation feature is being set up. The tearsheet will be created once the API is ready."
         );
         setShowAddTearsheetModal(false);
         setTearsheetForm({ name: "", visibility: "Existing" });
       } else {
-        alert(
+        toast.error(
           err instanceof Error
             ? err.message
             : "Failed to create tearsheet. Please try again."
@@ -3368,38 +3369,131 @@ Best regards`;
           )}
         </div>
 
-        {/* Notes List */}
+        {/* Notes List (standardized to Organization Notes design) */}
         {isLoadingNotes ? (
           <div className="flex justify-center py-4">
             <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
           </div>
         ) : sortedFilteredNotes.length > 0 ? (
           <div className="space-y-4">
-            {sortedFilteredNotes.map((note) => (
-              <div key={note.id} className="p-3 border rounded hover:bg-gray-50 bg-white">
-                <div className="flex justify-between items-start mb-2">
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-blue-600">
-                        {note.created_by_name || "Unknown User"}
-                      </span>
-                      {note.action && (
-                        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-medium">
-                          {note.action}
-                        </span>
-                      )}
+            {sortedFilteredNotes.map((note) => {
+              const parseAboutReferences = (refs: any) => {
+                if (!refs) return [];
+                if (typeof refs === "string") {
+                  try {
+                    return JSON.parse(refs);
+                  } catch {
+                    return [];
+                  }
+                }
+                if (Array.isArray(refs)) return refs;
+                return [];
+              };
+              const aboutRefs = parseAboutReferences((note as any).about_references ?? (note as any).aboutReferences);
+              const actionLabel = note.action || "General Note";
+
+              return (
+                <div id={`note-${note.id}`} key={note.id} className="p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors">
+                  <div className="border-b border-gray-200 pb-3 mb-3">
+                    <div className="flex justify-between items-start">
+                      <div className="flex flex-col gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-medium text-blue-600">
+                            {note.created_by_name || "Unknown User"}
+                          </span>
+                          {actionLabel && (
+                            <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-medium">
+                              {actionLabel}
+                            </span>
+                          )}
+                          <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded border">
+                            Job Seeker
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {new Date(note.created_at).toLocaleString("en-US", {
+                            month: "2-digit",
+                            day: "2-digit",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => {
+                            const el = document.getElementById(`note-${note.id}`);
+                            if (el) {
+                              el.scrollIntoView({ behavior: "smooth", block: "center" });
+                              el.classList.add("ring-2", "ring-blue-500");
+                              setTimeout(() => el.classList.remove("ring-2", "ring-blue-500"), 2000);
+                            }
+                          }}
+                          className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                          title="View"
+                        >
+                          View
+                        </button>
+                      </div>
                     </div>
-                    <span className="text-xs text-gray-500">
-                      {new Date(note.created_at).toLocaleString()}
-                    </span>
+                  </div>
+                  {aboutRefs.length > 0 && (
+                    <div className="mb-3 pb-3 border-b border-gray-100">
+                      <div className="flex items-start gap-2">
+                        <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide min-w-[80px]">
+                          References:
+                        </span>
+                        <div className="flex flex-wrap gap-2 flex-1">
+                          {aboutRefs.map((ref: any, idx: number) => {
+                            const displayText = typeof ref === "string" ? ref : ref.display || ref.value || `${ref.type} #${ref.id}`;
+                            const refType = typeof ref === "string" ? null : (ref.type || "").toLowerCase().replace(/\s+/g, "");
+                            const refId = typeof ref === "string" ? null : ref.id;
+                            const isClickable = !!(refId && refType);
+                            const navigateToRef = (r: any) => {
+                              if (!r?.id || !r?.type) return;
+                              const t = (r.type || "").toLowerCase().replace(/\s+/g, "");
+                              const routeMap: Record<string, string> = {
+                                organization: `/dashboard/organizations/view?id=${r.id}`,
+                                job: `/dashboard/jobs/view?id=${r.id}`,
+                                jobseeker: `/dashboard/job-seekers/view?id=${r.id}`,
+                                lead: `/dashboard/leads/view?id=${r.id}`,
+                                task: `/dashboard/tasks/view?id=${r.id}`,
+                                placement: `/dashboard/placements/view?id=${r.id}`,
+                                hiringmanager: `/dashboard/hiring-managers/view?id=${r.id}`,
+                              };
+                              if (routeMap[t]) router.push(routeMap[t]);
+                            };
+                            return (
+                              <button
+                                key={idx}
+                                onClick={() => isClickable && navigateToRef(ref)}
+                                disabled={!isClickable}
+                                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-all ${isClickable ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer" : "bg-gray-100 text-gray-700 border-gray-200 cursor-default"}`}
+                                title={isClickable ? `View ${refType}` : "Reference not available"}
+                              >
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                </svg>
+                                {displayText}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div className="mt-2">
+                    <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{note.text}</p>
                   </div>
                 </div>
-                <p className="text-gray-700 whitespace-pre-wrap">{note.text}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
-          <p className="text-gray-500 italic">No notes match your filters.</p>
+          <p className="text-gray-500 italic">
+            {(noteActionFilter || noteAuthorFilter) ? "No notes match your filters." : "No notes have been added yet."}
+          </p>
         )}
       </div>
     );
@@ -3625,23 +3719,46 @@ Best regards`;
 
   const renderOverviewPanel = () => {
     if (!jobSeeker) return null;
+    const customObj = jobSeeker.customFields || {};
+    const customFieldDefs = (availableFields || []).filter((f: any) => {
+      const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
+      return !isHidden;
+    });
+
+    const renderOverviewRow = (key: string) => {
+      const field = customFieldDefs.find(
+        (f: any) =>
+          String(f.field_name || f.field_key || f.api_name || f.id) === String(key) ||
+          String(f.field_label || "") === String(key) ||
+          String(f.field_name || "") === String(key)
+      );
+      const value =
+        (jobSeeker as any)?.[key] ??
+        (customObj as any)?.[key] ??
+        (field?.field_label ? (customObj as any)?.[field.field_label] : undefined) ??
+        (field?.field_name ? (customObj as any)?.[field.field_name] : undefined);
+      const label = field?.field_label || field?.field_name || key;
+      const displayValue = value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
+      return (
+        <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+          <div className="flex-1 p-2 text-sm">
+            {key === "status" ? (
+              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{displayValue}</span>
+            ) : (key === "email" || (field?.field_label && field.field_label.toLowerCase() === "email")) && displayValue !== "-" ? (
+              <a href={`mailto:${displayValue}`} className="text-blue-600 hover:underline">{displayValue}</a>
+            ) : (
+              displayValue
+            )}
+          </div>
+        </div>
+      );
+    };
+
     return (
       <PanelWithHeader title="Overview" onEdit={() => handleEditPanel("overview")}>
         <div className="space-y-0 border border-gray-200 rounded">
-          {visibleFields.overview.map((key) => (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{getHeaderFieldLabel(key)}:</div>
-              <div className="flex-1 p-2 text-sm">
-                {key === "status" ? (
-                  <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{getHeaderFieldValue(key)}</span>
-                ) : key === "email" ? (
-                  <a href={`mailto:${getHeaderFieldValue(key)}`} className="text-blue-600 hover:underline">{getHeaderFieldValue(key)}</a>
-                ) : (
-                  getHeaderFieldValue(key)
-                )}
-              </div>
-            </div>
-          ))}
+          {(visibleFields.overview || []).map((key) => renderOverviewRow(key))}
         </div>
       </PanelWithHeader>
     );
@@ -4016,7 +4133,7 @@ Best regards`;
                     onDragEnd={handlePanelDragEnd}
                     onDragCancel={handlePanelDragCancel}
                   >
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr] gap-4">
                       <div className="min-w-0">
                         <DroppableContainer id="left" items={columns.left}>
                           {columns.left.map((id) => renderPanel(id))}

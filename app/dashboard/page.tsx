@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth';
 import { FiSearch, FiChevronDown, FiX, FiChevronLeft, FiChevronRight, FiCheckSquare, FiPlus, FiClock, FiCalendar, FiEdit2, FiUpload, FiFile, FiMessageSquare, FiTrash2 } from 'react-icons/fi';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { toast } from 'sonner';
 
 interface Task {
     id: string;
@@ -531,7 +532,7 @@ export default function Dashboard() {
             );
         } catch (err) {
             console.error('Error updating task:', err);
-            alert(err instanceof Error ? err.message : 'Failed to update task');
+            toast.error(err instanceof Error ? err.message : 'Failed to update task');
         }
     };
 
@@ -624,7 +625,7 @@ export default function Dashboard() {
             const fileExtension = '.' + file.name.split('.').pop()?.toLowerCase();
             
             if (!allowedTypes.includes(file.type) && !allowedExtensions.includes(fileExtension)) {
-                alert('Invalid file type. Please upload PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, CSV, or RTF files only.');
+                toast.error('Invalid file type. Please upload PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, CSV, or RTF files only.');
                 e.target.value = '';
                 return;
             }
@@ -636,7 +637,7 @@ export default function Dashboard() {
     // Upload document
     const handleUploadDocument = async () => {
         if (!uploadFile) {
-            alert('Please select a file to upload');
+            toast.error('Please select a file to upload');
             return;
         }
 
@@ -671,7 +672,7 @@ export default function Dashboard() {
             fetchSharedDocuments();
         } catch (err) {
             console.error('Error uploading document:', err);
-            alert(err instanceof Error ? err.message : 'Failed to upload document');
+            toast.error(err instanceof Error ? err.message : 'Failed to upload document');
         } finally {
             setIsUploading(false);
         }
@@ -680,7 +681,7 @@ export default function Dashboard() {
     // Post broadcast message
     const handlePostMessage = async () => {
         if (!newMessage.trim()) {
-            alert('Please enter a message');
+            toast.error('Please enter a message');
             return;
         }
 
@@ -706,7 +707,7 @@ export default function Dashboard() {
             fetchBroadcastMessages();
         } catch (err) {
             console.error('Error posting message:', err);
-            alert(err instanceof Error ? err.message : 'Failed to post message');
+            toast.error(err instanceof Error ? err.message : 'Failed to post message');
         } finally {
             setIsPostingMessage(false);
         }
@@ -733,7 +734,7 @@ export default function Dashboard() {
             fetchSharedDocuments();
         } catch (err) {
             console.error('Error deleting document:', err);
-            alert('Failed to delete document');
+            toast.error('Failed to delete document');
         }
     };
 
@@ -758,7 +759,7 @@ export default function Dashboard() {
             fetchBroadcastMessages();
         } catch (err) {
             console.error('Error deleting message:', err);
-            alert('Failed to delete message');
+            toast.error('Failed to delete message');
         }
     };
 
@@ -799,7 +800,7 @@ export default function Dashboard() {
             fetchSharedDocuments();
         } catch (err) {
             console.error('Error updating document:', err);
-            alert(err instanceof Error ? err.message : 'Failed to update document');
+            toast.error(err instanceof Error ? err.message : 'Failed to update document');
         } finally {
             setIsUpdatingDocument(false);
         }
@@ -820,7 +821,7 @@ export default function Dashboard() {
     // Update message
     const handleUpdateMessage = async (id: number) => {
         if (!editMessageText.trim()) {
-            alert('Please enter a message');
+            toast.error('Please enter a message');
             return;
         }
 
@@ -847,7 +848,7 @@ export default function Dashboard() {
             fetchBroadcastMessages();
         } catch (err) {
             console.error('Error updating message:', err);
-            alert(err instanceof Error ? err.message : 'Failed to update message');
+            toast.error(err instanceof Error ? err.message : 'Failed to update message');
         } finally {
             setIsUpdatingMessage(false);
         }

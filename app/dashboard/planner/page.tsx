@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { FiX, FiPrinter, FiLock, FiUnlock } from 'react-icons/fi';
 
@@ -221,7 +222,7 @@ const Planners = () => {
   // Handle Save Appointment
   const handleSaveAppointment = async () => {
     if (!appointmentForm.date || !appointmentForm.time || !appointmentForm.type) {
-      alert('Please fill in all required fields (Date, Time, Type)');
+      toast.error('Please fill in all required fields (Date, Time, Type)');
       return;
     }
 
@@ -257,7 +258,7 @@ const Planners = () => {
       fetchAppointments();
     } catch (err) {
       console.error('Error saving appointment:', err);
-      alert(err instanceof Error ? err.message : 'Failed to save appointment');
+      toast.error(err instanceof Error ? err.message : 'Failed to save appointment');
     } finally {
       setIsSavingAppointment(false);
     }

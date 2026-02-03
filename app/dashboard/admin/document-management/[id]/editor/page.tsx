@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { useParams } from "next/navigation";
 import { Document, Page, pdfjs } from "react-pdf";
 import "react-pdf/dist/Page/AnnotationLayer.css";
@@ -469,7 +470,7 @@ export default function TemplateDocEditorPage() {
       window.location.href = "/dashboard/admin/document-management";
     } catch (e: any) {
       console.error("Save mapping error:", e);
-      alert(e?.message || "Save failed");
+      toast.error(e?.message || "Save failed");
     } finally {
       setSaving(false);
     }

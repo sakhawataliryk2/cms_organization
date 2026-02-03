@@ -17,6 +17,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { toast } from "sonner";
 import {
   buildPinnedKey,
   isPinnedRecord,
@@ -669,7 +670,7 @@ const TearsheetsPage = () => {
 
     const res = togglePinnedRecord({ key, label, url });
     if (res.action === "limit") {
-      window.alert("Maximum 10 pinned records reached");
+      toast.info("Maximum 10 pinned records reached");
     }
   };
 
@@ -862,7 +863,7 @@ const TearsheetsPage = () => {
   // Send email to selected users
   const handleSendEmail = async () => {
     if (!selectedTearsheetForAction || selectedUsers.length === 0) {
-      alert('Please select at least one user');
+      toast.error('Please select at least one user');
       return;
     }
 
@@ -889,13 +890,13 @@ const TearsheetsPage = () => {
         throw new Error(errorData.message || 'Failed to send email');
       }
 
-      alert('Email sent successfully');
+      toast.success('Email sent successfully');
       setShowSendModal(false);
       setSelectedUsers([]);
       setSelectedTearsheetForAction(null);
     } catch (err) {
       console.error('Error sending email:', err);
-      alert(err instanceof Error ? err.message : 'Failed to send email');
+      toast.error(err instanceof Error ? err.message : 'Failed to send email');
     } finally {
       setIsSending(false);
     }
@@ -920,13 +921,13 @@ const TearsheetsPage = () => {
         throw new Error(errorData.message || 'Failed to delete tearsheet');
       }
 
-      alert('Tearsheet deleted successfully');
+      toast.success('Tearsheet deleted successfully');
       setShowDeleteConfirm(false);
       setSelectedTearsheetForAction(null);
       fetchTearsheets();
     } catch (err) {
       console.error('Error deleting tearsheet:', err);
-      alert(err instanceof Error ? err.message : 'Failed to delete tearsheet');
+      toast.error(err instanceof Error ? err.message : 'Failed to delete tearsheet');
     } finally {
       setIsDeleting(false);
     }

@@ -2,6 +2,7 @@
 "use client";
 
 import { FiHelpCircle, FiUser, FiLogOut } from "react-icons/fi";
+import { toast } from "sonner";
 
 export default function PortalHeader({ userName }: { userName: string }) {
   return (
@@ -16,7 +17,7 @@ export default function PortalHeader({ userName }: { userName: string }) {
           <button
             className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
             title="Help"
-            onClick={() => alert("Help")}
+            onClick={() => toast.info("Help")}
           >
             <FiHelpCircle size={18} />
           </button>
@@ -25,7 +26,7 @@ export default function PortalHeader({ userName }: { userName: string }) {
           <button
             className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center"
             title="Profile"
-            onClick={() => alert("Profile")}
+            onClick={() => toast.info("Profile")}
           >
             <FiUser size={18} />
           </button>

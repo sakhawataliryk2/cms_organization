@@ -24,6 +24,7 @@ import { RiFolderDownloadLine } from "react-icons/ri";
 import { IoDocumentOutline } from "react-icons/io5";
 import { TfiUser } from "react-icons/tfi";
 import { FaRegArrowAltCircleRight } from "react-icons/fa";
+import { toast } from "sonner";
 
 
 interface AdminModule {
@@ -567,7 +568,7 @@ export default function AdminCenter() {
         } catch (error) {
             console.error('Error creating Excel file:', error);
             // Fallback to CSV if xlsx library is not available
-            alert('Excel export requires xlsx library. Please install it: npm install xlsx');
+            toast.error('Excel export requires xlsx library. Please install it: npm install xlsx');
             // Fallback to individual CSV downloads
             const timestamp = new Date().toISOString().split('T')[0];
             Object.entries(dataByModule).forEach(([moduleId, data]) => {
@@ -609,7 +610,7 @@ export default function AdminCenter() {
         } catch (error) {
             console.error('Error creating ZIP file:', error);
             // Fallback to individual CSV downloads
-            alert('ZIP export requires jszip library. Downloading individual CSV files instead.');
+            toast.info('ZIP export requires jszip library. Downloading individual CSV files instead.');
             const timestamp = new Date().toISOString().split('T')[0];
             Object.entries(dataByModule).forEach(([moduleId, data]) => {
                 if (data.length === 0) return;
@@ -725,7 +726,7 @@ export default function AdminCenter() {
 
         // Validate file type
         if (!file.name.toLowerCase().endsWith('.csv')) {
-            alert('Please select a CSV file.');
+            toast.error('Please select a CSV file.');
             return;
         }
 
@@ -736,7 +737,7 @@ export default function AdminCenter() {
             const rows = parseCSV(text);
             
             if (rows.length === 0) {
-                alert('CSV file is empty.');
+                toast.error('CSV file is empty.');
                 return;
             }
 
@@ -781,7 +782,7 @@ export default function AdminCenter() {
             setCurrentStep('map');
         } catch (error) {
             console.error('Error parsing CSV:', error);
-            alert('Error reading CSV file. Please check the file format.');
+            toast.error('Error reading CSV file. Please check the file format.');
         }
     };
 
@@ -863,7 +864,7 @@ export default function AdminCenter() {
     const handleUpload = async () => {
         const validation = validateData();
         if (!validation.isValid) {
-            alert(`Please fix validation errors:\n${validation.errors.slice(0, 5).join('\n')}`);
+            toast.error(`Please fix validation errors:\n${validation.errors.slice(0, 5).join('\n')}`);
             return;
         }
 
@@ -874,7 +875,7 @@ export default function AdminCenter() {
         const mappedData = mapDataToSystemFormat();
         const module = uploadModules.find(m => m.id === selectedUploadModule);
         if (!module) {
-            alert('Invalid module selected.');
+            toast.error('Invalid module selected.');
             setIsUploading(false);
             return;
         }
@@ -930,7 +931,7 @@ export default function AdminCenter() {
             setCurrentStep('upload');
         } catch (error) {
             console.error('Upload error:', error);
-            alert('An error occurred during upload. Please try again.');
+            toast.error('An error occurred during upload. Please try again.');
         } finally {
             setIsUploading(false);
         }
@@ -951,12 +952,12 @@ export default function AdminCenter() {
     // Handle export with backend API and Field Management integration
     const handleExport = async () => {
         if (!selectedModule) {
-            alert('Please select a module to export.');
+            toast.error('Please select a module to export.');
             return;
         }
 
         if (selectedFields.length === 0) {
-            alert('Please select at least one field to export.');
+            toast.error('Please select at least one field to export.');
             return;
         }
 
@@ -1021,11 +1022,11 @@ export default function AdminCenter() {
                 }
             }
 
-            alert(`Successfully exported ${moduleName}!`);
+            toast.success(`Successfully exported ${moduleName}!`);
             setShowDownloadModal(false);
         } catch (error) {
             console.error('Export error:', error);
-            alert(error instanceof Error ? error.message : 'An error occurred during export. Please try again.');
+            toast.error(error instanceof Error ? error.message : 'An error occurred during export. Please try again.');
         } finally {
             setIsExporting(false);
             setExportProgress({ current: 0, total: 0, module: '' });
@@ -1517,7 +1518,7 @@ export default function AdminCenter() {
                                                 if (validation.isValid) {
                                                     setCurrentStep('preview');
                                                 } else {
-                                                    alert(`Please fix validation errors:\n${validation.errors.slice(0, 5).join('\n')}`);
+                                                    toast.error(`Please fix validation errors:\n${validation.errors.slice(0, 5).join('\n')}`);
                                                 }
                                             }}
                                             className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"

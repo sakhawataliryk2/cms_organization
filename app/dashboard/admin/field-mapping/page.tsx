@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   FiChevronLeft,
   FiChevronsLeft,
@@ -485,7 +486,7 @@ const FieldMapping = () => {
       setSelectedField(null);
     } catch (err) {
       console.error("Error saving field:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "An error occurred while saving the field"
@@ -520,7 +521,7 @@ const FieldMapping = () => {
       await fetchCustomFields();
     } catch (err) {
       console.error("Error deleting field:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "An error occurred while deleting the field"
@@ -584,7 +585,7 @@ const FieldMapping = () => {
         err instanceof Error
           ? err.message
           : "An error occurred while updating the custom field";
-      alert(`Failed to update field status: ${errorMessage}`);
+      toast.error(`Failed to update field status: ${errorMessage}`);
     }
   };
 
@@ -643,7 +644,7 @@ const FieldMapping = () => {
         err instanceof Error
           ? err.message
           : "An error occurred while updating the custom field";
-      alert(`Failed to update field status: ${errorMessage}`);
+      toast.error(`Failed to update field status: ${errorMessage}`);
     }
   };
 
@@ -690,7 +691,7 @@ const FieldMapping = () => {
         err instanceof Error
           ? err.message
           : "An error occurred while updating the sort order";
-      alert(`Failed to update sort order: ${errorMessage}`);
+      toast.error(`Failed to update sort order: ${errorMessage}`);
     }
   };
 

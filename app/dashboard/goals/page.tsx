@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { toast } from "sonner";
 
 interface User {
   id: string;
@@ -555,7 +556,7 @@ const GoalsAndQuotas = () => {
       XLSX.writeFile(wb, filename);
     }).catch((error) => {
       console.error('Error exporting to Excel:', error);
-      alert('Failed to export to Excel. Please try again.');
+      toast.error('Failed to export to Excel. Please try again.');
     });
   };
 

@@ -19,6 +19,7 @@ import {
     togglePinnedRecord,
 } from "@/lib/pinnedRecords";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
+import { toast } from "sonner";
 
 import {
     DndContext,
@@ -270,8 +271,50 @@ export default function TaskView() {
     const [isLoadingNotes, setIsLoadingNotes] = useState(false);
     const [isLoadingHistory, setIsLoadingHistory] = useState(false);
     const [historyError, setHistoryError] = useState<string | null>(null);
+    const [noteError, setNoteError] = useState<string | null>(null);
     const historyFilters = useHistoryFilters(history);
     const [showAddNote, setShowAddNote] = useState(false);
+
+    // Note sorting & filtering (match Organization Notes design)
+    const [noteActionFilter, setNoteActionFilter] = useState<string>('');
+    const [noteAuthorFilter, setNoteAuthorFilter] = useState<string>('');
+    const [noteSortKey, setNoteSortKey] = useState<'date' | 'action' | 'author'>('date');
+    const [noteSortDir, setNoteSortDir] = useState<'asc' | 'desc'>('desc');
+    const sortedFilteredNotes = useMemo(() => {
+        let out = [...notes];
+        if (noteActionFilter) {
+            out = out.filter((n) => (n.action || '') === noteActionFilter);
+        }
+        if (noteAuthorFilter) {
+            out = out.filter(
+                (n) => (n.created_by_name || 'Unknown User') === noteAuthorFilter
+            );
+        }
+        out.sort((a, b) => {
+            let av: any, bv: any;
+            switch (noteSortKey) {
+                case 'action':
+                    av = a.action || '';
+                    bv = b.action || '';
+                    break;
+                case 'author':
+                    av = a.created_by_name || '';
+                    bv = b.created_by_name || '';
+                    break;
+                default:
+                    av = new Date(a.created_at).getTime();
+                    bv = new Date(b.created_at).getTime();
+                    break;
+            }
+            if (typeof av === 'number' && typeof bv === 'number') {
+                return noteSortDir === 'asc' ? av - bv : bv - av;
+            }
+            const cmp = String(av).localeCompare(String(bv), undefined, { sensitivity: 'base', numeric: true });
+            return noteSortDir === 'asc' ? cmp : -cmp;
+        });
+        return out;
+    }, [notes, noteActionFilter, noteAuthorFilter, noteSortKey, noteSortDir]);
+
     // Add Note form state - matching jobs view structure
     const [noteForm, setNoteForm] = useState({
         text: '',
@@ -831,7 +874,7 @@ export default function TaskView() {
     // Fetch notes for the task
     const fetchNotes = async (id: string) => {
         setIsLoadingNotes(true);
-
+        setNoteError(null);
         try {
             const response = await fetch(`/api/tasks/${id}/notes`, {
                 headers: {
@@ -840,13 +883,15 @@ export default function TaskView() {
             });
 
             if (!response.ok) {
-                throw new Error('Failed to fetch notes');
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Failed to fetch notes');
             }
 
             const data = await response.json();
             setNotes(data.notes || []);
         } catch (err) {
             console.error('Error fetching notes:', err);
+            setNoteError(err instanceof Error ? err.message : 'An error occurred while fetching notes');
         } finally {
             setIsLoadingNotes(false);
         }
@@ -925,11 +970,14 @@ export default function TaskView() {
             });
             setShowAddNote(false);
 
+            toast.success('Note added successfully');
+
             // Refresh history
+            fetchNotes(taskId);
             fetchHistory(taskId);
         } catch (err) {
             console.error('Error adding note:', err);
-            alert('Failed to add note. Please try again.');
+            toast.error(err instanceof Error ? err.message : 'An error occurred while adding a note');
         }
     };
 
@@ -954,12 +1002,12 @@ export default function TaskView() {
     // Handle tearsheet submission
     const handleTearsheetSubmit = async () => {
         if (!tearsheetForm.name.trim()) {
-            alert('Please enter a tearsheet name');
+            toast.error('Please enter a tearsheet name');
             return;
         }
 
         if (!taskId) {
-            alert('Task ID is missing');
+            toast.error('Task ID is missing');
             return;
         }
 
@@ -983,17 +1031,17 @@ export default function TaskView() {
                 throw new Error(errorData.message || 'Failed to create tearsheet');
             }
 
-            alert('Tearsheet created successfully!');
+            toast.success('Tearsheet created successfully!');
             setShowAddTearsheetModal(false);
             setTearsheetForm({ name: '', visibility: 'Existing' });
         } catch (err) {
             console.error('Error creating tearsheet:', err);
             if (err instanceof Error && err.message.includes('Failed to fetch')) {
-                alert('Tearsheet creation feature is being set up. The tearsheet will be created once the API is ready.');
+                toast.info('Tearsheet creation feature is being set up. The tearsheet will be created once the API is ready.');
                 setShowAddTearsheetModal(false);
                 setTearsheetForm({ name: '', visibility: 'Existing' });
             } else {
-                alert(err instanceof Error ? err.message : 'Failed to create tearsheet. Please try again.');
+                toast.error(err instanceof Error ? err.message : 'Failed to create tearsheet. Please try again.');
             }
         } finally {
             setIsSavingTearsheet(false);
@@ -1235,43 +1283,210 @@ export default function TaskView() {
         { id: 'notes', label: 'Notes' },
     ];
 
-    // Render notes tab content
-    const renderNotesTab = () => (
-        <div className="bg-white p-4 rounded shadow-sm">
-            <div className="flex justify-between items-center mb-4">
-                <h2 className="text-lg font-semibold">Task Notes</h2>
-                <button
-                    onClick={() => setShowAddNote(true)}
-                    className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-                >
-                    Add Note
-                </button>
-            </div>
+    // Render notes tab content (standardized to Organization Notes design)
+    const renderNotesTab = () => {
+        const parseAboutReferences = (refs: any) => {
+            if (!refs) return [];
+            if (typeof refs === 'string') {
+                try {
+                    return JSON.parse(refs);
+                } catch {
+                    return [];
+                }
+            }
+            if (Array.isArray(refs)) return refs;
+            return [];
+        };
+        const navigateToReference = (ref: any) => {
+            if (!ref?.id || !ref?.type) return;
+            const refType = (ref.type || '').toLowerCase().replace(/\s+/g, '');
+            const routeMap: Record<string, string> = {
+                organization: `/dashboard/organizations/view?id=${ref.id}`,
+                job: `/dashboard/jobs/view?id=${ref.id}`,
+                jobseeker: `/dashboard/job-seekers/view?id=${ref.id}`,
+                lead: `/dashboard/leads/view?id=${ref.id}`,
+                task: `/dashboard/tasks/view?id=${ref.id}`,
+                placement: `/dashboard/placements/view?id=${ref.id}`,
+                hiringmanager: `/dashboard/hiring-managers/view?id=${ref.id}`,
+            };
+            if (routeMap[refType]) router.push(routeMap[refType]);
+        };
 
-            {/* Notes List */}
-            {isLoadingNotes ? (
-                <div className="flex justify-center py-4">
-                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+        const actionOptions = Array.from(new Set(notes.map((n) => n.action).filter(Boolean))) as string[];
+
+        return (
+            <div className="bg-white p-4 rounded shadow-sm">
+                <div className="flex justify-between items-center mb-4">
+                    <h2 className="text-lg font-semibold">Task Notes</h2>
+                    <button
+                        onClick={() => setShowAddNote(true)}
+                        className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+                    >
+                        Add Note
+                    </button>
                 </div>
-            ) : notes.length > 0 ? (
-                <div className="space-y-4">
-                    {notes.map((note) => (
-                        <div key={note.id} className="p-3 border rounded hover:bg-gray-50">
-                            <div className="flex justify-between items-start mb-2">
-                                <span className="font-medium text-blue-600">{note.created_by_name || 'Unknown User'}</span>
-                                <span className="text-sm text-gray-500">
-                                    {new Date(note.created_at).toLocaleString()}
-                                </span>
-                            </div>
-                            <p className="text-gray-700">{note.text}</p>
-                        </div>
-                    ))}
+
+                <div className="flex flex-wrap gap-4 items-end mb-4">
+                    <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Action</label>
+                        <select
+                            value={noteActionFilter}
+                            onChange={(e) => setNoteActionFilter(e.target.value)}
+                            className="p-2 border border-gray-300 rounded text-sm"
+                        >
+                            <option value="">All Actions</option>
+                            {actionOptions.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Author</label>
+                        <select
+                            value={noteAuthorFilter}
+                            onChange={(e) => setNoteAuthorFilter(e.target.value)}
+                            className="p-2 border border-gray-300 rounded text-sm"
+                        >
+                            <option value="">All Authors</option>
+                            {Array.from(new Set(notes.map((n) => n.created_by_name || 'Unknown User'))).map((author) => (
+                                <option key={author} value={author}>{author}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-xs font-medium text-gray-700 mb-1">Sort By</label>
+                        <select
+                            value={noteSortKey}
+                            onChange={(e) => setNoteSortKey(e.target.value as 'date' | 'action' | 'author')}
+                            className="p-2 border border-gray-300 rounded text-sm"
+                        >
+                            <option value="date">Date</option>
+                            <option value="action">Action</option>
+                            <option value="author">Author</option>
+                        </select>
+                    </div>
+                    <div>
+                        <button
+                            onClick={() => setNoteSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))}
+                            className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs text-black"
+                            title="Toggle Sort Direction"
+                        >
+                            {noteSortDir === 'asc' ? 'Asc ↑' : 'Desc ↓'}
+                        </button>
+                    </div>
+                    {(noteActionFilter || noteAuthorFilter) && (
+                        <button
+                            onClick={() => { setNoteActionFilter(''); setNoteAuthorFilter(''); }}
+                            className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs"
+                        >
+                            Clear Filters
+                        </button>
+                    )}
                 </div>
-            ) : (
-                <p className="text-gray-500 italic">No notes have been added yet.</p>
-            )}
-        </div>
-    );
+
+                {isLoadingNotes ? (
+                    <div className="flex justify-center py-4">
+                        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                    </div>
+                ) : noteError ? (
+                    <div className="text-red-500 py-2">{noteError}</div>
+                ) : sortedFilteredNotes.length > 0 ? (
+                    <div className="space-y-4">
+                        {sortedFilteredNotes.map((note) => {
+                            const actionLabel = note.action || 'General Note';
+                            const aboutRefs = parseAboutReferences((note as any).about_references ?? (note as any).aboutReferences);
+                            return (
+                                <div id={`note-${note.id}`} key={note.id} className="p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors">
+                                    <div className="border-b border-gray-200 pb-3 mb-3">
+                                        <div className="flex justify-between items-start">
+                                            <div className="flex flex-col gap-2">
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className="font-medium text-blue-600">
+                                                        {note.created_by_name || 'Unknown User'}
+                                                    </span>
+                                                    {actionLabel && (
+                                                        <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-medium">
+                                                            {actionLabel}
+                                                        </span>
+                                                    )}
+                                                    <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded border">
+                                                        Task
+                                                    </span>
+                                                </div>
+                                                <div className="text-xs text-gray-500">
+                                                    {new Date(note.created_at).toLocaleString('en-US', {
+                                                        month: '2-digit',
+                                                        day: '2-digit',
+                                                        year: 'numeric',
+                                                        hour: '2-digit',
+                                                        minute: '2-digit',
+                                                    })}
+                                                </div>
+                                            </div>
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => {
+                                                        const el = document.getElementById(`note-${note.id}`);
+                                                        if (el) {
+                                                            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                                            el.classList.add('ring-2', 'ring-blue-500');
+                                                            setTimeout(() => el.classList.remove('ring-2', 'ring-blue-500'), 2000);
+                                                        }
+                                                    }}
+                                                    className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                                                    title="View"
+                                                >
+                                                    View
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {aboutRefs.length > 0 && (
+                                        <div className="mb-3 pb-3 border-b border-gray-100">
+                                            <div className="flex items-start gap-2">
+                                                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide min-w-[80px]">
+                                                    References:
+                                                </span>
+                                                <div className="flex flex-wrap gap-2 flex-1">
+                                                    {aboutRefs.map((ref: any, idx: number) => {
+                                                        const displayText = typeof ref === 'string' ? ref : ref.display || ref.value || `${ref.type} #${ref.id}`;
+                                                        const refType = typeof ref === 'string' ? null : (ref.type || '').toLowerCase().replace(/\s+/g, '');
+                                                        const refId = typeof ref === 'string' ? null : ref.id;
+                                                        const isClickable = !!(refId && refType);
+                                                        return (
+                                                            <button
+                                                                key={idx}
+                                                                onClick={() => isClickable && navigateToReference(ref)}
+                                                                disabled={!isClickable}
+                                                                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-all ${isClickable ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer' : 'bg-gray-100 text-gray-700 border-gray-200 cursor-default'}`}
+                                                                title={isClickable ? `View ${refType}` : 'Reference not available'}
+                                                            >
+                                                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                                                                </svg>
+                                                                {displayText}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+                                    <div className="mt-2">
+                                        <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{note.text}</p>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <p className="text-gray-500 italic">
+                        {(noteActionFilter || noteAuthorFilter) ? 'No notes match your filters.' : 'No notes have been added yet.'}
+                    </p>
+                )}
+            </div>
+        );
+    };
 
     // Render history tab content
     const renderHistoryTab = () => (
@@ -1563,7 +1778,7 @@ export default function TaskView() {
 
         const res = togglePinnedRecord({ key, label, url });
         if (res.action === "limit") {
-            window.alert("Maximum 10 pinned records reached");
+            toast.info("Maximum 10 pinned records reached");
         }
     };
 
@@ -2004,13 +2219,13 @@ export default function TaskView() {
                                     onDragOver={handlePanelDragOver}
                                     onDragEnd={handlePanelDragEnd}
                                 >
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div>
+                                    <div className="grid grid-cols-[1fr_1fr] gap-4">
+                                        <div className="min-w-0">
                                             <DroppableContainer id="left" items={columns.left}>
                                                 {columns.left.map((id) => renderPanel(id))}
                                             </DroppableContainer>
                                         </div>
-                                        <div>
+                                        <div className="min-w-0">
                                             <DroppableContainer id="right" items={columns.right}>
                                                 {columns.right.map((id) => renderPanel(id))}
                                             </DroppableContainer>

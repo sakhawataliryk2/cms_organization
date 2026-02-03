@@ -14,6 +14,7 @@ import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
+import { toast } from "sonner";
 import {
   DndContext,
   closestCorners,
@@ -226,6 +227,7 @@ export default function LeadView() {
       created_at: string;
       created_by_name: string;
       note_type?: string;
+      action?: string;
     }>
   >([]);
   const [history, setHistory] = useState<Array<any>>([]);
@@ -237,6 +239,47 @@ export default function LeadView() {
   const [showAddNote, setShowAddNote] = useState(false);
   const [newNote, setNewNote] = useState("");
   const [noteType, setNoteType] = useState("General Note");
+
+  // Note sorting & filtering (match Organization Notes design)
+  const [noteActionFilter, setNoteActionFilter] = useState<string>("");
+  const [noteAuthorFilter, setNoteAuthorFilter] = useState<string>("");
+  const [noteSortKey, setNoteSortKey] = useState<"date" | "action" | "author">("date");
+  const [noteSortDir, setNoteSortDir] = useState<"asc" | "desc">("desc");
+
+  const sortedFilteredNotes = useMemo(() => {
+    let out = [...notes];
+    if (noteActionFilter) {
+      out = out.filter((n) => (n.note_type || n.action || "") === noteActionFilter);
+    }
+    if (noteAuthorFilter) {
+      out = out.filter(
+        (n) => (n.created_by_name || "Unknown User") === noteAuthorFilter
+      );
+    }
+    out.sort((a, b) => {
+      let av: any, bv: any;
+      switch (noteSortKey) {
+        case "action":
+          av = a.note_type || a.action || "";
+          bv = b.note_type || b.action || "";
+          break;
+        case "author":
+          av = a.created_by_name || "";
+          bv = b.created_by_name || "";
+          break;
+        default:
+          av = new Date(a.created_at).getTime();
+          bv = new Date(b.created_at).getTime();
+          break;
+      }
+      if (typeof av === "number" && typeof bv === "number") {
+        return noteSortDir === "asc" ? av - bv : bv - av;
+      }
+      const cmp = String(av).localeCompare(String(bv), undefined, { sensitivity: "base", numeric: true });
+      return noteSortDir === "asc" ? cmp : -cmp;
+    });
+    return out;
+  }, [notes, noteActionFilter, noteAuthorFilter, noteSortKey, noteSortDir]);
 
   // Documents state
   const [documents, setDocuments] = useState<Array<any>>([]);
@@ -298,7 +341,7 @@ export default function LeadView() {
 
     const res = togglePinnedRecord({ key, label, url });
     if (res.action === "limit") {
-      window.alert("Maximum 10 pinned records reached");
+      toast.info("Maximum 10 pinned records reached");
     }
   };
 
@@ -1466,10 +1509,10 @@ export default function LeadView() {
       setShowAddDocument(false);
 
       // Show success message
-      alert("Document added successfully");
+      toast.success("Document added successfully");
     } catch (err) {
       console.error("Error adding document:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "An error occurred while adding a document"
@@ -1503,10 +1546,10 @@ export default function LeadView() {
       // Remove the document from the list
       setDocuments(documents.filter((doc) => doc.id !== documentId));
 
-      alert("Document deleted successfully");
+      toast.success("Document deleted successfully");
     } catch (err) {
       console.error("Error deleting document:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "An error occurred while deleting the document"
@@ -1530,7 +1573,7 @@ export default function LeadView() {
       link.click();
       document.body.removeChild(link);
     } else {
-      alert("This document has no file or content to download.");
+      toast.info("This document has no file or content to download.");
     }
   };
 
@@ -1561,7 +1604,7 @@ export default function LeadView() {
       setEditDocumentName("");
       setEditDocumentType("General");
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to update document");
+      toast.error(err instanceof Error ? err.message : "Failed to update document");
     }
   };
 
@@ -1708,12 +1751,12 @@ export default function LeadView() {
   // Handle tearsheet submission
   const handleTearsheetSubmit = async () => {
     if (!tearsheetForm.name.trim()) {
-      alert('Please enter a tearsheet name');
+      toast.error('Please enter a tearsheet name');
       return;
     }
 
     if (!leadId) {
-      alert('Lead ID is missing');
+      toast.error('Lead ID is missing');
       return;
     }
 
@@ -1737,17 +1780,17 @@ export default function LeadView() {
         throw new Error(errorData.message || 'Failed to create tearsheet');
       }
 
-      alert('Tearsheet created successfully!');
+      toast.success('Tearsheet created successfully!');
       setShowAddTearsheetModal(false);
       setTearsheetForm({ name: '', visibility: 'Existing' });
     } catch (err) {
       console.error('Error creating tearsheet:', err);
       if (err instanceof Error && err.message.includes('Failed to fetch')) {
-        alert('Tearsheet creation feature is being set up. The tearsheet will be created once the API is ready.');
+        toast.info('Tearsheet creation feature is being set up. The tearsheet will be created once the API is ready.');
         setShowAddTearsheetModal(false);
         setTearsheetForm({ name: '', visibility: 'Existing' });
       } else {
-        alert(err instanceof Error ? err.message : 'Failed to create tearsheet. Please try again.');
+        toast.error(err instanceof Error ? err.message : 'Failed to create tearsheet. Please try again.');
       }
     } finally {
       setIsSavingTearsheet(false);
@@ -1796,7 +1839,7 @@ export default function LeadView() {
       if (lead?.email) {
         window.location.href = `mailto:${lead.email}`;
       } else {
-        alert("Lead email not available");
+        toast.error("Lead email not available");
       }
     } else {
       console.log(`Action selected: ${action}`);
@@ -1871,13 +1914,14 @@ export default function LeadView() {
       setShowAddNote(false);
 
       // Refresh history to show the note addition
+      fetchNotes(leadId);
       fetchHistory(leadId);
 
       // Show success message
-      alert("Note added successfully");
+      toast.success("Note added successfully");
     } catch (err) {
       console.error("Error adding note:", err);
-      alert(
+      toast.error(
         err instanceof Error
           ? err.message
           : "An error occurred while adding a note"
@@ -1996,6 +2040,65 @@ export default function LeadView() {
         </div>
       )}
 
+      {/* Filters & Sort Controls (match Organization Notes) */}
+      <div className="flex flex-wrap gap-4 items-end mb-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Type</label>
+          <select
+            value={noteActionFilter}
+            onChange={(e) => setNoteActionFilter(e.target.value)}
+            className="p-2 border border-gray-300 rounded text-sm"
+          >
+            <option value="">All Types</option>
+            {Array.from(new Set(notes.map((n) => n.note_type || n.action).filter(Boolean))).map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Author</label>
+          <select
+            value={noteAuthorFilter}
+            onChange={(e) => setNoteAuthorFilter(e.target.value)}
+            className="p-2 border border-gray-300 rounded text-sm"
+          >
+            <option value="">All Authors</option>
+            {Array.from(new Set(notes.map((n) => n.created_by_name || "Unknown User"))).map((author) => (
+              <option key={author} value={author}>{author}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-1">Sort By</label>
+          <select
+            value={noteSortKey}
+            onChange={(e) => setNoteSortKey(e.target.value as "date" | "action" | "author")}
+            className="p-2 border border-gray-300 rounded text-sm"
+          >
+            <option value="date">Date</option>
+            <option value="action">Type</option>
+            <option value="author">Author</option>
+          </select>
+        </div>
+        <div>
+          <button
+            onClick={() => setNoteSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+            className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs text-black"
+            title="Toggle Sort Direction"
+          >
+            {noteSortDir === "asc" ? "Asc ↑" : "Desc ↓"}
+          </button>
+        </div>
+        {(noteActionFilter || noteAuthorFilter) && (
+          <button
+            onClick={() => { setNoteActionFilter(""); setNoteAuthorFilter(""); }}
+            className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs"
+          >
+            Clear Filters
+          </button>
+        )}
+      </div>
+
       {/* Notes List */}
       {isLoadingNotes ? (
         <div className="flex justify-center py-4">
@@ -2003,29 +2106,67 @@ export default function LeadView() {
         </div>
       ) : noteError ? (
         <div className="text-red-500 py-2">{noteError}</div>
-      ) : notes.length > 0 ? (
+      ) : sortedFilteredNotes.length > 0 ? (
         <div className="space-y-4">
-          {notes.map((note) => (
-            <div key={note.id} className="p-3 border rounded hover:bg-gray-50">
-              <div className="flex justify-between items-start mb-2">
-                <span className="font-medium text-blue-600">
-                  {note.created_by_name || "Unknown User"}
-                </span>
-                <span className="text-sm text-gray-500">
-                  {new Date(note.created_at).toLocaleString()}
-                </span>
-              </div>
-              {note.note_type && (
-                <div className="text-xs text-gray-500 mb-1">
-                  Type: {note.note_type}
+          {sortedFilteredNotes.map((note) => {
+            const actionLabel = note.note_type || (note as any).action || "General Note";
+            return (
+              <div id={`note-${note.id}`} key={note.id} className="p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors">
+                <div className="border-b border-gray-200 pb-3 mb-3">
+                  <div className="flex justify-between items-start">
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-blue-600">
+                          {note.created_by_name || "Unknown User"}
+                        </span>
+                        {actionLabel && (
+                          <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-medium">
+                            {actionLabel}
+                          </span>
+                        )}
+                        <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded border">
+                          Lead
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {new Date(note.created_at).toLocaleString("en-US", {
+                          month: "2-digit",
+                          day: "2-digit",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => {
+                          const el = document.getElementById(`note-${note.id}`);
+                          if (el) {
+                            el.scrollIntoView({ behavior: "smooth", block: "center" });
+                            el.classList.add("ring-2", "ring-blue-500");
+                            setTimeout(() => el.classList.remove("ring-2", "ring-blue-500"), 2000);
+                          }
+                        }}
+                        className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
+                        title="View"
+                      >
+                        View
+                      </button>
+                    </div>
+                  </div>
                 </div>
-              )}
-              <p className="text-gray-700">{note.text}</p>
-            </div>
-          ))}
+                <div className="mt-2">
+                  <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{note.text}</p>
+                </div>
+              </div>
+            );
+          })}
         </div>
       ) : (
-        <p className="text-gray-500 italic">No notes have been added yet.</p>
+        <p className="text-gray-500 italic">
+          {(noteActionFilter || noteAuthorFilter) ? "No notes match your filters." : "No notes have been added yet."}
+        </p>
       )}
     </div>
   );
@@ -2390,13 +2531,13 @@ export default function LeadView() {
               },
             }}
           >
-            <div className="grid grid-cols-7 gap-4">
-              <div className="col-span-4 space-y-4">
+            <div className="grid grid-cols-[1fr_1fr] gap-4">
+              <div className="min-w-0 space-y-4">
                 <DroppableContainer id="left" items={columns.left}>
                   {columns.left.map((id) => renderPanel(id))}
                 </DroppableContainer>
               </div>
-              <div className="col-span-3 space-y-4">
+              <div className="min-w-0 space-y-4">
                 <DroppableContainer id="right" items={columns.right}>
                   {columns.right.map((id) => renderPanel(id))}
                 </DroppableContainer>

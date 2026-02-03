@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import PortalHeader from "../components/PortalHeader";
 import DocumentCard from "../components/DocumentCard";
 
@@ -85,11 +86,11 @@ export default function JobSeekerPortalDocumentsPage() {
                     status={d.status}
                     title={d.document_name}
                     attachments={0}
-                    onAttach={() => alert(`Attach: ${d.document_name}`)}
+                    onAttach={() => toast.info(`Attach: ${d.document_name}`)}
                     onCreateAndSubmit={() =>
-                      alert(`Create & Submit: ${d.document_name}`)
+                      toast.info(`Create & Submit: ${d.document_name}`)
                     }
-                    onView={() => alert(`View: ${d.document_name}`)}
+                    onView={() => toast.info(`View: ${d.document_name}`)}
                   />
                 ))}
               </div>
