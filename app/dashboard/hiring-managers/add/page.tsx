@@ -148,18 +148,18 @@ export default function AddHiringManager() {
         setOrganizationPhone(orgPhone);
         setOrganizationAddress(orgAddress);
 
-        // Prefill organizationId in form
+        // Prefill organizationId and org-derived fields. When organization changes,
+        // always overwrite with the new org's data so company/address update correctly.
         setFormData(prev => ({
           ...prev,
           organizationId: orgId,
-          // Only auto-populate if fields are empty (don't overwrite user input)
-          phone: prev.phone || orgPhone || "",
-          companyPhone: prev.companyPhone || orgPhone || "",
-          address: prev.address || orgAddress || "",
-          address2: prev.address2 || orgAddress2 || "",
-          city: prev.city || orgCity || "",
-          state: prev.state || orgState || "",
-          zipCode: prev.zipCode || orgZip || "",
+          phone: orgPhone || prev.phone || "",
+          companyPhone: orgPhone || prev.companyPhone || "",
+          address: orgAddress || prev.address || "",
+          address2: orgAddress2 || prev.address2 || "",
+          city: orgCity || prev.city || "",
+          state: orgState || prev.state || "",
+          zipCode: orgZip || prev.zipCode || "",
         }));
 
         // Auto-populate custom fields once they're loaded
@@ -482,19 +482,61 @@ export default function AddHiringManager() {
 
   }, [hiringManagerId, customFields, customFieldValues, organizationName, formData.organizationId, fetchOrganizationData]);
 
+  // When organization data (phone, address) changes—e.g. after selecting a different org—
+  // overwrite the corresponding custom fields so they stay in sync.
+  // Do NOT overwrite the Organization/Company selector field with the name: that field holds the
+  // selected org ID; overwriting with the name breaks the dropdown (it reverts to "Select Organization").
+  useEffect(() => {
+    if (customFields.length === 0 || hiringManagerId) return;
+
+    const updates: Record<string, any> = {};
+
+    customFields.forEach((field) => {
+      const fieldLabel = field.field_label.toLowerCase();
+
+      // Company Phone fields
+      if (
+        (fieldLabel.includes("company phone") ||
+          fieldLabel.includes("company phone number") ||
+          (fieldLabel.includes("phone") && fieldLabel.includes("company"))) &&
+        organizationPhone
+      ) {
+        updates[field.field_name] = organizationPhone;
+      }
+
+      // Organization/Company address fields
+      if (
+        (fieldLabel.includes("organization address") ||
+          fieldLabel.includes("company address") ||
+          (fieldLabel.includes("address") && (fieldLabel.includes("organization") || fieldLabel.includes("company")))) &&
+        organizationAddress
+      ) {
+        updates[field.field_name] = organizationAddress;
+      }
+    });
+
+    if (Object.keys(updates).length > 0) {
+      Object.entries(updates).forEach(([fieldName, value]) => {
+        if (customFieldValues[fieldName] !== value) {
+          handleCustomFieldChange(fieldName, value);
+        }
+      });
+    }
+  }, [customFields, organizationName, organizationPhone, organizationAddress, hiringManagerId, customFieldValues, handleCustomFieldChange]);
+
   // Handle prefilling from URL (existing logic preserved but ensuring it plays nice)
   useEffect(() => {
     if (customFields.length === 0 || !organizationIdFromUrl || hasPrefilledOrgRef.current === false) return;
     if (hiringManagerId) return; // Don't auto-populate in edit mode
 
-    // Auto-populate custom fields with organization data
+    // Auto-populate custom fields with organization data when arriving from URL
     const updates: Record<string, any> = {};
 
     customFields.forEach((field) => {
       const fieldLabel = field.field_label.toLowerCase();
       const currentValue = customFieldValues[field.field_name];
 
-      // Organization Name fields
+      // Organization Name fields (URL case: only when empty or still showing ID)
       if (
         (fieldLabel.includes("organization") || fieldLabel.includes("company")) &&
         !fieldLabel.includes("phone") &&
@@ -506,7 +548,7 @@ export default function AddHiringManager() {
         }
       }
 
-      // Company Phone fields
+      // Company Phone fields (URL case)
       if (
         (fieldLabel.includes("company phone") ||
           fieldLabel.includes("company phone number") ||
@@ -517,7 +559,7 @@ export default function AddHiringManager() {
         updates[field.field_name] = organizationPhone;
       }
 
-      // Organization Address fields
+      // Organization Address fields (URL case)
       if (
         (fieldLabel.includes("organization address") ||
           fieldLabel.includes("company address") ||
