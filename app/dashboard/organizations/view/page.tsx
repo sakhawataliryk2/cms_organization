@@ -2140,12 +2140,11 @@ export default function OrganizationView() {
       setDocuments([data.document, ...documents]);
 
       // Clear the form
+      toast.success('Document added successfully');
       setNewDocumentName("");
       setNewDocumentType("General");
       setNewDocumentContent("");
       setShowAddDocument(false);
-
-      // Refresh summary counts
       fetchDocuments(organizationId);
       fetchSummaryCounts();
     } catch (err) {

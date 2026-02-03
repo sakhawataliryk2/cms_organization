@@ -2451,6 +2451,7 @@ export default function HiringManagerView() {
     // For uploaded files, use the file_path
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
     window.open(`${apiUrl}/${doc.file_path}`, "_blank");
+    toast.success('Document downloaded successfully');
   };
 
   // Close add note modal
