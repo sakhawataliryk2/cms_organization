@@ -2392,7 +2392,7 @@ export default function OrganizationView() {
                     key={key}
                     className="flex border-b border-gray-200 last:border-b-0"
                   >
-                    <div className="w-24 font-medium p-2 border-r border-gray-200 bg-gray-50">
+                    <div className="w-44 min-w-[13rem] font-medium p-2 border-r border-gray-200 bg-gray-50">
                       {label}:
                     </div>
                     <div className="flex-1 p-2">
