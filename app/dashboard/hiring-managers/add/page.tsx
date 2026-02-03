@@ -828,10 +828,18 @@ export default function AddHiringManager() {
     router.back();
   };
 
-  const isFormValid = useMemo(() => {
-    const customFieldValidation = validateCustomFields();
-    return customFieldValidation.isValid;
+  const validationResult = useMemo(() => {
+    const result = validateCustomFields();
+    // Debug: log validation result whenever it runs
+    console.log("[Hiring Manager Form] Validation:", {
+      isValid: result.isValid,
+      message: result.message || "(all required fields valid)",
+      customFieldValues: { ...customFieldValues },
+    });
+    return result;
   }, [customFieldValues, validateCustomFields]);
+
+  const isFormValid = validationResult.isValid;
 
   if (isLoading) {
     return <LoadingScreen message="Loading hiring manager data..." />;
@@ -891,6 +899,19 @@ export default function AddHiringManager() {
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 mb-4 rounded">
             <p>{error}</p>
+          </div>
+        )}
+
+        {/* Validation debug: show why Save is disabled when form is invalid */}
+        {!isFormValid && validationResult.message && (
+          <div className="bg-amber-50 border border-amber-300 text-amber-800 px-4 py-3 mb-4 rounded flex items-start gap-2">
+            <span className="shrink-0 font-semibold" title="Validation debug">
+              ⚠
+            </span>
+            <div>
+              <p className="font-medium">Save is disabled — validation:</p>
+              <p className="text-sm mt-1">{validationResult.message}</p>
+            </div>
           </div>
         )}
 

@@ -98,12 +98,11 @@ function UnderlineField({
     const hasValue = value && String(value).trim() !== "";
     if (!hasValue) return false;
 
+    // Use label/type only — no field_name (Field_24) so mapping per entity is respected
     const isZipCodeField =
       field.field_label?.toLowerCase().includes("zip") ||
       field.field_label?.toLowerCase().includes("postal code") ||
-      field.field_name?.toLowerCase().includes("zip") ||
-      field.field_name === "Field_24" ||
-      field.field_name === "field_24";
+      field.field_name?.toLowerCase().includes("zip");
 
     if (isZipCodeField) {
       return /^\d{5}$/.test(String(value).trim());
@@ -215,12 +214,11 @@ export default function AddressGroupRenderer({
 
     if (!value || String(value).trim() === "") return false;
 
+    // Use label/type only — no field_name (Field_24) so mapping per entity is respected
     const isZipCodeField =
       field.field_label?.toLowerCase().includes("zip") ||
       field.field_label?.toLowerCase().includes("postal code") ||
-      field.field_name?.toLowerCase().includes("zip") ||
-      field.field_name === "Field_24" ||
-      field.field_name === "field_24";
+      field.field_name?.toLowerCase().includes("zip");
     if (isZipCodeField) {
       return /^\d{5}$/.test(String(value).trim());
     }

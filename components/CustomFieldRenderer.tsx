@@ -523,12 +523,11 @@ export default function CustomFieldRenderer({
       }
 
       // Check if this is a ZIP code field (even if defined as "number" type, treat as text for leading zeros)
+      // Use label/type only — no field_name (Field_24 etc.) so mapping per entity is respected.
       const isZipCodeFieldNumber =
         field.field_label?.toLowerCase().includes("zip") ||
         field.field_label?.toLowerCase().includes("postal code") ||
-        field.field_name?.toLowerCase().includes("zip") ||
-        field.field_name === "Field_24" || // ZIP Code
-        field.field_name === "field_24";
+        field.field_name?.toLowerCase().includes("zip");
 
       if (isZipCodeFieldNumber) {
         // ZIP codes should be treated as text (not number) to preserve leading zeros
@@ -560,20 +559,14 @@ export default function CustomFieldRenderer({
         field.field_name?.toLowerCase().includes("year");
       
       // Check if this is a numeric field that allows values >= 0 (Number of Employees, Offices, Oasis Key)
-      // Check by both label and field_name (Field_32, Field_25, Field_31)
+      // Use label/type only — no field_name (Field_32 etc.) so mapping per entity is respected.
       const isNonNegativeField =
         field.field_label?.toLowerCase().includes("employees") ||
         field.field_label?.toLowerCase().includes("offices") ||
         field.field_label?.toLowerCase().includes("oasis key") ||
         field.field_name?.toLowerCase().includes("employees") ||
         field.field_name?.toLowerCase().includes("offices") ||
-        field.field_name?.toLowerCase().includes("oasis") ||
-        field.field_name === "Field_32" || // # of employees
-        field.field_name === "field_32" ||
-        field.field_name === "Field_25" || // # of offices
-        field.field_name === "field_25" ||
-        field.field_name === "Field_31" || // Oasis Key
-        field.field_name === "field_31";
+        field.field_name?.toLowerCase().includes("oasis");
 
       if (isYearField) {
         // Year fields: 2000-2100, max 4 digits
@@ -730,10 +723,9 @@ export default function CustomFieldRenderer({
     //     />
     //   );
     case "date": {
-      // Treat "Date Added" fields as read-only with a lock icon
+      // Treat "Date Added" fields as read-only with a lock icon (label only)
       const isDateAddedField =
-        field.field_label?.toLowerCase() === "date added" ||
-        field.field_name?.toLowerCase() === "dateadded";
+        field.field_label?.toLowerCase() === "date added";
 
       // Common display value (mm/dd/yyyy)
       const todayDefault = () => {
@@ -1221,15 +1213,12 @@ export default function CustomFieldRenderer({
         />
       );
     default:
-      // Check if this is a ZIP code field
-      // Check by both label and field_name (Field_24)
+      // Check if this is a ZIP code field (label/type only — no field_name)
       const isZipCodeField =
         field.field_label?.toLowerCase().includes("zip") ||
         field.field_label?.toLowerCase().includes("postal code") ||
         field.field_name?.toLowerCase().includes("zip") ||
-        field.field_name?.toLowerCase().includes("postal") ||
-        field.field_name === "Field_24" || // ZIP Code
-        field.field_name === "field_24";
+        field.field_name?.toLowerCase().includes("postal");
 
       return (
         <div style={{ position: "relative", width: "100%" }}>
@@ -1254,8 +1243,8 @@ export default function CustomFieldRenderer({
             style={{ paddingRight: "25px" }} // thoda space right pe icon ke liye
           />
 
-          {/* Sirf Job Title field ke liye icon show kare */}
-          {field.field_name === "jobTitle" &&
+          {/* Show check icon for Job Title field (by label, not field_name) */}
+          {field.field_label?.toLowerCase().includes("job title") &&
             (value && value.trim() !== "" ? (
               <span
                 style={{
@@ -1385,11 +1374,8 @@ export function useCustomFields(entityType: string) {
       
       // Special validation for date fields
       if (field.field_type === "date") {
-        // Special check for "Date Added" - always valid as it's auto-populated/read-only
-        if (
-          field.field_label?.toLowerCase() === "date added" ||
-          field.field_name?.toLowerCase() === "dateadded"
-        ) {
+        // Special check for "Date Added" - always valid as it's auto-populated/read-only (label only)
+        if (field.field_label?.toLowerCase() === "date added") {
           return true;
         }
 
@@ -1422,33 +1408,23 @@ export function useCustomFields(entityType: string) {
         return true;
       }
       
-      // Special validation for ZIP code (must be exactly 5 digits)
-      // Check by both label and field_name (Field_24)
+      // Special validation for ZIP code (must be exactly 5 digits) — label/type only
       const isZipCodeField =
         field.field_label?.toLowerCase().includes("zip") ||
         field.field_label?.toLowerCase().includes("postal code") ||
-        field.field_name?.toLowerCase().includes("zip") ||
-        field.field_name === "Field_24" || // ZIP Code
-        field.field_name === "field_24";
+        field.field_name?.toLowerCase().includes("zip");
       if (isZipCodeField) {
         return /^\d{5}$/.test(trimmed);
       }
       
-      // Special validation for numeric fields that allow values >= 0
-      // Check by both label and field_name (Field_32, Field_25, Field_31)
+      // Special validation for numeric fields that allow values >= 0 — label/type only
       const isNonNegativeField =
         field.field_label?.toLowerCase().includes("employees") ||
         field.field_label?.toLowerCase().includes("offices") ||
         field.field_label?.toLowerCase().includes("oasis key") ||
         field.field_name?.toLowerCase().includes("employees") ||
         field.field_name?.toLowerCase().includes("offices") ||
-        field.field_name?.toLowerCase().includes("oasis") ||
-        field.field_name === "Field_32" || // # of employees
-        field.field_name === "field_32" ||
-        field.field_name === "Field_25" || // # of offices
-        field.field_name === "field_25" ||
-        field.field_name === "Field_31" || // Oasis Key
-        field.field_name === "field_31";
+        field.field_name?.toLowerCase().includes("oasis");
       if (isNonNegativeField && field.field_type === "number") {
         const numValue = parseFloat(trimmed);
         // Allow values >= 0 (0, 1, 2, etc.)
@@ -1458,15 +1434,15 @@ export function useCustomFields(entityType: string) {
       }
       
       // Special validation for phone fields (exclude date fields e.g. Start Date)
+      // Only use field_type or label — do NOT use field_name (e.g. Field_5) as proxy for phone,
+      // since the same field name can be mapped to different labels per entity (e.g. Title vs Main Phone).
       const isDateFieldForPhone =
         field.field_type === "date" ||
         field.field_label?.toLowerCase().includes("date");
       const isPhoneField =
         !isDateFieldForPhone &&
         (field.field_type === "phone" ||
-          field.field_label?.toLowerCase().includes("phone") ||
-          field.field_name === "Field_5" ||
-          field.field_name === "field_5");
+          field.field_label?.toLowerCase().includes("phone"));
       if (isPhoneField && trimmed !== "") {
         // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
         // Remove all non-numeric characters to check digit count
@@ -1480,14 +1456,11 @@ export function useCustomFields(entityType: string) {
         return phoneRegex.test(trimmed);
       }
       
-      // Special validation for URL fields (Organization Website, etc.)
-      // Check by both field_type and field_name (Field_4)
+      // Special validation for URL fields (Organization Website, etc.) — field_type/label only
       const isUrlField =
         field.field_type === "url" ||
         field.field_label?.toLowerCase().includes("website") ||
-        field.field_label?.toLowerCase().includes("url") ||
-        field.field_name === "Field_4" || // Organization Website
-        field.field_name === "field_4";
+        field.field_label?.toLowerCase().includes("url");
       if (isUrlField && trimmed !== "") {
         // URL must start with http://, https://, or www.
         const urlPattern = /^(https?:\/\/|www\.).+/i;
@@ -1552,13 +1525,11 @@ export function useCustomFields(entityType: string) {
         if (!hasValidValue(field, value)) {
           let errorMessage = `${field.field_label} is required`;
           
-          // Add specific error messages for validation failures
+          // Add specific error messages for validation failures (label/type only)
           const isZipCodeField =
             field.field_label?.toLowerCase().includes("zip") ||
             field.field_label?.toLowerCase().includes("postal code") ||
-            field.field_name?.toLowerCase().includes("zip") ||
-            field.field_name === "Field_24" || // ZIP Code
-            field.field_name === "field_24";
+            field.field_name?.toLowerCase().includes("zip");
           if (isZipCodeField && value && String(value).trim() !== "") {
             errorMessage = `${field.field_label} must be exactly 5 digits`;
           }
@@ -1569,13 +1540,7 @@ export function useCustomFields(entityType: string) {
             field.field_label?.toLowerCase().includes("oasis key") ||
             field.field_name?.toLowerCase().includes("employees") ||
             field.field_name?.toLowerCase().includes("offices") ||
-            field.field_name?.toLowerCase().includes("oasis") ||
-            field.field_name === "Field_32" || // # of employees
-            field.field_name === "field_32" ||
-            field.field_name === "Field_25" || // # of offices
-            field.field_name === "field_25" ||
-            field.field_name === "Field_31" || // Oasis Key
-            field.field_name === "field_31";
+            field.field_name?.toLowerCase().includes("oasis");
           if (isNonNegativeField && value && !isNaN(parseFloat(String(value)))) {
             const numValue = parseFloat(String(value));
             if (numValue < 0) {
@@ -1590,9 +1555,7 @@ export function useCustomFields(entityType: string) {
           const isPhoneFieldError =
             !isDateField &&
             (field.field_type === "phone" ||
-              field.field_label?.toLowerCase().includes("phone") ||
-              field.field_name === "Field_5" ||
-              field.field_name === "field_5");
+              field.field_label?.toLowerCase().includes("phone"));
           if (isPhoneFieldError && value && String(value).trim() !== "") {
             const trimmed = String(value).trim();
             const digitsOnly = trimmed.replace(/\D/g, "");
@@ -1606,14 +1569,11 @@ export function useCustomFields(entityType: string) {
             }
           }
           
-          // Add specific error message for URL validation failures
-          // Check by both field_type and field_name (Field_4)
+          // Add specific error message for URL validation failures (field_type/label only)
           const isUrlFieldError =
             field.field_type === "url" ||
             field.field_label?.toLowerCase().includes("website") ||
-            field.field_label?.toLowerCase().includes("url") ||
-            field.field_name === "Field_4" || // Organization Website
-            field.field_name === "field_4";
+            field.field_label?.toLowerCase().includes("url");
           if (isUrlFieldError && value && String(value).trim() !== "") {
             const trimmed = String(value).trim();
             const urlPattern = /^(https?:\/\/|www\.).+/i;
