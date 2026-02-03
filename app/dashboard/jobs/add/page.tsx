@@ -1273,6 +1273,16 @@ useEffect(() => {
     router.back();
   };
 
+  const isFormValid = useMemo(() => {
+    const customFieldValidation = validateCustomFields();
+    if (!customFieldValidation.isValid) return false;
+    if (!isEditMode) {
+      if (!hiringManagerCustomField) return false;
+      if (!hiringManagerValue || String(hiringManagerValue).trim() === "") return false;
+    }
+    return true;
+  }, [customFieldValues, isEditMode, hiringManagerCustomField, hiringManagerValue, validateCustomFields]);
+
   // Show landing page for new job creation (show immediately, don't wait for custom fields)
   if (showLandingPage) {
     return (
@@ -2151,8 +2161,8 @@ useEffect(() => {
             )}
           </div>
 
-          {/* Form Buttons */}
-          <div className="flex justify-end space-x-4 mt-8">
+          <div className="h-20" aria-hidden="true" />
+          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
             <button
               type="button"
               onClick={handleGoBack}
@@ -2162,7 +2172,12 @@ useEffect(() => {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              disabled={isSubmitting || !isFormValid}
+              className={`px-4 py-2 rounded ${
+                isSubmitting || !isFormValid
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-blue-500 text-white hover:bg-blue-600"
+              }`}
             >
               {isEditMode ? "Update" : "Save"}
             </button>

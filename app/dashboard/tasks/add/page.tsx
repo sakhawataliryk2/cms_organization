@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -46,6 +46,7 @@ export default function AddTask() {
   const taskId = searchParams.get("id");
   const relatedEntity = searchParams.get("relatedEntity");
   const relatedEntityId = searchParams.get("relatedEntityId");
+  const organizationNameFromUrl = searchParams.get("organizationName");
 
   const [isEditMode, setIsEditMode] = useState(!!taskId);
   const [isLoadingTask, setIsLoadingTask] = useState(!!taskId);
@@ -55,6 +56,7 @@ export default function AddTask() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const hasFetchedRef = useRef(false); // Track if we've already fetched task data
+  const hasPrefilledOrgFromUrlRef = useRef(false); // Prefill Organization from relatedEntityId once
 
   // Use the custom fields hook
   const {
@@ -152,6 +154,69 @@ export default function AddTask() {
       };
     });
   }, [isEditMode, currentUser, customFields, setCustomFieldValues]);
+
+  // Prefill Organization from URL when opened from organization (relatedEntity=organization&relatedEntityId=...)
+  useEffect(() => {
+    if (isEditMode) return;
+    if (relatedEntity !== "organization" || !relatedEntityId) return;
+    if (customFieldsLoading || customFields.length === 0) return;
+    if (hasPrefilledOrgFromUrlRef.current) return;
+
+    // Match Organization field by label (any variant) or by lookup type for organizations
+    const orgField = customFields.find((f: any) => {
+      const label = String(f.field_label || "").toLowerCase();
+      const isOrgLabel =
+        label === "organization" ||
+        label === "organization name" ||
+        label === "company" ||
+        label.includes("organization");
+      const isOrgLookup =
+        String(f.field_type || "").toLowerCase() === "lookup" &&
+        String(f.lookup_type || "").toLowerCase() === "organizations";
+      return isOrgLabel || isOrgLookup;
+    });
+
+    if (!orgField?.field_name) return;
+
+    // LookupField uses <select> with value=option.id, so we must set the organization ID not the name
+    const isLookup = String(orgField.field_type || "").toLowerCase() === "lookup";
+    const valueToSet = isLookup ? String(relatedEntityId) : (organizationNameFromUrl?.trim() || "");
+
+    const applyOrgValue = (val: string) => {
+      if (val === "") return;
+      hasPrefilledOrgFromUrlRef.current = true;
+      setCustomFieldValues((prev) => ({
+        ...prev,
+        [orgField.field_name]: val,
+      }));
+    };
+
+    if (isLookup) {
+      applyOrgValue(valueToSet);
+      return;
+    }
+
+    const nameToSet = organizationNameFromUrl?.trim();
+    if (nameToSet) {
+      applyOrgValue(nameToSet);
+      return;
+    }
+
+    (async () => {
+      try {
+        const response = await fetch(`/api/organizations/${relatedEntityId}`);
+        if (response.ok) {
+          const data = await response.json();
+          const orgName = data.organization?.name || "";
+          if (orgName) {
+            applyOrgValue(orgName);
+          }
+        }
+      } catch (e) {
+        console.error("Error fetching organization for task prefill:", e);
+      }
+    })();
+  }, [isEditMode, relatedEntity, relatedEntityId, organizationNameFromUrl, customFieldsLoading, customFields, setCustomFieldValues]);
 
   // Fetch active users for assignment dropdown
   const fetchActiveUsers = async () => {
@@ -498,6 +563,11 @@ export default function AddTask() {
     router.back();
   };
 
+  const isFormValid = useMemo(() => {
+    const customFieldValidation = validateCustomFields();
+    return customFieldValidation.isValid;
+  }, [customFieldValues, validateCustomFields]);
+
   // Show loading screen when submitting
   if (isSubmitting) {
     return (
@@ -660,12 +730,6 @@ export default function AddTask() {
             {/* Custom Fields Section */}
             {customFields.length > 0 && (
               <>
-                {/* <div className="mt-8 mb-4">
-                                    <h3 className="text-lg font-semibold text-gray-800 border-b pb-2">
-                                        Additional Information
-                                    </h3>
-                                </div> */}
-
                 {customFields.map((field) => {
                   // Don't render hidden fields at all (neither label nor input)
                   if (field.is_hidden) return null;
@@ -750,8 +814,8 @@ export default function AddTask() {
             )}
           </div>
 
-          {/* Form Buttons */}
-          <div className="flex justify-end space-x-4 mt-8">
+          <div className="h-20" aria-hidden="true" />
+          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
             <button
               type="button"
               onClick={handleGoBack}
@@ -761,7 +825,12 @@ export default function AddTask() {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              disabled={isSubmitting || !isFormValid}
+              className={`px-4 py-2 rounded ${
+                isSubmitting || !isFormValid
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-blue-500 text-white hover:bg-blue-600"
+              }`}
             >
               {isEditMode ? "Update" : "Save"}
             </button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -683,6 +683,11 @@ export default function AddLead() {
   const handleGoBack = () => {
     router.back();
   };
+
+  const isFormValid = useMemo(() => {
+    const customFieldValidation = validateCustomFields();
+    return customFieldValidation.isValid;
+  }, [customFieldValues, validateCustomFields]);
 
   // Show loading screen when loading existing lead data or custom fields
   if (isLoading || customFieldsLoading) {
@@ -1726,8 +1731,8 @@ export default function AddLead() {
             </div>
           )}
 
-          {/* Form Buttons */}
-          <div className="flex justify-end space-x-4 mt-8">
+          <div className="h-20" aria-hidden="true" />
+          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
             <button
               type="button"
               onClick={handleGoBack}
@@ -1737,8 +1742,12 @@ export default function AddLead() {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isFormValid}
+              className={`px-4 py-2 rounded ${
+                isSubmitting || !isFormValid
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-blue-500 text-white hover:bg-blue-600"
+              }`}
             >
               {isEditMode ? "Update" : "Save"}
             </button>

@@ -2798,9 +2798,12 @@ export default function OrganizationView() {
     } else if (action === "add-task") {
       // Navigate to add task page with organization context
       if (organizationId) {
-        router.push(
-          `/dashboard/tasks/add?relatedEntity=organization&relatedEntityId=${organizationId}`
-        );
+        const params = new URLSearchParams({
+          relatedEntity: "organization",
+          relatedEntityId: organizationId,
+        });
+        if (organization?.name) params.set("organizationName", organization.name);
+        router.push(`/dashboard/tasks/add?${params.toString()}`);
       }
     } else if (action === "add-hiring-manager") {
       // Navigate to add hiring manager page with organization context

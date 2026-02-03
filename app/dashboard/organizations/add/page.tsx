@@ -1076,6 +1076,61 @@ export default function AddOrganization() {
     router.back();
   };
 
+  // Compute whether all required fields are satisfied (for disabling Update/Save until valid)
+  const isFormValid = useMemo(() => {
+    const customFieldValidation = validateCustomFields();
+    if (!customFieldValidation.isValid) return false;
+
+    // Address required fields
+    if (addressFields.length > 0) {
+      const requiredAddressFields = addressFields.filter((f) => f.is_required);
+      for (const field of requiredAddressFields) {
+        const value = customFieldValues[field.field_name];
+        if (!value || String(value).trim() === "") return false;
+        const isZipCodeField =
+          field.field_label?.toLowerCase().includes("zip") ||
+          field.field_label?.toLowerCase().includes("postal code") ||
+          field.field_name?.toLowerCase().includes("zip") ||
+          field.field_name === "Field_24" ||
+          field.field_name === "field_24";
+        if (isZipCodeField && !/^\d{5}$/.test(String(value).trim())) return false;
+      }
+    }
+
+    // Contract Signed By required when Contract Signed on File is "Yes"
+    const contractSignedOnFileField = customFields.find(
+      (f) =>
+        f.field_name === "Field_8" ||
+        f.field_name === "field_8" ||
+        (f.field_label === "Contract Signed on File" && f.field_name?.toLowerCase().includes("field_8"))
+    );
+    const contractSignedByField = customFields.find(
+      (f) =>
+        f.field_name === "Field_9" ||
+        f.field_name === "field_9" ||
+        (f.field_label === "Contract Signed By" && f.field_name?.toLowerCase().includes("field_9"))
+    );
+    if (contractSignedOnFileField && contractSignedByField) {
+      const contractOnFileValue =
+        customFieldValues[contractSignedOnFileField.field_name] || "";
+      const contractSignedByValue =
+        customFieldValues[contractSignedByField.field_name] || "";
+      if (
+        String(contractOnFileValue).trim() === "Yes" &&
+        (!contractSignedByValue || String(contractSignedByValue).trim() === "")
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  }, [
+    customFieldValues,
+    customFields,
+    addressFields,
+    validateCustomFields,
+  ]);
+
   if (isLoading) {
     return <LoadingScreen message="Loading organization data..." />;
   }
@@ -1886,8 +1941,11 @@ const hasValidValue = () => {
             )}
           </div>
 
-          {/* Form Buttons */}
-          <div className="pt-4 flex justify-end space-x-4">
+          {/* Spacer so content is not hidden behind sticky bar */}
+          <div className="h-20" aria-hidden="true" />
+
+          {/* Form Buttons - sticky bar at bottom */}
+          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
             <button
               type="button"
               onClick={handleGoBack}
@@ -1897,8 +1955,12 @@ const hasValidValue = () => {
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-              disabled={isSubmitting}
+              disabled={isSubmitting || !isFormValid}
+              className={`px-4 py-2 rounded ${
+                isSubmitting || !isFormValid
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-blue-500 text-white hover:bg-blue-600"
+              }`}
             >
               {isEditMode ? "Update" : "Save"}
             </button>

@@ -300,11 +300,13 @@ export default function AddPlacement() {
   const organizationDisplayValue = organizationField ? (customFieldValues[organizationField.field_name] ?? "") : "";
 
   const canSubmit = useMemo(() => {
+    const validation = validateCustomFields();
+    if (!validation.isValid) return false;
     if (!jobField || !candidateField) return true;
     const j = customFieldValues[jobField.field_name];
     const c = customFieldValues[candidateField.field_name];
     return j != null && String(j).trim() !== "" && c != null && String(c).trim() !== "";
-  }, [jobField, candidateField, customFieldValues]);
+  }, [jobField, candidateField, customFieldValues, validateCustomFields]);
 
   if (isLoading) {
     return <LoadingScreen message="Loading placement data..." />;
@@ -439,7 +441,8 @@ export default function AddPlacement() {
             )}
           </div>
 
-          <div className="flex justify-end space-x-4 mt-8 pt-6 border-t">
+          <div className="h-20" aria-hidden="true" />
+          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
             <button
               type="button"
               onClick={handleGoBack}
@@ -449,8 +452,12 @@ export default function AddPlacement() {
             </button>
             <button
               type="submit"
-              className="px-6 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400 disabled:cursor-not-allowed"
               disabled={isSubmitting || !canSubmit}
+              className={`px-6 py-2 rounded ${
+                isSubmitting || !canSubmit
+                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                  : "bg-blue-500 text-white hover:bg-blue-600"
+              }`}
             >
               {isSubmitting
                 ? isEditMode
