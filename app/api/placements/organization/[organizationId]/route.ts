@@ -2,13 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
 type Params = {
-  params: {
-    organizationId: string;
-  };
+  params: Promise<{ organizationId: string }>;
 };
 
 export async function GET(_request: NextRequest, { params }: Params) {
-  const organizationId = params?.organizationId;
+  const { organizationId } = await params;
   if (!organizationId) {
     return NextResponse.json(
       { success: false, message: "Organization ID is required" },
