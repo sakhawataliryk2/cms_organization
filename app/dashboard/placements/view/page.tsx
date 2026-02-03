@@ -10,7 +10,7 @@ import ActionDropdown from "@/components/ActionDropdown";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import LoadingScreen from "@/components/LoadingScreen";
 import { FiBriefcase, FiLock, FiUnlock, FiSearch } from "react-icons/fi";
-import { HiOutlineOfficeBuilding } from "react-icons/hi";
+import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
 import { formatRecordId } from "@/lib/recordIdFormatter";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
@@ -434,6 +434,7 @@ export default function PlacementView() {
     action: "",
     about: "",
     aboutReferences: [] as { id: number | string; type: string; display: string; value: string }[],
+    emailNotification: [] as string[],
   });
   const [validationErrors, setValidationErrors] = useState<{ action?: string; about?: string; text?: string }>({});
   const [aboutSearchQuery, setAboutSearchQuery] = useState("");
@@ -443,6 +444,12 @@ export default function PlacementView() {
   const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
   const [isLoadingAboutSearch, setIsLoadingAboutSearch] = useState(false);
   const aboutInputRef = useRef<HTMLDivElement>(null);
+
+  const [users, setUsers] = useState<any[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [emailSearchQuery, setEmailSearchQuery] = useState("");
+  const [showEmailDropdown, setShowEmailDropdown] = useState(false);
+  const emailInputRef = useRef<HTMLInputElement>(null);
 
   const [documents, setDocuments] = useState<Array<any>>([]);
   const [isLoadingDocuments, setIsLoadingDocuments] = useState(false);
@@ -1466,6 +1473,37 @@ export default function PlacementView() {
     });
   };
 
+  const emailNotificationSuggestions = useMemo(() => {
+    const selected = new Set(noteForm.emailNotification);
+    const q = (emailSearchQuery || "").trim().toLowerCase();
+    if (!q) return users.filter((u) => !selected.has(u.email || u.name));
+    return users.filter((u) => {
+      if (selected.has(u.email || u.name)) return false;
+      const name = (u.name || "").toLowerCase();
+      const email = (u.email || "").toLowerCase();
+      return name.includes(q) || email.includes(q);
+    });
+  }, [users, noteForm.emailNotification, emailSearchQuery]);
+
+  const handleEmailNotificationSelect = (user: any) => {
+    const value = user.email || user.name;
+    if (!value) return;
+    setNoteForm((prev) => {
+      if (prev.emailNotification.includes(value)) return prev;
+      return { ...prev, emailNotification: [...prev.emailNotification, value] };
+    });
+    setEmailSearchQuery("");
+    setShowEmailDropdown(false);
+    if (emailInputRef.current) emailInputRef.current.focus();
+  };
+
+  const removeEmailNotification = (value: string) => {
+    setNoteForm((prev) => ({
+      ...prev,
+      emailNotification: prev.emailNotification.filter((v) => v !== value),
+    }));
+  };
+
   const navigateToReference = (ref: any) => {
     if (!ref || !ref.id) return;
     const refType = (ref.type || "").toLowerCase().replace(/\s+/g, "");
@@ -1486,8 +1524,10 @@ export default function PlacementView() {
   const handleCloseAddNoteModal = () => {
     setShowAddNote(false);
     setAboutSearchQuery("");
-    setValidationErrors({});
     setShowAboutDropdown(false);
+    setEmailSearchQuery("");
+    setShowEmailDropdown(false);
+    setValidationErrors({});
     if (placement && placementId) {
       const defaultRef = {
         id: placement.id,
@@ -1495,9 +1535,9 @@ export default function PlacementView() {
         display: `#${placement.id} ${placement.jobSeekerName || ""} - ${placement.jobTitle || ""}`.trim() || `Placement #${placement.id}`,
         value: `#${placement.id}`,
       };
-      setNoteForm({ text: "", action: "", about: defaultRef.display, aboutReferences: [defaultRef] });
+      setNoteForm({ text: "", action: "", about: defaultRef.display, aboutReferences: [defaultRef], emailNotification: [] });
     } else {
-      setNoteForm({ text: "", action: "", about: "", aboutReferences: [] });
+      setNoteForm({ text: "", action: "", about: "", aboutReferences: [], emailNotification: [] });
     }
   };
 
@@ -1514,6 +1554,54 @@ export default function PlacementView() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        emailInputRef.current &&
+        !emailInputRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest("[data-email-dropdown]")
+      ) {
+        setShowEmailDropdown(false);
+      }
+    };
+    if (showEmailDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showEmailDropdown]);
+
+  const fetchUsers = async () => {
+    setIsLoadingUsers(true);
+    try {
+      const response = await fetch("/api/users/active", {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const internalUsers = (data.users || []).filter((user: any) =>
+          user.user_type === "internal" ||
+          user.role === "admin" ||
+          user.role === "user" ||
+          (!user.user_type && user.email)
+        );
+        setUsers(internalUsers);
+      }
+    } catch (err) {
+      console.error("Error fetching users:", err);
+    } finally {
+      setIsLoadingUsers(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showAddNote) fetchUsers();
+  }, [showAddNote]);
 
   const fetchDocuments = async (id: string) => {
     setIsLoadingDocuments(true);
@@ -2510,6 +2598,7 @@ export default function PlacementView() {
           action: noteForm.action,
           about_references: aboutData.length > 0 ? aboutData : undefined,
           aboutReferences: aboutData.length > 0 ? aboutData : undefined,
+          email_notification: Array.isArray(noteForm.emailNotification) ? noteForm.emailNotification : [],
         }),
       });
 
@@ -2538,8 +2627,11 @@ export default function PlacementView() {
         action: "",
         about: defaultRef ? defaultRef.display : "",
         aboutReferences: defaultRef ? [defaultRef] : [],
+        emailNotification: [],
       });
       setAboutSearchQuery("");
+      setEmailSearchQuery("");
+      setShowEmailDropdown(false);
       setValidationErrors({});
       setShowAddNote(false);
       fetchNotes(placementId);
@@ -3892,6 +3984,101 @@ export default function PlacementView() {
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Email Notification - Search and add (matches About/Reference design) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Email Notification
+                  </label>
+                  <div className="relative" ref={emailInputRef}>
+                    {noteForm.emailNotification.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
+                        {noteForm.emailNotification.map((val) => (
+                          <span
+                            key={val}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
+                          >
+                            <HiOutlineUser className="w-4 h-4 shrink-0" />
+                            {val}
+                            <button
+                              type="button"
+                              onClick={() => removeEmailNotification(val)}
+                              className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
+                              title="Remove"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {noteForm.emailNotification.length > 0 && (
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Add Additional Users</label>
+                    )}
+                    <div className="relative">
+                      {isLoadingUsers ? (
+                        <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                          Loading users...
+                        </div>
+                      ) : (
+                        <input
+                          type="text"
+                          value={emailSearchQuery}
+                          onChange={(e) => {
+                            setEmailSearchQuery(e.target.value);
+                            setShowEmailDropdown(true);
+                          }}
+                          onFocus={() => setShowEmailDropdown(true)}
+                          placeholder={
+                            noteForm.emailNotification.length === 0
+                              ? "Search and add users to notify..."
+                              : "Add another user..."
+                          }
+                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
+                        />
+                      )}
+                      {!isLoadingUsers && (
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
+                          <FiSearch className="w-4 h-4" />
+                        </span>
+                      )}
+                    </div>
+                    {showEmailDropdown && !isLoadingUsers && (
+                      <div
+                        data-email-dropdown
+                        className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
+                      >
+                        {emailNotificationSuggestions.length > 0 ? (
+                          emailNotificationSuggestions.slice(0, 10).map((user, idx) => (
+                            <button
+                              key={user.id ?? idx}
+                              type="button"
+                              onClick={() => handleEmailNotificationSelect(user)}
+                              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
+                            >
+                              <HiOutlineUser className="w-4 h-4 text-gray-500 shrink-0" />
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-gray-900">{user.name || user.email}</div>
+                                {user.email && user.name && (
+                                  <div className="text-xs text-gray-500">{user.email}</div>
+                                )}
+                              </div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="p-3 text-center text-gray-500 text-sm">
+                            {emailSearchQuery.trim().length >= 1
+                              ? "No matching users found"
+                              : "Type to search internal users"}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Only internal system users are available for notification
+                  </p>
                 </div>
               </div>
               <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">

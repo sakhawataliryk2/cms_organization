@@ -57,6 +57,7 @@ export default function AddTask() {
   const [error, setError] = useState<string | null>(null);
   const hasFetchedRef = useRef(false); // Track if we've already fetched task data
   const hasPrefilledOrgFromUrlRef = useRef(false); // Prefill Organization from relatedEntityId once
+  const hasPrefilledRelatedFromUrlRef = useRef<Set<string>>(new Set()); // Prefill Job / Job Seeker / Hiring Manager once per entity type
 
   // Use the custom fields hook
   const {
@@ -217,6 +218,65 @@ export default function AddTask() {
       }
     })();
   }, [isEditMode, relatedEntity, relatedEntityId, organizationNameFromUrl, customFieldsLoading, customFields, setCustomFieldValues]);
+
+  // Prefill Job, Job Seeker, or Hiring Manager from URL (relatedEntity & relatedEntityId)
+  useEffect(() => {
+    if (isEditMode) return;
+    if (!relatedEntity || !relatedEntityId) return;
+    const entity = relatedEntity.toLowerCase();
+    if (!["job", "job_seeker", "hiring_manager", "lead", "placement"].includes(entity)) return;
+    if (customFieldsLoading || customFields.length === 0) return;
+    if (hasPrefilledRelatedFromUrlRef.current.has(entity)) return;
+
+    const isLookup = (f: any) => String(f.field_type || "").toLowerCase() === "lookup";
+    const lookupType = (f: any) => String(f.lookup_type || "").toLowerCase();
+
+    let targetField: any = null;
+    if (entity === "job") {
+      targetField = customFields.find((f: any) => {
+        const label = String(f.field_label || "").toLowerCase();
+        return (
+          (isLookup(f) && lookupType(f) === "jobs") ||
+          (label.includes("job") && !label.includes("seeker"))
+        );
+      });
+    } else if (entity === "job_seeker") {
+      targetField = customFields.find(
+        (f: any) =>
+          (isLookup(f) && lookupType(f) === "job-seekers") ||
+          String(f.field_label || "").toLowerCase().includes("job seeker") ||
+          String(f.field_label || "").toLowerCase().includes("jobseeker")
+      );
+    } else if (entity === "hiring_manager") {
+      targetField = customFields.find(
+        (f: any) =>
+          (isLookup(f) && lookupType(f) === "hiring-managers") ||
+          String(f.field_label || "").toLowerCase().includes("hiring manager")
+      );
+    } else if (entity === "lead") {
+      targetField = customFields.find((f: any) => {
+        const label = String(f.field_label || "").toLowerCase();
+        return (
+          (isLookup(f) && (lookupType(f) === "leads" || lookupType(f) === "lead")) ||
+          (label.includes("lead") && !label.includes("manager"))
+        );
+      });
+    } else if (entity === "placement") {
+      targetField = customFields.find(
+        (f: any) =>
+          (isLookup(f) && lookupType(f) === "placements") ||
+          String(f.field_label || "").toLowerCase().includes("placement")
+      );
+    }
+
+    if (!targetField?.field_name) return;
+
+    hasPrefilledRelatedFromUrlRef.current.add(entity);
+    setCustomFieldValues((prev) => ({
+      ...prev,
+      [targetField.field_name]: String(relatedEntityId),
+    }));
+  }, [isEditMode, relatedEntity, relatedEntityId, customFieldsLoading, customFields, setCustomFieldValues]);
 
   // Fetch active users for assignment dropdown
   const fetchActiveUsers = async () => {

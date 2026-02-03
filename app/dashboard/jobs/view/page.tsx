@@ -7,7 +7,8 @@ import Image from 'next/image';
 import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
-import { FiBriefcase } from "react-icons/fi";
+import { FiBriefcase, FiSearch } from "react-icons/fi";
+import { HiOutlineUser } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 // Drag and drop imports
@@ -1016,6 +1017,11 @@ export default function JobView() {
   const [isLoadingReferences, setIsLoadingReferences] = useState(false);
   const referenceInputRef = useRef<HTMLInputElement>(null);
 
+  // Email notification search state (search-and-add like About/Reference)
+  const [emailSearchQuery, setEmailSearchQuery] = useState("");
+  const [showEmailDropdown, setShowEmailDropdown] = useState(false);
+  const emailInputRef = useRef<HTMLInputElement>(null);
+
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [hiringManagerAvailableFields, setHiringManagerAvailableFields] = useState<any[]>([]);
@@ -1976,6 +1982,24 @@ export default function JobView() {
     }
   }, [showReferenceDropdown]);
 
+  // Close email notification dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        emailInputRef.current &&
+        !emailInputRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest("[data-email-dropdown]")
+      ) {
+        setShowEmailDropdown(false);
+      }
+    };
+
+    if (showEmailDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showEmailDropdown]);
+
   // Fetch users for email notification dropdown - Internal Users Only
   const fetchUsers = async () => {
     setIsLoadingUsers(true);
@@ -2226,6 +2250,38 @@ export default function JobView() {
       newRefs.splice(index, 1);
       return { ...prev, aboutReferences: newRefs };
     });
+  };
+
+  // Filtered users for email notification dropdown (exclude already selected)
+  const emailNotificationSuggestions = useMemo(() => {
+    const selected = new Set(noteForm.emailNotification);
+    const q = (emailSearchQuery || "").trim().toLowerCase();
+    if (!q) return users.filter((u) => !selected.has(u.email || u.name));
+    return users.filter((u) => {
+      if (selected.has(u.email || u.name)) return false;
+      const name = (u.name || "").toLowerCase();
+      const email = (u.email || "").toLowerCase();
+      return name.includes(q) || email.includes(q);
+    });
+  }, [users, noteForm.emailNotification, emailSearchQuery]);
+
+  const handleEmailNotificationSelect = (user: any) => {
+    const value = user.email || user.name;
+    if (!value) return;
+    setNoteForm((prev) => {
+      if (prev.emailNotification.includes(value)) return prev;
+      return { ...prev, emailNotification: [...prev.emailNotification, value] };
+    });
+    setEmailSearchQuery("");
+    setShowEmailDropdown(false);
+    if (emailInputRef.current) emailInputRef.current.focus();
+  };
+
+  const removeEmailNotification = (value: string) => {
+    setNoteForm((prev) => ({
+      ...prev,
+      emailNotification: prev.emailNotification.filter((v) => v !== value),
+    }));
   };
 
   // Fetch available fields from modify page (custom fields)
@@ -2810,6 +2866,8 @@ export default function JobView() {
         scheduleNextAction: "None",
         emailNotification: [],
       });
+      setEmailSearchQuery("");
+      setShowEmailDropdown(false);
       setValidationErrors({});
       fetchNotes(jobId);
       setShowAddNote(false);
@@ -3025,6 +3083,8 @@ export default function JobView() {
       scheduleNextAction: "None",
       emailNotification: [],
     });
+    setEmailSearchQuery("");
+    setShowEmailDropdown(false);
     setValidationErrors({});
   };
 
@@ -5965,83 +6025,97 @@ export default function JobView() {
                   </div>
                 </div>
 
-                {/* Email Notification Section - Multi-select */}
+                {/* Email Notification Section - Search and add (matches About/Reference design) */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center">
-                    <span className="mr-2">📧</span>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
                     Email Notification
                   </label>
-                  <div className="relative">
-                    {isLoadingUsers ? (
-                      <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
-                        Loading users...
-                      </div>
-                    ) : (
-                      <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 max-h-48 overflow-y-auto p-2 bg-white">
-                        {users.length === 0 ? (
-                          <div className="text-gray-500 text-sm p-2 text-center">
-                            No internal users found
-                          </div>
-                        ) : (
-                          <div className="space-y-1">
-                            {users.map((user) => (
-                              <label
-                                key={user.id}
-                                className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={noteForm.emailNotification.includes(user.email || user.name)}
-                                  onChange={() => {
-                                    const value = user.email || user.name;
-                                    setNoteForm((prev) => {
-                                      const current = prev.emailNotification;
-                                      if (current.includes(value)) {
-                                        return {
-                                          ...prev,
-                                          emailNotification: current.filter((v) => v !== value),
-                                        };
-                                      } else {
-                                        return {
-                                          ...prev,
-                                          emailNotification: [...current, value],
-                                        };
-                                      }
-                                    });
-                                  }}
-                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
-                                />
-                                <span className="text-sm text-gray-700">
-                                  {user.name || user.email} {user.email && `(${user.email})`}
-                                </span>
-                              </label>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    )}
+                  <div className="relative" ref={emailInputRef}>
                     {noteForm.emailNotification.length > 0 && (
-                      <div className="mt-2 flex flex-wrap gap-1">
-                        {noteForm.emailNotification.map((val) => (
+                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
+                        {noteForm.emailNotification.map((val, index) => (
                           <span
                             key={val}
-                            className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
                           >
+                            <HiOutlineUser className="w-4 h-4 shrink-0" />
                             {val}
                             <button
                               type="button"
-                              onClick={() => {
-                                setNoteForm((prev) => ({
-                                  ...prev,
-                                  emailNotification: prev.emailNotification.filter((v) => v !== val),
-                                }));
-                              }}
-                              className="ml-1 text-blue-600 hover:text-blue-800"
+                              onClick={() => removeEmailNotification(val)}
+                              className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
+                              title="Remove"
                             >
                               ×
                             </button>
                           </span>
                         ))}
+                      </div>
+                    )}
+                    {noteForm.emailNotification.length > 0 && (
+                      <label className="block text-xs font-medium text-gray-500 mb-1">
+                        Add Additional Users
+                      </label>
+                    )}
+                    <div className="relative">
+                      {isLoadingUsers ? (
+                        <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                          Loading users...
+                        </div>
+                      ) : (
+                        <input
+                          type="text"
+                          value={emailSearchQuery}
+                          onChange={(e) => {
+                            setEmailSearchQuery(e.target.value);
+                            setShowEmailDropdown(true);
+                          }}
+                          onFocus={() => setShowEmailDropdown(true)}
+                          placeholder={
+                            noteForm.emailNotification.length === 0
+                              ? "Search and add users to notify..."
+                              : "Add another user..."
+                          }
+                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
+                        />
+                      )}
+                      {!isLoadingUsers && (
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
+                          <FiSearch className="w-4 h-4" />
+                        </span>
+                      )}
+                    </div>
+                    {showEmailDropdown && !isLoadingUsers && (
+                      <div
+                        data-email-dropdown
+                        className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
+                      >
+                        {emailNotificationSuggestions.length > 0 ? (
+                          emailNotificationSuggestions.slice(0, 10).map((user, idx) => (
+                            <button
+                              key={user.id ?? idx}
+                              type="button"
+                              onClick={() => handleEmailNotificationSelect(user)}
+                              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
+                            >
+                              <HiOutlineUser className="w-4 h-4 text-gray-500 shrink-0" />
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {user.name || user.email}
+                                </div>
+                                {user.email && user.name && (
+                                  <div className="text-xs text-gray-500">{user.email}</div>
+                                )}
+                              </div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="p-3 text-center text-gray-500 text-sm">
+                            {emailSearchQuery.trim().length >= 1
+                              ? "No matching users found"
+                              : "Type to search internal users"}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
