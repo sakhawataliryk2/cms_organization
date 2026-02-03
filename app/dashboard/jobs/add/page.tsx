@@ -307,16 +307,21 @@ export default function AddJob() {
           "$1"
         );
 
-        const orgId = currentOrganizationId || organizationIdFromUrl;
-        const query = orgId ? `?organization_id=${encodeURIComponent(orgId)}` : "";
+        // Fetch ALL hiring managers without organization filter
+        // This makes hiring manager selection completely independent of organizationIdFromUrl
+        // organizationIdFromUrl only auto-fills the organization field, but doesn't affect hiring manager list
+        console.log("Fetching all hiring managers (no organization filter)");
 
-        const response = await fetch(`/api/hiring-managers${query}`, {
+        const response = await fetch(`/api/hiring-managers`, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
         });
 
         if (!response.ok) {
+          console.error("Failed to fetch hiring managers:", response.status, response.statusText);
+          const errorData = await response.json().catch(() => ({}));
+          console.error("Error details:", errorData);
           setHiringManagerOptions([]);
           return;
         }
@@ -343,8 +348,6 @@ export default function AddJob() {
     fetchHiringManagers();
   }, [
     isHiringManagerModalOpen,
-    currentOrganizationId,
-    organizationIdFromUrl,
   ]);
 
   // Sort custom fields by sort_order
@@ -504,6 +507,36 @@ export default function AddJob() {
     fetchOrganizations();
   }, []);
 
+  // Set Field_3 when organizations load if organizationIdFromUrl is present
+  // This is a backup in case organizations load before the API call in prefill effect completes
+  useEffect(() => {
+    if (jobId) return; // don't override edit mode
+    if (!organizationIdFromUrl) return;
+    if (organizations.length === 0) return; // Wait for organizations to load
+    if (customFieldsLoading || customFields.length === 0) return; // Wait for custom fields
+
+    // Find organization by ID
+    const foundOrg = organizations.find(
+      (org) => org.id.toString() === organizationIdFromUrl
+    );
+    
+    if (foundOrg && foundOrg.name) {
+      const orgField = customFields.find((f) => f.field_name === "Field_3");
+      if (orgField) {
+        setCustomFieldValues((prev) => {
+          // Only set if not already set (don't override if already set by prefill effect or user)
+          if (prev[orgField.field_name]) return prev;
+          return {
+            ...prev,
+            Field_3: foundOrg.name,
+          };
+        });
+        setOrganizationName(foundOrg.name);
+        setCurrentOrganizationId(organizationIdFromUrl);
+      }
+    }
+  }, [organizations, organizationIdFromUrl, jobId, customFieldsLoading, customFields, setCustomFieldValues]);
+
   // Auto-populate Field_507 (Account Manager) with logged-in user's name
   useEffect(() => {
     // Wait for customFields to load
@@ -625,10 +658,83 @@ export default function AddJob() {
     if (!organizationIdFromUrl) return;
     if (hasPrefilledOrgRef.current) return;
     if (formFields.length === 0) return;
+    if (customFieldsLoading) return; // Wait for custom fields to load
+    if (customFields.length === 0) return; // Wait for custom fields to be available
 
     hasPrefilledOrgRef.current = true;
-    fetchOrganizationName(organizationIdFromUrl);
-  }, [organizationIdFromUrl, jobId, formFields.length]);
+    // Set currentOrganizationId immediately so hiring manager fetch works
+    setCurrentOrganizationId(organizationIdFromUrl);
+    
+    // Fetch organization name and set both formFields and custom field Field_3
+    const fetchAndSetOrganization = async () => {
+      try {
+        const response = await fetch(`/api/organizations/${organizationIdFromUrl}`);
+        if (response.ok) {
+          const data = await response.json();
+          const orgName = data.organization?.name || "";
+          setOrganizationName(orgName);
+          
+          // Set Field_3 (Organization custom field) if it exists
+          // Use the organization name (which matches the dropdown option values)
+          if (customFields.length > 0 && orgName) {
+            const orgField = customFields.find((f) => f.field_name === "Field_3");
+            if (orgField) {
+              setCustomFieldValues((prev) => {
+                // Only set if not already set (don't override user input)
+                if (prev[orgField.field_name]) return prev;
+                return {
+                  ...prev,
+                  Field_3: orgName,
+                };
+              });
+            }
+          }
+          
+          // Also set the old formFields for backward compatibility
+          setFormFields((prev) =>
+            prev.map((f) =>
+              f.name === "organizationId"
+                ? { ...f, value: orgName || organizationIdFromUrl, locked: true }
+                : f
+            )
+          );
+        } else {
+          // If fetch fails, try to find organization in already-loaded organizations list
+          if (organizations.length > 0) {
+            const foundOrg = organizations.find(
+              (org) => org.id.toString() === organizationIdFromUrl
+            );
+            if (foundOrg && foundOrg.name) {
+              const orgField = customFields.find((f) => f.field_name === "Field_3");
+              if (orgField) {
+                setCustomFieldValues((prev) => {
+                  if (prev[orgField.field_name]) return prev;
+                  return {
+                    ...prev,
+                    Field_3: foundOrg.name,
+                  };
+                });
+              }
+              setOrganizationName(foundOrg.name);
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching organization:", error);
+        // Still set the organizationId even if fetch fails
+        setCurrentOrganizationId(organizationIdFromUrl);
+        setFormFields((prev) =>
+          prev.map((f) =>
+            f.name === "organizationId"
+              ? { ...f, value: organizationIdFromUrl, locked: true }
+              : f
+          )
+        );
+      }
+    };
+    
+    fetchAndSetOrganization();
+  }, [organizationIdFromUrl, jobId, formFields.length, customFieldsLoading, customFields, organizations, setCustomFieldValues]);
 
   // Prefill from lead when coming via Leads -> Convert (create mode only)
   useEffect(() => {

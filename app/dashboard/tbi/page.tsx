@@ -13,13 +13,15 @@ import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { TbGripVertical } from "react-icons/tb";
+import { TbGripVertical, TbBinoculars } from "react-icons/tb";
+import OrganizationDetailPanel from "./OrganizationDetailPanel";
 
 // Excel-like grid: fixed dimensions
 const ROW_LABEL_WIDTH = 190;
 const HEADER_HEIGHT = 44;
 const CELL_WIDTH = 135;
 const ROW_HEIGHT = 40;
+const ACTIONS_CELL_WIDTH = 44;
 
 const availableHeight = typeof window !== "undefined" ? window.innerHeight - HEADER_HEIGHT * 4.5 : 400;
 const DATA_ROW_COUNT = Math.max(5, Math.floor(availableHeight / ROW_HEIGHT));
@@ -176,6 +178,7 @@ export default function TbiPage() {
   const [tbiOrgsError, setTbiOrgsError] = useState<string | null>(null);
 
   const [tbiOrganizationsCache, setTbiOrganizationsCache] = useState<OrganizationRecord[] | null>(null);
+  const [detailOrganization, setDetailOrganization] = useState<OrganizationRecord | null>(null);
 
   useEffect(() => {
     if (selectedRow !== "Organization") {
@@ -365,7 +368,7 @@ export default function TbiPage() {
                 key={rowLabel}
                 type="button"
                 onClick={() => handleRowClick(rowLabel)}
-                className={`shrink-0 px-3 py-2 border-b border-black flex items-center justify-center font-medium text-sm cursor-pointer transition-colors shadow-sm text-center ${isSelected ? "bg-teal-600 text-white" : "bg-teal-500 text-white hover:bg-teal-600"
+                className={`shrink-0 px-3 py-2 border-b border-black flex items-center justify-center font-medium text-sm cursor-pointer transition-colors shadow-sm text-center ${isSelected ? "bg-green-600 text-white" : "bg-green-500 text-white hover:bg-green-600"
                   }`}
                 style={{ height: ROW_HEIGHT }}
               >
@@ -390,6 +393,13 @@ export default function TbiPage() {
                 <div className="flex sticky top-0 z-20">
                   <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: HEADER_HEIGHT }}>
                     #
+                  </div>
+                  <div
+                    className="shrink-0 bg-teal-500 text-white px-2 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm shadow-sm"
+                    style={{ width: ACTIONS_CELL_WIDTH, minWidth: ACTIONS_CELL_WIDTH, height: HEADER_HEIGHT }}
+                    title="View details"
+                  >
+                    <TbBinoculars size={20} />
                   </div>
                   {columnHeaders.map((header, index) => (
                     <SortableHeaderCell
@@ -424,6 +434,27 @@ export default function TbiPage() {
                   <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: ROW_HEIGHT }}>
                     {rowIndex + 1}
                   </div>
+                  <div
+                    className="shrink-0 border-r border-b border-gray-400 flex items-center justify-center bg-gray-50"
+                    style={{ width: ACTIONS_CELL_WIDTH, minWidth: ACTIONS_CELL_WIDTH, height: ROW_HEIGHT }}
+                  >
+                    {selectedRow === "Organization" && org ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDetailOrganization(org);
+                        }}
+                        className="p-1.5 rounded text-gray-600 hover:bg-teal-100 hover:text-teal-700 transition-colors"
+                        title="View details"
+                        aria-label="View organization details"
+                      >
+                        <TbBinoculars size={20} />
+                      </button>
+                    ) : (
+                      <span className="text-gray-300" aria-hidden><TbBinoculars size={20} /></span>
+                    )}
+                  </div>
                   {columnHeaders.map((header, colIndex) => {
                     const cellValue = org ? getOrgCellValue(org, header) : "";
                     return (
@@ -449,6 +480,16 @@ export default function TbiPage() {
           </div>
         </div>
       </div>
+
+      {/* Organization detail panel – slide-over from right */}
+      {detailOrganization && (
+        <OrganizationDetailPanel
+          organization={detailOrganization}
+          onClose={() => setDetailOrganization(null)}
+          onSave={() => {}}
+          onDelete={() => {}}
+        />
+      )}
 
       {/* Columns modal – select which columns to show; layout saved to localStorage */}
       {showColumnsMenu && (
