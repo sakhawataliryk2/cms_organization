@@ -1499,16 +1499,14 @@ export default function LeadView() {
 
       const data = await response.json();
 
-      // Add the new document to the list
-      setDocuments([data.document, ...documents]);
-
-      // Clear the form
+      // Clear the form and close modal
       setNewDocumentName("");
       setNewDocumentType("General");
       setNewDocumentContent("");
       setShowAddDocument(false);
 
-      // Show success message
+      // Refresh docs list from server and show success
+      await fetchDocuments(leadId);
       toast.success("Document added successfully");
     } catch (err) {
       console.error("Error adding document:", err);
@@ -1711,7 +1709,9 @@ export default function LeadView() {
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
             const data = JSON.parse(xhr.responseText);
-            if (data.document) setDocuments((prev) => [data.document, ...prev]);
+            if (data.document) {
+              fetchDocuments(leadId).then(() => toast.success("Document added successfully"));
+            }
           } catch (_) {}
         } else {
           try {

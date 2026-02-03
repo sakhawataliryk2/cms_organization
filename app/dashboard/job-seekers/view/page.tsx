@@ -2103,7 +2103,8 @@ Best regards`;
             delete next[file.name];
             return next;
           });
-          fetchDocuments(jobSeekerId);
+          await fetchDocuments(jobSeekerId);
+          toast.success("Document added successfully");
         } else {
           const data = await response.json();
           setUploadErrors((prev) => ({
@@ -2288,7 +2289,7 @@ Best regards`;
       setNewDocumentName("");
       setNewDocumentType("General");
       setNewDocumentContent("");
-      fetchDocuments(jobSeekerId);
+      await fetchDocuments(jobSeekerId);
       toast.success("Document added successfully");
     } catch (err) {
       console.error("Error adding document:", err);

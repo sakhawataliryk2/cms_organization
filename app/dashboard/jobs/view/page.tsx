@@ -784,13 +784,12 @@ export default function JobView() {
 
       xhr.addEventListener("load", () => {
         if (xhr.status === 200 || xhr.status === 201) {
-          const data = JSON.parse(xhr.responseText);
-          setDocuments((prev) => [data.document, ...prev]);
           setUploadProgress((prev) => {
             const newProgress = { ...prev };
             delete newProgress[fileName];
             return newProgress;
           });
+          fetchDocuments(jobId).then(() => toast.success("Document added successfully"));
         } else {
           const errorData = JSON.parse(xhr.responseText);
           setUploadErrors((prev) => ({
@@ -863,7 +862,8 @@ export default function JobView() {
         setNewDocumentName("");
         setNewDocumentType("General");
         setNewDocumentContent("");
-        fetchDocuments(jobId);
+        await fetchDocuments(jobId);
+        toast.success("Document added successfully");
       } else {
         const data = await response.json();
         toast.error(data.message || "Failed to add document");

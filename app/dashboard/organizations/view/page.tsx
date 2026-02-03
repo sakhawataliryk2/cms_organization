@@ -2051,15 +2051,15 @@ export default function OrganizationView() {
       // Handle completion
       xhr.addEventListener("load", () => {
         if (xhr.status === 200 || xhr.status === 201) {
-          const data = JSON.parse(xhr.responseText);
-          setDocuments((prev) => [data.document, ...prev]);
           setUploadProgress((prev) => {
             const newProgress = { ...prev };
             delete newProgress[fileName];
             return newProgress;
           });
-          // Refresh summary counts after upload
-          fetchSummaryCounts();
+          fetchDocuments(organizationId).then(() => {
+            toast.success("Document added successfully");
+            fetchSummaryCounts();
+          });
         } else {
           const errorData = JSON.parse(xhr.responseText);
           setUploadErrors((prev) => ({
@@ -2135,17 +2135,16 @@ export default function OrganizationView() {
       }
 
       const data = await response.json();
-      toast.success('Document added successfully');
-      fetchDocuments(organizationId);
 
-      // Add the new document to the list
-      setDocuments([data.document, ...documents]);
-
-      // Clear the form
+      // Clear the form and close modal
       setNewDocumentName("");
       setNewDocumentType("General");
       setNewDocumentContent("");
       setShowAddDocument(false);
+
+      // Refresh docs list from server and show success
+      await fetchDocuments(organizationId);
+      toast.success('Document added successfully');
       fetchSummaryCounts();
     } catch (err) {
       console.error('Error adding document:', err);

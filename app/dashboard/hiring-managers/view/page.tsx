@@ -2341,8 +2341,8 @@ export default function HiringManagerView() {
             delete next[file.name];
             return next;
           });
-          // Refresh document list
-          fetchDocuments(hiringManagerId);
+          await fetchDocuments(hiringManagerId);
+          toast.success("Document added successfully");
         } else {
           const data = await response.json();
           setUploadErrors(prev => ({
@@ -2396,7 +2396,8 @@ export default function HiringManagerView() {
         setNewDocumentName("");
         setNewDocumentType("General");
         setNewDocumentContent("");
-        fetchDocuments(hiringManagerId);
+        await fetchDocuments(hiringManagerId);
+        toast.success("Document added successfully");
       } else {
         const data = await response.json();
         toast.error(data.message || "Failed to add document");

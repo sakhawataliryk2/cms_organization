@@ -1659,7 +1659,8 @@ export default function PlacementView() {
             delete next[file.name];
             return next;
           });
-          fetchDocuments(placementId);
+          await fetchDocuments(placementId);
+          toast.success("Document added successfully");
         } else {
           const data = await response.json();
           setUploadErrors((prev) => ({
@@ -1712,7 +1713,8 @@ export default function PlacementView() {
         setNewDocumentName("");
         setNewDocumentType("General");
         setNewDocumentContent("");
-        fetchDocuments(placementId);
+        await fetchDocuments(placementId);
+        toast.success("Document added successfully");
       } else {
         const data = await response.json();
         toast.error(data.message || "Failed to add document");
