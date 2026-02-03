@@ -46,6 +46,7 @@ type TearsheetRow = {
   job_order_count: number;
   lead_count: number;
   organization_count?: number;
+  placement_count?: number;
   owner_name?: string | null;
   created_at?: string | null;
   last_opened_at?: string | null;
@@ -242,6 +243,7 @@ const TEARSHEET_DEFAULT_COLUMNS = [
   "job_order_count",
   "lead_count",
   "organization_count",
+  "placement_count",
   "owner_name",
   "created_at",
   "last_opened_at",
@@ -253,6 +255,12 @@ type RecordItem = {
   email?: string;
   company?: string;
   type: string;
+  organization?: string;
+  organization_name?: string;
+  organization_id?: string;
+  placement?: string;
+  placement_name?: string;
+  placement_id?: string;
 };
 
 type User = {
@@ -293,6 +301,33 @@ const TearsheetsPage = () => {
     records: RecordItem[];
   } | null>(null);
   const [isLoadingRecords, setIsLoadingRecords] = useState(false);
+
+  // Linked Organizations modal
+  const [linkedOrgsModal, setLinkedOrgsModal] = useState<{
+    tearsheetId: number;
+    tearsheetName: string;
+    organizations: { id: number; name: string }[];
+  } | null>(null);
+  const [isLoadingLinkedOrgs, setIsLoadingLinkedOrgs] = useState(false);
+
+  // Linked Placements modal
+  const [linkedPlacementsModal, setLinkedPlacementsModal] = useState<{
+    tearsheetId: number;
+    tearsheetName: string;
+    placements: Array<{
+      id: number;
+      job_id: number;
+      job_seeker_id: number;
+      status: string;
+      start_date: string;
+      js_first_name?: string;
+      js_last_name?: string;
+      js_email?: string;
+      job_title?: string;
+      organization_name?: string;
+    }>;
+  } | null>(null);
+  const [isLoadingLinkedPlacements, setIsLoadingLinkedPlacements] = useState(false);
 
   // Actions modal state
   const [selectedTearsheetForAction, setSelectedTearsheetForAction] = useState<TearsheetRow | null>(null);
@@ -422,6 +457,7 @@ const TearsheetsPage = () => {
       { key: "job_order_count", label: "Job Order", sortable: true, filterType: "number" as const },
       { key: "lead_count", label: "Lead", sortable: true, filterType: "number" as const },
       { key: "organization_count", label: "Organization", sortable: true, filterType: "number" as const },
+      { key: "placement_count", label: "Placement", sortable: true, filterType: "number" as const },
       { key: "owner_name", label: "Owner", sortable: true, filterType: "text" as const },
       { key: "created_at", label: "Date Added", sortable: true, filterType: "text" as const },
       { key: "last_opened_at", label: "Last Date Opened", sortable: true, filterType: "text" as const },
@@ -470,6 +506,7 @@ const TearsheetsPage = () => {
       case "job_order_count": return row.job_order_count;
       case "lead_count": return row.lead_count;
       case "organization_count": return row.organization_count ?? 0;
+      case "placement_count": return row.placement_count ?? 0;
       case "owner_name": return row.owner_name || "-";
       case "created_at": return row.created_at; // Keep raw for sorting
       case "last_opened_at": return row.last_opened_at; // Keep raw for sorting
@@ -548,8 +585,24 @@ const TearsheetsPage = () => {
         );
       case "organization_count":
         return (
-          <span className="text-gray-700">{r.organization_count ?? 0}</span>
+          <button
+            onClick={() => handleLinkedOrgsClick(r.id, r.name, r.organization_count ?? 0)}
+            className={`${(r.organization_count ?? 0) > 0 ? "text-blue-600 hover:text-blue-800 underline cursor-pointer" : "text-gray-700 cursor-default"}`}
+            disabled={(r.organization_count ?? 0) === 0}
+          >
+            {r.organization_count ?? 0}
+          </button>
         );
+      case "placement_count":
+        return (
+          <button
+            onClick={() => handleLinkedPlacementsClick(r.id, r.name, r.placement_count ?? 0)}
+            className={`${(r.placement_count ?? 0) > 0 ? "text-blue-600 hover:text-blue-800 underline cursor-pointer" : "text-gray-700"}`}
+            disabled={(r.placement_count ?? 0) === 0}
+          >
+            {r.placement_count ?? 0}
+          </button>
+          );
       case "owner_name":
         return <span className="text-gray-700">{r.owner_name || "-"}</span>;
       case "created_at":
@@ -827,6 +880,60 @@ const TearsheetsPage = () => {
       'leads': 'Leads'
     };
     return labels[type] || type;
+  };
+
+  const handleLinkedOrgsClick = async (tearsheetId: number, tearsheetName: string, _count: number) => {
+    if (_count === 0) return;
+    setLinkedOrgsModal({ tearsheetId, tearsheetName, organizations: [] });
+    setIsLoadingLinkedOrgs(true);
+    try {
+      const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+      const res = await fetch(`/api/tearsheets/${tearsheetId}/organizations`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      let data: { organizations?: { id: number; name: string }[] } = {};
+      try {
+        data = await res.json();
+      } catch {
+        // non-JSON response (e.g. HTML error page)
+      }
+      if (res.ok && Array.isArray(data.organizations)) {
+        setLinkedOrgsModal({ tearsheetId, tearsheetName, organizations: data.organizations });
+      } else {
+        setLinkedOrgsModal((prev) => prev ? { ...prev, organizations: [] } : null);
+      }
+    } catch (err) {
+      setLinkedOrgsModal((prev) => prev ? { ...prev, organizations: [] } : null);
+    } finally {
+      setIsLoadingLinkedOrgs(false);
+    }
+  };
+
+  const handleLinkedPlacementsClick = async (tearsheetId: number, tearsheetName: string, _count: number) => {
+    if (_count === 0) return;
+    setLinkedPlacementsModal({ tearsheetId, tearsheetName, placements: [] });
+    setIsLoadingLinkedPlacements(true);
+    try {
+      const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+      const res = await fetch(`/api/tearsheets/${tearsheetId}/placements`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      let data: { placements?: any[] } = {};
+      try {
+        data = await res.json();
+      } catch {
+        // non-JSON response
+      }
+      if (res.ok && Array.isArray(data.placements)) {
+        setLinkedPlacementsModal({ tearsheetId, tearsheetName, placements: data.placements });
+      } else {
+        setLinkedPlacementsModal((prev) => prev ? { ...prev, placements: [] } : null);
+      }
+    } catch {
+      setLinkedPlacementsModal((prev) => prev ? { ...prev, placements: [] } : null);
+    } finally {
+      setIsLoadingLinkedPlacements(false);
+    }
   };
 
   const handleSendInternally = () => {
@@ -1510,7 +1617,7 @@ const TearsheetsPage = () => {
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                         <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Company</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Organization</th>
                       </tr>
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
@@ -1523,8 +1630,8 @@ const TearsheetsPage = () => {
                           <td className="px-4 py-3 text-sm text-gray-600">{getTypeLabel(record.type)}</td>
                           <td className="px-4 py-3 text-sm font-medium text-gray-900">{record.name}</td>
                           <td className="px-4 py-3 text-sm text-gray-600">{record.email || "-"}</td>
-                          <td className="px-4 py-3 text-sm text-gray-600">{record.company || "-"}</td>
-                        </tr>
+                          <td className="px-4 py-3 text-sm text-gray-600">{record.organization || record.organization_name || record.organization_id || "-"}</td>
+                          </tr>
                       ))}
                     </tbody>
                   </table>
@@ -1539,6 +1646,140 @@ const TearsheetsPage = () => {
               <div className="p-6 border-t border-gray-200">
                 <button
                   onClick={handleCloseModal}
+                  className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Linked Organizations Modal */}
+        {linkedOrgsModal && (
+          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[80vh] flex flex-col">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Linked Organizations in &quot;{linkedOrgsModal.tearsheetName}&quot;
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {linkedOrgsModal.organizations.length} organization(s)
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setLinkedOrgsModal(null)}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    <FiX size={24} />
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6">
+                {isLoadingLinkedOrgs ? (
+                  <div className="text-center py-8 text-gray-500">Loading organizations...</div>
+                ) : linkedOrgsModal.organizations.length > 0 ? (
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Organization</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {linkedOrgsModal.organizations.map((org) => (
+                        <tr
+                          key={org.id}
+                          className="hover:bg-gray-50 cursor-pointer"
+                          onClick={() => router.push(`/dashboard/organizations/view?id=${org.id}`)}
+                        >
+                          <td className="px-4 py-3 text-sm font-medium text-blue-600 hover:text-blue-800 underline">
+                            {org.name || `Organization ${org.id}`}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">No linked organizations</div>
+                )}
+              </div>
+              <div className="p-6 border-t border-gray-200">
+                <button
+                  onClick={() => setLinkedOrgsModal(null)}
+                  className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Linked Placements Modal */}
+        {linkedPlacementsModal && (
+          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] flex flex-col">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">
+                      Linked Placements in &quot;{linkedPlacementsModal.tearsheetName}&quot;
+                    </h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                      {linkedPlacementsModal.placements.length} placement(s)
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setLinkedPlacementsModal(null)}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    <FiX size={24} />
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-6">
+                {isLoadingLinkedPlacements ? (
+                  <div className="text-center py-8 text-gray-500">Loading placements...</div>
+                ) : linkedPlacementsModal.placements.length > 0 ? (
+                  <table className="min-w-full divide-y divide-gray-200">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job Seeker</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Job</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Organization</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
+                        <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Start Date</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {linkedPlacementsModal.placements.map((p) => (
+                        <tr
+                          key={p.id}
+                          className="hover:bg-gray-50 cursor-pointer"
+                          onClick={() => router.push(`/dashboard/placements/view?id=${p.id}`)}
+                        >
+                          <td className="px-4 py-3 text-sm text-gray-900">
+                            {[p.js_first_name, p.js_last_name].filter(Boolean).join(" ") || p.job_seeker_id}
+                          </td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{p.job_title || p.job_id}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{p.organization_name || "-"}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">{p.status || "-"}</td>
+                          <td className="px-4 py-3 text-sm text-gray-600">
+                            {p.start_date ? formatDate(p.start_date) : "-"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <div className="text-center py-8 text-gray-500">No linked placements</div>
+                )}
+              </div>
+              <div className="p-6 border-t border-gray-200">
+                <button
+                  onClick={() => setLinkedPlacementsModal(null)}
                   className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium"
                 >
                   Close
