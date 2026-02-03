@@ -279,7 +279,7 @@ export default function EmailManagementSectionPage() {
       template_name: "",
       subject: "",
       body: "",
-      type: sectionTypes[0] || "",
+      type: availableTypes[0] || sectionTypes[0] || "",
     });
     setShowModal(true);
   };
@@ -319,6 +319,12 @@ export default function EmailManagementSectionPage() {
     }));
   };
 
+  const usedTypes = useMemo(() => templates.map((t) => t.type), [templates]);
+  const availableTypes = useMemo(
+    () => sectionTypes.filter((t) => !usedTypes.includes(t)),
+    [sectionTypes, usedTypes]
+  );
+
   const required = config?.required?.[formData.type] || [];
   const placeholders = config?.placeholders?.[formData.type] || [];
   const missing = useMemo(() => {
@@ -339,6 +345,10 @@ export default function EmailManagementSectionPage() {
         : "/api/admin/email-management";
       const method = editingTemplate ? "PUT" : "POST";
       const data = await apiRequest(url, method, formData);
+      if (!data.success && data.message) {
+        alert(data.message);
+        return;
+      }
       setTemplates((prev) =>
         editingTemplate
           ? prev.map((t) => (t.id === data.template.id ? data.template : t))
@@ -383,13 +393,22 @@ export default function EmailManagementSectionPage() {
         <p className="text-gray-600 text-sm">
           Use <code className="bg-gray-300 px-1 rounded">{`{{approvalUrl}}`}</code> and{" "}
           <code className="bg-gray-300 px-1 rounded">{`{{denyUrl}}`}</code> anywhere in the body—they render as full Approve/Deny buttons.
+          {sectionTypes.length > 0 && (
+            <span className="block mt-1">
+              One template per type (e.g. one Delete Request, one Transfer Request per section).
+            </span>
+          )}
         </p>
-        <button
-          className="bg-blue-600 text-white px-5 py-2 rounded-lg shadow hover:bg-blue-700 transition"
-          onClick={openCreate}
-        >
-          Create New Template
-        </button>
+        {availableTypes.length > 0 ? (
+          <button
+            className="bg-blue-600 text-white px-5 py-2 rounded-lg shadow hover:bg-blue-700 transition"
+            onClick={openCreate}
+          >
+            Create New Template
+          </button>
+        ) : (
+          <span className="text-sm text-gray-500">All types in this section have a template. Edit existing to change.</span>
+        )}
       </div>
 
       <table className="min-w-full table-auto border-collapse border border-gray-300 shadow-sm rounded-lg overflow-hidden bg-white">
@@ -473,16 +492,20 @@ export default function EmailManagementSectionPage() {
             <div className="mb-5">
               <label className="block text-sm font-medium mb-2 text-gray-700">Type</label>
               <select
-                className="p-3 border rounded w-full focus:ring-2 focus:ring-blue-500 outline-none"
+                className="p-3 border rounded w-full focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:cursor-not-allowed"
                 value={formData.type}
                 onChange={(e) => setFormData((p) => ({ ...p, type: e.target.value }))}
+                disabled={!!editingTemplate}
               >
-                {config.types.map((o) => (
+                {(editingTemplate ? config.types : config.types.filter((o) => availableTypes.includes(o.value))).map((o) => (
                   <option key={o.value} value={o.value}>
                     {o.label}
                   </option>
                 ))}
               </select>
+              {editingTemplate && (
+                <p className="mt-1 text-xs text-gray-500">Type cannot be changed; one template per type.</p>
+              )}
               {(formData.type.includes("DELETE_REQUEST") || formData.type.includes("TRANSFER_REQUEST")) && (
                 <div className="mt-2 text-xs text-gray-600">
                   Use <strong>{`{{approvalUrl}}`}</strong> and <strong>{`{{denyUrl}}`}</strong> anywhere in the body—they render as full Approve/Deny buttons. In the subject they remain plain URLs.
