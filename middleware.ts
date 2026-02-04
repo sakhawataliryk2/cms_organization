@@ -7,17 +7,25 @@ export async function middleware(request: NextRequest) {
   // Get the pathname of the request
   const path = request.nextUrl.pathname;
 
-  //job seeker portal logins
-   if (path.startsWith("/job-seeker-portal")) {
+  // Skip middleware for job seeker portal
+  if (path.startsWith("/job-seeker-portal")) {
     return NextResponse.next();
   }
+
+  // Skip middleware for ALL API routes - they handle their own authentication
+  if (path.startsWith("/api/")) {
+    return NextResponse.next();
+  }
+
   // Define public paths that don't require authentication
   const isPublicPath =
     path === "/auth/login" ||
     path === "/auth/signup" ||
     path === "/" ||
-    path.startsWith("/api/auth/") ||
-    path === "/api/check-token";
+    path.startsWith("/_next") ||
+    path.startsWith("/images") ||
+    path.startsWith("/public") ||
+    path === "/favicon.ico";
 
   // Get the token from cookies
   const token = request.cookies.get("token")?.value;
@@ -50,8 +58,11 @@ export async function middleware(request: NextRequest) {
         await jwtVerify(token, secretKey);
         // Token is valid, continue to the requested page
         return NextResponse.next();
-      } catch (jwtError) {
-        console.error("JWT verification error in middleware:", jwtError);
+      } catch (jwtError: any) {
+        // Only log and redirect if it's a real error, not just token expiration warnings
+        if (jwtError.code !== "ERR_JWT_EXPIRED" && jwtError.name !== "JWTExpired") {
+          console.error("JWT verification error in middleware:", jwtError.name, jwtError.message);
+        }
 
         // Clear invalid cookies and redirect to login
         const response = NextResponse.redirect(
@@ -62,9 +73,9 @@ export async function middleware(request: NextRequest) {
 
         return response;
       }
-    } catch (error) {
+    } catch (error: any) {
       // Token is invalid, redirect to login
-      console.error("Invalid token or other error:", error);
+      console.error("Invalid token or other error:", error?.name || error?.message || error);
 
       // Clear invalid cookies
       const response = NextResponse.redirect(
@@ -84,7 +95,7 @@ export async function middleware(request: NextRequest) {
 // Configure which paths should trigger this middleware
 export const config = {
   matcher: [
-    // Match all paths except for static files, api routes that don't need auth, etc.
-    "/((?!_next/static|_next/image|favicon.ico|images|public).*)",
+    // Match all paths except for static files, api routes, images, etc.
+    "/((?!_next/static|_next/image|favicon.ico|images|public|api).*)",
   ],
 };

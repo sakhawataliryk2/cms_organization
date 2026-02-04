@@ -891,7 +891,7 @@ const TearsheetsPage = () => {
       const res = await fetch(`/api/tearsheets/${tearsheetId}/organizations`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      let data: { organizations?: { id: number; name: string }[] } = {};
+      let data: { success?: boolean; organizations?: { id: number; name: string }[] } = {};
       try {
         data = await res.json();
       } catch {
@@ -900,6 +900,10 @@ const TearsheetsPage = () => {
       if (res.ok && Array.isArray(data.organizations)) {
         setLinkedOrgsModal({ tearsheetId, tearsheetName, organizations: data.organizations });
       } else {
+        // Show error message if organizations array is empty but count was > 0
+        if (_count > 0 && (!data.organizations || data.organizations.length === 0)) {
+          console.error("Organizations count mismatch:", { _count, organizations: data.organizations });
+        }
         setLinkedOrgsModal((prev) => prev ? { ...prev, organizations: [] } : null);
       }
     } catch (err) {

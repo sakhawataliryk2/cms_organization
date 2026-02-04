@@ -546,6 +546,7 @@ export default function OrganizationView() {
     selectedTearsheetId: "",
   });
   const [existingTearsheets, setExistingTearsheets] = useState<any[]>([]);
+  const [linkedTearsheets, setLinkedTearsheets] = useState<number[]>([]);
   const [isLoadingTearsheets, setIsLoadingTearsheets] = useState(false);
   const [isSavingTearsheet, setIsSavingTearsheet] = useState(false);
   const [tearsheetSearchQuery, setTearsheetSearchQuery] = useState("");
@@ -3671,13 +3672,17 @@ export default function OrganizationView() {
   const fetchExistingTearsheets = async () => {
     setIsLoadingTearsheets(true);
     try {
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      const authHeaders = {
+        Authorization: `Bearer ${token}`,
+      };
+
+      // Fetch all tearsheets
       const response = await fetch("/api/tearsheets", {
-        headers: {
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
+        headers: authHeaders,
       });
 
       if (response.ok) {
@@ -3686,6 +3691,23 @@ export default function OrganizationView() {
       } else {
         console.error("Failed to fetch tearsheets:", response.statusText);
         setExistingTearsheets([]);
+      }
+
+      // Fetch linked tearsheets for this organization
+      if (organizationId) {
+        try {
+          const linkedResponse = await fetch(`/api/tearsheets/organization/${organizationId}`, {
+            headers: authHeaders,
+          });
+          if (linkedResponse.ok) {
+            const linkedData = await linkedResponse.json();
+            const linkedIds = (linkedData.tearsheets || []).map((ts: any) => ts.id);
+            setLinkedTearsheets(linkedIds);
+          }
+        } catch (err) {
+          console.error("Error fetching linked tearsheets:", err);
+          setLinkedTearsheets([]);
+        }
       }
     } catch (err) {
       console.error("Error fetching tearsheets:", err);
@@ -3974,6 +3996,25 @@ export default function OrganizationView() {
         setShowAddTearsheetModal(false);
         setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
         setTearsheetSearchQuery("");
+        // Refresh linked tearsheets
+        if (organizationId) {
+          const token = document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          );
+          try {
+            const linkedResponse = await fetch(`/api/tearsheets/organization/${organizationId}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (linkedResponse.ok) {
+              const linkedData = await linkedResponse.json();
+              const linkedIds = (linkedData.tearsheets || []).map((ts: any) => ts.id);
+              setLinkedTearsheets(linkedIds);
+            }
+          } catch (err) {
+            console.error("Error refreshing linked tearsheets:", err);
+          }
+        }
       } catch (err) {
         console.error("Error creating tearsheet:", err);
         toast.error(
@@ -4030,6 +4071,25 @@ export default function OrganizationView() {
         setShowAddTearsheetModal(false);
         setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
         setTearsheetSearchQuery("");
+        // Refresh linked tearsheets
+        if (organizationId) {
+          const token = document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          );
+          try {
+            const linkedResponse = await fetch(`/api/tearsheets/organization/${organizationId}`, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (linkedResponse.ok) {
+              const linkedData = await linkedResponse.json();
+              const linkedIds = (linkedData.tearsheets || []).map((ts: any) => ts.id);
+              setLinkedTearsheets(linkedIds);
+            }
+          } catch (err) {
+            console.error("Error refreshing linked tearsheets:", err);
+          }
+        }
       } catch (err) {
         console.error("Error associating tearsheet:", err);
         toast.error(
@@ -6614,18 +6674,30 @@ export default function OrganizationView() {
                       {showTearsheetDropdown && (tearsheetSearchQuery || existingTearsheets.length > 0) && (
                         <div className="absolute z-[60] w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
                           {filteredTearsheets.length > 0 ? (
-                            filteredTearsheets.map((ts: any) => (
-                              <button
-                                key={ts.id}
-                                onClick={() => handleTearsheetSelect(ts)}
-                                className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex flex-col"
-                              >
-                                <span className="text-sm font-medium text-gray-900">{ts.name}</span>
-                                {ts.owner_name && (
-                                  <span className="text-xs text-gray-500">Owner: {ts.owner_name}</span>
-                                )}
-                              </button>
-                            ))
+                            filteredTearsheets.map((ts: any) => {
+                              const isLinked = linkedTearsheets.includes(ts.id);
+                              return (
+                                <button
+                                  key={ts.id}
+                                  onClick={() => handleTearsheetSelect(ts)}
+                                  className={`w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex flex-col ${
+                                    isLinked ? "bg-green-50" : ""
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-sm font-medium text-gray-900">{ts.name}</span>
+                                    {isLinked && (
+                                      <span className="text-xs px-2 py-0.5 bg-green-100 text-green-800 rounded font-medium">
+                                        Linked
+                                      </span>
+                                    )}
+                                  </div>
+                                  {ts.owner_name && (
+                                    <span className="text-xs text-gray-500">Owner: {ts.owner_name}</span>
+                                  )}
+                                </button>
+                              );
+                            })
                           ) : (
                             <div className="p-3 text-center text-gray-500 text-sm">
                               No matching tearsheets found
