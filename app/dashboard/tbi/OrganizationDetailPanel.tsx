@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { FiArrowUp, FiArrowDown, FiFilter, FiX } from "react-icons/fi";
@@ -365,6 +365,17 @@ export default function OrganizationDetailPanel({ organization, onClose, onSave,
   const [placementsColumnOrder, setPlacementsColumnOrder] = useState<string[]>(() => [...PLACEMENT_COLUMN_KEYS]);
   const [placementsPageSize, setPlacementsPageSize] = useState(25);
   const [placementsPage, setPlacementsPage] = useState(1);
+  const [selectedPlacementIds, setSelectedPlacementIds] = useState<Set<string>>(new Set());
+
+  const togglePlacementSelection = (id: number | string) => {
+    const key = String(id);
+    setSelectedPlacementIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
 
   function getPlacementCellValue(p: PlacementRecord, key: string): string {
     switch (key) {
@@ -415,6 +426,36 @@ export default function OrganizationDetailPanel({ organization, onClose, onSave,
     return result;
   }, [placementsData, placementsSearchTerm, placementsColumnFilters, placementsColumnSorts]);
 
+  const handleSelectAllPlacements = useCallback(() => {
+    const filteredIds = new Set(filteredAndSortedPlacements.map((p) => String(p.id)));
+    const allSelected = filteredAndSortedPlacements.length > 0 && filteredAndSortedPlacements.every((p) => selectedPlacementIds.has(String(p.id)));
+    if (allSelected) {
+      setSelectedPlacementIds((prev) => {
+        const next = new Set(prev);
+        filteredIds.forEach((id) => next.delete(id));
+        return next;
+      });
+    } else {
+      setSelectedPlacementIds((prev) => {
+        const next = new Set(prev);
+        filteredIds.forEach((id) => next.add(id));
+        return next;
+      });
+    }
+  }, [filteredAndSortedPlacements, selectedPlacementIds]);
+
+  const placementsSelectAllChecked =
+    filteredAndSortedPlacements.length > 0 &&
+    filteredAndSortedPlacements.every((p) => selectedPlacementIds.has(String(p.id)));
+  const placementsSelectAllIndeterminate =
+    filteredAndSortedPlacements.some((p) => selectedPlacementIds.has(String(p.id))) && !placementsSelectAllChecked;
+
+  const placementsSelectAllRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const el = placementsSelectAllRef.current;
+    if (el) el.indeterminate = placementsSelectAllIndeterminate;
+  }, [placementsSelectAllIndeterminate]);
+
   const placementsTotal = filteredAndSortedPlacements.length;
   const placementsPageCount = Math.max(1, Math.ceil(placementsTotal / placementsPageSize));
   const placementsPageClamped = Math.min(Math.max(1, placementsPage), placementsPageCount);
@@ -460,13 +501,15 @@ export default function OrganizationDetailPanel({ organization, onClose, onSave,
     return Array.from(statuses).map((s) => ({ label: s, value: s }));
   }, [placementsData]);
   const handleExportPlacements = () => {
+    const toExport = filteredAndSortedPlacements.filter((p) => selectedPlacementIds.has(String(p.id)));
+    if (toExport.length === 0) return;
     const header = ["Approver", "Candidate", "Title", "Status"];
     const escapeCsvValue = (value: unknown) => {
       const safe = value ?? "";
       const text = String(safe).replace(/"/g, '""');
       return `"${text}"`;
     };
-    const rows = filteredAndSortedPlacements.map((placement) => [
+    const rows = toExport.map((placement) => [
       placement.approver ?? placement.createdByName ?? "",
       placement.candidate ?? placement.jobSeekerName ?? "",
       placement.title ?? placement.jobTitle ?? "",
@@ -493,6 +536,7 @@ export default function OrganizationDetailPanel({ organization, onClose, onSave,
     );
     setPlacementsData(initialPlacements);
     setPlacementsPage(1);
+    setSelectedPlacementIds(new Set());
 
     if (!organization.id) {
       setPlacementsLoading(false);
@@ -939,7 +983,7 @@ export default function OrganizationDetailPanel({ organization, onClose, onSave,
                     type="button"
                     onClick={handleExportPlacements}
                     className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm font-medium shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
-                    disabled={placementsTotal === 0 || placementsLoading}
+                    disabled={placementsTotal === 0 || placementsLoading || selectedPlacementIds.size === 0}
                   >
                     Export CSV
                   </button>
@@ -961,6 +1005,17 @@ export default function OrganizationDetailPanel({ organization, onClose, onSave,
                     <table className="min-w-full divide-y divide-gray-200">
                       <thead className="bg-gray-50 sticky top-0 z-10">
                         <tr>
+                          <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 w-12">
+                            <input
+                              ref={placementsSelectAllRef}
+                              type="checkbox"
+                              checked={placementsSelectAllChecked}
+                              onChange={handleSelectAllPlacements}
+                              disabled={filteredAndSortedPlacements.length === 0}
+                              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                              aria-label="Select all placements"
+                            />
+                          </th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50">
                             ID
                           </th>
@@ -992,7 +1047,7 @@ export default function OrganizationDetailPanel({ organization, onClose, onSave,
                       <tbody className="bg-white divide-y divide-gray-200">
                         {placementsSlice.length === 0 ? (
                           <tr>
-                            <td colSpan={1 + placementsColumnOrder.length} className="px-6 py-12 text-center text-sm text-gray-500">
+                            <td colSpan={2 + placementsColumnOrder.length} className="px-6 py-12 text-center text-sm text-gray-500">
                               {placementsSearchTerm || Object.values(placementsColumnFilters).some((v) => v) ? "No placements found matching your search." : "No placements available."}
                             </td>
                           </tr>
@@ -1006,6 +1061,15 @@ export default function OrganizationDetailPanel({ organization, onClose, onSave,
                               }}
                               className="hover:bg-gray-50 cursor-pointer"
                             >
+                              <td className="px-4 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedPlacementIds.has(String(placement.id))}
+                                  onChange={() => togglePlacementSelection(placement.id)}
+                                  className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                  aria-label={`Select placement ${placement.id}`}
+                                />
+                              </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                                 P {placement.id}
                               </td>
