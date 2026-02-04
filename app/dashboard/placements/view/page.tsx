@@ -3628,7 +3628,7 @@ export default function PlacementView() {
             <FiBriefcase size={24} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
-            {placement.id} {placement.jobSeekerName} - {placement.jobTitle}
+            P {placement.id} {placement.jobSeekerName} - {placement.jobTitle}
           </h1>
         </div>
         

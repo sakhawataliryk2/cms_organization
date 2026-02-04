@@ -26,7 +26,9 @@ interface HiringManager {
   email: string;
   phone: string;
   title: string;
-  organization_name: string;
+  organization_id?: string | number | null;
+  organization_name?: string | null;
+  organization_name_from_org?: string | null;
   status: string;
   created_at: string;
   created_by_name: string;
@@ -494,6 +496,7 @@ export default function HiringManagerList() {
     if (key.startsWith("custom:")) {
       const rawKey = key.replace("custom:", "");
       const cf = hm?.customFields || hm?.custom_fields || {};
+      console.log("customFields", cf);
       const val = cf?.[rawKey];
       return val === undefined || val === null || val === "" ? "—" : String(val);
     }
@@ -506,8 +509,15 @@ export default function HiringManagerList() {
         return hm.status || "—";
       case "title":
         return hm.title || "—";
-      case "organization_name":
-        return hm.organization_name || "—";
+      case "organization_name": {
+        const orgId = hm.organization_id != null && hm.organization_id !== "" ? String(hm.organization_id) : null;
+        const orgName = hm.organization_name_from_org || hm.organization_name || null;
+        console.log("organization_name", orgId, orgName);
+        if (orgId && orgName) return `${orgId} - ${orgName}`;
+        if (orgName) return orgName;
+        if (orgId) return orgId;
+        return "—";
+      }
       case "email":
         return hm.email || "—";
       case "phone":
@@ -683,7 +693,9 @@ export default function HiringManagerList() {
         String(hm.id || "").toLowerCase().includes(term) ||
         (hm.email || "").toLowerCase().includes(term) ||
         (hm.title || "").toLowerCase().includes(term) ||
-        (hm.organization_name || "").toLowerCase().includes(term)
+        (hm.organization_name || "").toLowerCase().includes(term) ||
+        (hm.organization_name_from_org || "").toLowerCase().includes(term) ||
+        String(hm.organization_id ?? "").toLowerCase().includes(term)
       );
     }
 

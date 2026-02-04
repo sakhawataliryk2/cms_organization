@@ -287,15 +287,6 @@ const humanize = (s: string) =>
     .trim();
 
 const columnsCatalog = useMemo(() => {
-  const standard = [
-    { key: "name", label: "Name", sortable: true, filterType: "text" as const },
-    { key: "status", label: "Status", sortable: true, filterType: "select" as const },
-    { key: "email", label: "Email", sortable: true, filterType: "text" as const },
-    { key: "phone", label: "Phone", sortable: true, filterType: "text" as const },
-    { key: "title", label: "Title", sortable: true, filterType: "text" as const },
-    { key: "organization", label: "Organization", sortable: true, filterType: "text" as const },
-    { key: "owner", label: "Owner", sortable: true, filterType: "text" as const },
-  ];
 
   const customKeySet = new Set<string>();
   (leads || []).forEach((l: any) => {
@@ -310,7 +301,7 @@ const columnsCatalog = useMemo(() => {
     filterType: "text" as const,
   }));
 
-  const merged = [...standard, ...custom];
+  const merged = [...custom];
   const seen = new Set<string>();
   return merged.filter((x) => {
     if (seen.has(x.key)) return false;
@@ -558,7 +549,7 @@ const {
 
         // For select filters (like status), do exact match
         const columnInfo = getColumnInfo(columnKey);
-        if (columnInfo?.filterType === "select") {
+        if (columnInfo?.filterType && (columnInfo.filterType as string) === "select") {
           return valueStr === filterStr;
         }
 
@@ -1088,7 +1079,7 @@ const {
                           {getColumnValue(lead, key)}
                         </a>
                       ) : (
-                        getColumnValue(lead, key)
+                        <span>{getColumnValue(lead, key)}</span>
                       )}
                     </td>
                   ))}

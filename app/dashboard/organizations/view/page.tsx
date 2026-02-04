@@ -46,6 +46,7 @@ import {
 import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
+import RecordNameResolver from "@/components/RecordNameResolver";
 import { FiSearch } from "react-icons/fi";
 import { toast } from "sonner";
 
@@ -517,6 +518,13 @@ export default function OrganizationView() {
     null
   );
 
+  // Contacts tab: sortable/filterable column state
+  const CONTACT_DEFAULT_COLUMNS = ["name", "title", "email", "phone", "jobs", "status"];
+  const [contactColumnFields, setContactColumnFields] = useState<string[]>(CONTACT_DEFAULT_COLUMNS);
+  const [contactColumnSorts, setContactColumnSorts] = useState<Record<string, ColumnSortState>>({});
+  const [contactColumnFilters, setContactColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+  const [contactSearchTerm, setContactSearchTerm] = useState("");
+
   // Tasks state
   const [tasks, setTasks] = useState<Array<any>>([]);
   const [isLoadingTasks, setIsLoadingTasks] = useState(false);
@@ -791,6 +799,7 @@ export default function OrganizationView() {
   const [modalContactInfoOrder, setModalContactInfoOrder] = useState<string[]>([]);
   const [modalContactInfoVisible, setModalContactInfoVisible] = useState<Record<string, boolean>>({});
   const [contactInfoDragActiveId, setContactInfoDragActiveId] = useState<string | null>(null);
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
 
   // Fetch organization data when component mounts
   useEffect(() => {
@@ -1511,7 +1520,7 @@ export default function OrganizationView() {
         phone: data.organization.contact_phone || "(Not provided)",
         website: data.organization.website || "https://example.com",
         nicknames: data.organization.nicknames || "",
-        parentOrganization: data.organization.parent_organization || "",
+        parentOrganization: data.organization.parent_organization_name || data.organization.parent_organization || "",
         status: data.organization.status || "Active",
         contractOnFile: data.organization.contract_on_file || "No",
         dateContractSigned: data.organization.date_contract_signed || "",
@@ -1521,6 +1530,11 @@ export default function OrganizationView() {
         numOffices: data.organization.num_offices || "",
         contactPhone: data.organization.contact_phone || "",
         address: data.organization.address || "",
+        address2: data.organization.address2 || "",
+        city: data.organization.city || "",
+        state: data.organization.state || "",
+        zip_code: data.organization.zip_code || "",
+        parentOrganizationId: data.organization.parent_organization_id ?? (typeof data.organization.parent_organization === "string" && /^\d+$/.test(data.organization.parent_organization.trim()) ? data.organization.parent_organization.trim() : null),
         contact: {
           // IMPORTANT: Use correct field for contact name - this was causing "No contact specified"
           name: data.organization.name || "No name provided",
@@ -1771,6 +1785,153 @@ export default function OrganizationView() {
     }
   };
 
+  // Contacts (Hiring Managers) columns catalog and helpers
+  const contactColumnsCatalog = useMemo(() => [
+    { key: "name", label: "Name", sortable: true, filterType: "text" as const },
+    { key: "title", label: "Title", sortable: true, filterType: "text" as const },
+    { key: "email", label: "Email", sortable: true, filterType: "text" as const },
+    { key: "phone", label: "Phone", sortable: true, filterType: "text" as const },
+    { key: "jobs", label: "Jobs", sortable: true, filterType: "number" as const },
+    { key: "status", label: "Status", sortable: true, filterType: "select" as const },
+  ], []);
+
+  const getContactColumnLabel = (key: string) =>
+    contactColumnsCatalog.find((c) => c.key === key)?.label || key;
+
+  const getContactColumnInfo = (key: string) =>
+    contactColumnsCatalog.find((c) => c.key === key);
+
+  const getContactColumnValue = (hm: any, key: string) => {
+    switch (key) {
+      case "name":
+        return hm.full_name || `${hm.first_name || ""} ${hm.last_name || ""}`.trim() || "—";
+      case "title":
+        return hm.title || "—";
+      case "email":
+        return hm.email || "—";
+      case "phone":
+        return hm.phone || "—";
+      case "jobs":
+        return jobsCountForHiringManager(hm);
+      case "status":
+        return hm.status || "Active";
+      default:
+        return "—";
+    }
+  };
+
+  const contactStatusOptions = useMemo(() => {
+    const statuses = new Set<string>();
+    hiringManagers.forEach((hm) => {
+      if (hm.status) statuses.add(hm.status);
+    });
+    statuses.add("Active");
+    statuses.add("Inactive");
+    return Array.from(statuses).map((s) => ({ label: s, value: s }));
+  }, [hiringManagers]);
+
+  const filteredAndSortedHiringManagers = useMemo(() => {
+    let result = [...hiringManagers];
+
+    if (contactSearchTerm.trim()) {
+      const term = contactSearchTerm.toLowerCase();
+      result = result.filter((hm) => {
+        const name = getContactColumnValue(hm, "name");
+        const email = getContactColumnValue(hm, "email");
+        const title = getContactColumnValue(hm, "title");
+        const phone = getContactColumnValue(hm, "phone");
+        return (
+          String(name).toLowerCase().includes(term) ||
+          String(email).toLowerCase().includes(term) ||
+          String(title).toLowerCase().includes(term) ||
+          String(phone).toLowerCase().includes(term)
+        );
+      });
+    }
+
+    Object.entries(contactColumnFilters).forEach(([columnKey, filterValue]) => {
+      if (!filterValue || filterValue.trim() === "") return;
+
+      result = result.filter((hm) => {
+        let value = getContactColumnValue(hm, columnKey);
+        const valueStr = String(value).toLowerCase();
+        const filterStr = String(filterValue).toLowerCase();
+        const columnInfo = getContactColumnInfo(columnKey);
+        if (columnInfo?.filterType === "select") {
+          return valueStr === filterStr;
+        }
+        if (columnInfo?.filterType === "number") {
+          return String(value) === String(filterValue);
+        }
+        return valueStr.includes(filterStr);
+      });
+    });
+
+    const activeSorts = Object.entries(contactColumnSorts).filter(([_, dir]) => dir !== null);
+    if (activeSorts.length > 0) {
+      const [sortKey, sortDir] = activeSorts[0];
+      result.sort((a, b) => {
+        let aValue: any = getContactColumnValue(a, sortKey);
+        let bValue: any = getContactColumnValue(b, sortKey);
+
+        if (sortKey === "jobs") {
+          aValue = jobsCountForHiringManager(a);
+          bValue = jobsCountForHiringManager(b);
+          const aNum = Number(aValue);
+          const bNum = Number(bValue);
+          if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+            const cmp = aNum - bNum;
+            return sortDir === "asc" ? cmp : -cmp;
+          }
+        }
+
+        const cmp = String(aValue ?? "").localeCompare(String(bValue ?? ""), undefined, {
+          numeric: true,
+          sensitivity: "base",
+        });
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+
+    return result;
+  }, [hiringManagers, jobs, contactSearchTerm, contactColumnFilters, contactColumnSorts]);
+
+  const handleContactColumnSort = (columnKey: string) => {
+    setContactColumnSorts((prev) => {
+      const current = prev[columnKey];
+      if (current === "asc") return { ...prev, [columnKey]: "desc" };
+      if (current === "desc") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      }
+      return { ...prev, [columnKey]: "asc" };
+    });
+  };
+
+  const handleContactColumnFilter = (columnKey: string, value: string) => {
+    setContactColumnFilters((prev) => {
+      if (!value || value.trim() === "") {
+        const updated = { ...prev };
+        delete updated[columnKey];
+        return updated;
+      }
+      return { ...prev, [columnKey]: value };
+    });
+  };
+
+  const handleContactColumnDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    const oldIndex = contactColumnFields.indexOf(active.id as string);
+    const newIndex = contactColumnFields.indexOf(over.id as string);
+
+    if (oldIndex !== -1 && newIndex !== -1) {
+      setContactColumnFields(arrayMove(contactColumnFields, oldIndex, newIndex));
+    }
+  };
+
   // Fetch documents for organization
   const fetchDocuments = async (id: string) => {
     setIsLoadingDocuments(true);
@@ -1798,20 +1959,23 @@ export default function OrganizationView() {
     }
   };
 
-  // Fetch hiring managers (contacts) for organization
+  // Fetch hiring managers (contacts) for organization - use org-specific endpoint
   const fetchHiringManagers = async (organizationId: string) => {
     setIsLoadingHiringManagers(true);
     setHiringManagersError(null);
 
     try {
-      const response = await fetch(`/api/hiring-managers`, {
-        headers: {
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
-      });
+      const response = await fetch(
+        `/api/hiring-managers?organization_id=${organizationId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        }
+      );
 
       if (!response.ok) {
         const errorData = await response.json();
@@ -1819,12 +1983,28 @@ export default function OrganizationView() {
       }
 
       const data = await response.json();
-      // Filter hiring managers by organization ID
-      const orgHiringManagers = (data.hiringManagers || []).filter(
-        (hm: any) =>
-          hm.organization_id?.toString() === organizationId.toString()
-      );
-      setHiringManagers(orgHiringManagers);
+      let hms = data.hiringManagers || [];
+      // Fallback: if org-specific endpoint returns empty, fetch all and filter client-side
+      if (hms.length === 0) {
+        const allResponse = await fetch(`/api/hiring-managers`, {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        });
+        if (allResponse.ok) {
+          const allData = await allResponse.json();
+          const allHms = allData.hiringManagers || [];
+          hms = allHms.filter(
+            (hm: any) =>
+              hm.organization_id?.toString() === organizationId.toString() ||
+              hm.organizationId?.toString() === organizationId.toString()
+          );
+        }
+      }
+      setHiringManagers(hms);
     } catch (err) {
       console.error("Error fetching hiring managers:", err);
       setHiringManagersError(
@@ -2374,6 +2554,81 @@ export default function OrganizationView() {
       };
       const isNameField = (key: string) =>
         key === "name" || contactInfoFieldCatalog.find((f) => f.key === key)?.label?.toLowerCase() === "name";
+      const isPhoneField = (key: string) => {
+        const k = (key || "").toLowerCase();
+        const label = (getContactInfoLabel(key) || "").toLowerCase();
+        return k === "phone" || k === "contact_phone" || label === "phone" || label.includes("phone");
+      };
+      const isParentOrgField = (key: string) => {
+        const k = (key || "").toLowerCase();
+        const label = (getContactInfoLabel(key) || "").toLowerCase();
+        return k === "parent_organization" || k === "parentorganization" || label.includes("parent organization");
+      };
+      const isStatusField = (key: string) => {
+        const k = (key || "").toLowerCase();
+        const label = (getContactInfoLabel(key) || "").toLowerCase();
+        return k === "status" || label === "status";
+      };
+      const addressPartKeys = new Set(["address", "address2", "address 2", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
+      const isAddressPartKey = (key: string) => addressPartKeys.has((key || "").toLowerCase()) || (getContactInfoLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address 2";
+
+      const getCombinedAddress = () => {
+        if (!organization) return "-";
+        const o = organization as any;
+        const parts = [
+          o.address,
+          o.address2 ?? o.customFields?.["Address 2"],
+          [o.city ?? o.customFields?.["City"], o.state ?? o.customFields?.["State"]].filter(Boolean).join(", "),
+          o.zip_code ?? o.customFields?.["ZIP Code"] ?? o.customFields?.["Zip Code"],
+        ].filter(Boolean);
+        return parts.length > 0 ? parts.join(", ") : "-";
+      };
+
+      const getContactInfoValue = (key: string): string => {
+        if (!organization) return "-";
+        const o = organization as any;
+        const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+        let v = o[rawKey];
+        if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
+        if (o.contact?.[rawKey] !== undefined) return String(o.contact[rawKey] ?? "-");
+        if (rawKey === "contact_phone" || rawKey === "phone") return String(o.contact_phone ?? o.phone ?? "(Not provided)");
+        if (rawKey === "nickname") return String(o.nicknames ?? o.contact?.nickname ?? "-");
+        if (rawKey === "parent_organization" || rawKey === "parentOrganization") return String(o.parentOrganization ?? o.parent_organization ?? "-");
+        if (rawKey === "status") return String(o.status ?? "Active");
+        v = o.customFields?.[rawKey];
+        if (v !== undefined && v !== null) return String(v);
+        const field = contactInfoFieldCatalog.find((f) => f.key === key);
+        if (field) v = o.customFields?.[field.label];
+        return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
+      };
+
+      const contactKeys = visibleFields.contactInfo || [];
+      const hasAnyAddressPart = contactKeys.some((k) => isAddressPartKey(k));
+      const effectiveRows: { key: string; label: string; isAddress?: boolean; isParentOrg?: boolean; isPhone?: boolean; isStatus?: boolean; isUrl?: boolean; isName?: boolean }[] = [];
+      let addressRowAdded = false;
+      let statusRowAdded = false;
+      for (const key of contactKeys) {
+        if (isAddressPartKey(key)) {
+          if (!addressRowAdded && hasAnyAddressPart) {
+            effectiveRows.push({ key: "address", label: "Address", isAddress: true });
+            addressRowAdded = true;
+          }
+          continue;
+        }
+        if (isStatusField(key)) statusRowAdded = true;
+        effectiveRows.push({
+          key,
+          label: getContactInfoLabel(key),
+          isParentOrg: isParentOrgField(key),
+          isPhone: isPhoneField(key),
+          isStatus: isStatusField(key),
+          isUrl: isUrlField(key) && getContactInfoValue(key) !== "-",
+          isName: isNameField(key),
+        });
+      }
+      if (!statusRowAdded) {
+        effectiveRows.push({ key: "status", label: "Status", isStatus: true });
+      }
 
       return (
         <SortablePanel key={panelId} id={panelId}>
@@ -2382,21 +2637,32 @@ export default function OrganizationView() {
             onEdit={() => handleEditPanel("contactInfo")}
           >
             <div className="space-y-0 border border-gray-200 rounded">
-              {(visibleFields.contactInfo || []).map((key) => {
-                const label = getContactInfoLabel(key);
-                const value = getHeaderFieldValue(label);
-                const showAsLink = isUrlField(key) && value !== "-";
-                const showNameStyle = isNameField(key);
+              {effectiveRows.map((row) => {
+                const value = row.isAddress ? getCombinedAddress() : getContactInfoValue(row.key);
+                const parentOrgId = (organization as any)?.parentOrganizationId;
+                const displayValue = value !== "-" && value !== "(Not provided)" ? value : "";
                 return (
                   <div
-                    key={key}
+                    key={row.key}
                     className="flex border-b border-gray-200 last:border-b-0"
                   >
                     <div className="w-44 min-w-[13rem] font-medium p-2 border-r border-gray-200 bg-gray-50">
-                      {label}:
+                      {row.label}:
                     </div>
                     <div className="flex-1 p-2">
-                      {showAsLink ? (
+                      {row.isStatus ? (
+                        <select
+                          value={value}
+                          onChange={(e) => handleStatusChange(e.target.value)}
+                          disabled={isSavingStatus}
+                          className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+                        >
+                          <option value="Active">Active</option>
+                          <option value="Inactive">Inactive</option>
+                          <option value="Archived">Archived</option>
+                          <option value="On Hold">On Hold</option>
+                        </select>
+                      ) : row.isUrl ? (
                         <a
                           href={value.startsWith("http") ? value : `https://${value}`}
                           target="_blank"
@@ -2405,7 +2671,24 @@ export default function OrganizationView() {
                         >
                           {value}
                         </a>
-                      ) : showNameStyle ? (
+                      ) : row.isPhone && displayValue && value.replace(/\D/g, "").length >= 7 ? (
+                        <a href={`tel:${value.replace(/\D/g, "")}`} className="text-blue-600 hover:underline">
+                          {value}
+                        </a>
+                      ) : row.isPhone && displayValue ? (
+                        <span>{value}</span>
+                      ) : row.isParentOrg && (parentOrgId || displayValue) ? (
+                        parentOrgId ? (
+                          <RecordNameResolver
+                            id={parentOrgId}
+                            type="organization"
+                            clickable
+                            fallback={(organization as any)?.parentOrganization || value}
+                          />
+                        ) : (
+                          value
+                        )
+                      ) : row.isName ? (
                         <span className="text-blue-600">{value}</span>
                       ) : (
                         value
@@ -3191,6 +3474,29 @@ export default function OrganizationView() {
   // Cancel modifications
   const cancelModifications = () => {
     setEditableFields({ ...originalData });
+  };
+
+  // Handle status change from summary page dropdown
+  const handleStatusChange = async (newStatus: string) => {
+    if (!organizationId || isSavingStatus) return;
+    setIsSavingStatus(true);
+    try {
+      const response = await fetch(`/api/organizations/${organizationId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to update status");
+      }
+      setOrganization((prev: any) => prev ? { ...prev, status: newStatus } : prev);
+      toast.success("Status updated successfully");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update status");
+    } finally {
+      setIsSavingStatus(false);
+    }
   };
 
   // Handle adding a new note with validation
@@ -4642,87 +4948,146 @@ export default function OrganizationView() {
             ) : hiringManagersError ? (
               <div className="text-red-500 py-2">{hiringManagersError}</div>
             ) : hiringManagers.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="bg-gray-100 border-b">
-                      <th className="text-left p-3 font-medium">Name</th>
-                      <th className="text-left p-3 font-medium">Title</th>
-                      <th className="text-left p-3 font-medium">Email</th>
-                      <th className="text-left p-3 font-medium">Phone</th>
-                      <th className="text-left p-3 font-medium">Jobs</th>
-                      <th className="text-left p-3 font-medium">Status</th>
-                      <th className="text-left p-3 font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {hiringManagers.map((hm) => (
-                      <tr key={hm.id} className="border-b hover:bg-gray-50">
-                        <td className="p-3">
-                          <button
-                            onClick={() =>
-                              router.push(
-                                `/dashboard/hiring-managers/view?id=${hm.id}`
-                              )
-                            }
-                            className="text-blue-600 hover:underline font-medium"
+              <>
+                <div className="mb-4">
+                  <input
+                    type="text"
+                    placeholder="Search contacts..."
+                    value={contactSearchTerm}
+                    onChange={(e) => setContactSearchTerm(e.target.value)}
+                    className="w-full max-w-md px-3 py-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                {filteredAndSortedHiringManagers.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <DndContext collisionDetection={closestCenter} onDragEnd={handleContactColumnDragEnd}>
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-gray-100 border-b">
+                          <th className="text-left px-6 py-3 font-medium">Actions</th>
+                          <SortableContext
+                            items={contactColumnFields}
+                            strategy={horizontalListSortingStrategy}
                           >
-                            {hm.full_name || `${hm.first_name} ${hm.last_name}`}
-                          </button>
-                        </td>
-                        <td className="p-3">{hm.title || "-"}</td>
-                        <td className="p-3">
-                          <a
-                            href={`mailto:${hm.email}`}
-                            className="text-blue-600 hover:underline"
-                          >
-                            {hm.email || "-"}
-                          </a>
-                        </td>
-                        <td className="p-3">{hm.phone || "-"}</td>
-                        <td className="p-3">
-                          <button
-                            className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800 hover:bg-green-200"
-                            onClick={() => {
-                              // Jobs tab pe jump + filter param
-                              const name = encodeURIComponent(hmName(hm));
-                              router.push(
-                                `/dashboard/organizations/view?id=${organizationId}&tab=jobs&hm=${name}`
+                            {contactColumnFields.map((key) => {
+                              const columnInfo = getContactColumnInfo(key);
+                              if (!columnInfo) return null;
+                              return (
+                                <SortableColumnHeader
+                                  key={key}
+                                  id={key}
+                                  columnKey={key}
+                                  label={getContactColumnLabel(key)}
+                                  sortState={contactColumnSorts[key] || null}
+                                  filterValue={contactColumnFilters[key] || null}
+                                  onSort={() => handleContactColumnSort(key)}
+                                  onFilterChange={(value) => handleContactColumnFilter(key, value)}
+                                  filterType={columnInfo.filterType}
+                                  filterOptions={
+                                    key === "status" ? contactStatusOptions : undefined
+                                  }
+                                />
                               );
-                              setActiveTab("summary"); // optional
-                            }}
-                          >
-                            {jobsCountForHiringManager(hm)} Jobs
-                          </button>
-                        </td>
-                        <td className="p-3">
-                          <span
-                            className={`px-2 py-1 rounded text-xs ${hm.status === "Active"
-                              ? "bg-green-100 text-green-800"
-                              : "bg-gray-100 text-gray-800"
-                              }`}
-                          >
-                            {hm.status || "Active"}
-                          </span>
-                        </td>
-
-                        <td className="p-3">
-                          <button
-                            onClick={() =>
-                              router.push(
-                                `/dashboard/hiring-managers/view?id=${hm.id}`
-                              )
-                            }
-                            className="text-blue-500 hover:text-blue-700 text-sm"
-                          >
-                            View
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                            })}
+                          </SortableContext>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredAndSortedHiringManagers.map((hm) => (
+                          <tr key={hm.id} className="border-b hover:bg-gray-50">
+                            <td className="px-6 py-3">
+                              <ActionDropdown
+                                label="Actions"
+                                options={[
+                                  {
+                                    label: "View",
+                                    action: () =>
+                                      router.push(
+                                        `/dashboard/hiring-managers/view?id=${hm.id}`
+                                      ),
+                                  },
+                                ]}
+                              />
+                            </td>
+                            {contactColumnFields.map((key) => (
+                              <td key={key} className="px-6 py-3">
+                                {key === "name" ? (
+                                  <button
+                                    onClick={() =>
+                                      router.push(
+                                        `/dashboard/hiring-managers/view?id=${hm.id}`
+                                      )
+                                    }
+                                    className="text-blue-600 hover:underline font-medium"
+                                  >
+                                    {getContactColumnValue(hm, key)}
+                                  </button>
+                                ) : key === "email" ? (
+                                  getContactColumnValue(hm, key) !== "—" ? (
+                                    <a
+                                      href={`mailto:${hm.email}`}
+                                      className="text-blue-600 hover:underline"
+                                    >
+                                      {getContactColumnValue(hm, key)}
+                                    </a>
+                                  ) : (
+                                    "—"
+                                  )
+                                ) : key === "phone" ? (
+                                  (() => {
+                                    const phone = hm.phone || "";
+                                    const digits = phone.replace(/\D/g, "");
+                                    return digits.length >= 7 ? (
+                                      <a
+                                        href={`tel:${digits}`}
+                                        className="text-blue-600 hover:underline"
+                                      >
+                                        {getContactColumnValue(hm, key)}
+                                      </a>
+                                    ) : (
+                                      getContactColumnValue(hm, key)
+                                    );
+                                  })()
+                                ) : key === "jobs" ? (
+                                  <button
+                                    className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800 hover:bg-green-200"
+                                    onClick={() => {
+                                      const name = encodeURIComponent(hmName(hm));
+                                      router.push(
+                                        `/dashboard/organizations/view?id=${organizationId}&tab=jobs&hm=${name}`
+                                      );
+                                      setActiveTab("jobs");
+                                    }}
+                                  >
+                                    {getContactColumnValue(hm, key)} Jobs
+                                  </button>
+                                ) : key === "status" ? (
+                                  <span
+                                    className={`px-2 py-1 rounded text-xs ${
+                                      hm.status === "Active"
+                                        ? "bg-green-100 text-green-800"
+                                        : "bg-gray-100 text-gray-800"
+                                    }`}
+                                  >
+                                    {getContactColumnValue(hm, key)}
+                                  </span>
+                                ) : (
+                                  getContactColumnValue(hm, key)
+                                )}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </DndContext>
+                </div>
+                ) : (
+                  <p className="text-gray-500 italic py-4 text-center">
+                    No contacts match the current filters.
+                  </p>
+                )}
+              </>
             ) : (
               <div className="text-center py-8">
                 <p className="text-gray-500 italic mb-4">

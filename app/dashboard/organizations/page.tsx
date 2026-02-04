@@ -23,6 +23,7 @@ import {
   FiX,
 } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
+import RecordNameResolver from "@/components/RecordNameResolver";
 
 interface Organization {
   id: string;
@@ -1216,12 +1217,26 @@ export default function OrganizationList() {
                         key={key}
                         className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
                       >
-                        {key === "status" ? (
+                        {getColumnLabel(key).toLowerCase() === "status" ? (
                           <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
                             {getColumnValue(org, key)}
                           </span>
+                        ) : getColumnLabel(key).toLowerCase() === "parent organization" ? (
+                          <RecordNameResolver
+                            id={String(getColumnValue(org, key)) || null}
+                            type="organization"
+                            clickable
+                            fallback={String(getColumnValue(org, key)) || ""}
+                          />
+                        ) : getColumnLabel(key).toLowerCase() === "job" ? (
+                          <RecordNameResolver
+                            id={String(getColumnValue(org, key)) || null}
+                            type="job"
+                            clickable
+                            fallback={String(getColumnValue(org, key)) || ""}
+                          />
                         ) : (
-                          getColumnValue(org, key)
+                          <span>{getColumnValue(org, key)}</span>
                         )}
                       </td>
                     ))}

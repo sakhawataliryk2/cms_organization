@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
         // Get organization_id from query parameters
         const { searchParams } = new URL(request.url);
         const organizationId = searchParams.get('organization_id');
+        console.log('Organization ID:', organizationId);
 
         // Build API URL with organization_id if provided
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';

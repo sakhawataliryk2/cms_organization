@@ -737,6 +737,11 @@ export default function AddHiringManager() {
         customFieldsForDB[label] = value;
       });
 
+      // When adding from organization page, preserve organizationIdFromUrl - custom fields may have overwritten it with org name
+      if (organizationIdFromUrl && !isEditMode) {
+        apiData.organizationId = organizationIdFromUrl;
+        apiData.organizationName = organizationName || organizationIdFromUrl;
+      }
       // Normalize organization: if organizationId is not a number, treat as name
       if (apiData.organizationId && isNaN(Number(apiData.organizationId))) {
         apiData.organizationName = apiData.organizationId;

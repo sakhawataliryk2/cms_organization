@@ -463,7 +463,7 @@ export default function LeadView() {
         if (Array.isArray(parsed) && parsed.length > 0) {
           setVisibleFields((prev) => ({ ...prev, websiteJobs: parsed }));
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     const savedO = localStorage.getItem(OUR_JOBS_STORAGE_KEY);
     if (savedO) {
@@ -472,7 +472,7 @@ export default function LeadView() {
         if (Array.isArray(parsed) && parsed.length > 0) {
           setVisibleFields((prev) => ({ ...prev, ourJobs: parsed }));
         }
-      } catch (_) {}
+      } catch (_) { }
     }
   }, []);
 
@@ -574,28 +574,28 @@ export default function LeadView() {
         const parsed = JSON.parse(c);
         if (Array.isArray(parsed) && parsed.length > 0) contactInfo = Array.from(new Set(parsed));
       }
-    } catch (_) {}
+    } catch (_) { }
     try {
       const d = localStorage.getItem(LEAD_DETAILS_STORAGE_KEY);
       if (d) {
         const parsed = JSON.parse(d);
         if (Array.isArray(parsed) && parsed.length > 0) details = Array.from(new Set(parsed));
       }
-    } catch (_) {}
+    } catch (_) { }
     try {
       const w = localStorage.getItem(WEBSITE_JOBS_STORAGE_KEY);
       if (w) {
         const parsed = JSON.parse(w);
         if (Array.isArray(parsed) && parsed.length > 0) websiteJobs = Array.from(new Set(parsed));
       }
-    } catch (_) {}
+    } catch (_) { }
     try {
       const o = localStorage.getItem(OUR_JOBS_STORAGE_KEY);
       if (o) {
         const parsed = JSON.parse(o);
         if (Array.isArray(parsed) && parsed.length > 0) ourJobs = Array.from(new Set(parsed));
       }
-    } catch (_) {}
+    } catch (_) { }
     return { contactInfo, details, recentNotes: ["notes"], websiteJobs, ourJobs };
   });
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
@@ -617,7 +617,7 @@ export default function LeadView() {
   const [modalOurJobsVisible, setModalOurJobsVisible] = useState<Record<string, boolean>>({});
   const [ourJobsDragActiveId, setOurJobsDragActiveId] = useState<string | null>(null);
 
-    // =========================
+  // =========================
   const {
     headerFields,
     setHeaderFields,
@@ -854,7 +854,7 @@ export default function LeadView() {
   }, [editingPanel, visibleFields.ourJobs, ourJobsFieldCatalog]);
 
   // Handle edit panel click
-    const renderPanel = (id: string, isOverlay = false) => {
+  const renderPanel = (id: string, isOverlay = false) => {
     switch (id) {
       case "contactInfo":
         if (!lead) return null;
@@ -865,117 +865,23 @@ export default function LeadView() {
         });
 
         const renderContactInfoRow = (key: string) => {
-          // Standard fields
-          switch (key) {
-            case "fullName":
-              return (
-                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Name:</div>
-                  <div className="flex-1 p-2 text-blue-600">{lead?.fullName}</div>
-                </div>
-              );
-            case "nickname":
-              return (
-                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Nickname:</div>
-                  <div className="flex-1 p-2">{lead?.nickname || "-"}</div>
-                </div>
-              );
-            case "title":
-              return (
-                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Title:</div>
-                  <div className="flex-1 p-2">{lead?.title || "-"}</div>
-                </div>
-              );
-            case "organizationName":
-              return (
-                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Organization:</div>
-                  <div className="flex-1 p-2 text-blue-600">{lead?.organizationName || lead?.organizationId || "-"}</div>
-                </div>
-              );
-            case "department":
-              return (
-                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Department:</div>
-                  <div className="flex-1 p-2">{lead?.department || "-"}</div>
-                </div>
-              );
-            case "phone":
-              return (
-                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Phone:</div>
-                  <div className="flex-1 p-2">{lead?.phone || "-"}</div>
-                </div>
-              );
-            case "mobilePhone":
-              return (
-                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Mobile:</div>
-                  <div className="flex-1 p-2">{lead?.mobilePhone || "-"}</div>
-                </div>
-              );
-            case "email":
-              return (
-                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Email:</div>
-                  <div className="flex-1 p-2 text-blue-600">
-                    {lead?.email ? <a href={`mailto:${lead.email}`}>{lead.email}</a> : "-"}
-                  </div>
-                </div>
-              );
-            case "email2":
-              return (
-                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Email 2:</div>
-                  <div className="flex-1 p-2 text-blue-600">
-                    {lead?.email2 ? <a href={`mailto:${lead.email2}`}>{lead.email2}</a> : "-"}
-                  </div>
-                </div>
-              );
-            case "fullAddress":
-              return (
-                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Address:</div>
-                  <div className="flex-1 p-2">{lead?.fullAddress}</div>
-                </div>
-              );
-            case "linkedinUrl":
-              return (
-                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">LinkedIn:</div>
-                  <div className="flex-1 p-2 text-blue-600">
-                    {lead?.linkedinUrl ? (
-                      <a href={lead.linkedinUrl} target="_blank" rel="noopener noreferrer">
-                        {lead.linkedinUrl}
-                      </a>
-                    ) : (
-                      "-"
-                    )}
-                  </div>
-                </div>
-              );
-            default:
-              // Custom field
-              const field = customFieldDefs.find(
-                (f: any) =>
-                  String(f.field_name || f.field_key || f.api_name || f.id) === String(key) ||
-                  String(f.field_label || "") === String(key) ||
-                  String(f.field_name || "") === String(key)
-              );
-              const value =
-                (customObj as any)?.[key] ??
-                (field?.field_label ? (customObj as any)?.[field.field_label] : undefined) ??
-                (field?.field_name ? (customObj as any)?.[field.field_name] : undefined);
-              const label = field?.field_label || field?.field_name || key;
-              return (
-                <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
-                  <div className="flex-1 p-2">{value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-"}</div>
-                </div>
-              );
-          }
+          const field = customFieldDefs.find(
+            (f: any) =>
+              String(f.field_name || f.field_key || f.api_name || f.id) === String(key) ||
+              String(f.field_label || "") === String(key) ||
+              String(f.field_name || "") === String(key)
+          );
+          const value =
+            (customObj as any)?.[key] ??
+            (field?.field_label ? (customObj as any)?.[field.field_label] : undefined) ??
+            (field?.field_name ? (customObj as any)?.[field.field_name] : undefined);
+          const label = field?.field_label || field?.field_name || key;
+          return (
+            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+              <div className="flex-1 p-2">{value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-"}</div>
+            </div>
+          );
         };
 
         return (
@@ -1718,7 +1624,7 @@ export default function LeadView() {
             if (data.document) {
               fetchDocuments(leadId).then(() => toast.success("Document added successfully"));
             }
-          } catch (_) {}
+          } catch (_) { }
         } else {
           try {
             const data = JSON.parse(xhr.responseText);
@@ -1799,8 +1705,8 @@ export default function LeadView() {
     tearsheetSearchQuery.trim() === ""
       ? existingTearsheets
       : existingTearsheets.filter((ts: any) =>
-          ts.name.toLowerCase().includes(tearsheetSearchQuery.toLowerCase())
-        );
+        ts.name.toLowerCase().includes(tearsheetSearchQuery.toLowerCase())
+      );
 
   const handleTearsheetSelect = (tearsheet: any) => {
     setTearsheetForm((prev) => ({ ...prev, selectedTearsheetId: tearsheet.id.toString() }));
@@ -1979,9 +1885,9 @@ export default function LeadView() {
             "$1"
           )}`,
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           text: newNote,
-          note_type: noteType 
+          note_type: noteType
         }),
       });
 
@@ -2280,146 +2186,145 @@ export default function LeadView() {
             disabled={isLoadingHistory}
           />
           <div className="space-y-4">
-          {historyFilters.filteredAndSorted.map((item) => {
-            // Format the history entry based on action type
-            let actionDisplay = "";
-            let detailsDisplay: React.ReactNode = "";
+            {historyFilters.filteredAndSorted.map((item) => {
+              // Format the history entry based on action type
+              let actionDisplay = "";
+              let detailsDisplay: React.ReactNode = "";
 
-            try {
-              const details =
-                typeof item.details === "string"
-                  ? JSON.parse(item.details)
-                  : item.details;
+              try {
+                const details =
+                  typeof item.details === "string"
+                    ? JSON.parse(item.details)
+                    : item.details;
 
-              switch (item.action) {
-                case "CREATE":
-                  actionDisplay = "Lead Created";
-                  detailsDisplay = `Created by ${
-                    item.performed_by_name || "Unknown"
-                  }`;
-                  break;
-                case "UPDATE":
-                  actionDisplay = "Lead Updated";
-                  if (details && details.before && details.after) {
-                    // Create a list of changes
-                    const changes: React.ReactNode[] = [];
+                switch (item.action) {
+                  case "CREATE":
+                    actionDisplay = "Lead Created";
+                    detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
+                      }`;
+                    break;
+                  case "UPDATE":
+                    actionDisplay = "Lead Updated";
+                    if (details && details.before && details.after) {
+                      // Create a list of changes
+                      const changes: React.ReactNode[] = [];
 
-                    // Helper function to format values
-                    const formatValue = (val: any): string => {
-                      if (val === null || val === undefined) return "Empty";
-                      if (typeof val === "object") return JSON.stringify(val);
-                      return String(val);
-                    };
+                      // Helper function to format values
+                      const formatValue = (val: any): string => {
+                        if (val === null || val === undefined) return "Empty";
+                        if (typeof val === "object") return JSON.stringify(val);
+                        return String(val);
+                      };
 
-                    for (const key in details.after) {
-                      // Skip internal fields that might not be relevant to users
-                      if (key === "updated_at") continue;
+                      for (const key in details.after) {
+                        // Skip internal fields that might not be relevant to users
+                        if (key === "updated_at") continue;
 
-                      const beforeVal = details.before[key];
-                      const afterVal = details.after[key];
+                        const beforeVal = details.before[key];
+                        const afterVal = details.after[key];
 
-                      if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
-                        // Special handling for custom_fields
-                        if (key === "custom_fields") {
-                          let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
-                          let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
+                        if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                          // Special handling for custom_fields
+                          if (key === "custom_fields") {
+                            let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
+                            let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
 
-                          // Handle case where custom_fields might be null/undefined
-                          beforeObj = beforeObj || {};
-                          afterObj = afterObj || {};
+                            // Handle case where custom_fields might be null/undefined
+                            beforeObj = beforeObj || {};
+                            afterObj = afterObj || {};
 
-                          if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
-                            const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
+                            if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
+                              const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
 
-                            allKeys.forEach(cfKey => {
-                              const beforeCfVal = beforeObj[cfKey];
-                              const afterCfVal = afterObj[cfKey];
+                              allKeys.forEach(cfKey => {
+                                const beforeCfVal = beforeObj[cfKey];
+                                const afterCfVal = afterObj[cfKey];
 
-                              if (beforeCfVal !== afterCfVal) {
-                                changes.push(
-                                  <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                                    <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
-                                    <div className="flex flex-wrap gap-2 items-center">
-                                      <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                                        {formatValue(beforeCfVal)}
-                                      </span>
-                                      <span className="text-gray-400">→</span>
-                                      <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                                        {formatValue(afterCfVal)}
-                                      </span>
+                                if (beforeCfVal !== afterCfVal) {
+                                  changes.push(
+                                    <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                                      <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
+                                      <div className="flex flex-wrap gap-2 items-center">
+                                        <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                          {formatValue(beforeCfVal)}
+                                        </span>
+                                        <span className="text-gray-400">→</span>
+                                        <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                          {formatValue(afterCfVal)}
+                                        </span>
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              }
-                            });
-                            continue; // Skip the standard field handling for custom_fields
+                                  );
+                                }
+                              });
+                              continue; // Skip the standard field handling for custom_fields
+                            }
                           }
-                        }
 
-                        // Standard fields
-                        const fieldName = key.replace(/_/g, " ");
-                        changes.push(
-                          <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                            <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
-                            <div className="flex flex-wrap gap-2 items-center">
-                              <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                                {formatValue(beforeVal)}
-                              </span>
-                              <span className="text-gray-400">→</span>
-                              <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                                {formatValue(afterVal)}
-                              </span>
+                          // Standard fields
+                          const fieldName = key.replace(/_/g, " ");
+                          changes.push(
+                            <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                              <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
+                              <div className="flex flex-wrap gap-2 items-center">
+                                <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                  {formatValue(beforeVal)}
+                                </span>
+                                <span className="text-gray-400">→</span>
+                                <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                  {formatValue(afterVal)}
+                                </span>
+                              </div>
                             </div>
+                          );
+                        }
+                      }
+
+                      if (changes.length > 0) {
+                        detailsDisplay = (
+                          <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
+                            {changes}
                           </div>
                         );
+                      } else {
+                        detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
                       }
                     }
-
-                    if (changes.length > 0) {
-                      detailsDisplay = (
-                        <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
-                          {changes}
-                        </div>
-                      );
-                    } else {
-                      detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
-                    }
-                  }
-                  break;
-                case "ADD_NOTE":
-                  actionDisplay = "Note Added";
-                  detailsDisplay = details.text || "";
-                  break;
-                default:
-                  actionDisplay = item.action;
-                  detailsDisplay = JSON.stringify(details);
+                    break;
+                  case "ADD_NOTE":
+                    actionDisplay = "Note Added";
+                    detailsDisplay = details.text || "";
+                    break;
+                  default:
+                    actionDisplay = item.action;
+                    detailsDisplay = JSON.stringify(details);
+                }
+              } catch (e) {
+                console.error("Error parsing history details:", e);
+                detailsDisplay = "Error displaying details";
               }
-            } catch (e) {
-              console.error("Error parsing history details:", e);
-              detailsDisplay = "Error displaying details";
-            }
 
-            return (
-              <div
-                key={item.id}
-                className="p-3 border rounded hover:bg-gray-50"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="font-medium text-blue-600">
-                    {actionDisplay}
-                  </span>
-                  <span className="text-sm text-gray-500">
-                    {new Date(item.performed_at).toLocaleString()}
-                  </span>
+              return (
+                <div
+                  key={item.id}
+                  className="p-3 border rounded hover:bg-gray-50"
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="font-medium text-blue-600">
+                      {actionDisplay}
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      {new Date(item.performed_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mb-2">{detailsDisplay}</div>
+                  <div className="text-sm text-gray-600">
+                    By: {item.performed_by_name || "Unknown"}
+                  </div>
                 </div>
-                <div className="mb-2">{detailsDisplay}</div>
-                <div className="text-sm text-gray-600">
-                  By: {item.performed_by_name || "Unknown"}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
         </>
       ) : (
         <p className="text-gray-500 italic">No history records available</p>
@@ -2474,7 +2379,7 @@ export default function LeadView() {
             <FiTarget size={20} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
-            {lead.id} {lead.fullName}
+            L {lead.id} {lead.fullName}
           </h1>
         </div>
       </div>
@@ -2577,11 +2482,10 @@ export default function LeadView() {
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            className={`px-4 py-2 ${
-              activeTab === tab.id
+            className={`px-4 py-2 ${activeTab === tab.id
                 ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
                 : "text-gray-700 hover:bg-gray-200"
-            }`}
+              }`}
             onClick={() => setActiveTab(tab.id)}
           >
             {tab.label}
@@ -2893,9 +2797,8 @@ export default function LeadView() {
                         <td className="p-3">{doc.document_type}</td>
                         <td className="p-3">
                           <span
-                            className={`px-2 py-1 rounded text-xs ${
-                              doc.is_auto_generated ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
-                            }`}
+                            className={`px-2 py-1 rounded text-xs ${doc.is_auto_generated ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
+                              }`}
                           >
                             {doc.is_auto_generated ? "Yes" : "No"}
                           </span>
@@ -3044,11 +2947,10 @@ export default function LeadView() {
                     onClick={() =>
                       setTearsheetForm((prev) => ({ ...prev, visibility: "New", selectedTearsheetId: "" }))
                     }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === "New"
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "New"
                         ? "bg-blue-500 text-white"
                         : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
-                    }`}
+                      }`}
                   >
                     New Tearsheet
                   </button>
@@ -3057,11 +2959,10 @@ export default function LeadView() {
                     onClick={() =>
                       setTearsheetForm((prev) => ({ ...prev, visibility: "Existing", name: "" }))
                     }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === "Existing"
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "Existing"
                         ? "bg-blue-500 text-white"
                         : "bg-white text-gray-700 hover:bg-gray-50"
-                    }`}
+                      }`}
                   >
                     Existing Tearsheet
                   </button>
@@ -3223,42 +3124,42 @@ export default function LeadView() {
                     </div>
                   ) : (
                     headerFields.map((key, idx) => (
-                        <div
-                          key={key}
-                          className="flex items-center justify-between p-2 border rounded"
-                        >
-                          <div>
-                            <div className="text-sm font-medium">
-                              {getHeaderFieldLabel(key)}
-                            </div>
-                            <div className="text-xs text-gray-500">
-                              Value: {getHeaderFieldValue(key)}
-                            </div>
+                      <div
+                        key={key}
+                        className="flex items-center justify-between p-2 border rounded"
+                      >
+                        <div>
+                          <div className="text-sm font-medium">
+                            {getHeaderFieldLabel(key)}
                           </div>
-
-                          <div className="flex items-center gap-2">
-                            <button
-                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
-                              disabled={idx === 0}
-                              onClick={() => moveHeaderField(key, "up")}
-                            >
-                              ↑
-                            </button>
-                            <button
-                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
-                              disabled={idx === headerFields.length - 1}
-                              onClick={() => moveHeaderField(key, "down")}
-                            >
-                              ↓
-                            </button>
-                            <button
-                              className="px-2 py-1 border rounded text-xs hover:bg-gray-50 text-red-600"
-                              onClick={() => removeHeaderField(key)}
-                            >
-                              Remove
-                            </button>
+                          <div className="text-xs text-gray-500">
+                            Value: {getHeaderFieldValue(key)}
                           </div>
                         </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                            disabled={idx === 0}
+                            onClick={() => moveHeaderField(key, "up")}
+                          >
+                            ↑
+                          </button>
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                            disabled={idx === headerFields.length - 1}
+                            onClick={() => moveHeaderField(key, "down")}
+                          >
+                            ↓
+                          </button>
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 text-red-600"
+                            onClick={() => removeHeaderField(key)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
                     ))
                   )}
                 </div>
@@ -3351,7 +3252,7 @@ export default function LeadView() {
                             id={entry.key}
                             label={entry.label}
                             checked={!!modalContactInfoVisible[entry.key]}
-                            onToggle={() => {}}
+                            onToggle={() => { }}
                             isOverlay
                           />
                         );
@@ -3420,7 +3321,7 @@ export default function LeadView() {
                             id={entry.key}
                             label={entry.label}
                             checked={!!modalDetailsVisible[entry.key]}
-                            onToggle={() => {}}
+                            onToggle={() => { }}
                             isOverlay
                           />
                         );
@@ -3489,7 +3390,7 @@ export default function LeadView() {
                             id={entry.key}
                             label={entry.label}
                             checked={!!modalWebsiteJobsVisible[entry.key]}
-                            onToggle={() => {}}
+                            onToggle={() => { }}
                             isOverlay
                           />
                         );
@@ -3558,7 +3459,7 @@ export default function LeadView() {
                             id={entry.key}
                             label={entry.label}
                             checked={!!modalOurJobsVisible[entry.key]}
-                            onToggle={() => {}}
+                            onToggle={() => { }}
                             isOverlay
                           />
                         );
@@ -3582,133 +3483,133 @@ export default function LeadView() {
                 </>
               ) : (
                 <>
-              <div className="mb-4">
-                <h3 className="font-medium mb-3">
-                  Available Fields from Modify Page:
-                </h3>
-                <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
-                  {isLoadingFields ? (
-                    <div className="text-center py-4 text-gray-500">
-                      Loading fields...
-                    </div>
-                  ) : availableFields.length > 0 ? (
-                    availableFields.map((field) => {
-                      const fieldKey =
-                        field.field_name || field.field_label || field.id;
-                      const isVisible =
-                        visibleFields[editingPanel]?.includes(fieldKey) ||
-                        false;
-                      return (
-                        <div
-                          key={field.id || fieldKey}
-                          className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={isVisible}
-                              onChange={() =>
-                                toggleFieldVisibility(editingPanel, fieldKey)
-                              }
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            />
-                            <label className="text-sm text-gray-700">
-                              {field.field_label ||
-                                field.field_name ||
-                                fieldKey}
-                            </label>
-                          </div>
-                          <span className="text-xs text-gray-500">
-                            {field.field_type || "text"}
-                          </span>
+                  <div className="mb-4">
+                    <h3 className="font-medium mb-3">
+                      Available Fields from Modify Page:
+                    </h3>
+                    <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                      {isLoadingFields ? (
+                        <div className="text-center py-4 text-gray-500">
+                          Loading fields...
                         </div>
-                      );
-                    })
-                  ) : (
-                    <div className="text-center py-4 text-gray-500">
-                      <p>No custom fields available</p>
-                      <p className="text-xs mt-1">
-                        Fields from the modify page will appear here
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="mb-4">
-                <h3 className="font-medium mb-3">Standard Fields:</h3>
-                <div className="space-y-2 border border-gray-200 rounded p-3">
-                  {(() => {
-                    const standardFieldsMap: Record<
-                      string,
-                      Array<{ key: string; label: string }>
-                    > = {
-                      contactInfo: [
-                        { key: "fullName", label: "Name" },
-                        { key: "nickname", label: "Nickname" },
-                        { key: "title", label: "Title" },
-                        { key: "organizationName", label: "Organization" },
-                        { key: "department", label: "Department" },
-                        { key: "phone", label: "Phone" },
-                        { key: "mobilePhone", label: "Mobile" },
-                        { key: "email", label: "Email" },
-                        { key: "email2", label: "Email 2" },
-                        { key: "fullAddress", label: "Address" },
-                        { key: "linkedinUrl", label: "LinkedIn" },
-                      ],
-                      details: [
-                        { key: "status", label: "Status" },
-                        { key: "owner", label: "Owner" },
-                        { key: "reportsTo", label: "Reports To" },
-                        { key: "dateAdded", label: "Date Added" },
-                        { key: "lastContactDate", label: "Last Contact" },
-                      ],
-                      recentNotes: [{ key: "notes", label: "Notes" }],
-                      websiteJobs: [{ key: "jobs", label: "Jobs" }],
-                      ourJobs: [{ key: "jobs", label: "Jobs" }],
-                    };
-
-                    const fields = standardFieldsMap[editingPanel] || [];
-                    return fields.map((field) => {
-                      const isVisible =
-                        visibleFields[editingPanel]?.includes(field.key) ||
-                        false;
-                      return (
-                        <div
-                          key={field.key}
-                          className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="checkbox"
-                              checked={isVisible}
-                              onChange={() =>
-                                toggleFieldVisibility(editingPanel, field.key)
-                              }
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                            />
-                            <label className="text-sm text-gray-700">
-                              {field.label}
-                            </label>
-                          </div>
-                          <span className="text-xs text-gray-500">
-                            standard
-                          </span>
+                      ) : availableFields.length > 0 ? (
+                        availableFields.map((field) => {
+                          const fieldKey =
+                            field.field_name || field.field_label || field.id;
+                          const isVisible =
+                            visibleFields[editingPanel]?.includes(fieldKey) ||
+                            false;
+                          return (
+                            <div
+                              key={field.id || fieldKey}
+                              className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                            >
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isVisible}
+                                  onChange={() =>
+                                    toggleFieldVisibility(editingPanel, fieldKey)
+                                  }
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <label className="text-sm text-gray-700">
+                                  {field.field_label ||
+                                    field.field_name ||
+                                    fieldKey}
+                                </label>
+                              </div>
+                              <span className="text-xs text-gray-500">
+                                {field.field_type || "text"}
+                              </span>
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <div className="text-center py-4 text-gray-500">
+                          <p>No custom fields available</p>
+                          <p className="text-xs mt-1">
+                            Fields from the modify page will appear here
+                          </p>
                         </div>
-                      );
-                    });
-                  })()}
-                </div>
-              </div>
+                      )}
+                    </div>
+                  </div>
 
-              <div className="flex justify-end space-x-2 pt-4 border-t">
-                <button
-                  onClick={handleCloseEditModal}
-                  className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-                >
-                  Close
-                </button>
-              </div>
+                  <div className="mb-4">
+                    <h3 className="font-medium mb-3">Standard Fields:</h3>
+                    <div className="space-y-2 border border-gray-200 rounded p-3">
+                      {(() => {
+                        const standardFieldsMap: Record<
+                          string,
+                          Array<{ key: string; label: string }>
+                        > = {
+                          contactInfo: [
+                            { key: "fullName", label: "Name" },
+                            { key: "nickname", label: "Nickname" },
+                            { key: "title", label: "Title" },
+                            { key: "organizationName", label: "Organization" },
+                            { key: "department", label: "Department" },
+                            { key: "phone", label: "Phone" },
+                            { key: "mobilePhone", label: "Mobile" },
+                            { key: "email", label: "Email" },
+                            { key: "email2", label: "Email 2" },
+                            { key: "fullAddress", label: "Address" },
+                            { key: "linkedinUrl", label: "LinkedIn" },
+                          ],
+                          details: [
+                            { key: "status", label: "Status" },
+                            { key: "owner", label: "Owner" },
+                            { key: "reportsTo", label: "Reports To" },
+                            { key: "dateAdded", label: "Date Added" },
+                            { key: "lastContactDate", label: "Last Contact" },
+                          ],
+                          recentNotes: [{ key: "notes", label: "Notes" }],
+                          websiteJobs: [{ key: "jobs", label: "Jobs" }],
+                          ourJobs: [{ key: "jobs", label: "Jobs" }],
+                        };
+
+                        const fields = standardFieldsMap[editingPanel] || [];
+                        return fields.map((field) => {
+                          const isVisible =
+                            visibleFields[editingPanel]?.includes(field.key) ||
+                            false;
+                          return (
+                            <div
+                              key={field.key}
+                              className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                            >
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isVisible}
+                                  onChange={() =>
+                                    toggleFieldVisibility(editingPanel, field.key)
+                                  }
+                                  className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                                />
+                                <label className="text-sm text-gray-700">
+                                  {field.label}
+                                </label>
+                              </div>
+                              <span className="text-xs text-gray-500">
+                                standard
+                              </span>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end space-x-2 pt-4 border-t">
+                    <button
+                      onClick={handleCloseEditModal}
+                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    >
+                      Close
+                    </button>
+                  </div>
                 </>
               )}
             </div>
