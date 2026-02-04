@@ -1091,7 +1091,8 @@ export default function OrganizationList() {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="w-full max-w-full overflow-x-hidden">
+        <div className="overflow-x-auto">
         <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
@@ -1257,10 +1258,10 @@ export default function OrganizationList() {
             </tbody>
           </table>
         </DndContext>
-      </div>
+        </div>
 
       {/* Pagination */}
-      <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+      <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
         <div className="flex-1 flex justify-between sm:hidden">
           <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
             Previous
@@ -1328,6 +1329,7 @@ export default function OrganizationList() {
             </div>
           )}
         </div>
+      </div>
       </div>
 
       {/* Column Customization Modal */}
