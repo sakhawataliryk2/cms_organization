@@ -145,7 +145,6 @@ export function useAuth() {
         // This handles the case when cookies are cleared while on a cached page
         if (typeof window !== 'undefined') {
             const isLoggedIn = isAuthenticated();
-
             if (!isLoggedIn) {
                 // Store current path for redirect after login if needed
                 const currentPath = window.location.pathname;
