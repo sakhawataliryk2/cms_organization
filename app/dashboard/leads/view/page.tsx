@@ -2415,21 +2415,21 @@ export default function LeadView() {
                           }
 
                           // Standard fields
-                          const fieldName = key.replace(/_/g, " ");
-                          changes.push(
-                            <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                              <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
-                              <div className="flex flex-wrap gap-2 items-center">
-                                <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                                  {formatValue(beforeVal)}
-                                </span>
-                                <span className="text-gray-400">→</span>
-                                <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                                  {formatValue(afterVal)}
-                                </span>
-                              </div>
-                            </div>
-                          );
+                          // const fieldName = key.replace(/_/g, " ");
+                          // changes.push(
+                          //   <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                          //     <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
+                          //     <div className="flex flex-wrap gap-2 items-center">
+                          //       <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                          //         {formatValue(beforeVal)}
+                          //       </span>
+                          //       <span className="text-gray-400">→</span>
+                          //       <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                          //         {formatValue(afterVal)}
+                          //       </span>
+                          //     </div>
+                          //   </div>
+                          // );
                         }
                       }
 
@@ -2439,8 +2439,6 @@ export default function LeadView() {
                             {changes}
                           </div>
                         );
-                      } else {
-                        detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
                       }
                     }
                     break;
