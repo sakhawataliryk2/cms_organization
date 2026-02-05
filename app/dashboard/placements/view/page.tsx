@@ -2025,11 +2025,13 @@ export default function PlacementView() {
       // For text files, force download instead of opening in a new tab
       if (isTextFile) {
         try {
-          const path = String(doc.file_path).startsWith("/")
-            ? String(doc.file_path)
-            : `/${doc.file_path}`;
-          const isAbsoluteUrl = path.startsWith("http://") || path.startsWith("https://");
-          const url = isAbsoluteUrl ? path : path;
+          // Check if it's an absolute URL (e.g. from Vercel Blob)
+          const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
+          
+          // Prepend leading slash if missing and not absolute URL
+          const url = isAbsoluteUrl
+            ? doc.file_path
+            : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
 
           // Fetch the file content and create a blob for download
           const response = await fetch(url);
@@ -2050,19 +2052,21 @@ export default function PlacementView() {
           console.error("Error downloading text file:", error);
           toast.error("Failed to download file. Opening in new tab instead.");
           // Fallback to opening in new tab if download fails
-          const path = String(doc.file_path).startsWith("/")
-            ? String(doc.file_path)
-            : `/${doc.file_path}`;
-          window.open(path, "_blank");
+          const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
+          const url = isAbsoluteUrl
+            ? doc.file_path
+            : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
+          window.open(url, "_blank");
         }
         return;
       }
 
       // For non-text files, open in a new tab (existing behavior)
-      const path = String(doc.file_path).startsWith("/")
-        ? String(doc.file_path)
-        : `/${doc.file_path}`;
-      window.open(path, "_blank");
+      const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
+      const url = isAbsoluteUrl
+        ? doc.file_path
+        : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
+      window.open(url, "_blank");
       return;
     }
 
@@ -2070,13 +2074,12 @@ export default function PlacementView() {
     if (doc.content) {
       const blob = new Blob([doc.content], { type: "text/plain;charset=utf-8" });
       const link = document.createElement("a");
-      const fileUrl = URL.createObjectURL(blob);
-      link.href = fileUrl;
+      link.href = URL.createObjectURL(blob);
       link.download = `${doc.document_name || "document"}.txt`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(fileUrl);
+      URL.revokeObjectURL(link.href);
       toast.success("File downloaded successfully");
     } else {
       toast.info("This document has no file or content to download.");

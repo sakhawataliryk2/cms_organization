@@ -793,7 +793,7 @@ export default function LeadView() {
     const catalogKeys = contactInfoFieldCatalog.map((f) => f.key);
     // Remove duplicates from catalogKeys
     const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
-    
+
     // Check if Full Address should be visible (if any address parts are visible)
     const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
     const hasAddressParts = current.some((k) => {
@@ -802,10 +802,10 @@ export default function LeadView() {
       return addressPartKeys.has(k.toLowerCase()) || label === "address";
     });
     const fullAddressVisible = current.includes(FULL_ADDRESS_KEY) || hasAddressParts;
-    
+
     const currentInCatalog = current.filter((k) => uniqueCatalogKeys.includes(k) && k !== FULL_ADDRESS_KEY);
     const rest = uniqueCatalogKeys.filter((k) => !current.includes(k));
-    
+
     // Build order: preserve Full Address position if it exists, otherwise add it at the beginning if address parts exist
     let order: string[];
     const fullAddressIndex = current.indexOf(FULL_ADDRESS_KEY);
@@ -821,7 +821,7 @@ export default function LeadView() {
       // No Full Address needed
       order = [...currentInCatalog, ...rest];
     }
-    
+
     const uniqueOrder = Array.from(new Set(order));
     setModalContactInfoOrder(uniqueOrder);
     setModalContactInfoVisible(
@@ -912,8 +912,8 @@ export default function LeadView() {
         const isAddressPartKey = (key: string) => {
           // Don't treat Address 2 as an address part - it should show separately
           if (isAddress2Key(key)) return false;
-          return addressPartKeys.has((key || "").toLowerCase()) || 
-                 (getContactInfoLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
+          return addressPartKeys.has((key || "").toLowerCase()) ||
+            (getContactInfoLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
         };
 
         const getCombinedAddress = () => {
@@ -1566,18 +1566,21 @@ export default function LeadView() {
 
   const handleDownloadDocument = async (doc: any) => {
     // Check if it's a text file (by mime_type or file extension)
-    const isTextFile = doc.mime_type === "text/plain" || 
-                       doc.file_path?.toLowerCase().endsWith(".txt") ||
-                       doc.document_name?.toLowerCase().endsWith(".txt");
+    const isTextFile = doc.mime_type === "text/plain" ||
+      doc.file_path?.toLowerCase().endsWith(".txt") ||
+      doc.document_name?.toLowerCase().endsWith(".txt");
 
     // If the document has a stored file path
     if (doc.file_path) {
       // For text files, force download instead of opening in a new tab
       if (isTextFile) {
         try {
-          const isAbsoluteUrl = doc.file_path.startsWith("http://") || doc.file_path.startsWith("https://");
-          const url = isAbsoluteUrl 
-            ? doc.file_path 
+          // Check if it's an absolute URL (e.g. from Vercel Blob)
+          const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
+
+          // Prepend leading slash if missing and not absolute URL
+          const url = isAbsoluteUrl
+            ? doc.file_path
             : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
 
           // Fetch the file content and create a blob for download
@@ -1599,16 +1602,20 @@ export default function LeadView() {
           console.error("Error downloading text file:", error);
           toast.error("Failed to download file. Opening in new tab instead.");
           // Fallback to opening in new tab if download fails
-          const isAbsoluteUrl = doc.file_path.startsWith("http://") || doc.file_path.startsWith("https://");
-          const url = isAbsoluteUrl ? doc.file_path : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
+          const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
+          const url = isAbsoluteUrl
+            ? doc.file_path
+            : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
           window.open(url, "_blank");
         }
         return;
       }
 
       // For non-text files, open in a new tab (existing behavior)
-      const isAbsoluteUrl = doc.file_path.startsWith("http://") || doc.file_path.startsWith("https://");
-      const url = isAbsoluteUrl ? doc.file_path : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
+      const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
+      const url = isAbsoluteUrl
+        ? doc.file_path
+        : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
       window.open(url, "_blank");
       return;
     }
@@ -1617,13 +1624,12 @@ export default function LeadView() {
     if (doc.content) {
       const blob = new Blob([doc.content], { type: "text/plain;charset=utf-8" });
       const link = document.createElement("a");
-      const fileUrl = URL.createObjectURL(blob);
-      link.href = fileUrl;
+      link.href = URL.createObjectURL(blob);
       link.download = `${doc.document_name || "document"}.txt`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(fileUrl);
+      URL.revokeObjectURL(link.href);
       toast.success("File downloaded successfully");
     } else {
       toast.info("This document has no file or content to download.");
@@ -2630,8 +2636,8 @@ export default function LeadView() {
           <button
             key={tab.id}
             className={`px-4 py-2 ${activeTab === tab.id
-                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
-                : "text-gray-700 hover:bg-gray-200"
+              ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+              : "text-gray-700 hover:bg-gray-200"
               }`}
             onClick={() => setActiveTab(tab.id)}
           >
@@ -3095,8 +3101,8 @@ export default function LeadView() {
                       setTearsheetForm((prev) => ({ ...prev, visibility: "New", selectedTearsheetId: "" }))
                     }
                     className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "New"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
+                      ? "bg-blue-500 text-white"
+                      : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
                       }`}
                   >
                     New Tearsheet
@@ -3107,8 +3113,8 @@ export default function LeadView() {
                       setTearsheetForm((prev) => ({ ...prev, visibility: "Existing", name: "" }))
                     }
                     className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "Existing"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 hover:bg-gray-50"
+                      ? "bg-blue-500 text-white"
+                      : "bg-white text-gray-700 hover:bg-gray-50"
                       }`}
                   >
                     Existing Tearsheet
@@ -3372,8 +3378,8 @@ export default function LeadView() {
                       <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
                         {Array.from(new Set(modalContactInfoOrder)).map((key, index) => {
                           // Handle synthetic Full Address field
-                          const label = key === FULL_ADDRESS_KEY 
-                            ? "Full Address" 
+                          const label = key === FULL_ADDRESS_KEY
+                            ? "Full Address"
                             : (contactInfoFieldCatalog.find((f) => f.key === key)?.label ?? key);
                           const entry = contactInfoFieldCatalog.find((f) => f.key === key);
                           if (!entry && key !== FULL_ADDRESS_KEY) return null;
