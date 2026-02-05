@@ -16,15 +16,15 @@ interface FormField {
   name: string;
   label: string;
   type:
-    | "text"
-    | "email"
-    | "tel"
-    | "date"
-    | "select"
-    | "textarea"
-    | "file"
-    | "number"
-    | "url";
+  | "text"
+  | "email"
+  | "tel"
+  | "date"
+  | "select"
+  | "textarea"
+  | "file"
+  | "number"
+  | "url";
   required: boolean;
   visible: boolean;
   options?: string[]; // For select fields
@@ -365,36 +365,36 @@ export default function AddDirectHireJob() {
   }, []);
 
   // Fetch organization name if organizationId is provided
-  const fetchOrganizationName = async (orgId: string) => {
-    try {
-      const response = await fetch(`/api/organizations/${orgId}`);
-      if (response.ok) {
-        const data = await response.json();
-        const orgName = data.organization?.name || "";
-        setOrganizationName(orgName);
-        setCurrentOrganizationId(orgId);
-        // Prefill organizationId in form with organization name for display
-        setFormFields((prev) =>
-          prev.map((f) =>
-            f.name === "organizationId"
-              ? { ...f, value: orgName || orgId, locked: true }
-              : f
-          )
-        );
-      }
-    } catch (error) {
-      console.error("Error fetching organization:", error);
-      // Still set the organizationId even if fetch fails
-      setCurrentOrganizationId(orgId);
-      setFormFields((prev) =>
-        prev.map((f) =>
-          f.name === "organizationId"
-            ? { ...f, value: orgId, locked: true }
-            : f
-        )
-      );
-    }
-  };
+  // const fetchOrganizationName = async (orgId: string) => {
+  //   try {
+  //     const response = await fetch(`/api/organizations/${orgId}`);
+  //     if (response.ok) {
+  //       const data = await response.json();
+  //       const orgName = data.organization?.name || "";
+  //       setOrganizationName(orgName);
+  //       setCurrentOrganizationId(orgId);
+  //       // Prefill organizationId in form with organization name for display
+  //       setFormFields((prev) =>
+  //         prev.map((f) =>
+  //           f.name === "organizationId"
+  //             ? { ...f, value: orgName || orgId, locked: true }
+  //             : f
+  //         )
+  //       );
+  //     }
+  //   } catch (error) {
+  //     console.error("Error fetching organization:", error);
+  //     // Still set the organizationId even if fetch fails
+  //     setCurrentOrganizationId(orgId);
+  //     setFormFields((prev) =>
+  //       prev.map((f) =>
+  //         f.name === "organizationId"
+  //           ? { ...f, value: orgId, locked: true }
+  //           : f
+  //       )
+  //     );
+  //   }
+  // };
 
   // Fetch active users for Field_46 (Internal user), Field_506 (Sales Rep), and Field_507 (Account Manager) dropdowns
   useEffect(() => {
@@ -454,9 +454,9 @@ export default function AddDirectHireJob() {
     const foundOrg = organizations.find(
       (org) => org.id.toString() === organizationIdFromUrl
     );
-    
+
     if (foundOrg && foundOrg.name) {
-      const orgField = customFields.find((f) => f.field_name === "Field_3");
+      const orgField = customFields.find((f) => f.field_label.toLowerCase() === "organization");
       if (orgField) {
         setCustomFieldValues((prev) => {
           // Only set if not already set (don't override if already set by prefill effect or user)
@@ -516,13 +516,14 @@ export default function AddDirectHireJob() {
     setCustomFieldValues,
   ]);
 
+  const organizationField = customFields.find((f) => f.field_label.toLowerCase() === "organization");
   // Sync currentOrganizationId with Field_3 value when it changes
   useEffect(() => {
     if (customFieldsLoading || customFields.length === 0 || organizations.length === 0) return;
 
-    const organizationField = customFields.find((f) => f.field_name === "Field_3");
+    // const organizationField = customFields.find((f) => f.field_label.toLowerCase() === "organization");
     if (organizationField) {
-      const fieldValue = customFieldValues["Field_3"] || "";
+      const fieldValue = customFieldValues[organizationField.field_name] || "";
       if (fieldValue) {
         // Try to find organization by name or ID
         const selectedOrg = organizations.find(
@@ -549,7 +550,7 @@ export default function AddDirectHireJob() {
         }
       }
     }
-  }, [customFieldValues["Field_3"], organizations, customFields, customFieldsLoading, currentOrganizationId, setCustomFieldValues]);
+  }, [customFieldValues[organizationField?.field_name || ""], organizations, customFields, customFieldsLoading, currentOrganizationId, setCustomFieldValues]);
 
   // Fetch organization contacts (hiring managers) for Field_4 (Billing Contact) and Field_503 (Timecard Approver)
   // Uses API-level filtering by organization_id
@@ -599,7 +600,7 @@ export default function AddDirectHireJob() {
     hasPrefilledOrgRef.current = true;
     // Set currentOrganizationId immediately so hiring manager fetch works
     setCurrentOrganizationId(organizationIdFromUrl);
-    
+
     // Fetch organization name and set both formFields and custom field Field_3
     const fetchAndSetOrganization = async () => {
       try {
@@ -608,22 +609,22 @@ export default function AddDirectHireJob() {
           const data = await response.json();
           const orgName = data.organization?.name || "";
           setOrganizationName(orgName);
-          
+
           // Set Field_3 (Organization custom field) if it exists
           if (customFields.length > 0 && orgName) {
-            const orgField = customFields.find((f) => f.field_name === "Field_3");
+            const orgField = customFields.find((f) => f.field_label.toLowerCase() === "organization");
             if (orgField) {
               setCustomFieldValues((prev) => {
                 // Only set if not already set (don't override user input)
                 if (prev[orgField.field_name]) return prev;
                 return {
                   ...prev,
-                  Field_3: orgName,
+                  [organizationField?.field_name || ""]: orgName,
                 };
               });
             }
           }
-          
+
           // Also set the old formFields for backward compatibility
           setFormFields((prev) =>
             prev.map((f) =>
@@ -639,13 +640,13 @@ export default function AddDirectHireJob() {
               (org) => org.id.toString() === organizationIdFromUrl
             );
             if (foundOrg && foundOrg.name) {
-              const orgField = customFields.find((f) => f.field_name === "Field_3");
+              const orgField = customFields.find((f) => f.field_label.toLowerCase() === "organization");
               if (orgField) {
                 setCustomFieldValues((prev) => {
                   if (prev[orgField.field_name]) return prev;
                   return {
                     ...prev,
-                    Field_3: foundOrg.name,
+                    [organizationField?.field_name || ""]: foundOrg.name,
                   };
                 });
               }
@@ -666,7 +667,7 @@ export default function AddDirectHireJob() {
         );
       }
     };
-    
+
     fetchAndSetOrganization();
   }, [organizationIdFromUrl, jobId, formFields.length, customFieldsLoading, customFields, organizations, setCustomFieldValues]);
 
@@ -875,7 +876,7 @@ export default function AddDirectHireJob() {
 
       // Map custom fields from field_label (database key) to field_name (form key)
       const mappedCustomFieldValues: Record<string, any> = {};
-      
+
       // First, map any existing custom field values from the database
       if (customFields.length > 0 && Object.keys(existingCustomFields).length > 0) {
         customFields.forEach((field) => {
@@ -963,7 +964,7 @@ export default function AddDirectHireJob() {
     }
   };
 
-  
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -977,27 +978,27 @@ export default function AddDirectHireJob() {
         return;
       }
     }
-  
+
     // Validate required custom fields
     const customFieldValidation = validateCustomFields();
     if (!customFieldValidation.isValid) {
       setError(customFieldValidation.message);
       return;
     }
-  
+
     setIsSubmitting(true);
     setError(null);
-  
+
     try {
       // 1) Standard fields (visible ones)
       const payload = formFields.reduce((acc, field) => {
         if (field.visible) acc[field.name] = field.value;
         return acc;
       }, {} as Record<string, any>);
-  
+
       // 2) Custom fields from hook (keys are field_label)
       const customFieldsToSend = getCustomFieldsForSubmission();
-  
+
       // 3) Build DB customFields object: every form/custom field goes into custom_fields (create and edit)
       const customFieldsForDB: Record<string, any> = {};
       Object.keys(customFieldsToSend).forEach((k) => {
@@ -1054,12 +1055,12 @@ export default function AddDirectHireJob() {
         // Use snake_case custom_fields (all form fields included)
         custom_fields: customFieldsForDB,
       };
-  
+
       console.log(`${isEditMode ? "Updating" : "Creating"} Direct Hire job payload:`, finalPayload);
-  
+
       const url = isEditMode ? `/api/jobs/${jobId}` : "/api/jobs";
       const method = isEditMode ? "PUT" : "POST";
-  
+
       const response = await fetch(url, {
         method,
         headers: {
@@ -1071,12 +1072,12 @@ export default function AddDirectHireJob() {
         },
         body: JSON.stringify(finalPayload),
       });
-  
+
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.message || `Failed to ${isEditMode ? "update" : "create"} Direct Hire job`);
       }
-  
+
       const resultId = isEditMode ? jobId : data.job?.id;
       // Navigate based on where we came from
       if (organizationIdFromUrl && !isEditMode) {
@@ -1091,7 +1092,7 @@ export default function AddDirectHireJob() {
       setIsSubmitting(false);
     }
   };
-  
+
 
   const handleGoBack = () => {
     router.back();
@@ -1205,11 +1206,10 @@ export default function AddDirectHireJob() {
                 type="button"
                 disabled={!hiringManagerValue || hiringManagerValue.trim() === ""}
                 onClick={() => setJobStep(3)}
-                className={`px-4 py-2 rounded text-white ${
-                  !hiringManagerValue || hiringManagerValue.trim() === ""
+                className={`px-4 py-2 rounded text-white ${!hiringManagerValue || hiringManagerValue.trim() === ""
                     ? "bg-gray-300 cursor-not-allowed"
                     : "bg-blue-500 hover:bg-blue-600"
-                }`}
+                  }`}
               >
                 Continue
               </button>
@@ -1220,423 +1220,422 @@ export default function AddDirectHireJob() {
         {/* Form */}
         {(isEditMode || jobStep === 3) && (
           <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 gap-4">
-            {!isEditMode && (
-              <div className="flex items-center mb-3">
-                <label className="w-48 font-medium flex items-center">
-                  Hiring Manager:
-                </label>
-                <div className="flex-1 flex items-center gap-3">
-                  <div className="flex-1 p-2 border-b border-gray-300 text-gray-800">
-                    {hiringManagerDisplayValue}
+            <div className="grid grid-cols-1 gap-4">
+              {!isEditMode && (
+                <div className="flex items-center mb-3">
+                  <label className="w-48 font-medium flex items-center">
+                    Hiring Manager:
+                  </label>
+                  <div className="flex-1 flex items-center gap-3">
+                    <div className="flex-1 p-2 border-b border-gray-300 text-gray-800">
+                      {hiringManagerDisplayValue}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsHiringManagerModalOpen(true)}
+                      className="px-4 py-2 bg-gray-200 text-gray-800 hover:bg-gray-300 rounded"
+                    >
+                      Change
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsHiringManagerModalOpen(true)}
-                    className="px-4 py-2 bg-gray-200 text-gray-800 hover:bg-gray-300 rounded"
-                  >
-                    Change
-                  </button>
                 </div>
-              </div>
-            )}
-            {/* Custom Fields Section - Only fields from Admin Center → Field Management → Jobs Direct Hire */}
-            {customFields.length > 0 && (
-              <>
-                {customFields.map((field) => {
-                  // Don't render hidden fields at all
-                  if (field.is_hidden) return null;
+              )}
+              {/* Custom Fields Section - Only fields from Admin Center → Field Management → Jobs Direct Hire */}
+              {customFields.length > 0 && (
+                <>
+                  {customFields.map((field) => {
+                    // Don't render hidden fields at all
+                    if (field.is_hidden) return null;
 
-                  if (field.field_label === "Hiring Manager" && !isEditMode) {
-                    return null;
-                  }
-
-                  const fieldValue = customFieldValues[field.field_name] || "";
-
-                  const fieldLabelLower = String(field.field_label || "").toLowerCase();
-                  const isAdditionalSkillsField =
-                    fieldLabelLower.includes("additional") && fieldLabelLower.includes("skill");
-
-                  if (isAdditionalSkillsField) {
-                    const parseMultiValue = (val: any): string[] => {
-                      if (!val) return [];
-                      if (Array.isArray(val)) return val.filter((s) => s && String(s).trim());
-                      if (typeof val === "string") {
-                        return val
-                          .split(",")
-                          .map((s) => s.trim())
-                          .filter((s) => s);
-                      }
-                      return [];
-                    };
-
-                    const selected = parseMultiValue(fieldValue);
-
-                    let optionList: string[] = [];
-                    if (Array.isArray((field as any).options)) {
-                      optionList = (field as any).options.filter(
-                        (opt: any): opt is string => typeof opt === "string"
-                      );
-                    } else if (typeof (field as any).options === "string") {
-                      try {
-                        const parsed = JSON.parse((field as any).options);
-                        if (Array.isArray(parsed)) {
-                          optionList = parsed
-                            .map((x) => (typeof x === "string" ? x : x?.label || x?.value))
-                            .filter((x): x is string => typeof x === "string");
-                        }
-                      } catch {
-                        optionList = [];
-                      }
+                    if (field.field_label === "Hiring Manager" && !isEditMode) {
+                      return null;
                     }
 
-                    const mergedOptions = Array.from(
-                      new Set([...(optionList || []), ...(additionalSkillSuggestions || [])])
-                    );
+                    const fieldValue = customFieldValues[field.field_name] || "";
 
-                    const fetchSkillSuggestions = (query: string) => {
-                      const q = String(query || "").trim();
-                      if (additionalSkillSearchTimeoutRef.current) {
-                        clearTimeout(additionalSkillSearchTimeoutRef.current);
-                      }
-                      additionalSkillSearchTimeoutRef.current = setTimeout(async () => {
-                        try {
-                          if (!q) {
-                            setAdditionalSkillSuggestions([]);
-                            return;
-                          }
+                    const fieldLabelLower = String(field.field_label || "").toLowerCase();
+                    const isAdditionalSkillsField =
+                      fieldLabelLower.includes("additional") && fieldLabelLower.includes("skill");
 
-                          const response = await fetch(
-                            `/api/jobs/skills-suggestions?q=${encodeURIComponent(q)}&limit=20`
-                          );
-                          const data = await response.json();
-                          if (response.ok) {
-                            setAdditionalSkillSuggestions(data.suggestions || []);
-                          }
-                        } catch (e) {
-                          console.error("Error fetching skill suggestions:", e);
+                    if (isAdditionalSkillsField) {
+                      const parseMultiValue = (val: any): string[] => {
+                        if (!val) return [];
+                        if (Array.isArray(val)) return val.filter((s) => s && String(s).trim());
+                        if (typeof val === "string") {
+                          return val
+                            .split(",")
+                            .map((s) => s.trim())
+                            .filter((s) => s);
                         }
-                      }, 250);
-                    };
+                        return [];
+                      };
 
-                    const handleAdditionalSkillsChange = (skills: string[]) => {
-                      const valueToSave = skills.length > 0 ? skills.join(", ") : "";
-                      handleCustomFieldChange(field.field_name, valueToSave);
-                    };
+                      const selected = parseMultiValue(fieldValue);
+
+                      let optionList: string[] = [];
+                      if (Array.isArray((field as any).options)) {
+                        optionList = (field as any).options.filter(
+                          (opt: any): opt is string => typeof opt === "string"
+                        );
+                      } else if (typeof (field as any).options === "string") {
+                        try {
+                          const parsed = JSON.parse((field as any).options);
+                          if (Array.isArray(parsed)) {
+                            optionList = parsed
+                              .map((x) => (typeof x === "string" ? x : x?.label || x?.value))
+                              .filter((x): x is string => typeof x === "string");
+                          }
+                        } catch {
+                          optionList = [];
+                        }
+                      }
+
+                      const mergedOptions = Array.from(
+                        new Set([...(optionList || []), ...(additionalSkillSuggestions || [])])
+                      );
+
+                      const fetchSkillSuggestions = (query: string) => {
+                        const q = String(query || "").trim();
+                        if (additionalSkillSearchTimeoutRef.current) {
+                          clearTimeout(additionalSkillSearchTimeoutRef.current);
+                        }
+                        additionalSkillSearchTimeoutRef.current = setTimeout(async () => {
+                          try {
+                            if (!q) {
+                              setAdditionalSkillSuggestions([]);
+                              return;
+                            }
+
+                            const response = await fetch(
+                              `/api/jobs/skills-suggestions?q=${encodeURIComponent(q)}&limit=20`
+                            );
+                            const data = await response.json();
+                            if (response.ok) {
+                              setAdditionalSkillSuggestions(data.suggestions || []);
+                            }
+                          } catch (e) {
+                            console.error("Error fetching skill suggestions:", e);
+                          }
+                        }, 250);
+                      };
+
+                      const handleAdditionalSkillsChange = (skills: string[]) => {
+                        const valueToSave = skills.length > 0 ? skills.join(", ") : "";
+                        handleCustomFieldChange(field.field_name, valueToSave);
+                      };
+
+                      return (
+                        <div key={field.id} className="flex items-start mb-3">
+                          <label className="w-48 font-medium flex items-center pt-2">
+                            {field.field_label}:
+                            {field.is_required &&
+                              (selected.length > 0 ? (
+                                <span className="text-green-500 ml-1">✔</span>
+                              ) : (
+                                <span className="text-red-500 ml-1">*</span>
+                              ))}
+                          </label>
+                          <div className="flex-1 relative">
+                            <MultiValueSearchTagInput
+                              values={selected}
+                              onChange={handleAdditionalSkillsChange}
+                              options={mergedOptions}
+                              onSearch={fetchSkillSuggestions}
+                              placeholder="Type to search skills and press Enter"
+                            />
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Special handling for Field_3 (Organization) - organizations dropdown
+                    if (field.field_label.toLowerCase() === "organization") {
+                      return (
+                        <div key={field.id} className="flex items-center mb-3">
+                          <label className="w-48 font-medium flex items-center">
+                            {field.field_label}:
+                            {field.is_required &&
+                              (fieldValue !== "" ? (
+                                <span className="text-green-500 ml-1">✔</span>
+                              ) : (
+                                <span className="text-red-500 ml-1">*</span>
+                              ))}
+                          </label>
+
+                          <div className="flex-1 relative">
+                            <select
+                              value={fieldValue}
+                              onChange={(e) => {
+                                handleCustomFieldChange(field.field_name, e.target.value);
+                                // Update currentOrganizationId when organization changes
+                                const selectedOrg = organizations.find(
+                                  (org) => org.name === e.target.value || org.id.toString() === e.target.value
+                                );
+                                if (selectedOrg) {
+                                  setCurrentOrganizationId(selectedOrg.id.toString());
+                                }
+                              }}
+                              className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
+                              required={field.is_required}
+                            >
+                              <option value="">Select {field.field_label}</option>
+                              {organizations.map((org) => (
+                                <option key={org.id} value={org.name || org.id.toString()}>
+                                  {org.name || `Organization #${org.id}`}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Special handling for Field_46 (Internal user), Field_506 (Sales Rep), and Field_507 (Account Manager) - active users dropdown
+                    if (field.field_name === "Field_46" || field.field_name === "Field_506" || field.field_name === "Field_507") {
+                      return (
+                        <div key={field.id} className="flex items-center mb-3">
+                          <label className="w-48 font-medium flex items-center">
+                            {field.field_label}:
+                            {field.is_required &&
+                              (fieldValue !== "" ? (
+                                <span className="text-green-500 ml-1">✔</span>
+                              ) : (
+                                <span className="text-red-500 ml-1">*</span>
+                              ))}
+                          </label>
+
+                          <div className="flex-1 relative">
+                            <select
+                              value={fieldValue}
+                              onChange={(e) => handleCustomFieldChange(field.field_name, e.target.value)}
+                              className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
+                              required={field.is_required}
+                            >
+                              <option value="">Select {field.field_label}</option>
+                              {activeUsers.map((user) => (
+                                <option key={user.id} value={user.name || user.email}>
+                                  {user.name || user.email || `User #${user.id}`}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Special handling for Field_4 (Billing Contact) and Field_503 (Timecard Approver) - multi-select contact lookup
+                    if (field.field_name === "Field_4" || field.field_name === "Field_503") {
+                      // Parse existing value (comma-separated string or array)
+                      const selectedContactIds = Array.isArray(fieldValue)
+                        ? fieldValue
+                        : typeof fieldValue === "string" && fieldValue
+                          ? fieldValue.split(",").map((id) => id.trim()).filter(Boolean)
+                          : [];
+
+                      const handleContactLookupChange = (contactIds: string[]) => {
+                        // Save as comma-separated string
+                        const valueToSave = contactIds.length > 0 ? contactIds.join(", ") : "";
+                        handleCustomFieldChange(field.field_name, valueToSave);
+                      };
+
+                      // Determine field label with "(Organization Only)" suffix
+                      const fieldLabel = field.field_label === "Priority" || field.field_label === "Priority" || field.field_label === "priority"
+                        ? `${field.field_label} (Organization Only)`
+                        : field.field_label;
+
+                      return (
+                        <div key={field.id} className="flex items-start mb-3">
+                          <label className="w-48 font-medium flex items-center pt-2">
+                            {fieldLabel}:
+                            {field.is_required &&
+                              (selectedContactIds.length > 0 ? (
+                                <span className="text-green-500 ml-1">✔</span>
+                              ) : (
+                                <span className="text-red-500 ml-1">*</span>
+                              ))}
+                          </label>
+
+                          <div className="flex-1 relative">
+                            {!currentOrganizationId && !organizationIdFromUrl ? (
+                              <div className="w-full p-2 border border-gray-300 rounded bg-gray-50 text-gray-500 text-sm">
+                                Please select an organization first to load contacts
+                              </div>
+                            ) : (
+                              <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500">
+                                <div className="max-h-48 overflow-y-auto p-2">
+                                  {organizationContacts.length === 0 ? (
+                                    <div className="text-gray-500 text-sm p-2">
+                                      No Hiring Managers found for this organization
+                                    </div>
+                                  ) : (
+                                    organizationContacts.map((contact) => {
+                                      const contactId = contact.id.toString();
+                                      const isSelected = selectedContactIds.includes(contactId);
+                                      const contactName =
+                                        contact.full_name ||
+                                        `${contact.first_name || ""} ${contact.last_name || ""}`.trim() ||
+                                        contact.name ||
+                                        `Contact #${contact.id}`;
+
+                                      return (
+                                        <label
+                                          key={contact.id}
+                                          className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={isSelected}
+                                            onChange={(e) => {
+                                              const newIds = e.target.checked
+                                                ? [...selectedContactIds, contactId]
+                                                : selectedContactIds.filter((id) => id !== contactId);
+                                              handleContactLookupChange(newIds);
+                                            }}
+                                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
+                                          />
+                                          <span className="text-sm text-gray-700">{contactName}</span>
+                                        </label>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                                {selectedContactIds.length > 0 && (
+                                  <div className="border-t border-gray-300 p-2 bg-gray-50">
+                                    <div className="text-xs text-gray-600 mb-1">
+                                      Selected: {selectedContactIds.length} contact(s)
+                                    </div>
+                                    <div className="flex flex-wrap gap-1">
+                                      {selectedContactIds.map((contactId) => {
+                                        const contact = organizationContacts.find(
+                                          (c) => c.id.toString() === contactId
+                                        );
+                                        const contactName =
+                                          contact?.full_name ||
+                                          `${contact?.first_name || ""} ${contact?.last_name || ""}`.trim() ||
+                                          contact?.name ||
+                                          `Contact #${contactId}`;
+                                        return contact ? (
+                                          <span
+                                            key={contactId}
+                                            className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
+                                          >
+                                            {contactName}
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                const newIds = selectedContactIds.filter(
+                                                  (id) => id !== contactId
+                                                );
+                                                handleContactLookupChange(newIds);
+                                              }}
+                                              className="ml-1 text-blue-600 hover:text-blue-800"
+                                            >
+                                              ×
+                                            </button>
+                                          </span>
+                                        ) : null;
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    // Special handling for Field_11 (Pay Rate), Field_12/Field_512 (Mark-up %), and Field_13 (Client Bill Rate)
+                    if (field.field_name === "Field_11" || field.field_name === "Field_12" || field.field_name === "Field_512" || field.field_name === "Field_13") {
+                      const isCalculatedField = field.field_name === "Field_13";
+                      const payRateValue = customFieldValues["Field_11"] || "";
+                      const markupValue = customFieldValues["Field_12"] || customFieldValues["Field_512"] || "";
+                      const calculatedValue = calculateClientBillRate(payRateValue, markupValue);
+
+                      return (
+                        <div key={field.id} className="flex items-center mb-3">
+                          <label className="w-48 font-medium flex items-center">
+                            {field.field_label}:
+                            {field.is_required &&
+                              (fieldValue !== "" ? (
+                                <span className="text-green-500 ml-1">✔</span>
+                              ) : (
+                                <span className="text-red-500 ml-1">*</span>
+                              ))}
+                            {isCalculatedField && (
+                              <span className="text-xs text-gray-500 ml-2">(Calculated)</span>
+                            )}
+                          </label>
+
+                          <div className="flex-1 relative">
+                            {isCalculatedField ? (
+                              // Field_13 is read-only and shows calculated value
+                              <input
+                                type="text"
+                                value={calculatedValue || fieldValue}
+                                readOnly
+                                className="w-full p-2 border-b border-gray-300 bg-gray-50 text-gray-700 cursor-not-allowed"
+                                placeholder="Auto-calculated"
+                              />
+                            ) : (
+                              // Field_11, Field_12, and Field_512 are editable
+                              <CustomFieldRenderer
+                                field={field}
+                                value={fieldValue}
+                                onChange={handleCustomFieldChangeWithCalculation}
+                              />
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
 
                     return (
-                      <div key={field.id} className="flex items-start mb-3">
-                        <label className="w-48 font-medium flex items-center pt-2">
+                      <div key={field.id} className="flex items-center mb-3">
+                        <label className="w-48 font-medium flex items-center">
                           {field.field_label}:
                           {field.is_required &&
-                            (selected.length > 0 ? (
+                            (fieldValue !== "" ? (
                               <span className="text-green-500 ml-1">✔</span>
                             ) : (
                               <span className="text-red-500 ml-1">*</span>
                             ))}
                         </label>
+
                         <div className="flex-1 relative">
-                          <MultiValueSearchTagInput
-                            values={selected}
-                            onChange={handleAdditionalSkillsChange}
-                            options={mergedOptions}
-                            onSearch={fetchSkillSuggestions}
-                            placeholder="Type to search skills and press Enter"
+                          <CustomFieldRenderer
+                            field={field}
+                            value={fieldValue}
+                            onChange={handleCustomFieldChange}
                           />
                         </div>
                       </div>
                     );
-                  }
+                  })}
+                </>
+              )}
+            </div>
 
-                  // Special handling for Field_3 (Organization) - organizations dropdown
-                  if (field.field_name === "Field_3") {
-                    return (
-                      <div key={field.id} className="flex items-center mb-3">
-                        <label className="w-48 font-medium flex items-center">
-                          {field.field_label}:
-                          {field.is_required &&
-                            (fieldValue !== "" ? (
-                              <span className="text-green-500 ml-1">✔</span>
-                            ) : (
-                              <span className="text-red-500 ml-1">*</span>
-                            ))}
-                        </label>
-
-                        <div className="flex-1 relative">
-                          <select
-                            value={fieldValue}
-                            onChange={(e) => {
-                              handleCustomFieldChange(field.field_name, e.target.value);
-                              // Update currentOrganizationId when organization changes
-                              const selectedOrg = organizations.find(
-                                (org) => org.name === e.target.value || org.id.toString() === e.target.value
-                              );
-                              if (selectedOrg) {
-                                setCurrentOrganizationId(selectedOrg.id.toString());
-                              }
-                            }}
-                            className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
-                            required={field.is_required}
-                          >
-                            <option value="">Select {field.field_label}</option>
-                            {organizations.map((org) => (
-                              <option key={org.id} value={org.name || org.id.toString()}>
-                                {org.name || `Organization #${org.id}`}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  // Special handling for Field_46 (Internal user), Field_506 (Sales Rep), and Field_507 (Account Manager) - active users dropdown
-                  if (field.field_name === "Field_46" || field.field_name === "Field_506" || field.field_name === "Field_507") {
-                    return (
-                      <div key={field.id} className="flex items-center mb-3">
-                        <label className="w-48 font-medium flex items-center">
-                          {field.field_label}:
-                          {field.is_required &&
-                            (fieldValue !== "" ? (
-                              <span className="text-green-500 ml-1">✔</span>
-                            ) : (
-                              <span className="text-red-500 ml-1">*</span>
-                            ))}
-                        </label>
-
-                        <div className="flex-1 relative">
-                          <select
-                            value={fieldValue}
-                            onChange={(e) => handleCustomFieldChange(field.field_name, e.target.value)}
-                            className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
-                            required={field.is_required}
-                          >
-                            <option value="">Select {field.field_label}</option>
-                            {activeUsers.map((user) => (
-                              <option key={user.id} value={user.name || user.email}>
-                                {user.name || user.email || `User #${user.id}`}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  // Special handling for Field_4 (Billing Contact) and Field_503 (Timecard Approver) - multi-select contact lookup
-                  if (field.field_name === "Field_4" || field.field_name === "Field_503") {
-                    // Parse existing value (comma-separated string or array)
-                    const selectedContactIds = Array.isArray(fieldValue)
-                      ? fieldValue
-                      : typeof fieldValue === "string" && fieldValue
-                      ? fieldValue.split(",").map((id) => id.trim()).filter(Boolean)
-                      : [];
-
-                    const handleContactLookupChange = (contactIds: string[]) => {
-                      // Save as comma-separated string
-                      const valueToSave = contactIds.length > 0 ? contactIds.join(", ") : "";
-                      handleCustomFieldChange(field.field_name, valueToSave);
-                    };
-
-                    // Determine field label with "(Organization Only)" suffix
-                    const fieldLabel = field.field_name === "Field_4" 
-                      ? `${field.field_label} (Organization Only)`
-                      : `${field.field_label} (Organization Only)`;
-
-                    return (
-                      <div key={field.id} className="flex items-start mb-3">
-                        <label className="w-48 font-medium flex items-center pt-2">
-                          {fieldLabel}:
-                          {field.is_required &&
-                            (selectedContactIds.length > 0 ? (
-                              <span className="text-green-500 ml-1">✔</span>
-                            ) : (
-                              <span className="text-red-500 ml-1">*</span>
-                            ))}
-                        </label>
-
-                        <div className="flex-1 relative">
-                          {!currentOrganizationId && !organizationIdFromUrl ? (
-                            <div className="w-full p-2 border border-gray-300 rounded bg-gray-50 text-gray-500 text-sm">
-                              Please select an organization first to load contacts
-                            </div>
-                          ) : (
-                            <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500">
-                              <div className="max-h-48 overflow-y-auto p-2">
-                                {organizationContacts.length === 0 ? (
-                                  <div className="text-gray-500 text-sm p-2">
-                                    No Hiring Managers found for this organization
-                                  </div>
-                                ) : (
-                                  organizationContacts.map((contact) => {
-                                    const contactId = contact.id.toString();
-                                    const isSelected = selectedContactIds.includes(contactId);
-                                    const contactName =
-                                      contact.full_name ||
-                                      `${contact.first_name || ""} ${contact.last_name || ""}`.trim() ||
-                                      contact.name ||
-                                      `Contact #${contact.id}`;
-
-                                    return (
-                                      <label
-                                        key={contact.id}
-                                        className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
-                                      >
-                                        <input
-                                          type="checkbox"
-                                          checked={isSelected}
-                                          onChange={(e) => {
-                                            const newIds = e.target.checked
-                                              ? [...selectedContactIds, contactId]
-                                              : selectedContactIds.filter((id) => id !== contactId);
-                                            handleContactLookupChange(newIds);
-                                          }}
-                                          className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
-                                        />
-                                        <span className="text-sm text-gray-700">{contactName}</span>
-                                      </label>
-                                    );
-                                  })
-                                )}
-                              </div>
-                              {selectedContactIds.length > 0 && (
-                                <div className="border-t border-gray-300 p-2 bg-gray-50">
-                                  <div className="text-xs text-gray-600 mb-1">
-                                    Selected: {selectedContactIds.length} contact(s)
-                                  </div>
-                                  <div className="flex flex-wrap gap-1">
-                                    {selectedContactIds.map((contactId) => {
-                                      const contact = organizationContacts.find(
-                                        (c) => c.id.toString() === contactId
-                                      );
-                                      const contactName =
-                                        contact?.full_name ||
-                                        `${contact?.first_name || ""} ${contact?.last_name || ""}`.trim() ||
-                                        contact?.name ||
-                                        `Contact #${contactId}`;
-                                      return contact ? (
-                                        <span
-                                          key={contactId}
-                                          className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
-                                        >
-                                          {contactName}
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              const newIds = selectedContactIds.filter(
-                                                (id) => id !== contactId
-                                              );
-                                              handleContactLookupChange(newIds);
-                                            }}
-                                            className="ml-1 text-blue-600 hover:text-blue-800"
-                                          >
-                                            ×
-                                          </button>
-                                        </span>
-                                      ) : null;
-                                    })}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  // Special handling for Field_11 (Pay Rate), Field_12/Field_512 (Mark-up %), and Field_13 (Client Bill Rate)
-                  if (field.field_name === "Field_11" || field.field_name === "Field_12" || field.field_name === "Field_512" || field.field_name === "Field_13") {
-                    const isCalculatedField = field.field_name === "Field_13";
-                    const payRateValue = customFieldValues["Field_11"] || "";
-                    const markupValue = customFieldValues["Field_12"] || customFieldValues["Field_512"] || "";
-                    const calculatedValue = calculateClientBillRate(payRateValue, markupValue);
-
-                    return (
-                      <div key={field.id} className="flex items-center mb-3">
-                        <label className="w-48 font-medium flex items-center">
-                          {field.field_label}:
-                          {field.is_required &&
-                            (fieldValue !== "" ? (
-                              <span className="text-green-500 ml-1">✔</span>
-                            ) : (
-                              <span className="text-red-500 ml-1">*</span>
-                            ))}
-                          {isCalculatedField && (
-                            <span className="text-xs text-gray-500 ml-2">(Calculated)</span>
-                          )}
-                        </label>
-
-                        <div className="flex-1 relative">
-                          {isCalculatedField ? (
-                            // Field_13 is read-only and shows calculated value
-                            <input
-                              type="text"
-                              value={calculatedValue || fieldValue}
-                              readOnly
-                              className="w-full p-2 border-b border-gray-300 bg-gray-50 text-gray-700 cursor-not-allowed"
-                              placeholder="Auto-calculated"
-                            />
-                          ) : (
-                            // Field_11, Field_12, and Field_512 are editable
-                            <CustomFieldRenderer
-                              field={field}
-                              value={fieldValue}
-                              onChange={handleCustomFieldChangeWithCalculation}
-                            />
-                          )}
-                        </div>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <div key={field.id} className="flex items-center mb-3">
-                      <label className="w-48 font-medium flex items-center">
-                        {field.field_label}:
-                        {field.is_required &&
-                          (fieldValue !== "" ? (
-                            <span className="text-green-500 ml-1">✔</span>
-                          ) : (
-                            <span className="text-red-500 ml-1">*</span>
-                          ))}
-                      </label>
-
-                      <div className="flex-1 relative">
-                        <CustomFieldRenderer
-                          field={field}
-                          value={fieldValue}
-                          onChange={handleCustomFieldChange}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </>
-            )}
-          </div>
-
-          <div className="h-20" aria-hidden="true" />
-          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
-            <button
-              type="button"
-              onClick={handleGoBack}
-              className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isSubmitting || !isFormValid}
-              className={`px-4 py-2 rounded ${
-                isSubmitting || !isFormValid
-                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                  : "bg-blue-500 text-white hover:bg-blue-600"
-              }`}
-            >
-              {isEditMode ? "Update" : "Save"}
-            </button>
-          </div>
+            <div className="h-20" aria-hidden="true" />
+            <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
+              <button
+                type="button"
+                onClick={handleGoBack}
+                className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting || !isFormValid}
+                className={`px-4 py-2 rounded ${isSubmitting || !isFormValid
+                    ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                    : "bg-blue-500 text-white hover:bg-blue-600"
+                  }`}
+              >
+                {isEditMode ? "Update" : "Save"}
+              </button>
+            </div>
           </form>
         )}
       </div>
