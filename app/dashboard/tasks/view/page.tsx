@@ -11,7 +11,7 @@ import { FiCheckSquare } from 'react-icons/fi';
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
-
+import RecordNameResolver from '@/components/RecordNameResolver';
 import {
     buildPinnedKey,
     isPinnedRecord,
@@ -52,19 +52,19 @@ const TASK_DEFAULT_HEADER_FIELDS = ["dueDate", "assignedTo"];
 
 // Standard header field keys -> display labels (when not in API catalog)
 const TASK_HEADER_FIELD_LABELS: Record<string, string> = {
-  dueDate: "Due Date",
-  assignedTo: "Assigned To",
-  priority: "Priority",
-  status: "Status",
-  owner: "Owner",
-  jobSeeker: "Job Seeker",
-  hiringManager: "Hiring Manager",
-  job: "Job",
-  organization: "Organization",
-  lead: "Lead",
-  dateCreated: "Date Created",
-  createdBy: "Created By",
-  website: "Website",
+    dueDate: "Due Date",
+    assignedTo: "Assigned To",
+    priority: "Priority",
+    status: "Status",
+    owner: "Owner",
+    jobSeeker: "Job Seeker",
+    hiringManager: "Hiring Manager",
+    job: "Job",
+    organization: "Organization",
+    lead: "Lead",
+    dateCreated: "Date Created",
+    createdBy: "Created By",
+    website: "Website",
 };
 
 // Storage keys for Task Details and Task Overview – field lists come from admin (custom field definitions)
@@ -595,14 +595,14 @@ export default function TaskView() {
                 const parsed = JSON.parse(to);
                 if (Array.isArray(parsed) && parsed.length > 0) taskOverview = Array.from(new Set(parsed));
             }
-        } catch (_) {}
+        } catch (_) { }
         try {
             const d = localStorage.getItem(TASK_DETAILS_STORAGE_KEY);
             if (d) {
                 const parsed = JSON.parse(d);
                 if (Array.isArray(parsed) && parsed.length > 0) details = Array.from(new Set(parsed));
             }
-        } catch (_) {}
+        } catch (_) { }
         return { taskOverview, details, recentNotes: ["notes"] };
     });
     const [editingPanel, setEditingPanel] = useState<string | null>(null);
@@ -859,26 +859,28 @@ export default function TaskView() {
     // For summary: render record names as clickable links to their view pages
     const getTaskFieldDisplayContent = (key: string): React.ReactNode => {
         const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+        console.log("rawKey", getTaskFieldLabel(key));
         const displayValue = getTaskFieldValue(key);
-        const linkMap: Record<string, { id: number | null | undefined; path: string }> = {
-            jobSeeker: { id: task?.jobSeekerId, path: "/dashboard/job-seekers/view" },
-            hiringManager: { id: task?.hiringManagerId, path: "/dashboard/hiring-managers/view" },
-            job: { id: task?.jobId, path: "/dashboard/jobs/view" },
-            organization: { id: task?.organizationId, path: "/dashboard/organizations/view" },
-            lead: { id: task?.leadId, path: "/dashboard/leads/view" },
-        };
-        const link = linkMap[rawKey];
-        if (link?.id != null && Number(link.id) > 0 && String(displayValue) !== "-" && String(displayValue).trim() !== "") {
-            return (
-                <button
-                    type="button"
-                    onClick={() => router.push(`${link.path}?id=${link.id}`)}
-                    className="text-blue-600 hover:underline text-left"
-                >
-                    {displayValue}
-                </button>
-            );
-        }
+        // const linkMap: Record<string, { id: number | null | undefined; path: string }> = {
+        //     jobSeeker: { id: task?.jobSeekerId, path: "/dashboard/job-seekers/view" },
+        //     hiringManager: { id: task?.hiringManagerId, path: "/dashboard/hiring-managers/view" },
+        //     job: { id: task?.jobId, path: "/dashboard/jobs/view" },
+        //     organization: { id: task?.organizationId, path: "/dashboard/organizations/view" },
+        //     lead: { id: task?.leadId, path: "/dashboard/leads/view" },
+        // };
+        // console.log("linkMap", linkMap);
+        // const link = linkMap[rawKey];
+        // if (link?.id != null && Number(link.id) > 0 && String(displayValue) !== "-" && String(displayValue).trim() !== "") {
+        //     return (
+        //         <button
+        //             type="button"
+        //             onClick={() => router.push(`${link.path}?id=${link.id}`)}
+        //             className="text-blue-600 hover:underline text-left"
+        //         >
+        //             {displayValue}
+        //         </button>
+        //     );
+        // }
         return displayValue;
     };
 
@@ -970,7 +972,7 @@ export default function TaskView() {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
                 },
-                body: JSON.stringify({ 
+                body: JSON.stringify({
                     text: noteForm.text,
                     copy_note: noteForm.copyNote === 'Yes',
                     replace_general_contact_comments: noteForm.replaceGeneralContactComments,
@@ -1081,31 +1083,31 @@ export default function TaskView() {
 
     // Print handler: ensure Summary tab is active when printing
     const handlePrint = () => {
-    const printContent = document.getElementById("printable-summary");
-    if (!printContent) return;
+        const printContent = document.getElementById("printable-summary");
+        if (!printContent) return;
 
-    const printWindow = window.open("", "_blank");
-    if (!printWindow) return;
+        const printWindow = window.open("", "_blank");
+        if (!printWindow) return;
 
-    const tabTitle = activeTab?.toUpperCase() || "Tasks SUMMARY";
+        const tabTitle = activeTab?.toUpperCase() || "Tasks SUMMARY";
 
-    // clone styles
-    const styles = Array.from(document.styleSheets)
-      .map(sheet => {
-        try {
-          if (sheet.href) {
-            return `<link rel="stylesheet" href="${sheet.href}" />`;
-          }
-          return `<style>${Array.from(sheet.cssRules)
-            .map(rule => rule.cssText)
-            .join("")}</style>`;
-        } catch {
-          return "";
-        }
-      })
-      .join("");
+        // clone styles
+        const styles = Array.from(document.styleSheets)
+            .map(sheet => {
+                try {
+                    if (sheet.href) {
+                        return `<link rel="stylesheet" href="${sheet.href}" />`;
+                    }
+                    return `<style>${Array.from(sheet.cssRules)
+                        .map(rule => rule.cssText)
+                        .join("")}</style>`;
+                } catch {
+                    return "";
+                }
+            })
+            .join("");
 
-    printWindow.document.write(`
+        printWindow.document.write(`
     <html>
       <head>
         <title>${tabTitle}</title>
@@ -1197,14 +1199,14 @@ export default function TaskView() {
     </html>
   `);
 
-    printWindow.document.close();
-    printWindow.focus();
+        printWindow.document.close();
+        printWindow.focus();
 
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 600);
-  };
+        setTimeout(() => {
+            printWindow.print();
+            printWindow.close();
+        }, 600);
+    };
 
     const handleEdit = () => {
         if (taskId) {
@@ -1278,7 +1280,7 @@ export default function TaskView() {
             let data: { message?: string } = {};
             try {
                 data = responseText ? JSON.parse(responseText) : {};
-            } catch (_) {}
+            } catch (_) { }
 
             if (!response.ok) {
                 const msg = data.message || response.statusText || 'Failed to update task';
@@ -1541,138 +1543,138 @@ export default function TaskView() {
                         disabled={isLoadingHistory}
                     />
                     <div className="space-y-4">
-                    {historyFilters.filteredAndSorted.map((item) => {
-                        // Format the history entry based on action type
-                        let actionDisplay = '';
-                        let detailsDisplay: React.ReactNode = '';
+                        {historyFilters.filteredAndSorted.map((item) => {
+                            // Format the history entry based on action type
+                            let actionDisplay = '';
+                            let detailsDisplay: React.ReactNode = '';
 
-                        try {
-                            const details = typeof item.details === 'string'
-                                ? JSON.parse(item.details)
-                                : item.details;
+                            try {
+                                const details = typeof item.details === 'string'
+                                    ? JSON.parse(item.details)
+                                    : item.details;
 
-                            switch (item.action) {
-                                case 'CREATE':
-                                    actionDisplay = 'Task Created';
-                                    detailsDisplay = `Created by ${item.performed_by_name || 'Unknown'}`;
-                                    break;
-                                case 'UPDATE':
-                                    actionDisplay = 'Task Updated';
-                                    if (details && details.before && details.after) {
-                                        // Create a list of changes
-                                        const changes: React.ReactNode[] = [];
+                                switch (item.action) {
+                                    case 'CREATE':
+                                        actionDisplay = 'Task Created';
+                                        detailsDisplay = `Created by ${item.performed_by_name || 'Unknown'}`;
+                                        break;
+                                    case 'UPDATE':
+                                        actionDisplay = 'Task Updated';
+                                        if (details && details.before && details.after) {
+                                            // Create a list of changes
+                                            const changes: React.ReactNode[] = [];
 
-                                        // Helper function to format values
-                                        const formatValue = (val: any): string => {
-                                            if (val === null || val === undefined) return 'Empty';
-                                            if (typeof val === 'object') return JSON.stringify(val);
-                                            return String(val);
-                                        };
+                                            // Helper function to format values
+                                            const formatValue = (val: any): string => {
+                                                if (val === null || val === undefined) return 'Empty';
+                                                if (typeof val === 'object') return JSON.stringify(val);
+                                                return String(val);
+                                            };
 
-                                        for (const key in details.after) {
-                                            // Skip internal fields that might not be relevant to users
-                                            if (key === 'updated_at') continue;
+                                            for (const key in details.after) {
+                                                // Skip internal fields that might not be relevant to users
+                                                if (key === 'updated_at') continue;
 
-                                            const beforeVal = details.before[key];
-                                            const afterVal = details.after[key];
+                                                const beforeVal = details.before[key];
+                                                const afterVal = details.after[key];
 
-                                            if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
-                                                // Special handling for custom_fields
-                                                if (key === 'custom_fields') {
-                                                    let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
-                                                    let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
+                                                if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                                                    // Special handling for custom_fields
+                                                    if (key === 'custom_fields') {
+                                                        let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
+                                                        let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
 
-                                                    // Handle case where custom_fields might be null/undefined
-                                                    beforeObj = beforeObj || {};
-                                                    afterObj = afterObj || {};
+                                                        // Handle case where custom_fields might be null/undefined
+                                                        beforeObj = beforeObj || {};
+                                                        afterObj = afterObj || {};
 
-                                                    if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
-                                                        const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
+                                                        if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
+                                                            const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
 
-                                                        allKeys.forEach(cfKey => {
-                                                            const beforeCfVal = beforeObj[cfKey];
-                                                            const afterCfVal = afterObj[cfKey];
+                                                            allKeys.forEach(cfKey => {
+                                                                const beforeCfVal = beforeObj[cfKey];
+                                                                const afterCfVal = afterObj[cfKey];
 
-                                                            if (beforeCfVal !== afterCfVal) {
-                                                                changes.push(
-                                                                    <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                                                                        <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
-                                                                        <div className="flex flex-wrap gap-2 items-center">
-                                                                            <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                                                                                {formatValue(beforeCfVal)}
-                                                                            </span>
-                                                                            <span className="text-gray-400">→</span>
-                                                                            <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                                                                                {formatValue(afterCfVal)}
-                                                                            </span>
+                                                                if (beforeCfVal !== afterCfVal) {
+                                                                    changes.push(
+                                                                        <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                                                                            <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
+                                                                            <div className="flex flex-wrap gap-2 items-center">
+                                                                                <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                                                                    {formatValue(beforeCfVal)}
+                                                                                </span>
+                                                                                <span className="text-gray-400">→</span>
+                                                                                <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                                                                    {formatValue(afterCfVal)}
+                                                                                </span>
+                                                                            </div>
                                                                         </div>
-                                                                    </div>
-                                                                );
-                                                            }
-                                                        });
-                                                        continue; // Skip the standard field handling for custom_fields
+                                                                    );
+                                                                }
+                                                            });
+                                                            continue; // Skip the standard field handling for custom_fields
+                                                        }
                                                     }
-                                                }
 
-                                                // Standard fields
-                                                // const fieldName = key.replace(/_/g, ' ');
-                                                // changes.push(
-                                                //     <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                                                //         <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
-                                                //         <div className="flex flex-wrap gap-2 items-center">
-                                                //             <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                                                //                 {formatValue(beforeVal)}
-                                                //             </span>
-                                                //             <span className="text-gray-400">→</span>
-                                                //             <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                                                //                 {formatValue(afterVal)}
-                                                //             </span>
-                                                //         </div>
-                                                //     </div>
-                                                // );
+                                                    // Standard fields
+                                                    // const fieldName = key.replace(/_/g, ' ');
+                                                    // changes.push(
+                                                    //     <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                                                    //         <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
+                                                    //         <div className="flex flex-wrap gap-2 items-center">
+                                                    //             <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                                    //                 {formatValue(beforeVal)}
+                                                    //             </span>
+                                                    //             <span className="text-gray-400">→</span>
+                                                    //             <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                                    //                 {formatValue(afterVal)}
+                                                    //             </span>
+                                                    //         </div>
+                                                    //     </div>
+                                                    // );
+                                                }
+                                            }
+
+                                            if (changes.length > 0) {
+                                                detailsDisplay = (
+                                                    <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
+                                                        {changes}
+                                                    </div>
+                                                );
+                                            } else {
+                                                detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
                                             }
                                         }
-
-                                        if (changes.length > 0) {
-                                            detailsDisplay = (
-                                                <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
-                                                    {changes}
-                                                </div>
-                                            );
-                                        } else {
-                                            detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
-                                        }
-                                    }
-                                    break;
-                                case 'ADD_NOTE':
-                                    actionDisplay = 'Note Added';
-                                    detailsDisplay = details.text || '';
-                                    break;
-                                default:
-                                    actionDisplay = item.action;
-                                    detailsDisplay = JSON.stringify(details);
+                                        break;
+                                    case 'ADD_NOTE':
+                                        actionDisplay = 'Note Added';
+                                        detailsDisplay = details.text || '';
+                                        break;
+                                    default:
+                                        actionDisplay = item.action;
+                                        detailsDisplay = JSON.stringify(details);
+                                }
+                            } catch (e) {
+                                console.error('Error parsing history details:', e);
+                                detailsDisplay = 'Error displaying details';
                             }
-                        } catch (e) {
-                            console.error('Error parsing history details:', e);
-                            detailsDisplay = 'Error displaying details';
-                        }
 
-                        return (
-                            <div key={item.id} className="p-3 border rounded hover:bg-gray-50">
-                                <div className="flex justify-between items-start mb-2">
-                                    <span className="font-medium text-blue-600">{actionDisplay}</span>
-                                    <span className="text-sm text-gray-500">
-                                        {new Date(item.performed_at).toLocaleString()}
-                                    </span>
+                            return (
+                                <div key={item.id} className="p-3 border rounded hover:bg-gray-50">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <span className="font-medium text-blue-600">{actionDisplay}</span>
+                                        <span className="text-sm text-gray-500">
+                                            {new Date(item.performed_at).toLocaleString()}
+                                        </span>
+                                    </div>
+                                    <div className="mb-2">{detailsDisplay}</div>
+                                    <div className="text-sm text-gray-600">
+                                        By: {item.performed_by_name || 'Unknown'}
+                                    </div>
                                 </div>
-                                <div className="mb-2">{detailsDisplay}</div>
-                                <div className="text-sm text-gray-600">
-                                    By: {item.performed_by_name || 'Unknown'}
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
+                            );
+                        })}
+                    </div>
                 </>
             ) : (
                 <p className="text-gray-500 italic">No history records available</p>
@@ -1933,11 +1935,10 @@ export default function TaskView() {
                                 <div className="flex justify-between items-center">
                                     <h2 className="text-xl font-bold">{task.title}</h2>
                                     <div
-                                        className={`text-xs px-2 py-1 rounded ${
-                                            task.isCompleted
-                                                ? "bg-green-100 text-green-800"
-                                                : "bg-yellow-100 text-yellow-800"
-                                        }`}
+                                        className={`text-xs px-2 py-1 rounded ${task.isCompleted
+                                            ? "bg-green-100 text-green-800"
+                                            : "bg-yellow-100 text-yellow-800"
+                                            }`}
                                     >
                                         {task.isCompleted ? "Completed" : task.status}
                                     </div>
@@ -1961,7 +1962,39 @@ export default function TaskView() {
                                                 <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">
                                                     {getTaskFieldLabel(k)}:
                                                 </div>
-                                                <div className="flex-1 p-2">{getTaskFieldDisplayContent(k)}</div>
+                                                <div className="flex-1 p-2">
+                                                    {getTaskFieldLabel(k) === "Job Seekers" ?
+                                                        <RecordNameResolver
+                                                            id={Number(getTaskFieldValue(k))}
+                                                            type="jobSeeker"
+                                                            clickable
+                                                            fallback={getTaskFieldValue(k) || "-"}
+                                                        />
+                                                        : getTaskFieldLabel(k) === "Hiring Managers" ?
+                                                            <RecordNameResolver
+                                                                id={Number(getTaskFieldValue(k))}
+                                                                type="hiringManager"
+                                                                clickable
+                                                                fallback={getTaskFieldValue(k) || "-"}
+                                                            />
+                                                            : getTaskFieldLabel(k) === "Jobs" ?
+                                                                <RecordNameResolver
+                                                                    id={Number(getTaskFieldValue(k))}
+                                                                    type="job"
+                                                                    clickable
+                                                                    fallback={getTaskFieldValue(k) || "-"}
+                                                                />
+                                                                : getTaskFieldLabel(k) === "Organization" ?
+                                                                    <RecordNameResolver
+                                                                        id={Number(getTaskFieldValue(k))}
+                                                                        type="organization"
+                                                                        clickable
+                                                                        fallback={getTaskFieldValue(k) || "-"}
+                                                                    />
+                                                                    :
+                                                                    getTaskFieldValue(k) || "-"
+                                                    }
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -1998,7 +2031,39 @@ export default function TaskView() {
                                         <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">
                                             {getTaskFieldLabel(key)}:
                                         </div>
-                                        <div className="flex-1 p-2">{getTaskFieldDisplayContent(key)}</div>
+                                        <div className="flex-1 p-2">
+                                            {getTaskFieldLabel(key) === "Job Seekers" ?
+                                                <RecordNameResolver
+                                                    id={Number(getTaskFieldValue(key))}
+                                                    type="jobSeeker"
+                                                    clickable
+                                                    fallback={getTaskFieldValue(key) || "-"}
+                                                />
+                                                : getTaskFieldLabel(key) === "Hiring Managers" ?
+                                                    <RecordNameResolver
+                                                        id={Number(getTaskFieldValue(key))}
+                                                        type="hiringManager"
+                                                        clickable
+                                                        fallback={getTaskFieldValue(key) || "-"}
+                                                    />
+                                                    : getTaskFieldLabel(key) === "Jobs" ?
+                                                        <RecordNameResolver
+                                                            id={Number(getTaskFieldValue(key))}
+                                                            type="job"
+                                                            clickable
+                                                            fallback={getTaskFieldValue(key) || "-"}
+                                                        />
+                                                        : getTaskFieldLabel(key) === "Organization" ?
+                                                            <RecordNameResolver
+                                                                id={Number(getTaskFieldValue(key))}
+                                                                type="organization"
+                                                                clickable
+                                                                fallback={getTaskFieldValue(key) || "-"}
+                                                            />
+                                                            :
+                                                            getTaskFieldValue(key) || "-"
+                                            }
+                                        </div>
                                     </div>
                                 ))}
                             </div>
@@ -2215,11 +2280,10 @@ export default function TaskView() {
                 {tabs.map((tab) => (
                     <button
                         key={tab.id}
-                        className={`px-4 py-2 ${
-                            activeTab === tab.id
-                                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
-                                : "text-gray-700 hover:bg-gray-200"
-                        }`}
+                        className={`px-4 py-2 ${activeTab === tab.id
+                            ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+                            : "text-gray-700 hover:bg-gray-200"
+                            }`}
                         onClick={() => {
                             if (tab.id === "modify") {
                                 handleEdit();
@@ -2237,7 +2301,7 @@ export default function TaskView() {
             <div className="p-4">
                 {activeTab === "summary" && (
                     <div className="relative w-full">
-                        
+
                         {!isPinned && (
                             <div id="printable-summary" className="p-4">
                                 <DndContext
@@ -2325,22 +2389,20 @@ export default function TaskView() {
                                     <button
                                         type="button"
                                         onClick={() => setTearsheetForm(prev => ({ ...prev, visibility: 'New' }))}
-                                        className={`px-4 py-2 text-sm font-medium transition-colors ${
-                                            tearsheetForm.visibility === 'New'
-                                                ? 'bg-blue-500 text-white'
-                                                : 'bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50'
-                                        }`}
+                                        className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === 'New'
+                                            ? 'bg-blue-500 text-white'
+                                            : 'bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50'
+                                            }`}
                                     >
                                         New
                                     </button>
                                     <button
                                         type="button"
                                         onClick={() => setTearsheetForm(prev => ({ ...prev, visibility: 'Existing' }))}
-                                        className={`px-4 py-2 text-sm font-medium transition-colors ${
-                                            tearsheetForm.visibility === 'Existing'
-                                                ? 'bg-blue-500 text-white'
-                                                : 'bg-white text-gray-700 hover:bg-gray-50'
-                                        }`}
+                                        className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === 'Existing'
+                                            ? 'bg-blue-500 text-white'
+                                            : 'bg-white text-gray-700 hover:bg-gray-50'
+                                            }`}
                                     >
                                         Existing
                                     </button>
@@ -2506,7 +2568,7 @@ export default function TaskView() {
                                                             id={detailsDragActiveId}
                                                             label={field.label}
                                                             checked={modalDetailsVisible[detailsDragActiveId] || false}
-                                                            onToggle={() => {}}
+                                                            onToggle={() => { }}
                                                             isOverlay
                                                         />
                                                     ) : null;
@@ -2574,7 +2636,7 @@ export default function TaskView() {
                                                             id={taskOverviewDragActiveId}
                                                             label={field.label}
                                                             checked={modalTaskOverviewVisible[taskOverviewDragActiveId] || false}
-                                                            onToggle={() => {}}
+                                                            onToggle={() => { }}
                                                             isOverlay
                                                         />
                                                     ) : null;

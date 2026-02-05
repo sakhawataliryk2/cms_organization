@@ -1,67 +1,11 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-/**
- * Hook to resolve a record ID to its display name.
- * @returns { name, isLoading, error }
- */
-export function useRecordName(
-  id: string | number | null | undefined,
-  type: RecordType | string
-) {
-  const [name, setName] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  const idStr = id != null && id !== "" ? String(id).trim() : null;
-
-  useEffect(() => {
-    if (!idStr) {
-      setName(null);
-      setError(true);
-      setIsLoading(false);
-      return;
-    }
-
-    const controller = new AbortController();
-    setIsLoading(true);
-
-    const fetchName = async () => {
-      try {
-        setError(false);
-        const params = new URLSearchParams({
-          type: type.toString().toLowerCase().replace(/\s+/g, "-"),
-          id: idStr,
-        });
-        const response = await fetch(`/api/resolve-record?${params}`, {
-          signal: controller.signal,
-        });
-        const data = await response.json();
-
-        if (response.ok && data.success) {
-          setName(data.name || null);
-        } else {
-          setError(true);
-          setName(null);
-        }
-      } catch (err) {
-        if ((err as Error).name !== "AbortError") {
-          setError(true);
-          setName(null);
-        }
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchName();
-    return () => controller.abort();
-  }, [idStr, type]);
-
-  return { name, isLoading, error };
-}
+/* ---------------------------------------------
+   Types
+--------------------------------------------- */
 
 export type RecordType =
   | "organization"
@@ -77,7 +21,112 @@ export type RecordType =
   | "placement"
   | "placements"
   | "task"
-  | "tasks";
+  | "tasks"
+  | "jobSeeker"
+  | "jobSeekers"
+  | "hiringManager"
+  | "hiringManagers";
+
+type CacheEntry = {
+  name: string | null;
+  error: boolean;
+};
+
+/* ---------------------------------------------
+   Global Cache (shared across app)
+--------------------------------------------- */
+
+const recordNameCache = new Map<string, CacheEntry>();
+const inflightRequests = new Map<string, Promise<CacheEntry>>();
+
+/* ---------------------------------------------
+   Hook: useRecordName
+--------------------------------------------- */
+
+/**
+ * Resolves a record ID to its display name.
+ * Uses in-memory cache + request deduplication.
+ */
+export function useRecordName(
+  id: string | number | null | undefined,
+  type: RecordType | string
+) {
+  const [name, setName] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(false);
+
+  const idStr = id != null && id !== "" ? String(id).trim() : null;
+  const normalizedType = type.toString().toLowerCase().replace(/\s+/g, "-");
+  const cacheKey = idStr ? `${normalizedType}:${idStr}` : null;
+
+  useEffect(() => {
+    if (!cacheKey) {
+      setName(null);
+      setError(true);
+      return;
+    }
+
+    // ✅ Serve from cache instantly
+    const cached = recordNameCache.get(cacheKey);
+    if (cached) {
+      setName(cached.name);
+      setError(cached.error);
+      return;
+    }
+
+    let cancelled = false;
+    setIsLoading(true);
+
+    // ✅ Deduplicate concurrent requests
+    const request =
+      inflightRequests.get(cacheKey) ??
+      (async () => {
+        try {
+          const params = new URLSearchParams({
+            type: normalizedType,
+            id: idStr!,
+          });
+
+          const res = await fetch(`/api/resolve-record?${params}`);
+          const data = await res.json();
+
+          const entry: CacheEntry =
+            res.ok && data?.success
+              ? { name: data.name ?? null, error: false }
+              : { name: null, error: true };
+
+          recordNameCache.set(cacheKey, entry);
+          return entry;
+        } catch {
+          const entry = { name: null, error: true };
+          recordNameCache.set(cacheKey, entry);
+          return entry;
+        } finally {
+          inflightRequests.delete(cacheKey);
+        }
+      })();
+
+    inflightRequests.set(cacheKey, request);
+
+    request.then((entry) => {
+      if (!cancelled) {
+        setName(entry.name);
+        setError(entry.error);
+        setIsLoading(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cacheKey, normalizedType, idStr]);
+
+  return { name, isLoading, error };
+}
+
+/* ---------------------------------------------
+   View Routes
+--------------------------------------------- */
 
 const VIEW_ROUTE_BY_TYPE: Record<string, string> = {
   organization: "/dashboard/organizations/view",
@@ -94,30 +143,28 @@ const VIEW_ROUTE_BY_TYPE: Record<string, string> = {
   placements: "/dashboard/placements/view",
   task: "/dashboard/tasks/view",
   tasks: "/dashboard/tasks/view",
+  jobSeeker: "/dashboard/job-seekers/view",
+  jobSeekers: "/dashboard/job-seekers/view",
+  hiringManager: "/dashboard/hiring-managers/view",
+  hiringManagers: "/dashboard/hiring-managers/view",
 };
 
+/* ---------------------------------------------
+   Component: RecordNameResolver
+--------------------------------------------- */
+
 interface RecordNameResolverProps {
-  /** Record ID (string or number) */
   id: string | number | null | undefined;
-  /** Entity type - organization, hiring-manager, job, job-seeker, lead, placement, task (plural forms accepted) */
   type: RecordType | string;
-  /** If true, renders as a clickable link to the record's view page */
   clickable?: boolean;
-  /** Custom class name for the wrapper/link */
   className?: string;
-  /** Fallback text when id is missing or fetch fails */
   fallback?: string;
-  /** Placeholder while loading */
   loadingText?: string;
 }
 
 /**
- * Resolves a record ID to its display name by fetching from the API.
- * Use for displaying human-readable names (e.g., parent organization, referenced records).
- *
- * @example
- * <RecordNameResolver id={parentOrgId} type="organization" clickable />
- * <RecordNameResolver id={123} type="job" fallback="Unknown Job" />
+ * Displays a resolved record name.
+ * Optionally renders as a clickable link.
  */
 export default function RecordNameResolver({
   id,
@@ -129,21 +176,26 @@ export default function RecordNameResolver({
 }: RecordNameResolverProps) {
   const router = useRouter();
   const { name, isLoading, error } = useRecordName(id, type);
-  const idStr = id != null && id !== "" ? String(id).trim() : null;
 
-  const displayName = name ?? (error ? fallback : isLoading ? loadingText : fallback);
+  const idStr = id != null && id !== "" ? String(id).trim() : null;
   const normalizedType = type.toString().toLowerCase().replace(/\s+/g, "-");
   const viewPath = VIEW_ROUTE_BY_TYPE[normalizedType];
+
+  const displayName =
+    name ?? (isLoading ? loadingText : error ? fallback : fallback);
+
   const canNavigate = clickable && viewPath && idStr;
 
   if (canNavigate) {
+    const href = `${viewPath}?id=${idStr}`;
+
     return (
       <a
-        href={`${viewPath}?id=${idStr}`}
+        href={href}
         className={`text-blue-600 hover:underline ${className}`.trim()}
         onClick={(e) => {
           e.preventDefault();
-          router.push(`${viewPath}?id=${idStr}`);
+          router.push(href);
         }}
       >
         {displayName}

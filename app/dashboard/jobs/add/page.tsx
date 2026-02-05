@@ -307,12 +307,14 @@ export default function AddJob() {
           "$1"
         );
 
-        // Fetch ALL hiring managers without organization filter
-        // This makes hiring manager selection completely independent of organizationIdFromUrl
-        // organizationIdFromUrl only auto-fills the organization field, but doesn't affect hiring manager list
-        console.log("Fetching all hiring managers (no organization filter)");
+        // When URL or form has organization id, show only hiring managers under that organization
+        // (same as organization view → contacts tab). Otherwise show all hiring managers.
+        const orgId = currentOrganizationId || organizationIdFromUrl;
+        const url = orgId
+          ? `/api/hiring-managers?organization_id=${encodeURIComponent(orgId)}`
+          : "/api/hiring-managers";
 
-        const response = await fetch(`/api/hiring-managers`, {
+        const response = await fetch(url, {
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -348,6 +350,8 @@ export default function AddJob() {
     fetchHiringManagers();
   }, [
     isHiringManagerModalOpen,
+    currentOrganizationId,
+    organizationIdFromUrl,
   ]);
 
   // Sort custom fields by sort_order
