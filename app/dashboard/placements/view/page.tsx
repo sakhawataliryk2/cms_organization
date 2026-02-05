@@ -3573,7 +3573,9 @@ export default function PlacementView() {
                           {changes}
                         </div>
                       );
-                    }
+                    } else {
+                        detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
+                      }
                   }
                   break;
                 case "ADD_NOTE":

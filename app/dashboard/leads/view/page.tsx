@@ -2439,6 +2439,8 @@ export default function LeadView() {
                             {changes}
                           </div>
                         );
+                      } else {
+                        detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
                       }
                     }
                     break;
