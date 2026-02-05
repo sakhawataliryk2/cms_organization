@@ -2,6 +2,7 @@
 
 import React from "react";
 import LookupField from "./LookupField";
+import MultiSelectDropdown from "./MultiSelectDropdown";
 import { FiCalendar, FiLock } from "react-icons/fi";
 
 interface CustomFieldDefinition {
@@ -331,90 +332,40 @@ export default function CustomFieldRenderer({
       );
     case "multiselect":
     case "multicheckbox": {
+      // Parse selected values from value prop
       const selectedValues = Array.isArray(value)
         ? value.map((v) => String(v))
         : typeof value === "string" && value.trim() !== ""
           ? value.split(",").map((v) => v.trim()).filter(Boolean)
           : [];
-      const count = selectedValues.length;
-      const labelSingular = (field.field_label || "item").toLowerCase().replace(/\s*\(s\)$/, "");
-      const labelPlural = count === 1 ? labelSingular : `${labelSingular}s`;
-      const removeItem = (item: string) => {
+
+      // Use ONLY options from admin center (field.options) - no static fields
+      // normalizedOptions already filters from field.options, so we use it directly
+      const availableOptions = normalizedOptions;
+
+      const handleMultiSelectChange = (newValues: string[]) => {
         if (readOnly) return;
-        onChange(
-          field.field_name,
-          selectedValues.filter((v) => v !== item)
-        );
+        // Ensure all selected values are from the predefined options only
+        const validValues = newValues.filter((v) => availableOptions.includes(v));
+        onChange(field.field_name, validValues);
       };
+
       return (
-        <div
-          id={field.field_name}
-          className="w-full p-4 border border-gray-200 rounded-lg bg-white"
-        >
-          {/* Vertical list of checkboxes */}
-          <div className="space-y-3">
-            {normalizedOptions.length === 0 ? (
+        <div id={field.field_name} className="w-full">
+          {availableOptions.length === 0 ? (
+            <div className="px-3 py-2 border border-gray-300 rounded-md bg-gray-50">
               <span className="text-sm text-gray-500">No options configured.</span>
-            ) : (
-              normalizedOptions.map((option) => {
-                const checked = selectedValues.includes(option);
-                return (
-                  <label
-                    key={option}
-                    className="flex items-center gap-3 text-sm text-gray-700 cursor-pointer select-none"
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        if (readOnly) return;
-                        const next = e.target.checked
-                          ? Array.from(new Set([...selectedValues, option]))
-                          : selectedValues.filter((v) => v !== option);
-                        onChange(field.field_name, next);
-                      }}
-                      className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
-                      disabled={readOnly}
-                    />
-                    <span className="text-gray-700">{option}</span>
-                  </label>
-                );
-              })
-            )}
-          </div>
-          {/* Separator */}
-          <div className="border-t border-gray-200 my-4" />
-          {/* Selected count + pill tags */}
-          <div className="space-y-3">
-            <p className="text-sm text-gray-500">
-              Selected: {count} {labelPlural}
-            </p>
-            {count > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {selectedValues.map((item) => (
-                  <span
-                    key={item}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 text-blue-800 text-sm"
-                  >
-                    {item}
-                    {!readOnly && (
-                      <button
-                        type="button"
-                        onClick={() => removeItem(item)}
-                        className="p-0.5 rounded-full hover:bg-blue-100 text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
-                        aria-label={`Remove ${item}`}
-                      >
-                        <span className="sr-only">Remove</span>
-                        <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                    )}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <MultiSelectDropdown
+              options={availableOptions}
+              selectedValues={selectedValues}
+              onChange={handleMultiSelectChange}
+              placeholder={`Select ${field.field_label || "options"}...`}
+              disabled={readOnly}
+              className="w-full"
+            />
+          )}
         </div>
       );
     }

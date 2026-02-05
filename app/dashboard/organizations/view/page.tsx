@@ -4315,7 +4315,7 @@ export default function OrganizationView() {
     { id: "history", label: "History" },
     { id: "quotes", label: "Quotes" },
     { id: "invoices", label: "Invoices" },
-    { id: "contacts", label: "Contacts" },
+    { id: "contacts", label: `Contacts (${hiringManagers.length})` },
     { id: "docs", label: "Docs" },
     { id: "opportunities", label: "Opportunities" },
   ];
@@ -5260,7 +5260,7 @@ export default function OrganizationView() {
                                   )
                                 ) : key === "phone" ? (
                                   (() => {
-                                    const phone = hm.phone || "";
+                                    const phone = getContactColumnValue(hm, key) || "";
                                     const digits = phone.replace(/\D/g, "");
                                     return digits.length >= 7 ? (
                                       <a
