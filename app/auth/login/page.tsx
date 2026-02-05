@@ -90,17 +90,56 @@ export default function Login() {
         path: "/",
       });
 
-      // Get redirect URL from query params or default to home page
-      const redirectUrl =
-        typeof window !== "undefined"
-          ? new URLSearchParams(window.location.search).get("redirect")
-          : null;
+      // Get redirect URL from query params, sessionStorage, or default to home page
+      let redirectUrl: string | null = null;
+      
+      if (typeof window !== "undefined") {
+        // First priority: URL query params (most reliable - from middleware)
+        redirectUrl = new URLSearchParams(window.location.search).get("redirect");
+        
+        // Second priority: sessionStorage (fallback if cookies cleared but URL param lost)
+        if (!redirectUrl) {
+          try {
+            redirectUrl = sessionStorage.getItem('auth_redirect');
+            // Clear it after reading
+            if (redirectUrl) {
+              sessionStorage.removeItem('auth_redirect');
+            }
+          } catch (e) {
+            // Ignore sessionStorage errors (private browsing, etc.)
+          }
+        }
+      }
 
-      // Redirect to the original URL or home page
+      // Helper function to check if URL is from the same site
+      const isSameSite = (url: string): boolean => {
+        if (typeof window === 'undefined') return false;
+        try {
+          // If it's a relative path (starts with /), it's same site
+          if (url.startsWith('/')) return true;
+          
+          // If it's a full URL, check the origin
+          const urlObj = new URL(url, window.location.origin);
+          return urlObj.origin === window.location.origin;
+        } catch (e) {
+          // If URL parsing fails, assume it's not same site
+          return false;
+        }
+      };
+
+      // Redirect logic: same site → home, external site → redirect URL
       if (redirectUrl) {
         const decodedUrl = decodeURIComponent(redirectUrl);
-        router.push(decodedUrl);
+        
+        if (isSameSite(decodedUrl)) {
+          // Same site: redirect to home page
+          router.push("/home");
+        } else {
+          // External site: redirect to that URL
+          window.location.href = decodedUrl;
+        }
       } else {
+        // No redirect URL: go to home page
         router.push("/home");
       }
     } catch (error: any) {

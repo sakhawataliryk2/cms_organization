@@ -30,15 +30,52 @@ export async function middleware(request: NextRequest) {
   // Get the token from cookies
   const token = request.cookies.get("token")?.value;
 
-  // If the path is public and user is logged in, redirect to dashboard
+  // Helper function to check if URL is from the same site
+  const isSameSite = (url: string, baseUrl: URL): boolean => {
+    try {
+      // If it's a relative path (starts with /), it's same site
+      if (url.startsWith("/")) return true;
+      
+      // If it's a full URL, check the origin
+      const urlObj = new URL(url, baseUrl);
+      return urlObj.origin === baseUrl.origin;
+    } catch (e) {
+      // If URL parsing fails, assume it's not same site
+      return false;
+    }
+  };
+
+  // If the path is public and user is logged in, check for redirect param
   // This prevents logged-in users from accessing login/signup pages
   if (isPublicPath && token) {
+    // If there's a redirect param, check if it's same site or external
+    const redirectParam = request.nextUrl.searchParams.get("redirect");
+    if (redirectParam && path === "/auth/login") {
+      const redirectUrl = decodeURIComponent(redirectParam);
+      
+      if (isSameSite(redirectUrl, request.url)) {
+        // Same site: redirect to home page
+        return NextResponse.redirect(new URL("/home", request.url));
+      } else {
+        // External site: redirect to that URL
+        try {
+          const externalUrl = new URL(redirectUrl);
+          return NextResponse.redirect(externalUrl);
+        } catch (e) {
+          // Invalid URL, go to dashboard
+          return NextResponse.redirect(new URL("/dashboard", request.url));
+        }
+      }
+    }
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  // If the path requires authentication and user is not logged in, redirect to login
+  // If the path requires authentication and user is not logged in, redirect to login with original URL
   if (!isPublicPath && !token) {
-    return NextResponse.redirect(new URL("/auth/login", request.url));
+    const loginUrl = new URL("/auth/login", request.url);
+    // Preserve the original URL as a redirect parameter
+    loginUrl.searchParams.set("redirect", request.nextUrl.pathname + request.nextUrl.search);
+    return NextResponse.redirect(loginUrl);
   }
 
 
@@ -61,23 +98,41 @@ export async function middleware(request: NextRequest) {
           console.error("JWT verification error in middleware:", jwtError.name, jwtError.message);
         }
 
-        // Clear invalid cookies and redirect to login
-        const response = NextResponse.redirect(
-          new URL("/auth/login", request.url)
-        );
+        // Prevent redirect loop - if we're already going to login, just clear cookies and continue
+        if (path === "/auth/login") {
+          const response = NextResponse.next();
+          response.cookies.delete("token");
+          response.cookies.delete("user");
+          return response;
+        }
+
+        // Clear invalid cookies and redirect to login with original URL
+        const loginUrl = new URL("/auth/login", request.url);
+        // Preserve the original URL as a redirect parameter
+        loginUrl.searchParams.set("redirect", request.nextUrl.pathname + request.nextUrl.search);
+        const response = NextResponse.redirect(loginUrl);
         response.cookies.delete("token");
         response.cookies.delete("user");
 
         return response;
       }
     } catch (error: any) {
-      // Token is invalid, redirect to login
+      // Token is invalid, redirect to login with original URL
       console.error("Invalid token or other error:", error?.name || error?.message || error);
 
+      // Prevent redirect loop - if we're already going to login, just clear cookies and continue
+      if (path === "/auth/login") {
+        const response = NextResponse.next();
+        response.cookies.delete("token");
+        response.cookies.delete("user");
+        return response;
+      }
+
       // Clear invalid cookies
-      const response = NextResponse.redirect(
-        new URL("/auth/login", request.url)
-      );
+      const loginUrl = new URL("/auth/login", request.url);
+      // Preserve the original URL as a redirect parameter
+      loginUrl.searchParams.set("redirect", request.nextUrl.pathname + request.nextUrl.search);
+      const response = NextResponse.redirect(loginUrl);
       response.cookies.delete("token");
       response.cookies.delete("user");
 

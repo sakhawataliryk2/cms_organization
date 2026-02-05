@@ -27,12 +27,15 @@ export const isAuthenticated = (): boolean => {
     return !!token;
 };
 
-export const logout = () => {
+export const logout = (redirectUrl?: string) => {
     deleteCookie('token');
     deleteCookie('user');
 
     if (typeof window !== 'undefined') {
-        window.location.href = '/auth/login';
+        const loginUrl = redirectUrl 
+            ? `/auth/login?redirect=${encodeURIComponent(redirectUrl)}`
+            : '/auth/login';
+        window.location.href = loginUrl;
     }
 };
 
@@ -89,8 +92,9 @@ export const refreshTokenIfNeeded = async (): Promise<void> => {
         }
 
         if (!data.success) {
-            // Token is invalid, redirect to login
-            logout();
+            // Token is invalid, redirect to login with current URL preserved
+            const currentUrl = typeof window !== 'undefined' ? window.location.pathname + window.location.search : undefined;
+            logout(currentUrl);
             return;
         }
 
@@ -147,6 +151,7 @@ export function useAuth() {
 
         if (!isLoggedIn) {
             const currentPath = window.location.pathname;
+            const currentSearch = window.location.search;
 
             // Avoid redirect loop
             if (
@@ -154,10 +159,27 @@ export function useAuth() {
                 currentPath !== '/auth/signup' &&
                 !currentPath.startsWith('/job-seeker-portal')
             ) {
-                // 🔴 Always go to login (no redirect param)
-                window.location.href = '/auth/login';
+                // Store current URL in sessionStorage as backup (survives cookie clearing)
+                const fullUrl = currentPath + currentSearch;
+                try {
+                    sessionStorage.setItem('auth_redirect', fullUrl);
+                } catch (e) {
+                    // Ignore sessionStorage errors (private browsing, etc.)
+                }
+                
+                // Preserve the original URL when redirecting to login
+                const loginUrl = fullUrl
+                    ? `/auth/login?redirect=${encodeURIComponent(fullUrl)}`
+                    : '/auth/login';
+                window.location.href = loginUrl;
             }
         } else {
+            // Clear stored redirect when authenticated
+            try {
+                sessionStorage.removeItem('auth_redirect');
+            } catch (e) {
+                // Ignore sessionStorage errors
+            }
             refreshTokenIfNeeded();
         }
     }, [pathname]);
