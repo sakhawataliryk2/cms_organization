@@ -146,6 +146,7 @@ export default function AddOrganization() {
         const mappedCustomFieldValues: Record<string, any> = {};
 
         // First, map any existing custom field values from the database
+        // PRIORITY: customFields["Status"] takes precedence over org.status (matching Summary view)
         if (
           customFields.length > 0 &&
           Object.keys(existingCustomFields).length > 0
@@ -153,7 +154,7 @@ export default function AddOrganization() {
           customFields.forEach((field) => {
             // Try to find the value by field_label (as stored in DB)
             const value = existingCustomFields[field.field_label];
-            if (value !== undefined) {
+            if (value !== undefined && value !== null && String(value).trim() !== "") {
               // Map to field_name for the form
               mappedCustomFieldValues[field.field_name] = value;
             }
@@ -163,7 +164,14 @@ export default function AddOrganization() {
         // Second, map standard organization fields to custom fields based on field labels
         // This ensures that standard fields like "name", "nicknames" etc. populate custom fields
         // with matching labels like "Organization Name", "Nicknames", etc.
+        // NOTE: For Status, only use org.status as fallback if customFields["Status"] doesn't exist
         if (customFields.length > 0) {
+          // Check if Status was already set from customFields (prioritize customFields["Status"])
+          const statusField = customFields.find(
+            (f) => f.field_label?.toLowerCase() === "status" || f.field_name?.toLowerCase() === "status"
+          );
+          const statusFromCustomFields = statusField && mappedCustomFieldValues[statusField.field_name];
+          
           const standardFieldMapping: Record<string, string> = {
             // Organization name variations
             "Organization Name": org.name || "",
@@ -184,8 +192,9 @@ export default function AddOrganization() {
             "Main Phone": org.contact_phone || "",
             // Address
             "Address": org.address || "",
-            // Status
-            "Status": org.status || "Active",
+            // Status: Use customFields["Status"] if available, otherwise fallback to org.status
+            // This matches Summary view behavior - both prioritize customFields["Status"]
+            "Status": statusFromCustomFields || (org.status || "Active"),
             // Contract fields
             "Contract Signed on File": org.contract_on_file || "No",
             "Contract Signed By": org.contract_signed_by || "",
@@ -207,6 +216,7 @@ export default function AddOrganization() {
 
           customFields.forEach((field) => {
             // Only set if not already set from existingCustomFields
+            // This ensures customFields["Status"] takes precedence over org.status
             if (mappedCustomFieldValues[field.field_name] === undefined) {
               // Try to find matching standard field by field_label
               const standardValue = standardFieldMapping[field.field_label];

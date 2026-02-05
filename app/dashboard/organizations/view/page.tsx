@@ -2579,7 +2579,6 @@ export default function OrganizationView() {
       const getCombinedAddress = () => {
         if (!organization) return "-";
         const o = organization as any;
-        console.log("Organization", o);
         const parts = [
           o.customFields?.["Address"],
           o.customFields?.["Address 2"],
@@ -2593,13 +2592,36 @@ export default function OrganizationView() {
         if (!organization) return "-";
         const o = organization as any;
         const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+        
+        // Special handling for status: prioritize customFields["Status"] (matching Edit mode)
+        const isStatus = isStatusField(key);
+        if (isStatus) {
+          const statusField = contactInfoFieldCatalog.find((f) => f.key === key) || 
+                             contactInfoFieldCatalog.find((f) => f.label?.toLowerCase() === "status");
+          const statusLabel = statusField?.label || "Status";
+          
+          // PRIORITY 1: Check customFields with exact label "Status" (matching Edit mode storage)
+          let statusValue = o.customFields?.[statusLabel];
+          if (statusValue !== undefined && statusValue !== null && String(statusValue).trim() !== "") {
+            return String(statusValue);
+          }
+          
+          // PRIORITY 2: Check other variations in customFields
+          statusValue = o.customFields?.["Status"] ?? o.customFields?.["status"];
+          if (statusValue !== undefined && statusValue !== null && String(statusValue).trim() !== "") {
+            return String(statusValue);
+          }
+          
+          // PRIORITY 3: Fallback to top-level status (for backward compatibility)
+          return String(o.status ?? statusFieldOptions[0] ?? "Active");
+        }
+        
         let v = o[rawKey];
         if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
         if (o.contact?.[rawKey] !== undefined) return String(o.contact[rawKey] ?? "-");
         if (rawKey === "contact_phone" || rawKey === "phone") return String(o.contact_phone ?? o.phone ?? "(Not provided)");
         if (rawKey === "nickname") return String(o.nicknames ?? o.contact?.nickname ?? "-");
         if (rawKey === "parent_organization" || rawKey === "parentOrganization") return String(o.parentOrganization ?? o.parent_organization ?? "-");
-        if (rawKey === "status") return String(o.status ?? "Active");
         v = o.customFields?.[rawKey];
         if (v !== undefined && v !== null) return String(v);
         const field = contactInfoFieldCatalog.find((f) => f.key === key);
@@ -2632,7 +2654,12 @@ export default function OrganizationView() {
         });
       }
       if (!statusRowAdded) {
-        effectiveRows.push({ key: "status", label: "Status", isStatus: true });
+        // Find the actual status field from catalog to use its correct key
+        const statusFieldFromCatalog = contactInfoFieldCatalog.find(
+          (f) => f.label?.toLowerCase() === "status" || f.key?.toLowerCase() === "status"
+        );
+        const statusKey = statusFieldFromCatalog?.key || "status";
+        effectiveRows.push({ key: statusKey, label: "Status", isStatus: true });
       }
 
       return (
@@ -3533,19 +3560,70 @@ export default function OrganizationView() {
     if (!organizationId || isSavingStatus) return;
     setIsSavingStatus(true);
     try {
+      // Find the Status field definition to get its label (matching Edit mode)
+      const statusField = (availableFields || []).find(
+        (f: any) =>
+          (f.field_label || "").toLowerCase() === "status" ||
+          (f.field_name || "").toLowerCase() === "status"
+      );
+      const statusLabel = statusField?.field_label || "Status";
+      
+      // Get current customFields and update Status in it (matching Edit mode storage)
+      const currentCustomFields = organization?.customFields || {};
+      const updatedCustomFields = {
+        ...currentCustomFields,
+        [statusLabel]: newStatus,
+      };
+      
+      // Send update exactly like Edit mode: status goes to top-level AND custom_fields[Status]
+      // This matches how the add organization page sends it
       const response = await fetch(`/api/organizations/${organizationId}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: newStatus }),
+        headers: { 
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+        body: JSON.stringify({ 
+          status: newStatus, // Top-level for API compatibility
+          custom_fields: updatedCustomFields, // Full custom_fields object with Status updated
+        }),
       });
+      
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.message || "Failed to update status");
       }
-      setOrganization((prev: any) => prev ? { ...prev, status: newStatus } : prev);
+      
+      // Update local state immediately: both top-level status and customFields[Status]
+      // This ensures UI updates instantly while refresh happens in background
+      setOrganization((prev: any) => 
+        prev ? { 
+          ...prev, 
+          status: newStatus, // Update top-level for backward compatibility
+          customFields: {
+            ...prev.customFields,
+            [statusLabel]: newStatus, // Update in customFields matching Edit mode
+          },
+        } : prev
+      );
+      
       toast.success("Status updated successfully");
+      
+      // Refresh organization data to ensure consistency with backend
+      // This ensures both Summary and Edit mode see the same value
+      if (organizationId) {
+        await fetchOrganizationData(organizationId);
+      }
     } catch (err) {
+      console.error("Error updating status:", err);
       toast.error(err instanceof Error ? err.message : "Failed to update status");
+      // Revert on error by refreshing
+      if (organizationId) {
+        fetchOrganizationData(organizationId);
+      }
     } finally {
       setIsSavingStatus(false);
     }
