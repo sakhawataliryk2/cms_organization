@@ -72,7 +72,7 @@ export const refreshTokenIfNeeded = async (): Promise<void> => {
             // Silently handle fetch errors (network issues, etc.)
             return;
         }
-        
+
         // Check if response is JSON before parsing
         const contentType = response.headers.get('content-type');
         if (!response.ok || !contentType || !contentType.includes('application/json')) {
@@ -141,27 +141,29 @@ export function useAuth() {
     const pathname = usePathname();
 
     useEffect(() => {
-        // Check authentication status on every pathname change (client-side navigation)
-        // This handles the case when cookies are cleared while on a cached page
-        if (typeof window !== 'undefined') {
-            const isLoggedIn = isAuthenticated();
-            if (!isLoggedIn) {
-                // Store current path for redirect after login if needed
-                const currentPath = window.location.pathname;
-                if (currentPath !== '/auth/login' && currentPath !== '/auth/signup' && !currentPath.startsWith('/job-seeker-portal')) {
-                    const redirectUrl = encodeURIComponent(window.location.pathname + window.location.search);
-                    // Use window.location for full reload - ensures middleware runs and clears any cached state
-                    window.location.href = `/auth/login?redirect=${redirectUrl}`;
-                } else if (!currentPath.startsWith('/job-seeker-portal')) {
-                    window.location.href = '/auth/login';
-                }
-            } else {
-                // If logged in, refresh token if needed
-                refreshTokenIfNeeded();
-            }
-        }
-    }, [pathname, router]);
+        if (typeof window === 'undefined') return;
 
-    // Return user data for convenience
-    return { user: getUser(), isAuthenticated: isAuthenticated() };
+        const isLoggedIn = isAuthenticated();
+
+        if (!isLoggedIn) {
+            const currentPath = window.location.pathname;
+
+            // Avoid redirect loop
+            if (
+                currentPath !== '/auth/login' &&
+                currentPath !== '/auth/signup' &&
+                !currentPath.startsWith('/job-seeker-portal')
+            ) {
+                // 🔴 Always go to login (no redirect param)
+                window.location.href = '/auth/login';
+            }
+        } else {
+            refreshTokenIfNeeded();
+        }
+    }, [pathname]);
+
+    return {
+        user: getUser(),
+        isAuthenticated: isAuthenticated(),
+    };
 }

@@ -38,12 +38,9 @@ export async function middleware(request: NextRequest) {
 
   // If the path requires authentication and user is not logged in, redirect to login
   if (!isPublicPath && !token) {
-    // Remember the original URL to redirect back after login
-    const url = new URL("/auth/login", request.url);
-    url.searchParams.set("redirect", encodeURIComponent(request.url));
-
-    return NextResponse.redirect(url);
+    return NextResponse.redirect(new URL("/auth/login", request.url));
   }
+
 
   // For protected routes, verify the token
   if (!isPublicPath && token) {
