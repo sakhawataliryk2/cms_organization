@@ -127,13 +127,25 @@ export default function Login() {
         }
       };
 
-      // Redirect logic: same site → home, external site → redirect URL
+      // Helper function to check if URL is an action page (approve/deny) that should be preserved
+      const isActionPage = (url: string): boolean => {
+        return (url.includes('/transfer/') && (url.includes('/approve') || url.includes('/deny'))) ||
+               (url.includes('/delete/') && (url.includes('/approve') || url.includes('/deny')));
+      };
+
+      // Redirect logic: same site → home (except action pages), external site → redirect URL
       if (redirectUrl) {
         const decodedUrl = decodeURIComponent(redirectUrl);
         
         if (isSameSite(decodedUrl)) {
-          // Same site: redirect to home page
-          router.push("/home");
+          // Same site: check if it's an action page (approve/deny)
+          if (isActionPage(decodedUrl)) {
+            // Action pages: redirect back to the page itself
+            router.push(decodedUrl);
+          } else {
+            // Other same-site pages: redirect to home page
+            router.push("/home");
+          }
         } else {
           // External site: redirect to that URL
           window.location.href = decodedUrl;

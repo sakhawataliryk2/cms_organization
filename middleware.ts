@@ -45,6 +45,12 @@ export async function middleware(request: NextRequest) {
     }
   };
 
+  // Helper function to check if URL is an action page (approve/deny) that should be preserved
+  const isActionPage = (url: string): boolean => {
+    return (url.includes('/transfer/') && (url.includes('/approve') || url.includes('/deny'))) ||
+           (url.includes('/delete/') && (url.includes('/approve') || url.includes('/deny')));
+  };
+
   // If the path is public and user is logged in, check for redirect param
   // This prevents logged-in users from accessing login/signup pages
   if (isPublicPath && token) {
@@ -53,9 +59,15 @@ export async function middleware(request: NextRequest) {
     if (redirectParam && path === "/auth/login") {
       const redirectUrl = decodeURIComponent(redirectParam);
       
-      if (isSameSite(redirectUrl, new URL(request.url))) {
-        // Same site: redirect to home page
-        return NextResponse.redirect(new URL("/home", request.url));
+      if (isSameSite(redirectUrl, request.nextUrl)) {
+        // Same site: check if it's an action page (approve/deny)
+        if (isActionPage(redirectUrl)) {
+          // Action pages: redirect back to the page itself
+          return NextResponse.redirect(new URL(redirectUrl, request.url));
+        } else {
+          // Other same-site pages: redirect to home page
+          return NextResponse.redirect(new URL("/home", request.url));
+        }
       } else {
         // External site: redirect to that URL
         try {
