@@ -239,6 +239,21 @@ export default function AddOrganization() {
             label: f.field_label,
           }))
         );
+        
+        // Debug Status field specifically
+        const statusFieldDebug = customFields.find(
+          (f) => f.field_label?.toLowerCase() === "status" || f.field_name?.toLowerCase() === "status"
+        );
+        if (statusFieldDebug) {
+          console.log("Status field found:", {
+            field_name: statusFieldDebug.field_name,
+            field_label: statusFieldDebug.field_label,
+            value_in_existingCustomFields: existingCustomFields[statusFieldDebug.field_label],
+            value_in_mappedCustomFieldValues: mappedCustomFieldValues[statusFieldDebug.field_name],
+          });
+        } else {
+          console.warn("Status field NOT found in customFields definitions!");
+        }
 
         // All values live in customFieldValues (field_name as keys)
         setCustomFieldValues(mappedCustomFieldValues);

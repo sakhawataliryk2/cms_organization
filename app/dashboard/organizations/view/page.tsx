@@ -64,6 +64,8 @@ const ORG_PANEL_TITLES: Record<string, string> = {
 
 // Storage for Organization Contact Info panel – field list comes from admin (custom field definitions)
 const CONTACT_INFO_STORAGE_KEY = "organizationContactInfoFields";
+// Synthetic field key for Full Address (combined address field)
+const FULL_ADDRESS_KEY = "__full_address__";
 
 // Sortable Panel Component with drag handle
 function SortablePanel({
@@ -1390,14 +1392,45 @@ export default function OrganizationView() {
     if (editingPanel !== "contactInfo") return;
     const current = visibleFields.contactInfo || [];
     const catalogKeys = contactInfoFieldCatalog.map((f) => f.key);
-    const currentInCatalog = current.filter((k) => catalogKeys.includes(k));
+    
+    // Check if Full Address should be visible (if any address parts are visible)
+    const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
+    const hasAddressParts = current.some((k) => {
+      const entry = contactInfoFieldCatalog.find((f) => f.key === k);
+      const label = (entry?.label || k).toLowerCase().replace(/\s+/g, " ");
+      return addressPartKeys.has(k.toLowerCase()) || label === "address";
+    });
+    const fullAddressVisible = current.includes(FULL_ADDRESS_KEY) || hasAddressParts;
+    
+    const currentInCatalog = current.filter((k) => catalogKeys.includes(k) && k !== FULL_ADDRESS_KEY);
     const rest = catalogKeys.filter((k) => !current.includes(k));
-    const order = [...currentInCatalog, ...rest];
+    
+    // Build order: preserve Full Address position if it exists, otherwise add it at the beginning if address parts exist
+    let order: string[];
+    const fullAddressIndex = current.indexOf(FULL_ADDRESS_KEY);
+    if (fullAddressIndex !== -1) {
+      // Full Address exists in current order, preserve its position
+      const baseOrder = [...currentInCatalog, ...rest];
+      baseOrder.splice(fullAddressIndex, 0, FULL_ADDRESS_KEY);
+      order = baseOrder;
+    } else if (fullAddressVisible) {
+      // Full Address should be visible but not in order yet, add it at the beginning
+      order = [FULL_ADDRESS_KEY, ...currentInCatalog, ...rest];
+    } else {
+      // No Full Address needed
+      order = [...currentInCatalog, ...rest];
+    }
+    
     const uniqueOrder = Array.from(new Set(order));
     setModalContactInfoOrder(uniqueOrder);
+    
     setModalContactInfoVisible(
-      catalogKeys.reduce<Record<string, boolean>>((acc, k) => {
-        acc[k] = current.includes(k);
+      [...catalogKeys, FULL_ADDRESS_KEY].reduce<Record<string, boolean>>((acc, k) => {
+        if (k === FULL_ADDRESS_KEY) {
+          acc[k] = fullAddressVisible;
+        } else {
+          acc[k] = current.includes(k);
+        }
         return acc;
       }, {})
     );
@@ -1405,8 +1438,15 @@ export default function OrganizationView() {
 
   // Save Contact Info config (visibility + order) and persist globally
   const saveContactInfoConfig = () => {
-    const orderedVisible = modalContactInfoOrder.filter((k) => modalContactInfoVisible[k]);
+    // Include Full Address key if it's visible, otherwise filter it out
+    const orderedVisible = modalContactInfoOrder.filter((k) => {
+      if (k === FULL_ADDRESS_KEY) {
+        return modalContactInfoVisible[k] === true;
+      }
+      return modalContactInfoVisible[k] === true;
+    });
     if (orderedVisible.length === 0) return;
+    
     setVisibleFields((prev) => ({ ...prev, contactInfo: orderedVisible }));
     try {
       localStorage.setItem(CONTACT_INFO_STORAGE_KEY, JSON.stringify(orderedVisible));
@@ -2573,12 +2613,25 @@ export default function OrganizationView() {
         const label = (getContactInfoLabel(key) || "").toLowerCase();
         return k === "status" || label === "status";
       };
-      const addressPartKeys = new Set(["address", "address2", "address 2", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
-      const isAddressPartKey = (key: string) => addressPartKeys.has((key || "").toLowerCase()) || (getContactInfoLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address 2";
+      const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
+      // Check if key is Address 2 (case-insensitive, with various label formats)
+      const isAddress2Key = (key: string) => {
+        const k = (key || "").toLowerCase();
+        const label = (getContactInfoLabel(key) || "").toLowerCase().replace(/\s+/g, " ");
+        return k === "address2" || k === "address 2" || label === "address 2" || label === "address2";
+      };
+      // Address parts that should be combined into Full Address (excludes Address 2)
+      const isAddressPartKey = (key: string) => {
+        // Don't treat Address 2 as an address part - it should show separately
+        if (isAddress2Key(key)) return false;
+        return addressPartKeys.has((key || "").toLowerCase()) || 
+               (getContactInfoLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
+      };
 
       const getCombinedAddress = () => {
         if (!organization) return "-";
         const o = organization as any;
+        // Full Address combines Address, Address 2, City, State, ZIP
         const parts = [
           o.customFields?.["Address"],
           o.customFields?.["Address 2"],
@@ -2596,24 +2649,49 @@ export default function OrganizationView() {
         // Special handling for status: prioritize customFields["Status"] (matching Edit mode)
         const isStatus = isStatusField(key);
         if (isStatus) {
-          const statusField = contactInfoFieldCatalog.find((f) => f.key === key) || 
-                             contactInfoFieldCatalog.find((f) => f.label?.toLowerCase() === "status");
-          const statusLabel = statusField?.label || "Status";
+          // Find Status field from availableFields (same source as Edit mode uses)
+          const statusFieldFromApi = (availableFields || []).find(
+            (f: any) =>
+              (f.field_label || "").toLowerCase() === "status" ||
+              (f.field_name || "").toLowerCase() === "status"
+          );
+          const statusLabel = statusFieldFromApi?.field_label || "Status";
           
-          // PRIORITY 1: Check customFields with exact label "Status" (matching Edit mode storage)
+          console.log("Status retrieval - Field label:", statusLabel);
+          console.log("Status retrieval - customFields:", o.customFields);
+          console.log("Status retrieval - Available options:", statusFieldOptions);
+          
+          // PRIORITY 1: Check customFields with exact label from API (matching Edit mode storage)
           let statusValue = o.customFields?.[statusLabel];
           if (statusValue !== undefined && statusValue !== null && String(statusValue).trim() !== "") {
-            return String(statusValue);
+            const valueStr = String(statusValue).trim();
+            console.log("Status retrieval - Found in customFields[statusLabel]:", valueStr);
+            // Ensure the value matches one of the available options
+            if (statusFieldOptions.includes(valueStr)) {
+              console.log("Status retrieval - Value matches options, returning:", valueStr);
+              return valueStr;
+            }
+            // If value doesn't match options, still return it but log warning
+            console.warn("Status value doesn't match options:", valueStr, "Available:", statusFieldOptions);
+            return valueStr;
           }
           
           // PRIORITY 2: Check other variations in customFields
           statusValue = o.customFields?.["Status"] ?? o.customFields?.["status"];
           if (statusValue !== undefined && statusValue !== null && String(statusValue).trim() !== "") {
-            return String(statusValue);
+            const valueStr = String(statusValue).trim();
+            console.log("Status retrieval - Found in customFields variations:", valueStr);
+            if (statusFieldOptions.includes(valueStr)) {
+              console.log("Status retrieval - Value matches options, returning:", valueStr);
+              return valueStr;
+            }
+            return valueStr;
           }
           
           // PRIORITY 3: Fallback to top-level status (for backward compatibility)
-          return String(o.status ?? statusFieldOptions[0] ?? "Active");
+          const fallbackStatus = String(o.status ?? statusFieldOptions[0] ?? "Active").trim();
+          console.log("Status retrieval - Using fallback:", fallbackStatus);
+          return fallbackStatus;
         }
         
         let v = o[rawKey];
@@ -2631,17 +2709,29 @@ export default function OrganizationView() {
 
       const contactKeys = visibleFields.contactInfo || [];
       const hasAnyAddressPart = contactKeys.some((k) => isAddressPartKey(k));
+      const hasFullAddressKey = contactKeys.includes(FULL_ADDRESS_KEY);
       const effectiveRows: { key: string; label: string; isAddress?: boolean; isParentOrg?: boolean; isPhone?: boolean; isStatus?: boolean; isUrl?: boolean; isName?: boolean }[] = [];
       let addressRowAdded = false;
       let statusRowAdded = false;
       for (const key of contactKeys) {
-        if (isAddressPartKey(key)) {
-          if (!addressRowAdded && hasAnyAddressPart) {
-            effectiveRows.push({ key: "address", label: "Full Address", isAddress: true });
+        // Handle Full Address synthetic field
+        if (key === FULL_ADDRESS_KEY) {
+          if (!addressRowAdded && (hasAnyAddressPart || hasFullAddressKey)) {
+            effectiveRows.push({ key: FULL_ADDRESS_KEY, label: "Full Address", isAddress: true });
             addressRowAdded = true;
           }
           continue;
         }
+        // Skip address parts (Address, City, State, ZIP) - they'll be combined into Full Address
+        if (isAddressPartKey(key)) {
+          if (!addressRowAdded && (hasAnyAddressPart || hasFullAddressKey)) {
+            effectiveRows.push({ key: FULL_ADDRESS_KEY, label: "Full Address", isAddress: true });
+            addressRowAdded = true;
+          }
+          continue;
+        }
+        // Address 2 should show as a separate field (not combined into Full Address)
+        // So we don't skip it here - it will be added as a regular row below
         if (isStatusField(key)) statusRowAdded = true;
         effectiveRows.push({
           key,
@@ -2670,7 +2760,7 @@ export default function OrganizationView() {
           >
             <div className="space-y-0 border border-gray-200 rounded">
               {effectiveRows.map((row) => {
-                const value = row.isAddress ? getCombinedAddress() : getContactInfoValue(row.key);
+                const value = row.isAddress || row.key === FULL_ADDRESS_KEY ? getCombinedAddress() : getContactInfoValue(row.key);
                 const parentOrgId = (organization as any)?.parentOrganizationId;
                 const displayValue = value !== "-" && value !== "(Not provided)" ? value : "";
                 return (
@@ -2684,16 +2774,20 @@ export default function OrganizationView() {
                     <div className="flex-1 p-2">
                       {row.isStatus ? (
                         <select
-                          value={value}
+                          value={value && statusFieldOptions.includes(value) ? value : (statusFieldOptions[0] || "")}
                           onChange={(e) => handleStatusChange(e.target.value)}
                           disabled={isSavingStatus}
                           className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                         >
-                          {statusFieldOptions.map((option: string) => (
-                            <option key={option} value={option}>
-                              {option}
-                            </option>
-                          ))}
+                          {statusFieldOptions.length === 0 ? (
+                            <option value="">Loading...</option>
+                          ) : (
+                            statusFieldOptions.map((option: string) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))
+                          )}
                         </select>
                       ) : row.isUrl ? (
                         <a
@@ -3568,15 +3662,31 @@ export default function OrganizationView() {
       );
       const statusLabel = statusField?.field_label || "Status";
       
+      console.log("Status update - Field label:", statusLabel);
+      console.log("Status update - New value:", newStatus);
+      console.log("Status update - Current customFields:", organization?.customFields);
+      
       // Get current customFields and update Status in it (matching Edit mode storage)
+      // CRITICAL: Ensure we preserve ALL existing custom_fields, not just Status
       const currentCustomFields = organization?.customFields || {};
+      
+      // Ensure we're using the exact field_label that Edit mode will look for
+      // Edit mode reads from existingCustomFields[field.field_label], so we must use field_label
       const updatedCustomFields = {
-        ...currentCustomFields,
-        [statusLabel]: newStatus,
+        ...currentCustomFields, // Preserve all existing custom fields
+        [statusLabel]: newStatus, // Update Status with the exact field_label (matching Edit mode lookup)
       };
       
-      // Send update exactly like Edit mode: status goes to top-level AND custom_fields[Status]
-      // This matches how the add organization page sends it
+      console.log("Status update - Status field label:", statusLabel);
+      console.log("Status update - Status field name:", statusField?.field_name);
+      console.log("Status update - Current customFields keys:", Object.keys(currentCustomFields));
+      console.log("Status update - Updated customFields:", updatedCustomFields);
+      console.log("Status update - Status value in updatedCustomFields:", updatedCustomFields[statusLabel]);
+      
+      // Send update EXACTLY like Edit mode does:
+      // 1. Top-level status field (for API compatibility)
+      // 2. Full custom_fields object with ALL fields (matching Edit mode's getCustomFieldsForSubmission format)
+      // This ensures Edit mode can read it back correctly
       const response = await fetch(`/api/organizations/${organizationId}`, {
         method: "PUT",
         headers: { 
@@ -3587,8 +3697,8 @@ export default function OrganizationView() {
           )}`,
         },
         body: JSON.stringify({ 
-          status: newStatus, // Top-level for API compatibility
-          custom_fields: updatedCustomFields, // Full custom_fields object with Status updated
+          status: newStatus, // Top-level for API compatibility (matches Edit mode)
+          custom_fields: updatedCustomFields, // Full custom_fields object with Status updated (matches Edit mode)
         }),
       });
       
@@ -3597,18 +3707,39 @@ export default function OrganizationView() {
         throw new Error(errData.message || "Failed to update status");
       }
       
+      const responseData = await response.json();
+      console.log("Status update - API response:", responseData);
+      
+      // Parse the returned custom_fields from API response to ensure we have the exact format
+      let returnedCustomFields = updatedCustomFields; // Default to what we sent
+      if (responseData.organization?.custom_fields) {
+        try {
+          returnedCustomFields = typeof responseData.organization.custom_fields === "string"
+            ? JSON.parse(responseData.organization.custom_fields)
+            : responseData.organization.custom_fields;
+          console.log("Status update - Parsed custom_fields from API:", returnedCustomFields);
+          console.log("Status update - Status value in returned custom_fields:", returnedCustomFields[statusLabel]);
+          console.log("Status update - All keys in returned custom_fields:", Object.keys(returnedCustomFields));
+        } catch (e) {
+          console.error("Error parsing returned custom_fields:", e);
+        }
+      } else {
+        console.warn("Status update - No custom_fields in API response, using updatedCustomFields");
+      }
+      
       // Update local state immediately: both top-level status and customFields[Status]
-      // This ensures UI updates instantly while refresh happens in background
-      setOrganization((prev: any) => 
-        prev ? { 
+      // Use the returned custom_fields from API to ensure we have the exact format the backend stored
+      setOrganization((prev: any) => {
+        const updated = prev ? { 
           ...prev, 
           status: newStatus, // Update top-level for backward compatibility
-          customFields: {
-            ...prev.customFields,
-            [statusLabel]: newStatus, // Update in customFields matching Edit mode
-          },
-        } : prev
-      );
+          customFields: returnedCustomFields, // Use returned custom_fields from API (most accurate)
+        } : prev;
+        console.log("Status update - Updated local state:", updated);
+        console.log("Status update - customFields[Status] in state:", updated?.customFields?.[statusLabel]);
+        console.log("Status update - Status field label used:", statusLabel);
+        return updated;
+      });
       
       toast.success("Status updated successfully");
       
@@ -4315,7 +4446,7 @@ export default function OrganizationView() {
     { id: "history", label: "History" },
     { id: "quotes", label: "Quotes" },
     { id: "invoices", label: "Invoices" },
-    { id: "contacts", label: `Contacts (${hiringManagers.length})` },
+    { id: "contacts", label: "Contacts" },
     { id: "docs", label: "Docs" },
     { id: "opportunities", label: "Opportunities" },
   ];
@@ -5260,7 +5391,7 @@ export default function OrganizationView() {
                                   )
                                 ) : key === "phone" ? (
                                   (() => {
-                                    const phone = getContactColumnValue(hm, key) || "";
+                                    const phone = hm.phone || "";
                                     const digits = phone.replace(/\D/g, "");
                                     return digits.length >= 7 ? (
                                       <a
@@ -5889,8 +6020,10 @@ export default function OrganizationView() {
                         </div>
                       ) : (
                         modalContactInfoOrder.map((key, index) => {
-                          const entry = contactInfoFieldCatalog.find((f) => f.key === key);
-                          const label = entry?.label ?? key;
+                          // Handle synthetic Full Address field
+                          const label = key === FULL_ADDRESS_KEY 
+                            ? "Full Address" 
+                            : (contactInfoFieldCatalog.find((f) => f.key === key)?.label ?? key);
                           const isVisible = modalContactInfoVisible[key] ?? false;
                           return (
                             <SortableContactInfoFieldRow
@@ -5907,8 +6040,9 @@ export default function OrganizationView() {
                   </SortableContext>
                   <DragOverlay>
                     {contactInfoDragActiveId ? (() => {
-                      const entry = contactInfoFieldCatalog.find((f) => f.key === contactInfoDragActiveId);
-                      const label = entry?.label ?? contactInfoDragActiveId;
+                      const label = contactInfoDragActiveId === FULL_ADDRESS_KEY
+                        ? "Full Address"
+                        : (contactInfoFieldCatalog.find((f) => f.key === contactInfoDragActiveId)?.label ?? contactInfoDragActiveId);
                       return (
                         <SortableContactInfoFieldRow
                           id={contactInfoDragActiveId}
