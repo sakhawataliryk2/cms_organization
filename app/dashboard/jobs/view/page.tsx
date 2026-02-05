@@ -1466,6 +1466,24 @@ export default function JobView() {
     const customObj = hm?.customFields || {};
     const customFieldDefs = (hiringManagerAvailableFields || []).filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden);
 
+    const getHMLabel = (key: string) => hiringManagerFieldCatalog.find((f) => f.key === key)?.label || key;
+    const addressPartKeys = new Set(["address", "address2", "address 2", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
+    const isAddressPartKey = (key: string) =>
+      addressPartKeys.has((key || "").toLowerCase()) ||
+      (getHMLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address 2";
+
+    const getCombinedAddress = () => {
+      if (!hm) return "-";
+      const h = hm as any;
+      const parts = [
+        h.address ?? customObj?.["Address"],
+        h.address2 ?? customObj?.["Address 2"],
+        [customObj?.["City"], customObj?.["State"]].filter(Boolean).join(", ") || [h.city, h.state].filter(Boolean).join(", "),
+        h.zip ?? customObj?.["ZIP Code"] ?? customObj?.["Zip Code"],
+      ].filter(Boolean);
+      return parts.length > 0 ? parts.join(", ") : "-";
+    };
+
     const getCustomValue = (rawKey: string) => {
       for (const fieldDef of customFieldDefs) {
         if (String(fieldDef.field_key || fieldDef.api_name || "").toLowerCase() === rawKey.toLowerCase()) {
@@ -1480,6 +1498,21 @@ export default function JobView() {
       return customObj[rawKey] !== undefined && customObj[rawKey] !== null && String(customObj[rawKey]).trim() !== ""
         ? String(customObj[rawKey]) : null;
     };
+
+    const hmKeys = visibleFields.hiringManager || [];
+    const hasAnyAddressPart = hmKeys.some((k) => isAddressPartKey(k));
+    const effectiveRows: { key: string; label: string; isAddress?: boolean }[] = [];
+    let addressRowAdded = false;
+    for (const key of hmKeys) {
+      if (isAddressPartKey(key)) {
+        if (!addressRowAdded && hasAnyAddressPart) {
+          effectiveRows.push({ key: "address", label: "Full Address", isAddress: true });
+          addressRowAdded = true;
+        }
+        continue;
+      }
+      effectiveRows.push({ key, label: getHMLabel(key) });
+    }
 
     const renderHiringManagerDetailsRow = (key: string) => {
       const label = hiringManagerFieldCatalog.find((f) => f.key === key)?.label || key;
@@ -1511,7 +1544,7 @@ export default function JobView() {
         case "owner":
           return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.owner || "-"}</div></div>);
         case "address":
-          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.address || "-"}</div></div>);
+          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{getCombinedAddress()}</div></div>);
         default: {
           const cv = getCustomValue(label);
           const val = cv ?? (hm as any)[key];
@@ -1535,7 +1568,16 @@ export default function JobView() {
           ) : (visibleFields.hiringManager || []).length === 0 ? (
             <div className="p-4 text-center text-gray-500 text-sm">No fields visible. Use the edit icon to show fields.</div>
           ) : (
-            (visibleFields.hiringManager || []).map((key) => renderHiringManagerDetailsRow(key))
+            effectiveRows.map((row) =>
+              row.isAddress ? (
+                <div key="address" className="flex border-b border-gray-200 last:border-b-0">
+                  <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
+                  <div className="flex-1 p-2 text-sm">{getCombinedAddress()}</div>
+                </div>
+              ) : (
+                renderHiringManagerDetailsRow(row.key)
+              )
+            )
           )}
         </div>
       </PanelWithHeader>

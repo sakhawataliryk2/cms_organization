@@ -512,14 +512,14 @@ export default function JobSeekerView() {
         const parsed = JSON.parse(o);
         if (Array.isArray(parsed) && parsed.length > 0) overview = Array.from(new Set(parsed));
       }
-    } catch (_) {}
+    } catch (_) { }
     try {
       const d = localStorage.getItem(JOB_SEEKER_DETAILS_STORAGE_KEY);
       if (d) {
         const parsed = JSON.parse(d);
         if (Array.isArray(parsed) && parsed.length > 0) jobSeekerDetails = Array.from(new Set(parsed));
       }
-    } catch (_) {}
+    } catch (_) { }
     return { resume: ["profile", "skills", "experience"], overview, jobSeekerDetails };
   });
 
@@ -3028,8 +3028,8 @@ Best regards`;
     tearsheetSearchQuery.trim() === ""
       ? existingTearsheets
       : existingTearsheets.filter((ts: any) =>
-          ts.name.toLowerCase().includes(tearsheetSearchQuery.toLowerCase())
-        );
+        ts.name.toLowerCase().includes(tearsheetSearchQuery.toLowerCase())
+      );
 
   const handleTearsheetSelect = (tearsheet: any) => {
     setTearsheetForm((prev) => ({ ...prev, selectedTearsheetId: tearsheet.id.toString() }));
@@ -3654,145 +3654,145 @@ Best regards`;
             disabled={isLoadingHistory}
           />
           <div className="space-y-4">
-          {historyFilters.filteredAndSorted.map((item) => {
-            // Format the history entry based on action type
-            let actionDisplay = "";
-            let detailsDisplay: React.ReactNode = "";
+            {historyFilters.filteredAndSorted.map((item) => {
+              // Format the history entry based on action type
+              let actionDisplay = "";
+              let detailsDisplay: React.ReactNode = "";
 
-            try {
-              const details =
-                typeof item.details === "string"
-                  ? JSON.parse(item.details)
-                  : item.details;
+              try {
+                const details =
+                  typeof item.details === "string"
+                    ? JSON.parse(item.details)
+                    : item.details;
 
-              switch (item.action) {
-                case "CREATE":
-                  actionDisplay = "Job Seeker Created";
-                  detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
-                    }`;
-                  break;
-                case "UPDATE":
-                  actionDisplay = "Job Seeker Updated";
-                  if (details && details.before && details.after) {
-                    // Create a list of changes
-                    const changes: React.ReactNode[] = [];
+                switch (item.action) {
+                  case "CREATE":
+                    actionDisplay = "Job Seeker Created";
+                    detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
+                      }`;
+                    break;
+                  case "UPDATE":
+                    actionDisplay = "Job Seeker Updated";
+                    if (details && details.before && details.after) {
+                      // Create a list of changes
+                      const changes: React.ReactNode[] = [];
 
-                    // Helper function to format values
-                    const formatValue = (val: any): string => {
-                      if (val === null || val === undefined) return "Empty";
-                      if (typeof val === "object") return JSON.stringify(val);
-                      return String(val);
-                    };
+                      // Helper function to format values
+                      const formatValue = (val: any): string => {
+                        if (val === null || val === undefined) return "Empty";
+                        if (typeof val === "object") return JSON.stringify(val);
+                        return String(val);
+                      };
 
-                    for (const key in details.after) {
-                      // Skip internal fields that might not be relevant to users
-                      if (key === "updated_at") continue;
+                      for (const key in details.after) {
+                        // Skip internal fields that might not be relevant to users
+                        if (key === "updated_at") continue;
 
-                      const beforeVal = details.before[key];
-                      const afterVal = details.after[key];
+                        const beforeVal = details.before[key];
+                        const afterVal = details.after[key];
 
-                      if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
-                        // Special handling for custom_fields
-                        if (key === "custom_fields") {
-                          let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
-                          let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
+                        if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                          // Special handling for custom_fields
+                          if (key === "custom_fields") {
+                            let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
+                            let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
 
-                          // Handle case where custom_fields might be null/undefined
-                          beforeObj = beforeObj || {};
-                          afterObj = afterObj || {};
+                            // Handle case where custom_fields might be null/undefined
+                            beforeObj = beforeObj || {};
+                            afterObj = afterObj || {};
 
-                          if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
-                            const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
+                            if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
+                              const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
 
-                            allKeys.forEach(cfKey => {
-                              const beforeCfVal = beforeObj[cfKey];
-                              const afterCfVal = afterObj[cfKey];
+                              allKeys.forEach(cfKey => {
+                                const beforeCfVal = beforeObj[cfKey];
+                                const afterCfVal = afterObj[cfKey];
 
-                              if (beforeCfVal !== afterCfVal) {
-                                changes.push(
-                                  <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                                    <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
-                                    <div className="flex flex-wrap gap-2 items-center">
-                                      <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                                        {formatValue(beforeCfVal)}
-                                      </span>
-                                      <span className="text-gray-400">→</span>
-                                      <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                                        {formatValue(afterCfVal)}
-                                      </span>
+                                if (beforeCfVal !== afterCfVal) {
+                                  changes.push(
+                                    <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                                      <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
+                                      <div className="flex flex-wrap gap-2 items-center">
+                                        <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                          {formatValue(beforeCfVal)}
+                                        </span>
+                                        <span className="text-gray-400">→</span>
+                                        <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                          {formatValue(afterCfVal)}
+                                        </span>
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              }
-                            });
-                            continue; // Skip the standard field handling for custom_fields
+                                  );
+                                }
+                              });
+                              continue; // Skip the standard field handling for custom_fields
+                            }
                           }
-                        }
 
-                        // Standard fields
-                        const fieldName = key.replace(/_/g, " ");
-                        changes.push(
-                          <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                            <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
-                            <div className="flex flex-wrap gap-2 items-center">
-                              <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                                {formatValue(beforeVal)}
-                              </span>
-                              <span className="text-gray-400">→</span>
-                              <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                                {formatValue(afterVal)}
-                              </span>
+                          // Standard fields
+                          const fieldName = key.replace(/_/g, " ");
+                          changes.push(
+                            <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                              <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
+                              <div className="flex flex-wrap gap-2 items-center">
+                                <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                  {formatValue(beforeVal)}
+                                </span>
+                                <span className="text-gray-400">→</span>
+                                <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                  {formatValue(afterVal)}
+                                </span>
+                              </div>
                             </div>
+                          );
+                        }
+                      }
+
+                      if (changes.length > 0) {
+                        detailsDisplay = (
+                          <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
+                            {changes}
                           </div>
                         );
+                      } else {
+                        detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
                       }
                     }
-
-                    if (changes.length > 0) {
-                      detailsDisplay = (
-                        <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
-                          {changes}
-                        </div>
-                      );
-                    } else {
-                      detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
-                    }
-                  }
-                  break;
-                case "ADD_NOTE":
-                  actionDisplay = "Note Added";
-                  detailsDisplay = details.text || "";
-                  break;
-                default:
-                  actionDisplay = item.action;
-                  detailsDisplay = JSON.stringify(details);
+                    break;
+                  case "ADD_NOTE":
+                    actionDisplay = "Note Added";
+                    detailsDisplay = details.text || "";
+                    break;
+                  default:
+                    actionDisplay = item.action;
+                    detailsDisplay = JSON.stringify(details);
+                }
+              } catch (e) {
+                console.error("Error parsing history details:", e);
+                detailsDisplay = "Error displaying details";
               }
-            } catch (e) {
-              console.error("Error parsing history details:", e);
-              detailsDisplay = "Error displaying details";
-            }
 
-            return (
-              <div
-                key={item.id}
-                className="p-3 border rounded hover:bg-gray-50"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="font-medium text-blue-600">
-                    {actionDisplay}
-                  </span>
-                  <span className="text-sm text-gray-500">
-                    {new Date(item.performed_at).toLocaleString()}
-                  </span>
+              return (
+                <div
+                  key={item.id}
+                  className="p-3 border rounded hover:bg-gray-50"
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="font-medium text-blue-600">
+                      {actionDisplay}
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      {new Date(item.performed_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mb-2">{detailsDisplay}</div>
+                  <div className="text-sm text-gray-600">
+                    By: {item.performed_by_name || "Unknown"}
+                  </div>
                 </div>
-                <div className="mb-2">{detailsDisplay}</div>
-                <div className="text-sm text-gray-600">
-                  By: {item.performed_by_name || "Unknown"}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
         </>
       ) : (
         <p className="text-gray-500 italic">No Job Seeker history records available</p>
@@ -3858,6 +3858,41 @@ Best regards`;
       return !isHidden;
     });
 
+    const getOverviewLabel = (key: string) =>
+      overviewFieldCatalog.find((f) => f.key === key)?.label ||
+      customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === key)?.field_label ||
+      key;
+    const addressPartKeys = new Set(["address", "address2", "address 2", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
+    const isAddressPartKey = (key: string) =>
+      addressPartKeys.has((key || "").toLowerCase()) ||
+      (getOverviewLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address 2";
+
+    const getCombinedAddress = () => {
+      if (!jobSeeker) return "-";
+      const parts = [
+        customObj?.["Address"],
+        customObj?.["Address 2"],
+        [customObj?.["City"], customObj?.["State"]].filter(Boolean).join(", "),
+        customObj?.["ZIP Code"],
+      ].filter(Boolean);
+      return parts.length > 0 ? parts.join(", ") : "-";
+    };
+
+    const overviewKeys = visibleFields.overview || [];
+    const hasAnyAddressPart = overviewKeys.some((k) => isAddressPartKey(k));
+    const effectiveRows: { key: string; label: string; isAddress?: boolean }[] = [];
+    let addressRowAdded = false;
+    for (const key of overviewKeys) {
+      if (isAddressPartKey(key)) {
+        if (!addressRowAdded && hasAnyAddressPart) {
+          effectiveRows.push({ key: "address", label: "Full Address", isAddress: true });
+          addressRowAdded = true;
+        }
+        continue;
+      }
+      effectiveRows.push({ key, label: getOverviewLabel(key) });
+    }
+
     const renderOverviewRow = (key: string) => {
       const field = customFieldDefs.find(
         (f: any) =>
@@ -3891,7 +3926,16 @@ Best regards`;
     return (
       <PanelWithHeader title="Overview" onEdit={() => handleEditPanel("overview")}>
         <div className="space-y-0 border border-gray-200 rounded">
-          {(visibleFields.overview || []).map((key) => renderOverviewRow(key))}
+          {effectiveRows.map((row) =>
+            row.isAddress ? (
+              <div key="address" className="flex border-b border-gray-200 last:border-b-0">
+                <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
+                <div className="flex-1 p-2 text-sm">{getCombinedAddress()}</div>
+              </div>
+            ) : (
+              renderOverviewRow(row.key)
+            )
+          )}
         </div>
       </PanelWithHeader>
     );
@@ -3905,26 +3949,42 @@ Best regards`;
       return !isHidden;
     });
 
+    const getDetailsLabel = (key: string) =>
+      jobSeekerDetailsFieldCatalog.find((f) => f.key === key)?.label ||
+      customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === key)?.field_label ||
+      key;
+    const addressPartKeys = new Set(["address", "address2", "address 2", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
+    const isAddressPartKey = (key: string) =>
+      addressPartKeys.has((key || "").toLowerCase()) ||
+      (getDetailsLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address 2";
+
+    const getCombinedAddress = () => {
+      if (!jobSeeker) return "-";
+      const parts = [
+        customObj?.["Address"],
+        customObj?.["Address 2"],
+        [customObj?.["City"], customObj?.["State"]].filter(Boolean).join(", "),
+        customObj?.["ZIP Code"],
+      ].filter(Boolean);
+      return parts.length > 0 ? parts.join(", ") : "-";
+    };
+
+    const detailsKeys = visibleFields.jobSeekerDetails || [];
+    const hasAnyAddressPart = detailsKeys.some((k) => isAddressPartKey(k));
+    const effectiveRows: { key: string; label: string; isAddress?: boolean }[] = [];
+    let addressRowAdded = false;
+    for (const key of detailsKeys) {
+      if (isAddressPartKey(key)) {
+        if (!addressRowAdded && hasAnyAddressPart) {
+          effectiveRows.push({ key: "address", label: "Full Address", isAddress: true });
+          addressRowAdded = true;
+        }
+        continue;
+      }
+      effectiveRows.push({ key, label: getDetailsLabel(key) });
+    }
+
     const renderJobSeekerDetailsRow = (key: string) => {
-      // Standard fields - use existing getHeaderFieldValue which handles them correctly
-      // const standardKeys = ["status", "currentOrganization", "title", "email", "mobilePhone", "address", "desiredSalary", "dateAdded", "lastContactDate", "owner"];
-      // if (standardKeys.includes(key)) {
-      //   return (
-      //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-      //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{getHeaderFieldLabel(key)}:</div>
-      //       <div className="flex-1 p-2 text-sm">
-      //         {key === "status" ? (
-      //           <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{getHeaderFieldValue(key)}</span>
-      //         ) : key === "email" && getHeaderFieldValue(key) !== "-" ? (
-      //           <a href={`mailto:${getHeaderFieldValue(key)}`} className="text-blue-600 hover:underline">{getHeaderFieldValue(key)}</a>
-      //         ) : (
-      //           getHeaderFieldValue(key)
-      //         )}
-      //       </div>
-      //     </div>
-      //   );
-      // }
-      // Custom field
       const field = customFieldDefs.find(
         (f: any) =>
           String(f.field_name || f.field_key || f.api_name || f.id) === String(key) ||
@@ -3947,7 +4007,16 @@ Best regards`;
     return (
       <PanelWithHeader title="Job Seeker Details" onEdit={() => handleEditPanel("jobSeekerDetails")}>
         <div className="space-y-0 border border-gray-200 rounded">
-          {(visibleFields.jobSeekerDetails || []).map((key) => renderJobSeekerDetailsRow(key))}
+          {effectiveRows.map((row) =>
+            row.isAddress ? (
+              <div key="address" className="flex border-b border-gray-200 last:border-b-0">
+                <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
+                <div className="flex-1 p-2 text-sm">{getCombinedAddress()}</div>
+              </div>
+            ) : (
+              renderJobSeekerDetailsRow(row.key)
+            )
+          )}
         </div>
       </PanelWithHeader>
     );
@@ -4151,27 +4220,27 @@ Best regards`;
       {/* Navigation Tabs - scroll horizontally on small screens */}
       <div className="flex bg-gray-300 mt-1 border-b border-gray-400 px-2 overflow-x-auto">
         <div className="flex shrink-0 gap-0.5">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={`px-3 sm:px-4 py-2 text-sm sm:text-base whitespace-nowrap ${activeTab === tab.id
-              ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
-              : "text-gray-700 hover:bg-gray-200"
-              }`}
-            onClick={() => {
-              if (tab.id === "modify") {
-                handleEdit();
-              } else if (tab.id === "applications") {
-                setActiveTab(tab.id);
-                if (jobSeekerId) fetchApplications(jobSeekerId);
-              } else {
-                setActiveTab(tab.id);
-              }
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              className={`px-3 sm:px-4 py-2 text-sm sm:text-base whitespace-nowrap ${activeTab === tab.id
+                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+                : "text-gray-700 hover:bg-gray-200"
+                }`}
+              onClick={() => {
+                if (tab.id === "modify") {
+                  handleEdit();
+                } else if (tab.id === "applications") {
+                  setActiveTab(tab.id);
+                  if (jobSeekerId) fetchApplications(jobSeekerId);
+                } else {
+                  setActiveTab(tab.id);
+                }
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -5231,7 +5300,7 @@ Best regards`;
                             id={entry.key}
                             label={entry.label}
                             checked={!!modalJobSeekerDetailsVisible[entry.key]}
-                            onToggle={() => {}}
+                            onToggle={() => { }}
                             isOverlay
                           />
                         );
@@ -5382,7 +5451,7 @@ Best regards`;
                             id={entry.key}
                             label={entry.label}
                             checked={!!modalOverviewVisible[entry.key]}
-                            onToggle={() => {}}
+                            onToggle={() => { }}
                             isOverlay
                           />
                         );
@@ -5815,11 +5884,10 @@ Best regards`;
                     onClick={() =>
                       setTearsheetForm((prev) => ({ ...prev, visibility: "New", selectedTearsheetId: "" }))
                     }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === "New"
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "New"
                         ? "bg-blue-500 text-white"
                         : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
-                    }`}
+                      }`}
                   >
                     New Tearsheet
                   </button>
@@ -5828,11 +5896,10 @@ Best regards`;
                     onClick={() =>
                       setTearsheetForm((prev) => ({ ...prev, visibility: "Existing", name: "" }))
                     }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === "Existing"
+                    className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "Existing"
                         ? "bg-blue-500 text-white"
                         : "bg-white text-gray-700 hover:bg-gray-50"
-                    }`}
+                      }`}
                   >
                     Existing Tearsheet
                   </button>

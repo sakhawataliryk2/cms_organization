@@ -864,7 +864,29 @@ export default function LeadView() {
           return !isHidden;
         });
 
-        const renderContactInfoRow = (key: string) => {
+        const getContactInfoLabel = (key: string) => {
+          const field = contactInfoFieldCatalog.find((f) => f.key === key);
+          return field?.label || customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === String(key))?.field_label || key;
+        };
+        const addressPartKeys = new Set(["address", "address2", "address 2", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
+        const isAddressPartKey = (key: string) =>
+          addressPartKeys.has((key || "").toLowerCase()) ||
+          (getContactInfoLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address 2";
+
+        const getCombinedAddress = () => {
+          if (!lead) return "-";
+          const l = lead as any;
+          console.log("Lead", l);
+          const parts = [
+            l.address ?? l.customFields?.["Address"],
+            l.address2 ?? l.customFields?.["Address 2"],
+            [l.customFields?.["City"], l.customFields?.["State"]].filter(Boolean).join(", ") || [l.city, l.state].filter(Boolean).join(", "),
+            l.zip ?? l.customFields?.["ZIP Code"] ?? l.customFields?.["Zip Code"],
+          ].filter(Boolean);
+          return parts.length > 0 ? parts.join(", ") : "-";
+        };
+
+        const getContactInfoValue = (key: string): string => {
           const field = customFieldDefs.find(
             (f: any) =>
               String(f.field_name || f.field_key || f.api_name || f.id) === String(key) ||
@@ -875,11 +897,30 @@ export default function LeadView() {
             (customObj as any)?.[key] ??
             (field?.field_label ? (customObj as any)?.[field.field_label] : undefined) ??
             (field?.field_name ? (customObj as any)?.[field.field_name] : undefined);
-          const label = field?.field_label || field?.field_name || key;
+          return value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
+        };
+
+        const contactKeys = Array.from(new Set(visibleFields.contactInfo || []));
+        const hasAnyAddressPart = contactKeys.some((k) => isAddressPartKey(k));
+        const effectiveRows: { key: string; label: string; isAddress?: boolean }[] = [];
+        let addressRowAdded = false;
+        for (const key of contactKeys) {
+          if (isAddressPartKey(key)) {
+            if (!addressRowAdded && hasAnyAddressPart) {
+              effectiveRows.push({ key: "address", label: "Full Address", isAddress: true });
+              addressRowAdded = true;
+            }
+            continue;
+          }
+          effectiveRows.push({ key, label: getContactInfoLabel(key) });
+        }
+
+        const renderContactInfoRow = (row: { key: string; label: string; isAddress?: boolean }) => {
+          const value = row.isAddress ? getCombinedAddress() : getContactInfoValue(row.key);
           return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
-              <div className="flex-1 p-2">{value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-"}</div>
+            <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
+              <div className="flex-1 p-2">{value}</div>
             </div>
           );
         };
@@ -891,7 +932,7 @@ export default function LeadView() {
               onEdit={() => handleEditPanel("contactInfo")}
             >
               <div className="space-y-0 border border-gray-200 rounded">
-                {Array.from(new Set(visibleFields.contactInfo || [])).map((key) => renderContactInfoRow(key))}
+                {effectiveRows.map((row) => renderContactInfoRow(row))}
               </div>
             </PanelWithHeader>
           </SortablePanel>

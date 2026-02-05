@@ -91,6 +91,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{requestId}}",
         "{{reason}}",
         "{{requestDate}}",
         "{{approvalUrl}}",
@@ -117,15 +118,16 @@ const SECTION_CONFIG: Record<
         body:
           `<div>` +
           `<h2>Delete Request</h2>` +
-          `<p>A delete request has been submitted:</p>` +
+          `<p>A new organization delete request has been submitted and requires your review.</p>` +
+          `<p><strong>Request Details:</strong></p>` +
           `<ul>` +
+          `<li><strong>Request ID:</strong> {{requestId}} (the approval link uses this ID)</li>` +
+          `<li><strong>Record (Organization):</strong> {{recordNumber}}</li>` +
           `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
-          `<li><strong>Record Type:</strong> {{recordType}}</li>` +
-          `<li><strong>Record Number:</strong> {{recordNumber}}</li>` +
-          `<li><strong>Reason:</strong> {{reason}}</li>` +
           `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
+          `<li><strong>Reason:</strong> {{reason}}</li>` +
           `</ul>` +
-          `<p>Please review and approve or deny this deletion. Use the buttons below:</p>` +
+          `<p>Please review the request and take the appropriate action using the links below:</p>` +
           `<p>{{approvalUrl}} {{denyUrl}}</p>` +
           `</div>`,
       },
@@ -159,6 +161,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{requestId}}",
         "{{reason}}",
         "{{requestDate}}",
         "{{approvalUrl}}",
@@ -185,15 +188,16 @@ const SECTION_CONFIG: Record<
         body:
           `<div>` +
           `<h2>Delete Request (Hiring Manager)</h2>` +
-          `<p>A delete request has been submitted:</p>` +
+          `<p>A new hiring manager delete request has been submitted and requires your review.</p>` +
+          `<p><strong>Request Details:</strong></p>` +
           `<ul>` +
+          `<li><strong>Request ID:</strong> {{requestId}} (the approval link uses this ID)</li>` +
+          `<li><strong>Record (Hiring Manager):</strong> {{recordNumber}}</li>` +
           `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
-          `<li><strong>Record Type:</strong> {{recordType}}</li>` +
-          `<li><strong>Record Number:</strong> {{recordNumber}}</li>` +
-          `<li><strong>Reason:</strong> {{reason}}</li>` +
           `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
+          `<li><strong>Reason:</strong> {{reason}}</li>` +
           `</ul>` +
-          `<p>Please review and approve or deny this deletion. Use the buttons below:</p>` +
+          `<p>Please review the request and take the appropriate action using the links below:</p>` +
           `<p>{{approvalUrl}} {{denyUrl}}</p>` +
           `</div>`,
       },

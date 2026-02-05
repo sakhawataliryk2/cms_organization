@@ -561,6 +561,9 @@ export default function OrganizationView() {
   const [availableOrganizations, setAvailableOrganizations] = useState<any[]>([]);
   const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(false);
   const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false);
+  const [transferSearchQuery, setTransferSearchQuery] = useState("");
+  const [showTransferDropdown, setShowTransferDropdown] = useState(false);
+  const transferSearchRef = useRef<HTMLDivElement>(null);
 
   // Delete request modal state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -2576,11 +2579,12 @@ export default function OrganizationView() {
       const getCombinedAddress = () => {
         if (!organization) return "-";
         const o = organization as any;
+        console.log("Organization", o);
         const parts = [
-          o.address,
-          o.address2 ?? o.customFields?.["Address 2"],
-          [o.city ?? o.customFields?.["City"], o.state ?? o.customFields?.["State"]].filter(Boolean).join(", "),
-          o.zip_code ?? o.customFields?.["ZIP Code"] ?? o.customFields?.["Zip Code"],
+          o.customFields?.["Address"],
+          o.customFields?.["Address 2"],
+          [o.customFields?.["City"], o.customFields?.["State"]].filter(Boolean).join(", "),
+          o.customFields?.["ZIP Code"],
         ].filter(Boolean);
         return parts.length > 0 ? parts.join(", ") : "-";
       };
@@ -2611,7 +2615,7 @@ export default function OrganizationView() {
       for (const key of contactKeys) {
         if (isAddressPartKey(key)) {
           if (!addressRowAdded && hasAnyAddressPart) {
-            effectiveRows.push({ key: "address", label: "Address", isAddress: true });
+            effectiveRows.push({ key: "address", label: "Full Address", isAddress: true });
             addressRowAdded = true;
           }
           continue;
@@ -2634,7 +2638,7 @@ export default function OrganizationView() {
       return (
         <SortablePanel key={panelId} id={panelId}>
           <PanelWithHeader
-            title="Organization Contact Info:"
+            title="Organization Contact Info"
             onEdit={() => handleEditPanel("contactInfo")}
           >
             <div className="space-y-0 border border-gray-200 rounded">
@@ -2658,10 +2662,11 @@ export default function OrganizationView() {
                           disabled={isSavingStatus}
                           className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
                         >
-                          <option value="Active">Active</option>
-                          <option value="Inactive">Inactive</option>
-                          <option value="Archived">Archived</option>
-                          <option value="On Hold">On Hold</option>
+                          {statusFieldOptions.map((option: string) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
                         </select>
                       ) : row.isUrl ? (
                         <a
@@ -3477,6 +3482,52 @@ export default function OrganizationView() {
     setEditableFields({ ...originalData });
   };
 
+  // Get Status field options from admin field definitions
+  const statusFieldOptions = useMemo((): string[] => {
+    const statusField = (availableFields || []).find(
+      (f: any) =>
+        (f.field_label || "").toLowerCase() === "status" ||
+        (f.field_name || "").toLowerCase() === "status"
+    );
+    
+    if (!statusField || !statusField.options) {
+      // Fallback to default options if not found
+      return ["Active", "Inactive", "Archived", "On Hold"];
+    }
+
+    let options = statusField.options;
+    
+    // Parse options if it's a string
+    if (typeof options === "string") {
+      try {
+        options = JSON.parse(options);
+      } catch {
+        // Fallback: assume newline-delimited list
+        return options
+          .split(/\r?\n/)
+          .map((opt: string) => opt.trim())
+          .filter((opt: string) => opt.length > 0);
+      }
+    }
+
+    // Handle array of options
+    if (Array.isArray(options)) {
+      return options
+        .filter((opt: any): opt is string => typeof opt === "string" && opt.trim().length > 0)
+        .map((opt: string) => opt.trim());
+    }
+
+    // Handle object format {key: value}
+    if (typeof options === "object" && options !== null) {
+      const values = Object.values(options) as unknown[];
+      return values
+        .filter((opt): opt is string => typeof opt === "string" && opt.trim().length > 0)
+        .map((opt: string) => opt.trim());
+    }
+
+    return ["Active", "Inactive", "Archived", "On Hold"];
+  }, [availableFields]);
+
   // Handle status change from summary page dropdown
   const handleStatusChange = async (newStatus: string) => {
     if (!organizationId || isSavingStatus) return;
@@ -3725,6 +3776,20 @@ export default function OrganizationView() {
           ts.name.toLowerCase().includes(tearsheetSearchQuery.toLowerCase())
         );
 
+  const filteredTransferOrganizations =
+    transferSearchQuery.trim() === ""
+      ? availableOrganizations
+      : availableOrganizations.filter((org: any) => {
+          const q = transferSearchQuery.trim().toLowerCase();
+          const name = String(org?.name || "").toLowerCase();
+          const idStr = org?.id !== undefined && org?.id !== null ? String(org.id) : "";
+          const recordId =
+            org?.id !== undefined && org?.id !== null
+              ? String(formatRecordId(org.id, "organization")).toLowerCase()
+              : "";
+          return name.includes(q) || idStr.includes(q) || recordId.includes(q);
+        });
+
   const handleTearsheetSelect = (tearsheet: any) => {
     setTearsheetForm((prev) => ({
       ...prev,
@@ -3755,6 +3820,28 @@ export default function OrganizationView() {
     }
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showTearsheetDropdown]);
+
+  // Click outside to close transfer search dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (transferSearchRef.current && !transferSearchRef.current.contains(event.target as Node)) {
+        setShowTransferDropdown(false);
+      }
+    };
+    if (showTransferDropdown) {
+      document.addEventListener("mousedown", handleClickOutside);
+    } else {
+      document.removeEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showTransferDropdown]);
+
+  useEffect(() => {
+    if (showTransferModal) {
+      setTransferSearchQuery("");
+      setShowTransferDropdown(false);
+    }
+  }, [showTransferModal]);
 
   // Fetch available organizations for transfer (exclude current organization)
   const fetchAvailableOrganizations = async () => {
@@ -6321,6 +6408,7 @@ export default function OrganizationView() {
                 onClick={() => {
                   setShowTransferModal(false);
                   setTransferForm({ targetOrganizationId: "" });
+                  setTransferSearchQuery("");
                 }}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -6357,25 +6445,50 @@ export default function OrganizationView() {
                     No available organizations found
                   </div>
                 ) : (
-                  <select
-                    value={transferForm.targetOrganizationId}
-                    onChange={(e) =>
-                      setTransferForm((prev) => ({
-                        ...prev,
-                        targetOrganizationId: e.target.value,
-                      }))
-                    }
-                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  >
-                    <option value="">Select target organization...</option>
-                    {availableOrganizations.map((org) => (
-                      <option key={org.id} value={org.id}>
-                        {formatRecordId(org.id, "organization")} {org.name}
-                        {org.status && ` (${org.status})`}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="relative" ref={transferSearchRef}>
+                    <input
+                      type="text"
+                      value={transferSearchQuery}
+                      onChange={(e) => {
+                        setTransferSearchQuery(e.target.value);
+                        setShowTransferDropdown(true);
+                      }}
+                      onFocus={() => setShowTransferDropdown(true)}
+                      onClick={() => setShowTransferDropdown(true)}
+                      placeholder="Search by organization name or Record ID..."
+                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                    {showTransferDropdown && (transferSearchQuery || availableOrganizations.length > 0) && (
+                      <div className="absolute z-[60] w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
+                        {filteredTransferOrganizations.length > 0 ? (
+                          filteredTransferOrganizations.map((org: any) => (
+                            <button
+                              key={org.id}
+                              type="button"
+                              onClick={() => {
+                                setTransferForm((prev) => ({
+                                  ...prev,
+                                  targetOrganizationId: String(org.id),
+                                }));
+                                setTransferSearchQuery(`${formatRecordId(org.id, "organization")} ${org.name || ""}`.trim());
+                                setShowTransferDropdown(false);
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex flex-col"
+                            >
+                              <span className="text-sm font-medium text-gray-900">
+                                {formatRecordId(org.id, "organization")} {org.name}
+                              </span>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="p-3 text-center text-gray-500 text-sm">
+                            No matching organizations found
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
 
@@ -6395,6 +6508,7 @@ export default function OrganizationView() {
                 onClick={() => {
                   setShowTransferModal(false);
                   setTransferForm({ targetOrganizationId: "" });
+                  setTransferSearchQuery("");
                 }}
                 className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isSubmittingTransfer}

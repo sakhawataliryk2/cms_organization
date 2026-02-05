@@ -730,31 +730,63 @@ export default function HiringManagerView() {
       return !isHidden;
     });
 
-    const renderDetailsRow = (key: string) => {
-      // Standard fields
-      switch (key) {
+    const getDetailsLabel = (key: string) =>
+      detailsFieldCatalog.find((f) => f.key === key)?.label ||
+      customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === key)?.field_label ||
+      key;
+    const addressPartKeys = new Set(["address", "address2", "address 2", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
+    const isAddressPartKey = (key: string) =>
+      addressPartKeys.has((key || "").toLowerCase()) ||
+      (getDetailsLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address 2";
 
-        default:
-          // Custom field
-          const fieldDef = customFieldDefs.find((f: any) => {
-            const fk = f.field_name || f.field_key || f.api_name || f.id;
-            return String(fk) === key;
-          });
-          const fieldLabel = fieldDef?.field_label || fieldDef?.field_name || key;
-          const fieldValue = customObj[fieldLabel] || "-";
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
-              <div className="flex-1 p-2 text-sm">{String(fieldValue)}</div>
-            </div>
-          );
+    const getCombinedAddress = () => {
+      if (!hiringManager) return "-";
+      const o = hiringManager as any;
+      const parts = [
+        o.address ?? customObj?.["Address"],
+        o.address2 ?? customObj?.["Address 2"],
+        [customObj?.["City"], customObj?.["State"]].filter(Boolean).join(", ") || [o.city, o.state].filter(Boolean).join(", "),
+        o.zip ?? customObj?.["ZIP Code"] ?? customObj?.["Zip Code"],
+      ].filter(Boolean);
+      return parts.length > 0 ? parts.join(", ") : "-";
+    };
+
+    const getDetailsValue = (key: string): string => {
+      const fieldDef = customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === key);
+      const fieldLabel = fieldDef?.field_label || fieldDef?.field_name || key;
+      const v = customObj[fieldLabel] ?? customObj[key];
+      return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
+    };
+
+    const detailsKeys = Array.from(new Set(visibleFields.details || []));
+    const hasAnyAddressPart = detailsKeys.some((k) => isAddressPartKey(k));
+    const effectiveRows: { key: string; label: string; isAddress?: boolean }[] = [];
+    let addressRowAdded = false;
+    for (const key of detailsKeys) {
+      if (isAddressPartKey(key)) {
+        if (!addressRowAdded && hasAnyAddressPart) {
+          effectiveRows.push({ key: "address", label: "Full Address", isAddress: true });
+          addressRowAdded = true;
+        }
+        continue;
       }
+      effectiveRows.push({ key, label: getDetailsLabel(key) });
+    }
+
+    const renderDetailsRow = (row: { key: string; label: string; isAddress?: boolean }) => {
+      const value = row.isAddress ? getCombinedAddress() : getDetailsValue(row.key);
+      return (
+        <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
+          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
+          <div className="flex-1 p-2 text-sm">{value}</div>
+        </div>
+      );
     };
 
     return (
       <PanelWithHeader title="Details" onEdit={() => handleEditPanel("details")}>
         <div className="space-y-0 border border-gray-200 rounded">
-          {Array.from(new Set(visibleFields.details || [])).map((key) => renderDetailsRow(key))}
+          {effectiveRows.map((row) => renderDetailsRow(row))}
         </div>
       </PanelWithHeader>
     );
@@ -772,7 +804,6 @@ export default function HiringManagerView() {
     const getOrganizationDetailValue = (key: string): string => {
       if (!fetchedOrganization) return "-";
       const o = fetchedOrganization as any;
-      console.log("Organization", o);
       // Standard backend columns (snake_case from API or camelCase)
       const standard: Record<string, string> = {
         name: o.name ?? o.Name ?? "",
@@ -805,12 +836,43 @@ export default function HiringManagerView() {
       return "-";
     };
 
-    const renderOrganizationDetailsRow = (key: string) => {
-      const label = getOrganizationDetailLabel(key);
-      const value = getOrganizationDetailValue(key);
+    const addressPartKeys = new Set(["address", "address2", "address 2", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
+    const isAddressPartKey = (key: string) =>
+      addressPartKeys.has((key || "").toLowerCase()) ||
+      (getOrganizationDetailLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address 2";
+
+    const getCombinedAddress = () => {
+      if (!fetchedOrganization) return "-";
+      const o = fetchedOrganization as any;
+      const parts = [
+        o.customFields?.["Address"],
+        o.customFields?.["Address 2"],
+        [o.customFields?.["City"], o.customFields?.["State"]].filter(Boolean).join(", "),
+        o.customFields?.["ZIP Code"],
+      ].filter(Boolean);
+      return parts.length > 0 ? parts.join(", ") : "-";
+    };
+
+    const orgDetailsKeys = Array.from(new Set(visibleFields.organizationDetails || []));
+    const hasAnyAddressPart = orgDetailsKeys.some((k) => isAddressPartKey(k));
+    const effectiveRows: { key: string; label: string; isAddress?: boolean }[] = [];
+    let addressRowAdded = false;
+    for (const key of orgDetailsKeys) {
+      if (isAddressPartKey(key)) {
+        if (!addressRowAdded && hasAnyAddressPart) {
+          effectiveRows.push({ key: "address", label: "Full Address", isAddress: true });
+          addressRowAdded = true;
+        }
+        continue;
+      }
+      effectiveRows.push({ key, label: getOrganizationDetailLabel(key) });
+    }
+
+    const renderOrganizationDetailsRow = (row: { key: string; label: string; isAddress?: boolean }) => {
+      const value = row.isAddress ? getCombinedAddress() : getOrganizationDetailValue(row.key);
       return (
-        <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+        <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
+          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
           <div className="flex-1 p-2 text-sm">{value}</div>
         </div>
       );
@@ -822,7 +884,7 @@ export default function HiringManagerView() {
           {isLoadingOrganization ? (
             <div className="p-4 text-gray-500 text-sm">Loading organization details...</div>
           ) : (
-            Array.from(new Set(visibleFields.organizationDetails || [])).map((key: string) => renderOrganizationDetailsRow(key))
+            effectiveRows.map((row) => renderOrganizationDetailsRow(row))
           )}
         </div>
       </PanelWithHeader>
