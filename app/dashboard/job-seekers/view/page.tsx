@@ -1879,7 +1879,7 @@ Best regards`;
     if (editingPanel !== "jobSeekerDetails") return;
     const current = visibleFields.jobSeekerDetails || [];
     const catalogKeys = jobSeekerDetailsFieldCatalog.map((f) => f.key);
-    
+
     // Check if Full Address should be visible (if any address parts are visible)
     const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
     const hasAddressParts = current.some((k) => {
@@ -1888,10 +1888,10 @@ Best regards`;
       return addressPartKeys.has(k.toLowerCase()) || label === "address";
     });
     const fullAddressVisible = current.includes(FULL_ADDRESS_KEY) || hasAddressParts;
-    
+
     const currentInCatalog = current.filter((k) => catalogKeys.includes(k) && k !== FULL_ADDRESS_KEY);
     const rest = catalogKeys.filter((k) => !current.includes(k));
-    
+
     // Build order: preserve Full Address position if it exists, otherwise add it at the beginning if address parts exist
     let order: string[];
     const fullAddressIndex = current.indexOf(FULL_ADDRESS_KEY);
@@ -1907,7 +1907,7 @@ Best regards`;
       // No Full Address needed
       order = [...currentInCatalog, ...rest];
     }
-    
+
     setModalJobSeekerDetailsOrder(order);
     setModalJobSeekerDetailsVisible(
       [...catalogKeys, FULL_ADDRESS_KEY].reduce((acc, k) => {
@@ -1926,7 +1926,7 @@ Best regards`;
     if (editingPanel !== "overview") return;
     const current = visibleFields.overview || [];
     const catalogKeys = overviewFieldCatalog.map((f) => f.key);
-    
+
     // Check if Full Address should be visible (if any address parts are visible)
     const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
     const hasAddressParts = current.some((k) => {
@@ -1935,10 +1935,10 @@ Best regards`;
       return addressPartKeys.has(k.toLowerCase()) || label === "address";
     });
     const fullAddressVisible = current.includes(FULL_ADDRESS_KEY) || hasAddressParts;
-    
+
     const currentInCatalog = current.filter((k) => catalogKeys.includes(k) && k !== FULL_ADDRESS_KEY);
     const rest = catalogKeys.filter((k) => !current.includes(k));
-    
+
     // Build order: preserve Full Address position if it exists, otherwise add it at the beginning if address parts exist
     let order: string[];
     const fullAddressIndex = current.indexOf(FULL_ADDRESS_KEY);
@@ -1954,7 +1954,7 @@ Best regards`;
       // No Full Address needed
       order = [...currentInCatalog, ...rest];
     }
-    
+
     setModalOverviewOrder(order);
     setModalOverviewVisible(
       [...catalogKeys, FULL_ADDRESS_KEY].reduce((acc, k) => {
@@ -2269,21 +2269,22 @@ Best regards`;
 
   const handleDownloadDocument = async (doc: any) => {
     // Check if it's a text file (by mime_type or file extension)
-    const isTextFile = doc.mime_type === "text/plain" || 
-                       doc.file_path?.toLowerCase().endsWith(".txt") ||
-                       doc.document_name?.toLowerCase().endsWith(".txt");
+    const isTextFile = doc.mime_type === "text/plain" ||
+      doc.file_path?.toLowerCase().endsWith(".txt") ||
+      doc.document_name?.toLowerCase().endsWith(".txt");
 
     // If the document has a stored file path
     if (doc.file_path) {
       // For text files, force download instead of opening in a new tab
       if (isTextFile) {
         try {
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+          // Check if it's an absolute URL (e.g. from Vercel Blob)
           const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
-          
+
+          // Prepend leading slash if missing and not absolute URL
           const url = isAbsoluteUrl
             ? doc.file_path
-            : `${apiUrl}/${doc.file_path.startsWith("/") ? doc.file_path.slice(1) : doc.file_path}`;
+            : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
 
           // Fetch the file content and create a blob for download
           const response = await fetch(url);
@@ -2304,29 +2305,34 @@ Best regards`;
           console.error("Error downloading text file:", error);
           toast.error("Failed to download file. Opening in new tab instead.");
           // Fallback to opening in new tab if download fails
-          const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-          window.open(`${apiUrl}/${doc.file_path}`, "_blank");
+          const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
+          const url = isAbsoluteUrl
+            ? doc.file_path
+            : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
+          window.open(url, "_blank");
         }
         return;
       }
 
       // For non-text files, open in a new tab (existing behavior)
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-      window.open(`${apiUrl}/${doc.file_path}`, "_blank");
+      const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
+      const url = isAbsoluteUrl
+        ? doc.file_path
+        : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
+      window.open(url, "_blank");
       return;
     }
 
-    // For text documents without a file_path, generate a file to download
+    // For text-based documents without a file, trigger a text download
     if (doc.content) {
-      const element = document.createElement("a");
-      const file = new Blob([doc.content || ""], { type: "text/plain;charset=utf-8" });
-      const fileUrl = URL.createObjectURL(file);
-      element.href = fileUrl;
-      element.download = `${doc.document_name || "document"}.txt`;
-      document.body.appendChild(element);
-      element.click();
-      document.body.removeChild(element);
-      URL.revokeObjectURL(fileUrl);
+      const blob = new Blob([doc.content], { type: "text/plain;charset=utf-8" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `${doc.document_name || "document"}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(link.href);
       toast.success("File downloaded successfully");
     } else {
       toast.info("This document has no file or content to download.");
@@ -3992,7 +3998,7 @@ Best regards`;
       // Don't treat Address 2 as an address part - it should show separately
       if (isAddress2Key(key)) return false;
       return addressPartKeys.has((key || "").toLowerCase()) ||
-             (getOverviewLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
+        (getOverviewLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
     };
 
     const getCombinedAddress = () => {
@@ -4105,7 +4111,7 @@ Best regards`;
       // Don't treat Address 2 as an address part - it should show separately
       if (isAddress2Key(key)) return false;
       return addressPartKeys.has((key || "").toLowerCase()) ||
-             (getDetailsLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
+        (getDetailsLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
     };
 
     const getCombinedAddress = () => {
@@ -5435,8 +5441,8 @@ Best regards`;
                       <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
                         {modalJobSeekerDetailsOrder.map((key) => {
                           // Handle synthetic Full Address field
-                          const label = key === FULL_ADDRESS_KEY 
-                            ? "Full Address" 
+                          const label = key === FULL_ADDRESS_KEY
+                            ? "Full Address"
                             : (jobSeekerDetailsFieldCatalog.find((f) => f.key === key)?.label ?? key);
                           const entry = jobSeekerDetailsFieldCatalog.find((f) => f.key === key);
                           if (!entry && key !== FULL_ADDRESS_KEY) return null;
@@ -5593,8 +5599,8 @@ Best regards`;
                       <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
                         {modalOverviewOrder.map((key) => {
                           // Handle synthetic Full Address field
-                          const label = key === FULL_ADDRESS_KEY 
-                            ? "Full Address" 
+                          const label = key === FULL_ADDRESS_KEY
+                            ? "Full Address"
                             : (overviewFieldCatalog.find((f) => f.key === key)?.label ?? key);
                           const entry = overviewFieldCatalog.find((f) => f.key === key);
                           if (!entry && key !== FULL_ADDRESS_KEY) return null;
@@ -6061,8 +6067,8 @@ Best regards`;
                       setTearsheetForm((prev) => ({ ...prev, visibility: "New", selectedTearsheetId: "" }))
                     }
                     className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "New"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
+                      ? "bg-blue-500 text-white"
+                      : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
                       }`}
                   >
                     New Tearsheet
@@ -6073,8 +6079,8 @@ Best regards`;
                       setTearsheetForm((prev) => ({ ...prev, visibility: "Existing", name: "" }))
                     }
                     className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "Existing"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 hover:bg-gray-50"
+                      ? "bg-blue-500 text-white"
+                      : "bg-white text-gray-700 hover:bg-gray-50"
                       }`}
                   >
                     Existing Tearsheet
