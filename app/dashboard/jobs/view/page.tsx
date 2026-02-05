@@ -909,22 +909,92 @@ export default function JobView() {
     }
   };
 
+  // const handleDownloadDocument = async (doc: any) => {
+  //   // Check if it's a text file (by mime_type or file extension)
+  //   const isTextFile = doc.mime_type === "text/plain" || 
+  //                      doc.file_path?.toLowerCase().endsWith(".txt") ||
+  //                      doc.document_name?.toLowerCase().endsWith(".txt");
+
+  //   // If the document has a stored file path
+  //   if (doc.file_path) {
+  //     // For text files, force download instead of opening in a new tab
+  //     if (isTextFile) {
+  //       try {
+  //         const path = String(doc.file_path).startsWith("/")
+  //           ? String(doc.file_path)
+  //           : `/${doc.file_path}`;
+  //         const isAbsoluteUrl = path.startsWith("http://") || path.startsWith("https://");
+  //         const url = isAbsoluteUrl ? path : path;
+
+  //         // Fetch the file content and create a blob for download
+  //         const response = await fetch(url);
+  //         if (!response.ok) {
+  //           throw new Error("Failed to fetch file");
+  //         }
+  //         const blob = await response.blob();
+  //         const downloadUrl = URL.createObjectURL(blob);
+  //         const link = document.createElement("a");
+  //         link.href = downloadUrl;
+  //         link.download = `${doc.document_name || "document"}.txt`;
+  //         document.body.appendChild(link);
+  //         link.click();
+  //         document.body.removeChild(link);
+  //         URL.revokeObjectURL(downloadUrl);
+  //         toast.success("File downloaded successfully");
+  //       } catch (error) {
+  //         console.error("Error downloading text file:", error);
+  //         toast.error("Failed to download file. Opening in new tab instead.");
+  //         // Fallback to opening in new tab if download fails
+  //         const path = String(doc.file_path).startsWith("/")
+  //           ? String(doc.file_path)
+  //           : `/${doc.file_path}`;
+  //         window.open(path, "_blank");
+  //       }
+  //       return;
+  //     }
+
+  //     // For non-text files, open in a new tab (existing behavior)
+  //     const path = String(doc.file_path).startsWith("/")
+  //       ? String(doc.file_path)
+  //       : `/${doc.file_path}`;
+  //     window.open(path, "_blank");
+  //     return;
+  //   }
+
+  //   // For text-based documents without a file, trigger a text download
+  //   if (doc.content) {
+  //     const blob = new Blob([doc.content], { type: "text/plain;charset=utf-8" });
+  //     const link = document.createElement("a");
+  //     const fileUrl = URL.createObjectURL(blob);
+  //     link.href = fileUrl;
+  //     link.download = `${doc.document_name || "document"}.txt`;
+  //     document.body.appendChild(link);
+  //     link.click();
+  //     document.body.removeChild(link);
+  //     URL.revokeObjectURL(fileUrl);
+  //     toast.success("File downloaded successfully");
+  //   } else {
+  //     toast.info("This document has no file or content to download.");
+  //   }
+  // };
   const handleDownloadDocument = async (doc: any) => {
     // Check if it's a text file (by mime_type or file extension)
-    const isTextFile = doc.mime_type === "text/plain" || 
-                       doc.file_path?.toLowerCase().endsWith(".txt") ||
-                       doc.document_name?.toLowerCase().endsWith(".txt");
+    const isTextFile = doc.mime_type === "text/plain" ||
+      doc.file_path?.toLowerCase().endsWith(".txt") ||
+      doc.document_name?.toLowerCase().endsWith(".txt");
 
     // If the document has a stored file path
     if (doc.file_path) {
       // For text files, force download instead of opening in a new tab
       if (isTextFile) {
         try {
-          const path = String(doc.file_path).startsWith("/")
-            ? String(doc.file_path)
-            : `/${doc.file_path}`;
-          const isAbsoluteUrl = path.startsWith("http://") || path.startsWith("https://");
-          const url = isAbsoluteUrl ? path : path;
+          // Check if it's an absolute URL (e.g. from Vercel Blob)
+          const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
+
+          // Prepend leading slash if missing and not absolute URL
+          const url = isAbsoluteUrl
+            ? doc.file_path
+            : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
 
           // Fetch the file content and create a blob for download
           const response = await fetch(url);
@@ -945,19 +1015,21 @@ export default function JobView() {
           console.error("Error downloading text file:", error);
           toast.error("Failed to download file. Opening in new tab instead.");
           // Fallback to opening in new tab if download fails
-          const path = String(doc.file_path).startsWith("/")
-            ? String(doc.file_path)
-            : `/${doc.file_path}`;
-          window.open(path, "_blank");
+          const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
+          const url = isAbsoluteUrl
+            ? doc.file_path
+            : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
+          window.open(url, "_blank");
         }
         return;
       }
 
       // For non-text files, open in a new tab (existing behavior)
-      const path = String(doc.file_path).startsWith("/")
-        ? String(doc.file_path)
-        : `/${doc.file_path}`;
-      window.open(path, "_blank");
+      const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
+      const url = isAbsoluteUrl
+        ? doc.file_path
+        : (doc.file_path.startsWith("/") ? doc.file_path : `/${doc.file_path}`);
+      window.open(url, "_blank");
       return;
     }
 
@@ -965,13 +1037,12 @@ export default function JobView() {
     if (doc.content) {
       const blob = new Blob([doc.content], { type: "text/plain;charset=utf-8" });
       const link = document.createElement("a");
-      const fileUrl = URL.createObjectURL(blob);
-      link.href = fileUrl;
+      link.href = URL.createObjectURL(blob);
       link.download = `${doc.document_name || "document"}.txt`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
-      URL.revokeObjectURL(fileUrl);
+      URL.revokeObjectURL(link.href);
       toast.success("File downloaded successfully");
     } else {
       toast.info("This document has no file or content to download.");
@@ -1092,21 +1163,21 @@ export default function JobView() {
         const parsed = JSON.parse(jd);
         if (Array.isArray(parsed) && parsed.length > 0) jobDetails = Array.from(new Set(parsed));
       }
-    } catch (_) {}
+    } catch (_) { }
     try {
       const d = localStorage.getItem(DETAILS_STORAGE_KEY);
       if (d) {
         const parsed = JSON.parse(d);
         if (Array.isArray(parsed) && parsed.length > 0) details = Array.from(new Set(parsed));
       }
-    } catch (_) {}
+    } catch (_) { }
     try {
       const hm = localStorage.getItem(HIRING_MANAGER_STORAGE_KEY);
       if (hm) {
         const parsed = JSON.parse(hm);
         if (Array.isArray(parsed) && parsed.length > 0) hiringManager = Array.from(new Set(parsed));
       }
-    } catch (_) {}
+    } catch (_) { }
     return { jobDetails, details, hiringManager, recentNotes: ["notes"] };
   });
 
@@ -1530,7 +1601,7 @@ export default function JobView() {
       // Don't treat Address 2 as an address part - it should show separately
       if (isAddress2Key(key)) return false;
       return addressPartKeys.has((key || "").toLowerCase()) ||
-             (getHMLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
+        (getHMLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
     };
 
     const getCombinedAddress = () => {
@@ -2525,7 +2596,7 @@ export default function JobView() {
     if (editingPanel !== "hiringManager") return;
     const current = visibleFields.hiringManager || [];
     const catalogKeys = hiringManagerFieldCatalog.map((f) => f.key);
-    
+
     // Check if Full Address should be visible (if any address parts are visible)
     const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
     const hasAddressParts = current.some((k) => {
@@ -2534,10 +2605,10 @@ export default function JobView() {
       return addressPartKeys.has(k.toLowerCase()) || label === "address";
     });
     const fullAddressVisible = current.includes(FULL_ADDRESS_KEY) || hasAddressParts;
-    
+
     const currentInCatalog = current.filter((k) => catalogKeys.includes(k) && k !== FULL_ADDRESS_KEY);
     const rest = catalogKeys.filter((k) => !current.includes(k));
-    
+
     // Build order: preserve Full Address position if it exists, otherwise add it at the beginning if address parts exist
     let order: string[];
     const fullAddressIndex = current.indexOf(FULL_ADDRESS_KEY);
@@ -2553,7 +2624,7 @@ export default function JobView() {
       // No Full Address needed
       order = [...currentInCatalog, ...rest];
     }
-    
+
     setModalHiringManagerOrder(order);
     setModalHiringManagerVisible(
       [...catalogKeys, FULL_ADDRESS_KEY].reduce((acc, k) => {
@@ -4007,145 +4078,145 @@ export default function JobView() {
             disabled={isLoadingHistory}
           />
           <div className="space-y-4">
-          {historyFilters.filteredAndSorted.map((item) => {
-            // Format the history entry based on action type
-            let actionDisplay = "";
-            let detailsDisplay: React.ReactNode = "";
+            {historyFilters.filteredAndSorted.map((item) => {
+              // Format the history entry based on action type
+              let actionDisplay = "";
+              let detailsDisplay: React.ReactNode = "";
 
-            try {
-              const details =
-                typeof item.details === "string"
-                  ? JSON.parse(item.details)
-                  : item.details;
+              try {
+                const details =
+                  typeof item.details === "string"
+                    ? JSON.parse(item.details)
+                    : item.details;
 
-              switch (item.action) {
-                case "CREATE":
-                  actionDisplay = "Job Created";
-                  detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
-                    }`;
-                  break;
-                case "UPDATE":
-                  actionDisplay = "Job Updated";
-                  if (details && details.before && details.after) {
-                    // Create a list of changes
-                    const changes: React.ReactNode[] = [];
+                switch (item.action) {
+                  case "CREATE":
+                    actionDisplay = "Job Created";
+                    detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
+                      }`;
+                    break;
+                  case "UPDATE":
+                    actionDisplay = "Job Updated";
+                    if (details && details.before && details.after) {
+                      // Create a list of changes
+                      const changes: React.ReactNode[] = [];
 
-                    // Helper function to format values
-                    const formatValue = (val: any): string => {
-                      if (val === null || val === undefined) return "Empty";
-                      if (typeof val === "object") return JSON.stringify(val);
-                      return String(val);
-                    };
+                      // Helper function to format values
+                      const formatValue = (val: any): string => {
+                        if (val === null || val === undefined) return "Empty";
+                        if (typeof val === "object") return JSON.stringify(val);
+                        return String(val);
+                      };
 
-                    for (const key in details.after) {
-                      // Skip internal fields that might not be relevant to users
-                      if (key === "updated_at") continue;
+                      for (const key in details.after) {
+                        // Skip internal fields that might not be relevant to users
+                        if (key === "updated_at") continue;
 
-                      const beforeVal = details.before[key];
-                      const afterVal = details.after[key];
+                        const beforeVal = details.before[key];
+                        const afterVal = details.after[key];
 
-                      if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
-                        // Special handling for custom_fields
-                        if (key === "custom_fields") {
-                          let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
-                          let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
+                        if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                          // Special handling for custom_fields
+                          if (key === "custom_fields") {
+                            let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
+                            let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
 
-                          // Handle case where custom_fields might be null/undefined
-                          beforeObj = beforeObj || {};
-                          afterObj = afterObj || {};
+                            // Handle case where custom_fields might be null/undefined
+                            beforeObj = beforeObj || {};
+                            afterObj = afterObj || {};
 
-                          if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
-                            const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
+                            if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
+                              const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
 
-                            allKeys.forEach(cfKey => {
-                              const beforeCfVal = beforeObj[cfKey];
-                              const afterCfVal = afterObj[cfKey];
+                              allKeys.forEach(cfKey => {
+                                const beforeCfVal = beforeObj[cfKey];
+                                const afterCfVal = afterObj[cfKey];
 
-                              if (beforeCfVal !== afterCfVal) {
-                                changes.push(
-                                  <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                                    <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
-                                    <div className="flex flex-wrap gap-2 items-center">
-                                      <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                                        {formatValue(beforeCfVal)}
-                                      </span>
-                                      <span className="text-gray-400">→</span>
-                                      <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                                        {formatValue(afterCfVal)}
-                                      </span>
+                                if (beforeCfVal !== afterCfVal) {
+                                  changes.push(
+                                    <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                                      <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
+                                      <div className="flex flex-wrap gap-2 items-center">
+                                        <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                          {formatValue(beforeCfVal)}
+                                        </span>
+                                        <span className="text-gray-400">→</span>
+                                        <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                          {formatValue(afterCfVal)}
+                                        </span>
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              }
-                            });
-                            continue; // Skip the standard field handling for custom_fields
+                                  );
+                                }
+                              });
+                              continue; // Skip the standard field handling for custom_fields
+                            }
                           }
-                        }
 
-                        // Standard fields
-                        const fieldName = key.replace(/_/g, " ");
-                        changes.push(
-                          <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                            <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
-                            <div className="flex flex-wrap gap-2 items-center">
-                              <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                                {formatValue(beforeVal)}
-                              </span>
-                              <span className="text-gray-400">→</span>
-                              <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                                {formatValue(afterVal)}
-                              </span>
+                          // Standard fields
+                          const fieldName = key.replace(/_/g, " ");
+                          changes.push(
+                            <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                              <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
+                              <div className="flex flex-wrap gap-2 items-center">
+                                <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                  {formatValue(beforeVal)}
+                                </span>
+                                <span className="text-gray-400">→</span>
+                                <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                  {formatValue(afterVal)}
+                                </span>
+                              </div>
                             </div>
+                          );
+                        }
+                      }
+
+                      if (changes.length > 0) {
+                        detailsDisplay = (
+                          <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
+                            {changes}
                           </div>
                         );
+                      } else {
+                        detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
                       }
                     }
-
-                    if (changes.length > 0) {
-                      detailsDisplay = (
-                        <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
-                          {changes}
-                        </div>
-                      );
-                    } else {
-                      detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
-                    }
-                  }
-                  break;
-                case "ADD_NOTE":
-                  actionDisplay = "Note Added";
-                  detailsDisplay = details.text || "";
-                  break;
-                default:
-                  actionDisplay = item.action;
-                  detailsDisplay = JSON.stringify(details);
+                    break;
+                  case "ADD_NOTE":
+                    actionDisplay = "Note Added";
+                    detailsDisplay = details.text || "";
+                    break;
+                  default:
+                    actionDisplay = item.action;
+                    detailsDisplay = JSON.stringify(details);
+                }
+              } catch (e) {
+                console.error("Error parsing history details:", e);
+                detailsDisplay = "Error displaying details";
               }
-            } catch (e) {
-              console.error("Error parsing history details:", e);
-              detailsDisplay = "Error displaying details";
-            }
 
-            return (
-              <div
-                key={item.id}
-                className="p-3 border rounded hover:bg-gray-50"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="font-medium text-blue-600">
-                    {actionDisplay}
-                  </span>
-                  <span className="text-sm text-gray-500">
-                    {new Date(item.performed_at).toLocaleString()}
-                  </span>
+              return (
+                <div
+                  key={item.id}
+                  className="p-3 border rounded hover:bg-gray-50"
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="font-medium text-blue-600">
+                      {actionDisplay}
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      {new Date(item.performed_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mb-2">{detailsDisplay}</div>
+                  <div className="text-sm text-gray-600">
+                    By: {item.performed_by_name || "Unknown"}
+                  </div>
                 </div>
-                <div className="mb-2">{detailsDisplay}</div>
-                <div className="text-sm text-gray-600">
-                  By: {item.performed_by_name || "Unknown"}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
         </>
       ) : (
         <p className="text-gray-500 italic">No history records available</p>
@@ -5154,8 +5225,8 @@ export default function JobView() {
                         <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
                           {modalHiringManagerOrder.map((key) => {
                             // Handle synthetic Full Address field
-                            const label = key === FULL_ADDRESS_KEY 
-                              ? "Full Address" 
+                            const label = key === FULL_ADDRESS_KEY
+                              ? "Full Address"
                               : (hiringManagerFieldCatalog.find((f) => f.key === key)?.label ?? key);
                             const entry = hiringManagerFieldCatalog.find((f) => f.key === key);
                             if (!entry && key !== FULL_ADDRESS_KEY) return null;
