@@ -2278,7 +2278,9 @@ export default function OrganizationView() {
 
     // Queue validated files and show modal for the first one
     setPendingFiles(validFiles);
-    setFileDetailsName(validFiles[0].name);
+    // Strip file extension from name
+    const fileNameWithoutExt = validFiles[0].name.replace(/\.[^/.]+$/, "");
+    setFileDetailsName(fileNameWithoutExt);
     setFileDetailsType("General");
     setShowFileDetailsModal(true);
   };
@@ -2295,7 +2297,9 @@ export default function OrganizationView() {
     const remaining = pendingFiles.slice(1);
     if (remaining.length > 0) {
       setPendingFiles(remaining);
-      setFileDetailsName(remaining[0].name);
+      // Strip file extension from name
+      const fileNameWithoutExt = remaining[0].name.replace(/\.[^/.]+$/, "");
+      setFileDetailsName(fileNameWithoutExt);
       setFileDetailsType("General");
     } else {
       setShowFileDetailsModal(false);

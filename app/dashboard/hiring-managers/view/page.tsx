@@ -2459,7 +2459,7 @@ export default function HiringManagerView() {
       setPendingFiles(fileArray);
       // If single file, pre-fill modal with its name
       if (fileArray.length === 1) {
-        setFileDetailsName(fileArray[0].name.split(".")[0]);
+        setFileDetailsName(fileArray[0].name.replace(/\.[^/.]+$/, ""));
         setFileDetailsType("General");
       }
       setShowFileDetailsModal(true);
@@ -2496,7 +2496,7 @@ export default function HiringManagerView() {
       setPendingFiles(fileArray);
       // Pre-fill modal
       if (fileArray.length === 1) {
-        setFileDetailsName(fileArray[0].name.split(".")[0]);
+        setFileDetailsName(fileArray[0].name.replace(/\.[^/.]+$/, ""));
         setFileDetailsType("General");
       }
       setShowFileDetailsModal(true);
@@ -2531,7 +2531,9 @@ export default function HiringManagerView() {
       try {
         const formData = new FormData();
         formData.append("file", file);
-        formData.append("document_name", filesToUpload.length === 1 ? fileDetailsName : file.name.split(".")[0]);
+        // Strip file extension from name
+        const fileNameWithoutExt = filesToUpload.length === 1 ? fileDetailsName : file.name.replace(/\.[^/.]+$/, "");
+        formData.append("document_name", fileNameWithoutExt);
         formData.append("document_type", filesToUpload.length === 1 ? fileDetailsType : "General");
 
         // Simulate progress for UI feedback since fetch doesn't support it natively without XHR
@@ -2661,22 +2663,69 @@ export default function HiringManagerView() {
 
   // Download a document
   const handleDownloadDocument = async (doc: any) => {
-    if (!doc.file_path) {
-      // For text documents, we could generate a file to download
-      const element = document.createElement("a");
-      const file = new Blob([doc.content || ""], { type: "text/plain" });
-      element.href = URL.createObjectURL(file);
-      element.download = `${doc.document_name}.txt`;
-      document.body.appendChild(element);
-      element.click();
-      document.body.removeChild(element);
+    // Check if it's a text file (by mime_type or file extension)
+    const isTextFile = doc.mime_type === "text/plain" || 
+                       doc.file_path?.toLowerCase().endsWith(".txt") ||
+                       doc.document_name?.toLowerCase().endsWith(".txt");
+
+    // If the document has a stored file path
+    if (doc.file_path) {
+      // For text files, force download instead of opening in a new tab
+      if (isTextFile) {
+        try {
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+          const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
+          
+          const url = isAbsoluteUrl
+            ? doc.file_path
+            : `${apiUrl}/${doc.file_path.startsWith("/") ? doc.file_path.slice(1) : doc.file_path}`;
+
+          // Fetch the file content and create a blob for download
+          const response = await fetch(url);
+          if (!response.ok) {
+            throw new Error("Failed to fetch file");
+          }
+          const blob = await response.blob();
+          const downloadUrl = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = downloadUrl;
+          link.download = `${doc.document_name || "document"}.txt`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          URL.revokeObjectURL(downloadUrl);
+          toast.success("File downloaded successfully");
+        } catch (error) {
+          console.error("Error downloading text file:", error);
+          toast.error("Failed to download file. Opening in new tab instead.");
+          // Fallback to opening in new tab if download fails
+          const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+          window.open(`${apiUrl}/${doc.file_path}`, "_blank");
+        }
+        return;
+      }
+
+      // For non-text files, open in a new tab (existing behavior)
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+      window.open(`${apiUrl}/${doc.file_path}`, "_blank");
       return;
     }
 
-    // For uploaded files, use the file_path
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-    window.open(`${apiUrl}/${doc.file_path}`, "_blank");
-    toast.success('Document downloaded successfully');
+    // For text documents without a file_path, generate a file to download
+    if (doc.content) {
+      const element = document.createElement("a");
+      const file = new Blob([doc.content || ""], { type: "text/plain;charset=utf-8" });
+      const fileUrl = URL.createObjectURL(file);
+      element.href = fileUrl;
+      element.download = `${doc.document_name || "document"}.txt`;
+      document.body.appendChild(element);
+      element.click();
+      document.body.removeChild(element);
+      URL.revokeObjectURL(fileUrl);
+      toast.success("File downloaded successfully");
+    } else {
+      toast.info("This document has no file or content to download.");
+    }
   };
 
   // Close add note modal
