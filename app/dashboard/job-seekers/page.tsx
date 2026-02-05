@@ -418,6 +418,9 @@ export default function JobSeekerList() {
         filterType: "text" as const,
       }));
 
+      console.log("fromData", fromData);
+      console.log("fromApi", fromApi);
+
     const merged = [...fromApi, ...fromData];
     const seen = new Set<string>();
     return merged.filter((x) => {
