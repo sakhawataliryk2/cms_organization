@@ -277,7 +277,7 @@ function HiringManagerSearchSelect({
   return (
     <div ref={wrapperRef} className={`relative ${className}`}>
       <div
-        className={`w-full p-2 border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 flex items-center gap-2 bg-white ${disabled ? "bg-gray-50 cursor-not-allowed" : ""}`}
+        className={`w-full p-2 border-b border-gray-300 focus-within:border-blue-500 flex items-center gap-2 bg-white ${disabled ? "bg-gray-50 cursor-not-allowed" : ""}`}
       >
         <input
           type="text"
@@ -312,7 +312,7 @@ function HiringManagerSearchSelect({
         // ) : (
         <div
           ref={listRef}
-          className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded shadow-lg max-h-56 overflow-auto"
+          className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded shadow-sm max-h-56 overflow-auto"
         >
           {loading ? (
             <p className="px-3 py-4 text-sm text-gray-500 mt-1">Loading...</p>
@@ -1830,7 +1830,7 @@ export default function AddJob() {
                   <label className="w-48 font-medium flex items-center">
                     Hiring Manager:
                   </label>
-                  <div className="flex-1 flex items-center gap-3">
+                  <div className="flex-1">
                     <HiringManagerSearchSelect
                       value={hiringManagerValue}
                       options={hiringManagerOptions}
