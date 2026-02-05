@@ -53,7 +53,7 @@ export async function middleware(request: NextRequest) {
     if (redirectParam && path === "/auth/login") {
       const redirectUrl = decodeURIComponent(redirectParam);
       
-      if (isSameSite(redirectUrl, request.url)) {
+      if (isSameSite(redirectUrl, new URL(request.url))) {
         // Same site: redirect to home page
         return NextResponse.redirect(new URL("/home", request.url));
       } else {
