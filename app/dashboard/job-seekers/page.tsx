@@ -466,23 +466,7 @@ export default function JobSeekerList() {
         : String(val);
     }
 
-    // ✅ standard columns
-    switch (key) {
-      case "full_name":
-        return js.full_name || "N/A";
-      case "email":
-        return js.email || "N/A";
-      case "phone":
-        return js.phone || "N/A";
-      case "status":
-        return js.status || "N/A";
-      case "last_contact_date":
-        return js.last_contact_date || "N/A";
-      case "owner":
-        return js.owner || js.created_by_name || "Unassigned";
-      default:
-        return "N/A";
-    }
+    return "N/A";
   };
 
   // Get unique status values for filter dropdown
@@ -978,7 +962,7 @@ export default function JobSeekerList() {
                   />
                 </th>
 
-                
+
 
                 {/* Fixed Actions header (LOCKED) */}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -1113,19 +1097,19 @@ export default function JobSeekerList() {
                         {key === "status" ? (
                           <span
                             className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
-                              getColumnValue(jobSeeker, key)
+                              getColumnValue(jobSeeker, key || "")
                             )}`}
                           >
-                            {getColumnValue(jobSeeker, key)}
+                            {getColumnValue(jobSeeker, key || "")}
                           </span>
                         ) : key === "email" ? (
                           <div className="text-sm text-blue-600">
-                            {getColumnValue(jobSeeker, key)}
+                            {getColumnValue(jobSeeker, key || "")}
                           </div>
                         ) : key === "last_contact_date" ? (
                           <span className="text-sm text-gray-500">
-                            {getColumnValue(jobSeeker, key) !== "N/A"
-                              ? formatDate(getColumnValue(jobSeeker, key))
+                            {getColumnValue(jobSeeker, key || "") !== "N/A"
+                              ? formatDate(getColumnValue(jobSeeker, key || ""))
                               : "Not contacted"}
                           </span>
                         ) : (
@@ -1375,7 +1359,7 @@ export default function JobSeekerList() {
                 <FiX size={20} />
               </button>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1389,16 +1373,15 @@ export default function JobSeekerList() {
                     if (e.target.value.trim()) setFavoriteNameError(null);
                   }}
                   placeholder="e.g. Active Job Seekers"
-                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${
-                    favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
-                  }`}
+                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
+                    }`}
                   autoFocus
                 />
                 {favoriteNameError && (
                   <p className="text-xs text-red-500 mt-1">{favoriteNameError}</p>
                 )}
               </div>
-              
+
               <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-800 space-y-1">
                 <p className="font-medium flex items-center gap-2">
                   <FiStar className="text-blue-600" size={14} />
@@ -1416,7 +1399,7 @@ export default function JobSeekerList() {
                 </ul>
               </div>
             </div>
-            
+
             <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
               <button
                 onClick={() => setShowSaveFavoriteModal(false)}
