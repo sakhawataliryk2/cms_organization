@@ -1566,6 +1566,7 @@ export default function OrganizationView() {
         nicknames: data.organization.nicknames || "",
         parentOrganization: data.organization.parent_organization_name || data.organization.parent_organization || "",
         status: data.organization.status || "Active",
+        archived_at: data.organization.archived_at ?? null,
         contractOnFile: data.organization.contract_on_file || "No",
         dateContractSigned: data.organization.date_contract_signed || "",
         yearFounded: data.organization.year_founded || "",
@@ -1613,6 +1614,22 @@ export default function OrganizationView() {
   };
   const norm = (s: string) =>
     (s || "").toLowerCase().replace(/,/g, " ").replace(/\s+/g, " ").trim();
+
+  // Archive retention: backend schedules cleanup 7 days after archived_at
+  const ARCHIVE_RETENTION_DAYS = 7;
+  const getArchivedTimeLeft = (archivedAt: string | null | undefined): string | null => {
+    if (!archivedAt) return null;
+    const archived = new Date(archivedAt).getTime();
+    const deleteAt = archived + ARCHIVE_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const msLeft = deleteAt - now;
+    if (msLeft <= 0) return "Scheduled for deletion";
+    const daysLeft = Math.floor(msLeft / (24 * 60 * 60 * 1000));
+    const hoursLeft = Math.floor((msLeft % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+    if (daysLeft > 0) return `Deletes in ${daysLeft} day${daysLeft !== 1 ? "s" : ""}`;
+    if (hoursLeft > 0) return `Deletes in ${hoursLeft} hour${hoursLeft !== 1 ? "s" : ""}`;
+    return "Deletes in less than an hour";
+  };
 
   const hmName = (hm: any) =>
     hm.full_name?.trim() ||
@@ -4273,8 +4290,8 @@ export default function OrganizationView() {
     }
   };
 
-  // Handle tearsheet submission - Create new or add to existing (same logic as Hiring Manager)
-  // For organization: associate all of this org's hiring managers and jobs with the tearsheet
+  // Handle tearsheet submission - Create new or add to existing
+  // For organization: associate only the organization itself (not hiring managers or jobs)
   const handleTearsheetSubmit = async () => {
     if (!organizationId) {
       toast.error("Organization ID is missing");
@@ -4319,23 +4336,18 @@ export default function OrganizationView() {
           throw new Error("Tearsheet created but ID missing");
         }
 
-        // Associate all organization hiring managers and jobs with the new tearsheet
-        for (const hm of hiringManagers) {
-          await fetch(`/api/tearsheets/${tearsheetId}/associate`, {
-            method: "POST",
-            headers: authHeaders,
-            body: JSON.stringify({ hiring_manager_id: hm.id }),
-          });
-        }
-        for (const job of jobs) {
-          await fetch(`/api/tearsheets/${tearsheetId}/associate`, {
-            method: "POST",
-            headers: authHeaders,
-            body: JSON.stringify({ job_id: job.id }),
-          });
+        // Associate only the organization with the new tearsheet (not hiring managers or jobs)
+        const assocRes = await fetch(`/api/tearsheets/${tearsheetId}/associate`, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({ organization_id: organizationId }),
+        });
+        if (!assocRes.ok) {
+          const errData = await assocRes.json().catch(() => ({}));
+          throw new Error(errData.message || errData.error || "Failed to add organization to tearsheet");
         }
 
-        toast.success("Tearsheet created and organization contacts/jobs added.");
+        toast.success("Tearsheet created and organization added.");
         setShowAddTearsheetModal(false);
         setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
         setTearsheetSearchQuery("");
@@ -4385,32 +4397,17 @@ export default function OrganizationView() {
       try {
         const tearsheetId = tearsheetForm.selectedTearsheetId;
 
-        for (const hm of hiringManagers) {
-          const res = await fetch(`/api/tearsheets/${tearsheetId}/associate`, {
-            method: "POST",
-            headers: authHeaders,
-            body: JSON.stringify({ hiring_manager_id: hm.id }),
-          });
-          if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.message || errData.error || "Failed to associate hiring managers");
-          }
-        }
-        for (const job of jobs) {
-          const res = await fetch(`/api/tearsheets/${tearsheetId}/associate`, {
-            method: "POST",
-            headers: authHeaders,
-            body: JSON.stringify({ job_id: job.id }),
-          });
-          if (!res.ok) {
-            const errData = await res.json().catch(() => ({}));
-            throw new Error(errData.message || errData.error || "Failed to associate jobs");
-          }
+        const res = await fetch(`/api/tearsheets/${tearsheetId}/associate`, {
+          method: "POST",
+          headers: authHeaders,
+          body: JSON.stringify({ organization_id: organizationId }),
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.message || errData.error || "Failed to add organization to tearsheet");
         }
 
-        toast.success(
-          `Organization's hiring managers and jobs have been added to tearsheet "${selectedTearsheet.name}".`
-        );
+        toast.success(`Organization has been added to tearsheet "${selectedTearsheet.name}".`);
         setShowAddTearsheetModal(false);
         setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
         setTearsheetSearchQuery("");
@@ -4444,8 +4441,11 @@ export default function OrganizationView() {
     }
   };
 
+  const isArchived = organization?.status === "Archived" || !!organization?.archived_at;
+
   // Update the actionOptions to remove the edit option since we'll handle it in Modify tab
   const getDeleteLabel = () => {
+    if (isArchived) return "Delete (Archived)";
     if (isLoadingDeleteRequest) return "Delete (Loading...)";
     if (pendingDeleteRequest) {
       if (pendingDeleteRequest.status === "pending") {
@@ -4461,6 +4461,7 @@ export default function OrganizationView() {
 
   const isDeleteDisabled = () => {
     return (
+      isArchived ||
       isLoadingDeleteRequest ||
       (pendingDeleteRequest && pendingDeleteRequest.status === "pending")
     );
@@ -4478,7 +4479,11 @@ export default function OrganizationView() {
       label: "Add Tearsheet",
       action: () => handleActionSelected("add-tearsheet"),
     },
-    { label: "Transfer", action: () => handleActionSelected("transfer") },
+    {
+      label: isArchived ? "Transfer (Archived)" : "Transfer",
+      action: () => handleActionSelected("transfer"),
+      disabled: isArchived,
+    },
     {
       label: getDeleteLabel(),
       action: () => handleActionSelected("delete"),
@@ -5040,6 +5045,18 @@ export default function OrganizationView() {
           <h1 className="text-xl font-semibold text-gray-700">
             {formatRecordId(organization.id, "organization")}{" "}
             {organization.name}
+            {(organization.status === "Archived" || organization.archived_at) && (
+              <span className="ml-2 inline-flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">
+                  Archived
+                </span>
+                {getArchivedTimeLeft(organization.archived_at) && (
+                  <span className="text-sm text-amber-700 font-normal">
+                    ({getArchivedTimeLeft(organization.archived_at)})
+                  </span>
+                )}
+              </span>
+            )}
           </h1>
         </div>
       </div>
@@ -7081,7 +7098,7 @@ export default function OrganizationView() {
                     </div>
                   )}
                   <p className="mt-2 text-xs text-gray-500">
-                    Search and select an existing tearsheet to add this organization&apos;s hiring managers and jobs to it.
+                    Search and select an existing tearsheet to add this organization to it.
                   </p>
                 </div>
               )}

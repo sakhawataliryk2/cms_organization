@@ -60,6 +60,7 @@ const TASK_HEADER_FIELD_LABELS: Record<string, string> = {
   jobSeeker: "Job Seeker",
   hiringManager: "Hiring Manager",
   job: "Job",
+  organization: "Organization",
   lead: "Lead",
   dateCreated: "Date Created",
   createdBy: "Created By",
@@ -409,6 +410,8 @@ export default function TaskView() {
                 return task.hiringManager || "-";
             case "job":
                 return task.job || "-";
+            case "organization":
+                return task.organization || "-";
             case "lead":
                 return task.lead || "-";
             case "dateCreated":
@@ -552,6 +555,8 @@ export default function TaskView() {
                 hiringManagerId: data.task.hiring_manager_id,
                 job: data.task.job_title || 'Not specified',
                 jobId: data.task.job_id,
+                organization: data.task.organization_name || 'Not specified',
+                organizationId: data.task.organization_id,
                 lead: data.task.lead_name || 'Not specified',
                 leadId: data.task.lead_id,
                 placement: data.task.placement_id ? `Placement #${data.task.placement_id}` : 'Not specified',
@@ -849,6 +854,32 @@ export default function TaskView() {
 
         const custom = getCustomValue(rawKey);
         return custom === null ? "-" : custom;
+    };
+
+    // For summary: render record names as clickable links to their view pages
+    const getTaskFieldDisplayContent = (key: string): React.ReactNode => {
+        const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
+        const displayValue = getTaskFieldValue(key);
+        const linkMap: Record<string, { id: number | null | undefined; path: string }> = {
+            jobSeeker: { id: task?.jobSeekerId, path: "/dashboard/job-seekers/view" },
+            hiringManager: { id: task?.hiringManagerId, path: "/dashboard/hiring-managers/view" },
+            job: { id: task?.jobId, path: "/dashboard/jobs/view" },
+            organization: { id: task?.organizationId, path: "/dashboard/organizations/view" },
+            lead: { id: task?.leadId, path: "/dashboard/leads/view" },
+        };
+        const link = linkMap[rawKey];
+        if (link?.id != null && Number(link.id) > 0 && String(displayValue) !== "-" && String(displayValue).trim() !== "") {
+            return (
+                <button
+                    type="button"
+                    onClick={() => router.push(`${link.path}?id=${link.id}`)}
+                    className="text-blue-600 hover:underline text-left"
+                >
+                    {displayValue}
+                </button>
+            );
+        }
+        return displayValue;
     };
 
     // Fetch users for email notification dropdown
@@ -1930,7 +1961,7 @@ export default function TaskView() {
                                                 <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">
                                                     {getTaskFieldLabel(k)}:
                                                 </div>
-                                                <div className="flex-1 p-2">{getTaskFieldValue(k)}</div>
+                                                <div className="flex-1 p-2">{getTaskFieldDisplayContent(k)}</div>
                                             </div>
                                         ))}
                                     </div>
@@ -1967,7 +1998,7 @@ export default function TaskView() {
                                         <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">
                                             {getTaskFieldLabel(key)}:
                                         </div>
-                                        <div className="flex-1 p-2">{getTaskFieldValue(key)}</div>
+                                        <div className="flex-1 p-2">{getTaskFieldDisplayContent(key)}</div>
                                     </div>
                                 ))}
                             </div>

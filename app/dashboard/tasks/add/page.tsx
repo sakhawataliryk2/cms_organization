@@ -58,6 +58,20 @@ export default function AddTask() {
   const hasFetchedRef = useRef(false); // Track if we've already fetched task data
   const hasPrefilledOrgFromUrlRef = useRef(false); // Prefill Organization from relatedEntityId once
   const hasPrefilledRelatedFromUrlRef = useRef<Set<string>>(new Set()); // Prefill Job / Job Seeker / Hiring Manager once per entity type
+  const [assignedToDropdownOpen, setAssignedToDropdownOpen] = useState(false);
+  const assignedToDropdownRef = useRef<HTMLDivElement>(null);
+  const [reminderMinutesBeforeDue, setReminderMinutesBeforeDue] = useState<number | "">("");
+
+  // Close Assigned To dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (assignedToDropdownRef.current && !assignedToDropdownRef.current.contains(e.target as Node)) {
+        setAssignedToDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Use the custom fields hook
   const {
@@ -409,6 +423,7 @@ export default function AddTask() {
 
       // Set the mapped custom field values
       setCustomFieldValues(mappedCustomFieldValues);
+      setReminderMinutesBeforeDue(task.reminder_minutes_before_due != null ? task.reminder_minutes_before_due : "");
     } catch (err) {
       console.error("Error fetching task:", err);
       setLoadError(
@@ -561,6 +576,11 @@ export default function AddTask() {
       if (apiData.hiring_manager_id !== undefined) cleanPayload.hiring_manager_id = apiData.hiring_manager_id;
       if (apiData.job_seeker_id !== undefined) cleanPayload.job_seeker_id = apiData.job_seeker_id;
       if (apiData.placement_id !== undefined) cleanPayload.placement_id = apiData.placement_id;
+      if (reminderMinutesBeforeDue !== "" && reminderMinutesBeforeDue !== null) {
+        const mins = Number(reminderMinutesBeforeDue);
+        cleanPayload.reminder_minutes_before_due = mins;
+        cleanPayload.reminderMinutesBeforeDue = mins;
+      }
 
       cleanPayload.custom_fields =
         typeof apiData.custom_fields === "object" && apiData.custom_fields !== null && !Array.isArray(apiData.custom_fields)
@@ -827,51 +847,111 @@ export default function AddTask() {
                         )
                       : null;
 
-                  const dynamicAssignedOptions =
-                    isAssignedField &&
-                    String(field.field_type || "").toLowerCase() === "select" &&
-                    activeUsers.length > 0
-                      ? Array.from(
-                          new Set(
-                            activeUsers
-                              .map((u) => String(u.name || "").trim())
-                              .filter(Boolean)
-                          )
-                        )
-                      : null;
-
+                  // Assigned To is rendered as type-to-match (autocomplete), not dropdown
                   const fieldToRender: any =
                     dynamicOwnerOptions && dynamicOwnerOptions.length > 0
                       ? { ...field, options: dynamicOwnerOptions }
-                      : dynamicAssignedOptions && dynamicAssignedOptions.length > 0
-                        ? { ...field, options: dynamicAssignedOptions }
                       : field;
 
-                  return (
-                    <div key={field.id} className="flex items-center">
+                  const rawVal = customFieldValues[field.field_name];
+                      const isValid = field.is_required && rawVal !== undefined && rawVal !== null && String(rawVal).trim() !== "";
+                      const assignedToValue = String(customFieldValues[field.field_name] ?? "").trim();
+                      const assignedToMatches = isAssignedField && activeUsers.length > 0
+                        ? activeUsers.filter(
+                            (u) =>
+                              String(u.name || "").toLowerCase().includes(assignedToValue.toLowerCase()) ||
+                              String(u.email || "").toLowerCase().includes(assignedToValue.toLowerCase())
+                          )
+                        : [];
+                      return (
+                    <div key={field.id} className="flex items-center gap-2">
                       <label className="w-48 font-medium">
                         {field.field_label}:
-                        {field.is_required && (
+                        {field.is_required && !isValid && (
                           <span className="text-red-500 ml-1">*</span>
                         )}
+                        {isValid && (
+                          <span className="ml-1 text-green-600" title="Valid" aria-hidden="true">✓</span>
+                        )}
                       </label>
-                      <div className="flex-1 relative">
-                        <CustomFieldRenderer
-                          field={fieldToRender}
-                          value={customFieldValues[field.field_name]}
-                          onChange={handleCustomFieldChange}
-                        />
-                        {/* {field.is_required && (
-                                                    <span className="absolute text-red-500 left-[-10px] top-2">
-                                                        *
-                                                    </span>
-                                                )} */}
+                      <div className="flex-1 relative flex items-center gap-2" ref={isAssignedField ? assignedToDropdownRef : undefined}>
+                        {isAssignedField ? (
+                          <>
+                            <input
+                              type="text"
+                              value={assignedToValue}
+                              onChange={(e) => handleCustomFieldChange(field.field_name, e.target.value)}
+                              onFocus={() => setAssignedToDropdownOpen(true)}
+                              placeholder="Type to search by name or email..."
+                              className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                              autoComplete="off"
+                            />
+                            {assignedToDropdownOpen && (
+                              <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 max-h-48 overflow-auto">
+                                {assignedToValue.length === 0
+                                  ? activeUsers.map((u) => (
+                                      <button
+                                        key={u.id}
+                                        type="button"
+                                        className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
+                                        onClick={() => {
+                                          handleCustomFieldChange(field.field_name, String(u.name || "").trim());
+                                          setAssignedToDropdownOpen(false);
+                                        }}
+                                      >
+                                        {u.name || ""}{u.email ? ` (${u.email})` : ""}
+                                      </button>
+                                    ))
+                                  : assignedToMatches.length > 0
+                                    ? assignedToMatches.map((u) => (
+                                        <button
+                                          key={u.id}
+                                          type="button"
+                                          className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
+                                          onClick={() => {
+                                            handleCustomFieldChange(field.field_name, String(u.name || "").trim());
+                                            setAssignedToDropdownOpen(false);
+                                          }}
+                                        >
+                                          {u.name || ""}{u.email ? ` (${u.email})` : ""}
+                                        </button>
+                                      ))
+                                    : (
+                                        <div className="px-3 py-2 text-sm text-gray-500">No matching user</div>
+                                      )}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <CustomFieldRenderer
+                            field={fieldToRender}
+                            value={customFieldValues[field.field_name]}
+                            onChange={handleCustomFieldChange}
+                          />
+                        )}
                       </div>
                     </div>
                   );
                 })}
               </>
             )}
+            {/* Reminder: email to owner and assigned-to at selected time before due */}
+            <div className="flex items-center gap-2 pt-4 border-t border-gray-200 mt-4">
+              <label className="w-48 font-medium">Reminder:</label>
+              <div className="flex-1">
+                <select
+                  value={reminderMinutesBeforeDue === "" ? "" : reminderMinutesBeforeDue}
+                  onChange={(e) => setReminderMinutesBeforeDue(e.target.value === "" ? "" : Number(e.target.value))}
+                  className="w-full max-w-xs p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+                >
+                  <option value="">None</option>
+                  <option value={15}>15 minutes before due</option>
+                  <option value={60}>1 hour before due</option>
+                  <option value={1440}>24 hours before due</option>
+                </select>
+                <p className="text-xs text-gray-500 mt-1">Email will be sent to the task owner and assignee (if any) at the selected time before the due date.</p>
+              </div>
+            </div>
           </div>
 
           <div className="h-20" aria-hidden="true" />
