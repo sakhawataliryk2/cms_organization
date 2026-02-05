@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import { usePathname, useSearchParams, useRouter } from "next/navigation";
 import { getUser, logout } from "@/lib/auth";
@@ -165,9 +166,11 @@ export default function DashboardNav() {
   const pathname = usePathname();
   const router = useRouter();
   const addMenuRef = useRef<HTMLDivElement>(null);
+  const addMenuDropdownRef = useRef<HTMLDivElement>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLDivElement>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [addMenuPosition, setAddMenuPosition] = useState<{ top: number; left: number } | null>(null);
 
   // Add menu items
   const addMenuItems = [
@@ -329,7 +332,9 @@ export default function DashboardNav() {
     function handleClickOutside(event: MouseEvent) {
       if (
         addMenuRef.current &&
-        !addMenuRef.current.contains(event.target as Node)
+        !addMenuRef.current.contains(event.target as Node) &&
+        addMenuDropdownRef.current &&
+        !addMenuDropdownRef.current.contains(event.target as Node)
       ) {
         setIsAddMenuOpen(false);
       }
@@ -395,15 +400,20 @@ export default function DashboardNav() {
 
   const toggleAddMenu = () => {
     setIsAddMenuOpen(!isAddMenuOpen);
-    // Close other menus if they're open
-    if (isSearchOpen) {
-      setIsSearchOpen(false);
-      setSearchQuery("");
-    }
-    if (isUserMenuOpen) {
-      setIsUserMenuOpen(false);
-    }
   };
+
+  // Calculate dropdown position when menu opens
+  useLayoutEffect(() => {
+    if (isAddMenuOpen && addMenuRef.current) {
+      const rect = addMenuRef.current.getBoundingClientRect();
+      setAddMenuPosition({
+        top: rect.bottom + 4,
+        left: rect.left,
+      });
+    } else {
+      setAddMenuPosition(null);
+    }
+  }, [isAddMenuOpen]);
 
   const toggleUserMenu = () => {
     setIsUserMenuOpen(!isUserMenuOpen);
@@ -1033,9 +1043,17 @@ export default function DashboardNav() {
                 Add
               </button>
 
-              {/* Add dropdown menu */}
-              {isAddMenuOpen && (
-                <div className="absolute top-full left-0 mt-1 w-56 bg-slate-800 rounded shadow-lg py-1 z-10000">
+              {/* Add dropdown menu - rendered via portal */}
+              {isAddMenuOpen && addMenuPosition && typeof document !== "undefined" && createPortal(
+                <div
+                  ref={addMenuDropdownRef}
+                  className="fixed w-56 bg-slate-800 rounded shadow-lg py-1 z-[300]"
+                  style={{
+                    top: `${addMenuPosition.top}px`,
+                    left: `${addMenuPosition.left}px`,
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                >
                   {addMenuItems.map((item) => (
                     <button
                       key={item.path}
@@ -1046,7 +1064,8 @@ export default function DashboardNav() {
                       {item.name}
                     </button>
                   ))}
-                </div>
+                </div>,
+                document.body
               )}
             </div>
           </div>

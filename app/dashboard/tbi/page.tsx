@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect } from "react";
 
 type OrganizationRecord = {
   id: number;
@@ -28,7 +28,8 @@ import { restrictToHorizontalAxis } from "@dnd-kit/modifiers";
 import { arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical, TbBinoculars } from "react-icons/tb";
-import { FiChevronLeft, FiChevronRight } from "react-icons/fi";
+import { FiChevronLeft, FiChevronRight, FiArrowUp, FiArrowDown, FiFilter, FiX } from "react-icons/fi";
+import { createPortal } from "react-dom";
 import OrganizationDetailPanel from "./OrganizationDetailPanel";
 
 type TimePeriodType = "week" | "customRange" | "all";
@@ -174,12 +175,23 @@ function escapeCsvValue(val: string): string {
   return val;
 }
 
+type ColumnSortState = "asc" | "desc" | null;
+type ColumnFilterState = string | null;
+
 function SortableHeaderCell({
   id,
   header,
+  sortState,
+  filterValue,
+  onSort,
+  onFilterChange,
 }: {
   id: string;
   header: string;
+  sortState: ColumnSortState;
+  filterValue: ColumnFilterState;
+  onSort: () => void;
+  onFilterChange: (value: string) => void;
 }) {
   const {
     attributes,
@@ -190,6 +202,12 @@ function SortableHeaderCell({
     isDragging,
   } = useSortable({ id });
 
+  const [showFilter, setShowFilter] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+  const filterToggleRef = useRef<HTMLButtonElement>(null);
+  const headerRef = useRef<HTMLDivElement>(null);
+  const [filterPosition, setFilterPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -197,21 +215,113 @@ function SortableHeaderCell({
     ...(isDragging ? { willChange: "transform" as const } : {}),
   };
 
+  useEffect(() => {
+    if (!showFilter || !filterToggleRef.current || !headerRef.current) {
+      setFilterPosition(null);
+      return;
+    }
+    const btnRect = filterToggleRef.current.getBoundingClientRect();
+    const headerRect = headerRef.current.getBoundingClientRect();
+    setFilterPosition({ 
+      top: btnRect.bottom + 4, 
+      left: headerRect.left, 
+      width: Math.max(150, Math.min(250, headerRect.width)) 
+    });
+  }, [showFilter]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        filterRef.current &&
+        !filterRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest(`[data-filter-toggle="${id}"]`)
+      ) {
+        setShowFilter(false);
+      }
+    };
+
+    if (showFilter) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [showFilter, id]);
+
   return (
     <div
-      ref={setNodeRef}
+      ref={(node) => { headerRef.current = node; setNodeRef(node); }}
       style={{ ...style, width: CELL_WIDTH, minWidth: CELL_WIDTH, height: HEADER_HEIGHT }}
-      className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out"
+      className="shrink-0 bg-teal-500 text-white px-2 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm shadow-sm gap-1 transition-transform duration-200 ease-out relative group"
     >
-      <span className="flex-1 truncate text-center">{header}</span>
-      <span
-        {...attributes}
-        {...listeners}
-        className="cursor-grab active:cursor-grabbing touch-none opacity-80 hover:opacity-100"
-        title="Drag to reorder column"
-      >
-        <TbGripVertical size={16} />
-      </span>
+      <span className="flex-1 truncate text-center text-xs">{header}</span>
+      <div className="flex items-center gap-0.5 shrink-0">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onSort();
+          }}
+          className="text-white hover:text-teal-200 transition-colors p-0.5"
+          title={sortState === "asc" ? "Sort descending" : sortState === "desc" ? "Clear sort" : "Sort ascending"}
+        >
+          {sortState === "asc" ? (
+            <FiArrowUp size={12} />
+          ) : sortState === "desc" ? (
+            <FiArrowDown size={12} />
+          ) : (
+            <FiArrowUp size={12} className="opacity-50" />
+          )}
+        </button>
+        <button
+          ref={filterToggleRef}
+          data-filter-toggle={id}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowFilter(!showFilter);
+          }}
+          className={`text-white hover:text-teal-200 transition-colors p-0.5 ${filterValue ? "text-teal-200" : ""}`}
+          title="Filter column"
+        >
+          <FiFilter size={12} />
+        </button>
+        <span
+          {...attributes}
+          {...listeners}
+          className="cursor-grab active:cursor-grabbing touch-none opacity-80 hover:opacity-100 p-0.5"
+          title="Drag to reorder column"
+        >
+          <TbGripVertical size={14} />
+        </span>
+      </div>
+
+      {showFilter && filterPosition && typeof document !== "undefined" && createPortal(
+        <div
+          ref={filterRef}
+                  className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
+          style={{ position: "fixed", top: filterPosition.top, left: filterPosition.left, width: filterPosition.width }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            type="text"
+            value={filterValue || ""}
+            onChange={(e) => onFilterChange(e.target.value)}
+            placeholder={`Filter ${header.toLowerCase()}...`}
+            className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+            autoFocus
+          />
+          {filterValue && (
+            <button
+              onClick={() => {
+                onFilterChange("");
+                setShowFilter(false);
+              }}
+              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded flex items-center justify-center gap-1"
+            >
+              <FiX size={12} />
+              Clear Filter
+            </button>
+          )}
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -263,6 +373,10 @@ export default function TbiPage() {
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showColumnsMenu, setShowColumnsMenu] = useState(false);
+  
+  // Column sort and filter state
+  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
   const getCurrentColumns = () => {
     if (selectedRow && columnHeadersMap[selectedRow]) return columnHeadersMap[selectedRow];
     return defaultColumns;
@@ -275,6 +389,10 @@ export default function TbiPage() {
   // Sync column order when view (sidebar) changes: load from localStorage or use schema default
   useEffect(() => {
     setColumnOrder(loadColumnLayout(viewKey, schemaColumns));
+    // Reset filters and sorts when switching views
+    setColumnSorts({});
+    setColumnFilters({});
+    setSelectedRows(new Set());
   }, [viewKey]);
 
   // Persist column layout to localStorage when user changes visibility/order (not on view switch)
@@ -321,6 +439,8 @@ export default function TbiPage() {
   const [timesheetsPlacements, setTimesheetsPlacements] = useState<PlacementRecord[]>([]);
   const [timesheetsLoading, setTimesheetsLoading] = useState(false);
   const [timesheetsError, setTimesheetsError] = useState<string | null>(null);
+  const [timesheetsColumnSorts, setTimesheetsColumnSorts] = useState<Record<string, ColumnSortState>>({});
+  const [timesheetsColumnFilters, setTimesheetsColumnFilters] = useState<Record<string, ColumnFilterState>>({});
 
   // Each row = one approved contract placement whose schedule end date is on or before the selected calendar range
   const timesheetsRows = useMemo(() => {
@@ -346,17 +466,53 @@ export default function TbiPage() {
       });
     }
     const term = timesheetsSearchTerm.trim().toLowerCase();
-    if (!term) return byDate.map(placementToTimesheetRow);
-    return byDate
-      .filter((p) => {
+    let result = byDate;
+    if (term) {
+      result = byDate.filter((p) => {
         const name = (p.jobSeekerName || "").toLowerCase();
         const id = String(p.jobSeekerId ?? p.id ?? "").toLowerCase();
         const email = (p.jobSeekerEmail || "").toLowerCase();
         const title = (p.jobTitle || "").toLowerCase();
         return name.includes(term) || id.includes(term) || email.includes(term) || title.includes(term);
-      })
-      .map(placementToTimesheetRow);
-  }, [timesheetsPlacements, timePeriod, timesheetsWeekEnd, timesheetsSearchTerm]);
+      });
+    }
+    
+    // Apply column filters
+    Object.entries(timesheetsColumnFilters).forEach(([header, filterValue]) => {
+      if (!filterValue || filterValue.trim() === "") return;
+      result = result.filter((p) => {
+        const row = placementToTimesheetRow(p);
+        const cellValue = row[header] ?? "";
+        return String(cellValue).toLowerCase().includes(filterValue.toLowerCase());
+      });
+    });
+
+    // Apply sorting
+    const activeSortColumn = Object.keys(timesheetsColumnSorts).find((key) => timesheetsColumnSorts[key] !== null);
+    if (activeSortColumn) {
+      const direction = timesheetsColumnSorts[activeSortColumn];
+      result.sort((a, b) => {
+        const aRow = placementToTimesheetRow(a);
+        const bRow = placementToTimesheetRow(b);
+        let aValue = aRow[activeSortColumn];
+        let bValue = bRow[activeSortColumn];
+
+        if (aValue === null || aValue === undefined) return 1;
+        if (bValue === null || bValue === undefined) return -1;
+
+        if (aValue === bValue) return 0;
+
+        const aString = String(aValue).toLowerCase();
+        const bString = String(bValue).toLowerCase();
+
+        return direction === "asc"
+          ? aString.localeCompare(bString)
+          : bString.localeCompare(aString);
+      });
+    }
+
+    return result.map(placementToTimesheetRow);
+  }, [timesheetsPlacements, timePeriod, timesheetsWeekEnd, timesheetsSearchTerm, timesheetsColumnFilters, timesheetsColumnSorts]);
 
   const timesheetsCalendarDays = useMemo(() => {
     const year = timesheetsCalendarMonth.getFullYear();
@@ -401,6 +557,9 @@ export default function TbiPage() {
   useEffect(() => {
     if (selectedRow === "TimeSheets") {
       setTimesheetsColumnOrder(loadColumnLayout("TimeSheets", [...TIMESHEETS_TABLE_COLUMNS_LIST]));
+      // Reset filters and sorts when switching to TimeSheets
+      setTimesheetsColumnSorts({});
+      setTimesheetsColumnFilters({});
     }
   }, [selectedRow]);
 
@@ -521,11 +680,30 @@ export default function TbiPage() {
   const handleColumnDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = columnIds.indexOf(String(active.id));
-    const newIndex = columnIds.indexOf(String(over.id));
-    if (oldIndex === -1 || newIndex === -1) return;
-    setColumnOrder((prev) => arrayMove(prev, oldIndex, newIndex));
-  }, [columnIds]);
+    // Find the header names from the IDs
+    const activeId = String(active.id);
+    const overId = String(over.id);
+    
+    // Try to find the header by matching the ID in columnIds
+    const activeIndex = columnIds.indexOf(activeId);
+    const overIndex = columnIds.indexOf(overId);
+    
+    if (activeIndex === -1 || overIndex === -1) return;
+    
+    // Get the actual headers from columnHeaders
+    const activeHeader = columnHeaders[activeIndex];
+    const overHeader = columnHeaders[overIndex];
+    
+    if (!activeHeader || !overHeader) return;
+    
+    // Reorder based on header names
+    setColumnOrder((prev) => {
+      const oldIndex = prev.indexOf(activeHeader);
+      const newIndex = prev.indexOf(overHeader);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, [columnIds, columnHeaders]);
 
   const handleRowClick = (rowLabel: string) => setSelectedRow(rowLabel);
 
@@ -538,15 +716,100 @@ export default function TbiPage() {
     });
   }, []);
 
+  // Master checkbox handler - always use DATA_ROW_COUNT
+  const handleSelectAll = useCallback(() => {
+    if (selectedRows.size >= DATA_ROW_COUNT) {
+      setSelectedRows(new Set());
+    } else {
+      setSelectedRows(new Set(Array.from({ length: DATA_ROW_COUNT }, (_, i) => i)));
+    }
+  }, [selectedRows.size]);
+
+  const selectAll = useMemo(() => {
+    return selectedRows.size === DATA_ROW_COUNT;
+  }, [selectedRows.size]);
+
+  // Column sort handler
+  const handleColumnSort = useCallback((header: string) => {
+    setColumnSorts((prev) => {
+      const current = prev[header];
+      if (current === "asc") {
+        return { ...prev, [header]: "desc" };
+      } else if (current === "desc") {
+        const updated = { ...prev };
+        delete updated[header];
+        return updated;
+      } else {
+        return { ...prev, [header]: "asc" };
+      }
+    });
+  }, []);
+
+  // Column filter handler
+  const handleColumnFilter = useCallback((header: string, value: string) => {
+    setColumnFilters((prev) => {
+      if (!value || value.trim() === "") {
+        const updated = { ...prev };
+        delete updated[header];
+        return updated;
+      }
+      return { ...prev, [header]: value };
+    });
+  }, []);
+
+  // Filter and sort organizations data
+  const filteredAndSortedOrgs = useMemo(() => {
+    let result = [...tbiOrganizations];
+
+    // Apply filters
+    Object.entries(columnFilters).forEach(([header, filterValue]) => {
+      if (!filterValue || filterValue.trim() === "") return;
+      result = result.filter((org) => {
+        const cellValue = getOrgCellValue(org, header);
+        return String(cellValue).toLowerCase().includes(filterValue.toLowerCase());
+      });
+    });
+
+    // Apply sorting
+    const activeSortColumn = Object.keys(columnSorts).find((key) => columnSorts[key] !== null);
+    if (activeSortColumn) {
+      const direction = columnSorts[activeSortColumn];
+      result.sort((a, b) => {
+        let aValue = getOrgCellValue(a, activeSortColumn);
+        let bValue = getOrgCellValue(b, activeSortColumn);
+
+        if (aValue === null || aValue === undefined) return 1;
+        if (bValue === null || bValue === undefined) return -1;
+
+        if (aValue === bValue) return 0;
+
+        const aString = String(aValue).toLowerCase();
+        const bString = String(bValue).toLowerCase();
+
+        return direction === "asc"
+          ? aString.localeCompare(bString)
+          : bString.localeCompare(aString);
+      });
+    }
+
+    return result;
+  }, [tbiOrganizations, columnFilters, columnSorts]);
+
+  // Use all column headers (including empty ones) - don't filter out empty columns
+  // Empty columns will just show empty cells
+
   const exportSelectedAsCsv = useCallback(() => {
     const headers = columnHeaders;
     const headerLine = headers.map(escapeCsvValue).join(",");
     const sortedRows = Array.from(selectedRows).sort((a, b) => a - b);
     const dataLines = sortedRows.map((rowIndex) => {
-      if (selectedRow === "Organization" && tbiOrganizations[rowIndex]) {
-        return headers
-          .map((h) => escapeCsvValue(getOrgCellValue(tbiOrganizations[rowIndex], h)))
-          .join(",");
+      if (selectedRow === "Organization") {
+        const org = filteredAndSortedOrgs[rowIndex];
+        if (org) {
+          return headers
+            .map((h) => escapeCsvValue(getOrgCellValue(org, h)))
+            .join(",");
+        }
       }
       return headers.map(() => "").join(",");
     });
@@ -559,7 +822,7 @@ export default function TbiPage() {
     a.click();
     URL.revokeObjectURL(url);
     setShowExportMenu(false);
-  }, [columnHeaders, selectedRows, selectedRow, tbiOrganizations]);
+  }, [columnHeaders, selectedRows, selectedRow, filteredAndSortedOrgs]);
 
   const containerWidth = typeof window !== "undefined" ? window.innerWidth : 1200;
   const totalColumns = columnHeaders.length;
@@ -579,7 +842,24 @@ export default function TbiPage() {
       }}
     >
       {/* Top Header Bar */}
-      <div className="shrink-0 bg-gray-700 text-white px-6 py-4 flex justify-end items-center shadow-md">
+      <div className="shrink-0 bg-gray-700 text-white px-6 py-4 flex justify-between items-center shadow-md">
+        <div className="flex items-center gap-3">
+          {(Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
+            <div className="flex items-center gap-2 text-sm">
+              <span className="text-gray-300">Active:</span>
+              {Object.keys(columnFilters).length > 0 && (
+                <span className="bg-blue-600 px-2 py-1 rounded text-xs">
+                  {Object.keys(columnFilters).length} filter{Object.keys(columnFilters).length !== 1 ? 's' : ''}
+                </span>
+              )}
+              {Object.keys(columnSorts).length > 0 && (
+                <span className="bg-purple-600 px-2 py-1 rounded text-xs">
+                  {Object.keys(columnSorts).length} sort{Object.keys(columnSorts).length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          )}
+        </div>
         <div className="flex items-center gap-3 relative">
           {selectionCount > 0 && (
             <div className="relative">
@@ -597,7 +877,7 @@ export default function TbiPage() {
                     aria-hidden
                     onClick={() => setShowExportMenu(false)}
                   />
-                  <div className="absolute right-0 top-full mt-1 z-20 py-1 bg-white rounded-lg shadow-lg border border-gray-200 min-w-[160px]">
+                  <div className="absolute right-0 top-full mt-1 z-[100] py-1 bg-white rounded-lg shadow-lg border border-gray-200 min-w-[160px]">
                     <button
                       type="button"
                       onClick={exportSelectedAsCsv}
@@ -614,6 +894,7 @@ export default function TbiPage() {
             type="button"
             onClick={() => setShowColumnsMenu(true)}
             className="bg-white hover:bg-gray-100 text-gray-700 px-4 py-2 rounded-sm flex items-center gap-2 transition-colors shadow-sm"
+            title="Show/hide columns"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor" aria-hidden>
               <path d="M3 4a1 1 0 011-1h12a1 1 0 011 1v2a1 1 0 01-1 1H4a1 1 0 01-1-1V4zM3 10a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H4a1 1 0 01-1-1v-6zM14 9a1 1 0 00-1 1v6a1 1 0 001 1h2a1 1 0 001-1v-6a1 1 0 00-1-1h-2z" />
@@ -781,14 +1062,36 @@ export default function TbiPage() {
                           Actions
                         </div>
                         {timesheetsColumnOrder.map((header) => (
-                          <SortableHeaderCell key={header} id={header} header={header} />
-                        ))}
-                        {Array.from({ length: timesheetsExtraCellCount }, (_, i) => (
-                          <div
-                            key={`ts-empty-h-${i}`}
-                            className="shrink-0 bg-teal-500 text-white border-r border-b border-black"
-                            style={{ width: CELL_WIDTH, minWidth: CELL_WIDTH, height: HEADER_HEIGHT }}
-                            aria-hidden
+                          <SortableHeaderCell 
+                            key={header} 
+                            id={header} 
+                            header={header}
+                            sortState={timesheetsColumnSorts[header] || null}
+                            filterValue={timesheetsColumnFilters[header] || null}
+                            onSort={() => {
+                              setTimesheetsColumnSorts((prev) => {
+                                const current = prev[header];
+                                if (current === "asc") {
+                                  return { ...prev, [header]: "desc" };
+                                } else if (current === "desc") {
+                                  const updated = { ...prev };
+                                  delete updated[header];
+                                  return updated;
+                                } else {
+                                  return { ...prev, [header]: "asc" };
+                                }
+                              });
+                            }}
+                            onFilterChange={(val) => {
+                              setTimesheetsColumnFilters((prev) => {
+                                if (!val || val.trim() === "") {
+                                  const updated = { ...prev };
+                                  delete updated[header];
+                                  return updated;
+                                }
+                                return { ...prev, [header]: val };
+                              });
+                            }}
                           />
                         ))}
                       </div>
@@ -831,14 +1134,6 @@ export default function TbiPage() {
                               <span className="truncate w-full text-center">{String(row[col] ?? "") || "\u00A0"}</span>
                             </div>
                           ))}
-                          {Array.from({ length: timesheetsExtraCellCount }, (_, i) => (
-                            <div
-                              key={`ts-empty-${row.id}-${i}`}
-                              className={`shrink-0 border-r border-b border-gray-400 ${rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
-                              style={{ width: CELL_WIDTH, minWidth: CELL_WIDTH, height: ROW_HEIGHT }}
-                              aria-hidden
-                            />
-                          ))}
                         </div>
                       );
                     })
@@ -862,26 +1157,32 @@ export default function TbiPage() {
                     #
                   </div>
                   <div
-                    className="shrink-0 bg-teal-500 text-white px-2 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm shadow-sm"
+                    className="shrink-0 bg-teal-500 text-white px-2 py-2 border-r border-b border-black flex items-center justify-center gap-2 font-medium text-sm shadow-sm"
                     style={{ width: ACTIONS_CELL_WIDTH, minWidth: ACTIONS_CELL_WIDTH, height: HEADER_HEIGHT }}
                   >
-                    Actions
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 text-teal-600 border-gray-300 rounded cursor-pointer"
+                      checked={selectAll}
+                      onChange={handleSelectAll}
+                      title="Select all"
+                    />
+                    <span className="text-xs">Actions</span>
                   </div>
-                  {columnHeaders.map((header, index) => (
-                    <SortableHeaderCell
-                      key={columnIds[index]}
-                      id={columnIds[index]}
-                      header={header}
-                    />
-                  ))}
-                  {Array.from({ length: extraCellCount }, (_, i) => (
-                    <div
-                      key={`empty-h-${i}`}
-                      className="shrink-0 bg-teal-500 text-white border-r border-b border-black"
-                      style={{ width: CELL_WIDTH, minWidth: CELL_WIDTH, height: HEADER_HEIGHT }}
-                      aria-hidden
-                    />
-                  ))}
+                  {columnHeaders.map((header, index) => {
+                    const colId = columnIds[index];
+                    return (
+                      <SortableHeaderCell
+                        key={colId}
+                        id={colId}
+                        header={header}
+                        sortState={columnSorts[header] || null}
+                        filterValue={columnFilters[header] || null}
+                        onSort={() => handleColumnSort(header)}
+                        onFilterChange={(val) => handleColumnFilter(header, val)}
+                      />
+                    );
+                  })}
                 </div>
               </SortableContext>
             </DndContext>
@@ -900,70 +1201,68 @@ export default function TbiPage() {
               </div>
             )}
 
-            {!tbiOrgsLoading && Array.from({ length: DATA_ROW_COUNT }, (_, rowIndex) => {
-              const isRowSelected = selectedRows.has(rowIndex);
-              const org = selectedRow === "Organization" ? tbiOrganizations[rowIndex] : null;
-              return (
-                <div key={rowIndex} className="flex">
-                  <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: ROW_HEIGHT }}>
-                    {rowIndex + 1}
-                  </div>
-                  <div
-                    className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center gap-1.5 ${rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
-                    style={{ width: ACTIONS_CELL_WIDTH, minWidth: ACTIONS_CELL_WIDTH, height: ROW_HEIGHT }}
-                  >
-                    {selectedRow === "Organization" && org ? (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDetailOrganization(org);
-                        }}
-                        className="p-1.5 rounded text-gray-600 hover:bg-teal-100 hover:text-teal-700 transition-colors shrink-0 inline-flex items-center justify-center"
-                        title="View details"
-                        aria-label="View organization details"
-                      >
-                        <TbBinoculars size={20} />
-                      </button>
-                    ) : (
-                      <span className="p-1.5 shrink-0 inline-flex items-center justify-center text-gray-300" aria-hidden><TbBinoculars size={20} /></span>
-                    )}
-                    <input
-                      type="checkbox"
-                      checked={isRowSelected}
-                      onChange={() => toggleDataRow(rowIndex)}
-                      className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer shrink-0"
-                      aria-label={`Select row ${rowIndex + 1}`}
-                    />
-                  </div>
-                  {columnHeaders.map((header, colIndex) => {
-                    const cellValue = org ? getOrgCellValue(org, header) : "";
-                    return (
-                      <div
-                        key={colIndex}
-                        className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center text-sm select-none text-left px-1 ${isRowSelected
-                          ? "bg-teal-200 ring-1 ring-teal-500"
-                          : rowIndex % 2 === 0
-                            ? "bg-white"
-                            : "bg-gray-50"
-                          }`}
-                        style={{ width: CELL_WIDTH, minWidth: CELL_WIDTH, height: ROW_HEIGHT }}
-                      >
-                        <span className="truncate w-full text-center">{cellValue || "\u00A0"}</span>
-                      </div>
-                    );
-                  })}
-                  {Array.from({ length: extraCellCount }, (_, i) => (
+            {!tbiOrgsLoading && (() => {
+              const displayOrgs = selectedRow === "Organization" ? filteredAndSortedOrgs : [];
+              // Always show DATA_ROW_COUNT rows, even if empty
+              const rowCount = DATA_ROW_COUNT;
+              
+              return Array.from({ length: rowCount }, (_, rowIndex) => {
+                const isRowSelected = selectedRows.has(rowIndex);
+                const org = selectedRow === "Organization" && rowIndex < displayOrgs.length ? displayOrgs[rowIndex] : null;
+                return (
+                  <div key={rowIndex} className="flex">
+                    <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: ROW_HEIGHT }}>
+                      {rowIndex + 1}
+                    </div>
                     <div
-                      key={`empty-${rowIndex}-${i}`}
-                      className={`shrink-0 border-r border-b border-gray-400 ${rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
-                      style={{ width: CELL_WIDTH, minWidth: CELL_WIDTH, height: ROW_HEIGHT }}
-                      aria-hidden
-                    />
-                  ))}
-                </div>
-              );
-            })}
+                      className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center gap-1.5 ${rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
+                      style={{ width: ACTIONS_CELL_WIDTH, minWidth: ACTIONS_CELL_WIDTH, height: ROW_HEIGHT }}
+                    >
+                      {selectedRow === "Organization" && org ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDetailOrganization(org);
+                          }}
+                          className="p-1.5 rounded text-gray-600 hover:bg-teal-100 hover:text-teal-700 transition-colors shrink-0 inline-flex items-center justify-center"
+                          title="View details"
+                          aria-label="View organization details"
+                        >
+                          <TbBinoculars size={20} />
+                        </button>
+                      ) : (
+                        <span className="p-1.5 shrink-0 inline-flex items-center justify-center text-gray-300" aria-hidden><TbBinoculars size={20} /></span>
+                      )}
+                      <input
+                        type="checkbox"
+                        checked={isRowSelected}
+                        onChange={() => toggleDataRow(rowIndex)}
+                        className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer shrink-0"
+                        aria-label={`Select row ${rowIndex + 1}`}
+                      />
+                    </div>
+                    {columnHeaders.map((header, colIndex) => {
+                      const cellValue = org ? getOrgCellValue(org, header) : "";
+                      return (
+                        <div
+                          key={colIndex}
+                          className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center text-sm select-none text-left px-1 ${isRowSelected
+                            ? "bg-teal-200 ring-1 ring-teal-500"
+                            : rowIndex % 2 === 0
+                              ? "bg-white"
+                              : "bg-gray-50"
+                            }`}
+                          style={{ width: CELL_WIDTH, minWidth: CELL_WIDTH, height: ROW_HEIGHT }}
+                        >
+                          <span className="truncate w-full text-center">{cellValue || "\u00A0"}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
         )}
@@ -982,11 +1281,11 @@ export default function TbiPage() {
       {/* Columns modal – select which columns to show; layout saved to localStorage */}
       {showColumnsMenu && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/50"
           onClick={() => setShowColumnsMenu(false)}
         >
           <div
-            className="bg-white rounded-sm shadow-xl max-w-md w-full mx-4 overflow-hidden flex flex-col max-h-[85vh]"
+            className="bg-white rounded-sm shadow-xl max-w-md w-full mx-4 overflow-hidden flex flex-col max-h-[85vh] relative z-[201]"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 py-3 bg-gray-100 border-b shrink-0">
@@ -1024,7 +1323,20 @@ export default function TbiPage() {
                 );
               })}
             </div>
-            <div className="px-4 py-3 bg-gray-50 border-t flex justify-end shrink-0">
+            <div className="px-4 py-3 bg-gray-50 border-t flex justify-end gap-2 shrink-0">
+              {(Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setColumnFilters({});
+                    setColumnSorts({});
+                  }}
+                  className="px-4 py-2 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded-lg font-medium text-sm flex items-center gap-2"
+                >
+                  <FiX size={14} />
+                  Clear Filters & Sorts
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => setShowColumnsMenu(false)}
