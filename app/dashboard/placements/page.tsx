@@ -17,6 +17,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
+import RecordNameResolver from "@/components/RecordNameResolver";
 
 type PlacementFavorite = {
   id: string;
@@ -1003,8 +1004,6 @@ export default function PlacementList() {
                       />
                     </td>
 
-
-
                     {/* Fixed Actions */}
                     <td
                       className="px-6 py-4 whitespace-nowrap text-sm"
@@ -1031,13 +1030,30 @@ export default function PlacementList() {
                         key={key}
                         className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
                       >
-                        {key === "status" ? (
+                        {getColumnLabel(key).toLowerCase() === "status" ? (
                           <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
                             {getColumnValue(placement, key)}
                           </span>
-                        ) : (
-                          getColumnValue(placement, key)
-                        )}
+                        ) :
+                          getColumnLabel(key).toLowerCase() === "candidate" || getColumnLabel(key).toLowerCase() === "job seeker" ? (
+                            <RecordNameResolver
+                              id={String(getColumnValue(placement, key)) || null}
+                              type="jobSeeker"
+                              clickable
+                              fallback={String(getColumnValue(placement, key)) || ""}
+                            />
+                          ) :
+                            getColumnLabel(key).toLowerCase() === "job" ? (
+                              <RecordNameResolver
+                                id={String(getColumnValue(placement, key)) || null}
+                                type="job"
+                                clickable
+                                fallback={String(getColumnValue(placement, key)) || ""}
+                              />
+                            ) :
+                            (
+                              getColumnValue(placement, key)
+                            )}
                       </td>
                     ))}
                   </tr>
@@ -1280,7 +1296,7 @@ export default function PlacementList() {
                 <FiX size={20} />
               </button>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1294,16 +1310,15 @@ export default function PlacementList() {
                     if (e.target.value.trim()) setFavoriteNameError(null);
                   }}
                   placeholder="e.g. High Priority Placements"
-                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${
-                    favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
-                  }`}
+                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
+                    }`}
                   autoFocus
                 />
                 {favoriteNameError && (
                   <p className="text-xs text-red-500 mt-1">{favoriteNameError}</p>
                 )}
               </div>
-              
+
               <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-800 space-y-1">
                 <p className="font-medium flex items-center gap-2">
                   <FiStar className="text-blue-600" size={14} />
@@ -1321,7 +1336,7 @@ export default function PlacementList() {
                 </ul>
               </div>
             </div>
-            
+
             <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
               <button
                 onClick={() => setShowSaveFavoriteModal(false)}

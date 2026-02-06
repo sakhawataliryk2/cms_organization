@@ -143,10 +143,11 @@ const VIEW_ROUTE_BY_TYPE: Record<string, string> = {
   placements: "/dashboard/placements/view",
   task: "/dashboard/tasks/view",
   tasks: "/dashboard/tasks/view",
-  jobSeeker: "/dashboard/job-seekers/view",
-  jobSeekers: "/dashboard/job-seekers/view",
-  hiringManager: "/dashboard/hiring-managers/view",
-  hiringManagers: "/dashboard/hiring-managers/view",
+  jobseeker: "/dashboard/job-seekers/view",
+  jobseekers: "/dashboard/job-seekers/view",
+  hiringmanager: "/dashboard/hiring-managers/view",
+  hiringmanagers: "/dashboard/hiring-managers/view",
+  // hiringManagers: "/dashboard/hiring-managers/view",
 };
 
 /* ---------------------------------------------

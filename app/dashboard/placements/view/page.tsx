@@ -52,6 +52,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
+import RecordNameResolver from "@/components/RecordNameResolver";
 
 // Default header fields for Placements module - defined outside component to ensure stable reference
 const PLACEMENT_DEFAULT_HEADER_FIELDS = ["status", "owner"];
@@ -568,7 +569,7 @@ export default function PlacementView() {
       if (Array.isArray(parsed) && parsed.length > 0) {
         setVisibleFields((prev) => ({ ...prev, details: parsed }));
       }
-    } catch (_) {}
+    } catch (_) { }
   }, []);
 
   const prevColumnsRef = useRef<string>("");
@@ -745,14 +746,14 @@ export default function PlacementView() {
         const parsed = JSON.parse(pd);
         if (Array.isArray(parsed) && parsed.length > 0) placementDetails = Array.from(new Set(parsed));
       }
-    } catch (_) {}
+    } catch (_) { }
     try {
       const d = localStorage.getItem(DETAILS_STORAGE_KEY);
       if (d) {
         const parsed = JSON.parse(d);
         if (Array.isArray(parsed) && parsed.length > 0) details = Array.from(new Set(parsed));
       }
-    } catch (_) {}
+    } catch (_) { }
     return { placementDetails, details, recentNotes: ["notes"] };
   });
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
@@ -1215,7 +1216,7 @@ export default function PlacementView() {
           let data: any = {};
           try {
             data = JSON.parse(raw);
-          } catch {}
+          } catch { }
           const fields = data.customFields || data.fields || data.data?.fields || [];
           const fieldNamesToCheck = ["field_500", "actions", "action"];
           const field500 = (fields as any[]).find(
@@ -1228,7 +1229,7 @@ export default function PlacementView() {
             if (typeof options === "string") {
               try {
                 options = JSON.parse(options);
-              } catch {}
+              } catch { }
             }
             if (Array.isArray(options)) {
               setActionFields(
@@ -2016,9 +2017,9 @@ export default function PlacementView() {
 
   const handleDownloadDocument = async (doc: any) => {
     // Check if it's a text file (by mime_type or file extension)
-    const isTextFile = doc.mime_type === "text/plain" || 
-                       doc.file_path?.toLowerCase().endsWith(".txt") ||
-                       doc.document_name?.toLowerCase().endsWith(".txt");
+    const isTextFile = doc.mime_type === "text/plain" ||
+      doc.file_path?.toLowerCase().endsWith(".txt") ||
+      doc.document_name?.toLowerCase().endsWith(".txt");
 
     // If the document has a stored file path
     if (doc.file_path) {
@@ -2027,7 +2028,7 @@ export default function PlacementView() {
         try {
           // Check if it's an absolute URL (e.g. from Vercel Blob)
           const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
-          
+
           // Prepend leading slash if missing and not absolute URL
           const url = isAbsoluteUrl
             ? doc.file_path
@@ -2666,11 +2667,11 @@ export default function PlacementView() {
       const defaultRef =
         placement && placementId
           ? {
-              id: placement.id,
-              type: "Placement",
-              display: `#${placement.id} ${placement.jobSeekerName || ""} - ${placement.jobTitle || ""}`.trim() || `Placement #${placement.id}`,
-              value: `#${placement.id}`,
-            }
+            id: placement.id,
+            type: "Placement",
+            display: `#${placement.id} ${placement.jobSeekerName || ""} - ${placement.jobTitle || ""}`.trim() || `Placement #${placement.id}`,
+            value: `#${placement.id}`,
+          }
           : null;
       setNoteForm({
         text: "",
@@ -2879,11 +2880,10 @@ export default function PlacementView() {
                                 key={idx}
                                 onClick={() => isClickable && navigateToReference(ref)}
                                 disabled={!isClickable}
-                                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-all ${
-                                  isClickable
-                                    ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer"
-                                    : "bg-gray-100 text-gray-700 border-gray-200 cursor-default"
-                                }`}
+                                className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-all ${isClickable
+                                  ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer"
+                                  : "bg-gray-100 text-gray-700 border-gray-200 cursor-default"
+                                  }`}
                                 title={isClickable ? `View ${refType}` : "Reference not available"}
                               >
                                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -3247,59 +3247,59 @@ export default function PlacementView() {
   const renderPlacementDetailsPanel = () => {
     const renderPlacementDetailsRow = (key: string, index: number) => {
       switch (key) {
-        case "candidate":
-          return (
-            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Candidate:</div>
-              <div className="flex-1 p-2 text-blue-600">{placement.jobSeekerName}</div>
-            </div>
-          );
-        case "job":
-          return (
-            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Job:</div>
-              <div className="flex-1 p-2 text-blue-600">{placement.jobTitle}</div>
-            </div>
-          );
-        case "organization":
-          return (
-            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Organization:</div>
-              <div className="flex-1 p-2">{placement.organizationName || "—"}</div>
-            </div>
-          );
-        case "status":
-          return (
-            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
-              <div className="flex-1 p-2">
-                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-                  {placement.status}
-                </span>
-              </div>
-            </div>
-          );
-        case "startDate":
-          return (
-            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Start Date:</div>
-              <div className="flex-1 p-2">{placement.startDate || "-"}</div>
-            </div>
-          );
-        case "endDate":
-          return (
-            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">End Date:</div>
-              <div className="flex-1 p-2">{placement.endDate || "-"}</div>
-            </div>
-          );
-        case "salary":
-          return (
-            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Salary:</div>
-              <div className="flex-1 p-2">{placement.salary || "-"}</div>
-            </div>
-          );
+        // case "candidate":
+        //   return (
+        //     <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Candidate:</div>
+        //       <div className="flex-1 p-2 text-blue-600">{placement.jobSeekerName}</div>
+        //     </div>
+        //   );
+        // case "job":
+        //   return (
+        //     <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Job:</div>
+        //       <div className="flex-1 p-2 text-blue-600">{placement.jobTitle}</div>
+        //     </div>
+        //   );
+        // case "organization":
+        //   return (
+        //     <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Organization:</div>
+        //       <div className="flex-1 p-2">{placement.organizationName || "—"}</div>
+        //     </div>
+        //   );
+        // case "status":
+        //   return (
+        //     <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
+        //       <div className="flex-1 p-2">
+        //         <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
+        //           {placement.status}
+        //         </span>
+        //       </div>
+        //     </div>
+        //   );
+        // case "startDate":
+        //   return (
+        //     <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Start Date:</div>
+        //       <div className="flex-1 p-2">{placement.startDate || "-"}</div>
+        //     </div>
+        //   );
+        // case "endDate":
+        //   return (
+        //     <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">End Date:</div>
+        //       <div className="flex-1 p-2">{placement.endDate || "-"}</div>
+        //     </div>
+        //   );
+        // case "salary":
+        //   return (
+        //     <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Salary:</div>
+        //       <div className="flex-1 p-2">{placement.salary || "-"}</div>
+        //     </div>
+        //   );
         default:
           // Custom field
           const field = availableFields.find(
@@ -3310,7 +3310,29 @@ export default function PlacementView() {
           return (
             <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
-              <div className="flex-1 p-2">{String(fieldValue)}</div>
+              <div className="flex-1 p-2">
+                {fieldLabel.toLowerCase().includes("phone") ? (
+                  <a href={`tel:${fieldValue}`} className="text-blue-600 hover:underline">
+                    {fieldValue}
+                  </a>
+                ) : fieldLabel.toLowerCase() === "candidate" || fieldLabel.toLowerCase() === "job seeker" ? (
+                  <RecordNameResolver
+                    id={String(fieldValue) || null}
+                    type="jobSeeker"
+                    clickable
+                    fallback={String(fieldValue) || ""}
+                  />
+                ) : fieldLabel.toLowerCase() === "job" ? (
+                  <RecordNameResolver
+                    id={String(fieldValue) || null}
+                    type="job"
+                    clickable
+                    fallback={String(fieldValue) || ""}
+                  />
+                ) : (
+                  fieldValue
+                )}
+              </div>
             </div>
           );
       }
@@ -3361,7 +3383,29 @@ export default function PlacementView() {
           return (
             <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
-              <div className="flex-1 p-2">{String(fieldValue)}</div>
+              <div className="flex-1 p-2">
+                {fieldLabel.toLowerCase().includes("phone") ? (
+                  <a href={`tel:${fieldValue}`} className="text-blue-600 hover:underline">
+                    {fieldValue}
+                  </a>
+                ) : fieldLabel.toLowerCase() === "candidate" || fieldLabel.toLowerCase() === "job seeker" ? (
+                  <RecordNameResolver
+                    id={fieldValue || null}
+                    type="jobSeeker"
+                    clickable
+                    fallback={String(fieldValue) || ""}
+                  />
+                ) : fieldLabel.toLowerCase() === "job" ? (
+                  <RecordNameResolver
+                    id={fieldValue || null}
+                    type="job"
+                    clickable
+                    fallback={String(fieldValue) || ""}
+                  />
+                ) : (
+                  fieldValue
+                )}
+              </div>
             </div>
           );
         }
@@ -3472,146 +3516,145 @@ export default function PlacementView() {
             disabled={isLoadingHistory}
           />
           <div className="space-y-4">
-          {historyFilters.filteredAndSorted.map((item, index) => {
-            // Format the history entry based on action type
-            let actionDisplay = "";
-            let detailsDisplay: React.ReactNode = "";
+            {historyFilters.filteredAndSorted.map((item, index) => {
+              // Format the history entry based on action type
+              let actionDisplay = "";
+              let detailsDisplay: React.ReactNode = "";
 
-            try {
-              const details =
-                typeof item.details === "string"
-                  ? JSON.parse(item.details)
-                  : item.details;
+              try {
+                const details =
+                  typeof item.details === "string"
+                    ? JSON.parse(item.details)
+                    : item.details;
 
-              switch (item.action || item.action_type) {
-                case "CREATE":
-                  actionDisplay = "Placement Created";
-                  detailsDisplay = `Created by ${
-                    item.performed_by_name || item.created_by_name || "Unknown"
-                  }`;
-                  break;
-                case "UPDATE":
-                  actionDisplay = "Placement Updated";
-                  if (details && details.before && details.after) {
-                    // Create a list of changes
-                    const changes: React.ReactNode[] = [];
+                switch (item.action || item.action_type) {
+                  case "CREATE":
+                    actionDisplay = "Placement Created";
+                    detailsDisplay = `Created by ${item.performed_by_name || item.created_by_name || "Unknown"
+                      }`;
+                    break;
+                  case "UPDATE":
+                    actionDisplay = "Placement Updated";
+                    if (details && details.before && details.after) {
+                      // Create a list of changes
+                      const changes: React.ReactNode[] = [];
 
-                    // Helper function to format values
-                    const formatValue = (val: any): string => {
-                      if (val === null || val === undefined) return "Empty";
-                      if (typeof val === "object") return JSON.stringify(val);
-                      return String(val);
-                    };
+                      // Helper function to format values
+                      const formatValue = (val: any): string => {
+                        if (val === null || val === undefined) return "Empty";
+                        if (typeof val === "object") return JSON.stringify(val);
+                        return String(val);
+                      };
 
-                    for (const key in details.after) {
-                      // Skip internal fields that might not be relevant to users
-                      if (key === "updated_at") continue;
+                      for (const key in details.after) {
+                        // Skip internal fields that might not be relevant to users
+                        if (key === "updated_at") continue;
 
-                      const beforeVal = details.before[key];
-                      const afterVal = details.after[key];
+                        const beforeVal = details.before[key];
+                        const afterVal = details.after[key];
 
-                      if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
-                        // Special handling for custom_fields
-                        if (key === "custom_fields") {
-                          let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
-                          let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
+                        if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                          // Special handling for custom_fields
+                          if (key === "custom_fields") {
+                            let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
+                            let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
 
-                          // Handle case where custom_fields might be null/undefined
-                          beforeObj = beforeObj || {};
-                          afterObj = afterObj || {};
+                            // Handle case where custom_fields might be null/undefined
+                            beforeObj = beforeObj || {};
+                            afterObj = afterObj || {};
 
-                          if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
-                            const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
+                            if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
+                              const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
 
-                            allKeys.forEach(cfKey => {
-                              const beforeCfVal = beforeObj[cfKey];
-                              const afterCfVal = afterObj[cfKey];
+                              allKeys.forEach(cfKey => {
+                                const beforeCfVal = beforeObj[cfKey];
+                                const afterCfVal = afterObj[cfKey];
 
-                              if (beforeCfVal !== afterCfVal) {
-                                changes.push(
-                                  <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                                    <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
-                                    <div className="flex flex-wrap gap-2 items-center">
-                                      <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                                        {formatValue(beforeCfVal)}
-                                      </span>
-                                      <span className="text-gray-400">→</span>
-                                      <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                                        {formatValue(afterCfVal)}
-                                      </span>
+                                if (beforeCfVal !== afterCfVal) {
+                                  changes.push(
+                                    <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                                      <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
+                                      <div className="flex flex-wrap gap-2 items-center">
+                                        <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                          {formatValue(beforeCfVal)}
+                                        </span>
+                                        <span className="text-gray-400">→</span>
+                                        <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                          {formatValue(afterCfVal)}
+                                        </span>
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              }
-                            });
-                            continue; // Skip the standard field handling for custom_fields
+                                  );
+                                }
+                              });
+                              continue; // Skip the standard field handling for custom_fields
+                            }
                           }
+
+                          // Standard fields
+                          // const fieldName = key.replace(/_/g, " ");
+                          // changes.push(
+                          //   <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                          //     <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
+                          //     <div className="flex flex-wrap gap-2 items-center">
+                          //       <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                          //         {formatValue(beforeVal)}
+                          //       </span>
+                          //       <span className="text-gray-400">→</span>
+                          //       <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                          //         {formatValue(afterVal)}
+                          //       </span>
+                          //     </div>
+                          //   </div>
+                          // );
                         }
-
-                        // Standard fields
-                        // const fieldName = key.replace(/_/g, " ");
-                        // changes.push(
-                        //   <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                        //     <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
-                        //     <div className="flex flex-wrap gap-2 items-center">
-                        //       <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                        //         {formatValue(beforeVal)}
-                        //       </span>
-                        //       <span className="text-gray-400">→</span>
-                        //       <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                        //         {formatValue(afterVal)}
-                        //       </span>
-                        //     </div>
-                        //   </div>
-                        // );
                       }
-                    }
 
-                    if (changes.length > 0) {
-                      detailsDisplay = (
-                        <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
-                          {changes}
-                        </div>
-                      );
-                    } else {
+                      if (changes.length > 0) {
+                        detailsDisplay = (
+                          <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
+                            {changes}
+                          </div>
+                        );
+                      } else {
                         detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
                       }
-                  }
-                  break;
-                case "ADD_NOTE":
-                  actionDisplay = "Note Added";
-                  detailsDisplay = details.text || "";
-                  break;
-                default:
-                  actionDisplay = item.action || item.action_type || "Unknown Action";
-                  detailsDisplay = JSON.stringify(details);
+                    }
+                    break;
+                  case "ADD_NOTE":
+                    actionDisplay = "Note Added";
+                    detailsDisplay = details.text || "";
+                    break;
+                  default:
+                    actionDisplay = item.action || item.action_type || "Unknown Action";
+                    detailsDisplay = JSON.stringify(details);
+                }
+              } catch (e) {
+                console.error("Error parsing history details:", e);
+                detailsDisplay = "Error displaying details";
               }
-            } catch (e) {
-              console.error("Error parsing history details:", e);
-              detailsDisplay = "Error displaying details";
-            }
 
-            return (
-              <div
-                key={item.id || index}
-                className="p-3 border rounded hover:bg-gray-50"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="font-medium text-blue-600">
-                    {actionDisplay}
-                  </span>
-                  <span className="text-sm text-gray-500">
-                    {new Date(item.performed_at || item.created_at).toLocaleString()}
-                  </span>
+              return (
+                <div
+                  key={item.id || index}
+                  className="p-3 border rounded hover:bg-gray-50"
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="font-medium text-blue-600">
+                      {actionDisplay}
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      {new Date(item.performed_at || item.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mb-2">{detailsDisplay}</div>
+                  <div className="text-sm text-gray-600">
+                    By: {item.performed_by_name || item.created_by_name || "Unknown"}
+                  </div>
                 </div>
-                <div className="mb-2">{detailsDisplay}</div>
-                <div className="text-sm text-gray-600">
-                  By: {item.performed_by_name || item.created_by_name || "Unknown"}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
         </>
       ) : (
         <p className="text-gray-500 italic">No history records available</p>
@@ -3626,7 +3669,7 @@ export default function PlacementView() {
     { id: "docs", label: "Docs" },
     { id: "history", label: "History" },
   ];
-  
+
   const actionOptions = [
     { label: "Add Note", action: () => handleActionSelected("add-note") },
     { label: "Add Task", action: () => handleActionSelected("add-task") },
@@ -3681,7 +3724,7 @@ export default function PlacementView() {
             P {placement.id} {placement.jobSeekerName} - {placement.jobTitle}
           </h1>
         </div>
-        
+
       </div>
 
       {/* Header Fields Row */}
@@ -3700,7 +3743,29 @@ export default function PlacementView() {
                     {getHeaderFieldLabel(fk)}
                   </div>
                   <div className="text-sm font-medium text-gray-900">
-                    {getHeaderFieldValue(fk)}
+                    <div className="flex-1 p-2">
+                      {getHeaderFieldLabel(fk).toLowerCase().includes("phone") ? (
+                        <a href={`tel:${getHeaderFieldValue(fk)}`} className="text-blue-600 hover:underline">
+                          {getHeaderFieldValue(fk)}
+                        </a>
+                      ) : getHeaderFieldLabel(fk).toLowerCase() === "candidate" || getHeaderFieldLabel(fk).toLowerCase() === "job seeker" ? (
+                        <RecordNameResolver
+                          id={String(getHeaderFieldValue(fk)) || null}
+                          type="jobSeeker"
+                          clickable
+                          fallback={String(getHeaderFieldValue(fk)) || ""}
+                        />
+                      ) : getHeaderFieldLabel(fk).toLowerCase() === "job" ? (
+                        <RecordNameResolver
+                          id={String(getHeaderFieldValue(fk)) || null}
+                          type="job"
+                          clickable
+                          fallback={String(getHeaderFieldValue(fk)) || ""}
+                        />
+                      ) : (
+                        getHeaderFieldValue(fk)
+                      )}
+                    </div>
                   </div>
                 </div>
               ))
@@ -3775,11 +3840,10 @@ export default function PlacementView() {
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            className={`px-4 py-2 ${
-              activeTab === tab.id
-                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
-                : "text-gray-700 hover:bg-gray-200"
-            }`}
+            className={`px-4 py-2 ${activeTab === tab.id
+              ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+              : "text-gray-700 hover:bg-gray-200"
+              }`}
             onClick={() => setActiveTab(tab.id)}
           >
             {tab.label}
@@ -4228,7 +4292,7 @@ export default function PlacementView() {
                               id={placementDetailsDragActiveId}
                               label={field.label}
                               checked={modalPlacementDetailsVisible[placementDetailsDragActiveId] || false}
-                              onToggle={() => {}}
+                              onToggle={() => { }}
                               isOverlay
                             />
                           ) : null;
@@ -4295,7 +4359,7 @@ export default function PlacementView() {
                             id={detailsDragActiveId}
                             label={field.label}
                             checked={modalDetailsVisible[detailsDragActiveId] || false}
-                            onToggle={() => {}}
+                            onToggle={() => { }}
                             isOverlay
                           />
                         ) : null;
@@ -4354,7 +4418,7 @@ export default function PlacementView() {
                       )}
                     </div>
                   </div>
-                  
+
                   <div className="mb-4">
                     <h3 className="font-medium mb-3">Standard Fields:</h3>
                     <div className="space-y-2 border border-gray-200 rounded p-3">
@@ -4369,7 +4433,7 @@ export default function PlacementView() {
                             { key: 'notes', label: 'Notes' }
                           ]
                         };
-                        
+
                         const fields = standardFieldsMap[editingPanel] || [];
                         return fields.map((field) => {
                           const isVisible = visibleFields[editingPanel]?.includes(field.key) || false;

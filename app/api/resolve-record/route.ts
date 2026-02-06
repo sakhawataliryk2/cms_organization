@@ -32,21 +32,27 @@ export async function GET(request: NextRequest) {
     }
 
     const normalizedType = type.toLowerCase().replace(/\s+/g, "-").trim();
+    // Map both hyphenated and non-hyphenated forms (e.g. jobSeeker → "jobseeker")
     const apiPathMap: Record<string, string> = {
       organization: "/api/organizations",
       organizations: "/api/organizations",
       "hiring-manager": "/api/hiring-managers",
       "hiring-managers": "/api/hiring-managers",
+      hiringmanager: "/api/hiring-managers",
+      hiringmanagers: "/api/hiring-managers",
       job: "/api/jobs",
       jobs: "/api/jobs",
       "job-seeker": "/api/job-seekers",
       "job-seekers": "/api/job-seekers",
+      jobseeker: "/api/job-seekers",
+      jobseekers: "/api/job-seekers",
       lead: "/api/leads",
       leads: "/api/leads",
       placement: "/api/placements",
       placements: "/api/placements",
       task: "/api/tasks",
       tasks: "/api/tasks",
+      
     };
 
     const basePath = apiPathMap[normalizedType];
@@ -93,21 +99,31 @@ export async function GET(request: NextRequest) {
       data.task ??
       data;
 
+    const isJobSeeker =
+      normalizedType.includes("job-seeker") ||
+      normalizedType === "jobseeker" ||
+      normalizedType === "jobseekers";
+    const isJob = normalizedType === "job" || normalizedType === "jobs";
+
     if (record) {
       if (normalizedType.includes("organization")) {
         name = record.name || "";
-      } else if (normalizedType.includes("hiring-manager")) {
+      } else if (
+        normalizedType.includes("hiring-manager") ||
+        normalizedType === "hiringmanager" ||
+        normalizedType === "hiringmanagers"
+      ) {
         name =
           record.full_name ||
           [record.first_name, record.last_name].filter(Boolean).join(" ") ||
           "";
-      } else if (normalizedType.includes("job")) {
+      } else if (isJobSeeker) {
+        name =
+          record.full_name ||
+          [record.first_name, record.last_name].filter(Boolean).join(" ") ||
+          "";
+      } else if (isJob) {
         name = record.job_title || record.title || "";
-      } else if (normalizedType.includes("job-seeker")) {
-        name =
-          record.full_name ||
-          [record.first_name, record.last_name].filter(Boolean).join(" ") ||
-          "";
       } else if (normalizedType.includes("lead")) {
         name =
           record.full_name ||
