@@ -11,6 +11,7 @@ import { HiOutlineUser } from 'react-icons/hi';
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { sendCalendarInvite, type CalendarEvent } from "@/lib/office365";
+import RecordNameResolver from '@/components/RecordNameResolver';
 // Drag and drop imports
 import {
   DndContext,
@@ -799,10 +800,34 @@ export default function HiringManagerView() {
 
     const renderDetailsRow = (row: { key: string; label: string; isAddress?: boolean }) => {
       const value = row.isAddress || row.key === FULL_ADDRESS_KEY ? getCombinedAddress() : getDetailsValue(row.key);
+      const lookupType = (customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key)?.lookup_type || customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key)?.lookupType || "") as any;
       return (
         <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
-          <div className="flex-1 p-2 text-sm">{value}</div>
+          <div className="flex-1 p-2 text-sm">{lookupType && value ? (
+            <RecordNameResolver
+              id={String(value || "") || null}
+              type={lookupType as any}
+              clickable
+              fallback={String(value || "") || ""}
+            />
+          ) : value.toLowerCase().includes("@") ? (
+            <a href={`mailto:${value}`} className="text-sm font-medium text-blue-600 hover:underline">
+              {value}
+            </a>
+          ) : value.toLowerCase().startsWith("http") || value.toLowerCase().startsWith("https") ? (
+            <a href={value} className="text-sm font-medium text-blue-600 hover:underline">
+              {value}
+            </a>
+          ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(value || "") ? (
+            <a href={`tel:${value.replace(/\D/g, "")}`} className="text-sm font-medium text-blue-600 hover:underline">
+              {value}
+            </a>
+          ) : value ? (
+            <div className="text-sm font-medium text-gray-900">{value}</div>
+          ) : (
+            <div className="text-sm font-medium text-gray-900">-</div>
+          )}</div>
         </div>
       );
     };
@@ -915,11 +940,40 @@ export default function HiringManagerView() {
     }
 
     const renderOrganizationDetailsRow = (row: { key: string; label: string; isAddress?: boolean }) => {
+      const customFieldDefs = (organizationAvailableFields || []).filter((f: any) => {
+        const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
+        return !isHidden;
+      });
       const value = row.isAddress || row.key === FULL_ADDRESS_KEY ? getCombinedAddress() : getOrganizationDetailValue(row.key);
+      const lookupType = (customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key)?.lookup_type || customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key)?.lookupType || "") as any;
+
       return (
         <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
-          <div className="flex-1 p-2 text-sm">{value}</div>
+          <div className="flex-1 p-2 text-sm">{lookupType && value ? (
+            <RecordNameResolver
+              id={String(value || "") || null}
+              type={lookupType as any}
+              clickable
+              fallback={String(value || "") || ""}
+            />
+          ) : value.toLowerCase().includes("@") ? (
+            <a href={`mailto:${value}`} className="text-sm font-medium text-blue-600 hover:underline">
+              {value}
+            </a>
+          ) : value.toLowerCase().startsWith("http") || value.toLowerCase().startsWith("https") ? (
+            <a href={value} className="text-sm font-medium text-blue-600 hover:underline">
+              {value}
+            </a>
+          ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(value || "") ? (
+            <a href={`tel:${value.replace(/\D/g, "")}`} className="text-sm font-medium text-blue-600 hover:underline">
+              {value}
+            </a>
+          ) : value ? (
+            <div className="text-sm font-medium text-gray-900">{value}</div>
+          )  : (
+            <div className="text-sm font-medium text-gray-900">-</div>
+          )}</div>
         </div>
       );
     };
@@ -4445,33 +4499,63 @@ export default function HiringManagerView() {
               </span>
             ) : (
               headerFields.map((fk) => {
+                const customFieldDefs = (availableFields || []).filter((f: any) => {
+                  const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
+                  return !isHidden;
+                });
                 const value = getHeaderFieldValue(fk);
                 const label = getHeaderFieldLabel(fk);
 
                 const renderValue = () => {
-                  if (fk === "website") {
-                    return (
-                      <a
-                        href={value}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-sm font-medium text-blue-600 hover:underline"
-                      >
-                        {value}
-                      </a>
-                    );
-                  } else if (fk === "mobilePhone" || fk === "phone") {
-                    return (
-                      <a
-                        href={`tel:+${value}`}
-                        className="text-sm font-medium text-blue-600 hover:underline"
-                      >
-                        {value}
-                      </a>
-                    );
-                  } else {
-                    return <div className="text-sm font-medium text-gray-900">{value}</div>;
-                  }
+                  // if (fk === "website") {
+                  //   return (
+                  //     <a
+                  //       href={value}
+                  //       target="_blank"
+                  //       rel="noreferrer"
+                  //       className="text-sm font-medium text-blue-600 hover:underline"
+                  //     >
+                  //       {value}
+                  //     </a>
+                  //   );
+                  // } else if (fk === "mobilePhone" || fk === "phone") {
+                  //   return (
+                  //     <a
+                  //       href={`tel:+${value}`}
+                  //       className="text-sm font-medium text-blue-600 hover:underline"
+                  //     >
+                  //       {value}
+                  //     </a>
+                  //   );
+                  // } else {
+                  //   return <div className="text-sm font-medium text-gray-900">{value}</div>;
+                  // }
+                  const lookupType = (customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === fk)?.lookup_type || customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === fk)?.lookupType || "") as any;
+                  return lookupType && value ? (
+                    <RecordNameResolver
+                      id={String(value || "") || null}
+                      type={lookupType as any}
+                      clickable
+                      fallback={String(value || "") || ""}
+                    />
+                  ) :
+                  value.toLowerCase().includes("@") ? (
+                    <a href={`mailto:${value}`} className="text-sm font-medium text-blue-600 hover:underline">
+                      {value}
+                    </a>
+                  ) : value.toLowerCase().startsWith("http") || value.toLowerCase().startsWith("https") ? (
+                    <a href={value} className="text-sm font-medium text-blue-600 hover:underline">
+                      {value}
+                    </a>
+                  ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(value || "") ? (
+                    <a href={`tel:${value.replace(/\D/g, "")}`} className="text-sm font-medium text-blue-600 hover:underline">
+                      {value}
+                    </a>
+                  ) : value ? (
+                    <div className="text-sm font-medium text-gray-900">{value}</div>
+                  ) : (
+                    <div className="text-sm font-medium text-gray-900">-</div>
+                  );
                 };
 
                 return (
