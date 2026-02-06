@@ -456,27 +456,29 @@ export default function OrganizationList() {
           label: String(label || name),
           sortable: isBackendCol,
           filterType,
+          fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
+          lookupType: (f as any)?.lookup_type ?? (f as any)?.lookupType ?? "",
         };
       });
 
-    const customKeySet = new Set<string>();
-    (organizations || []).forEach((org: any) => {
-      const cf = org?.customFields || org?.custom_fields || {};
-      Object.keys(cf).forEach((k) => customKeySet.add(k));
-    });
-    const alreadyHaveCustom = new Set(
-      fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
-    );
-    const fromData = Array.from(customKeySet)
-      .filter((k) => !alreadyHaveCustom.has(k))
-      .map((k) => ({
-        key: `custom:${k}`,
-        label: humanize(k),
-        sortable: false,
-        filterType: "text" as const,
-      }));
+    // const customKeySet = new Set<string>();
+    // (organizations || []).forEach((org: any) => {
+    //   const cf = org?.customFields || org?.custom_fields || {};
+    //   Object.keys(cf).forEach((k) => customKeySet.add(k));
+    // });
+    // const alreadyHaveCustom = new Set(
+    //   fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
+    // );
+    // const fromData = Array.from(customKeySet)
+    //   .filter((k) => !alreadyHaveCustom.has(k))
+    //   .map((k) => ({
+    //     key: `custom:${k}`,
+    //     label: humanize(k),
+    //     sortable: false,
+    //     filterType: "text" as const,
+    //   }));
 
-    const merged = [...fromApi, ...fromData];
+    const merged = [...fromApi];
     const seen = new Set<string>();
     return merged.filter((x) => {
       if (seen.has(x.key)) return false;
@@ -1093,243 +1095,256 @@ export default function OrganizationList() {
 
       <div className="w-full max-w-full overflow-x-hidden">
         <div className="overflow-x-auto">
-        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                {/* Fixed checkbox header */}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                    checked={selectAll}
-                    onChange={handleSelectAll}
-                  />
-                </th>
-
-
-                {/* Fixed Actions header */}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ID
-                </th>
-                {/* Draggable Dynamic headers */}
-                <SortableContext
-                  items={columnFields}
-                  strategy={horizontalListSortingStrategy}
-                >
-                  {columnFields.map((key) => {
-                    const columnInfo = getColumnInfo(key);
-                    if (!columnInfo) return null;
-
-                    return (
-                      <SortableColumnHeader
-                        key={key}
-                        id={key}
-                        columnKey={key}
-                        label={getColumnLabel(key)}
-                        sortState={columnSorts[key] || null}
-                        filterValue={columnFilters[key] || null}
-                        onSort={() => handleColumnSort(key)}
-                        onFilterChange={(value) => handleColumnFilter(key, value)}
-                        filterType={columnInfo.filterType}
-                        filterOptions={
-                          key === "status" ? statusOptions : undefined
-                        }
-                      />
-                    );
-                  })}
-                </SortableContext>
-              </tr>
-            </thead>
-
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredAndSortedOrganizations.length > 0 ? (
-                filteredAndSortedOrganizations.map((org) => (
-                  <tr
-                    key={org.id}
-                    className="hover:bg-gray-50 cursor-pointer"
-                    onClick={() => handleViewOrganization(org.id)}
-                  >
-                    {/* Fixed checkbox */}
-                    <td
-                      className="px-6 py-4 whitespace-nowrap"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                        checked={selectedOrganizations.includes(org.id)}
-                        onChange={() => { }}
-                        onClick={(e) => handleSelectOrganization(org.id, e)}
-                      />
-                    </td>
-
-                    {/* Fixed Actions */}
-                    <td
-                      className="px-6 py-4 whitespace-nowrap text-sm"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <ActionDropdown
-                        label="Actions"
-                        options={[
-                          { label: "View", action: () => handleViewOrganization(org.id) },
-                          {
-                            label: "Delete",
-                            action: async () => {
-                              if (
-                                !window.confirm(
-                                  "Are you sure you want to delete this organization?"
-                                )
-                              )
-                                return;
-                              setIsDeleting(true);
-                              try {
-                                const response = await fetch(
-                                  `/api/organizations/${org.id}`,
-                                  { method: "DELETE" }
-                                );
-                                if (!response.ok)
-                                  throw new Error("Failed to delete organization");
-                                await fetchOrganizations();
-                              } catch (err) {
-                                setDeleteError(
-                                  err instanceof Error
-                                    ? err.message
-                                    : "An error occurred"
-                                );
-                              } finally {
-                                setIsDeleting(false);
-                              }
-                            },
-                          },
-                        ]}
-                      />
-                    </td>
-
-                    <td className="px-6 py-4 text-black whitespace-nowrap">O {org?.id}</td>
-
-                    {/* Dynamic cells */}
-                    {columnFields.map((key) => (
-                      <td
-                        key={key}
-                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                      >
-                        {getColumnLabel(key).toLowerCase() === "status" ? (
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
-                            {getColumnValue(org, key)}
-                          </span>
-                        ) : getColumnLabel(key).toLowerCase() === "parent organization" ? (
-                          <RecordNameResolver
-                            id={String(getColumnValue(org, key)) || null}
-                            type="organization"
-                            clickable
-                            fallback={String(getColumnValue(org, key)) || ""}
-                          />
-                        ) : getColumnLabel(key).toLowerCase() === "job" ? (
-                          <RecordNameResolver
-                            id={String(getColumnValue(org, key)) || null}
-                            type="job"
-                            clickable
-                            fallback={String(getColumnValue(org, key)) || ""}
-                          />
-                        ) : (
-                          <span>{getColumnValue(org, key)}</span>
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : (
+          <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
                 <tr>
-                  <td
-                    colSpan={3 + columnFields.length}
-                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
+                  {/* Fixed checkbox header */}
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                      checked={selectAll}
+                      onChange={handleSelectAll}
+                    />
+                  </th>
+
+
+                  {/* Fixed Actions header */}
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    ID
+                  </th>
+                  {/* Draggable Dynamic headers */}
+                  <SortableContext
+                    items={columnFields}
+                    strategy={horizontalListSortingStrategy}
                   >
-                    {searchTerm
-                      ? "No organizations found matching your search."
-                      : 'No organizations found. Click "Add Organization" to create one.'}
-                  </td>
+                    {columnFields.map((key) => {
+                      const columnInfo = getColumnInfo(key);
+                      if (!columnInfo) return null;
+
+                      return (
+                        <SortableColumnHeader
+                          key={key}
+                          id={key}
+                          columnKey={key}
+                          label={getColumnLabel(key)}
+                          sortState={columnSorts[key] || null}
+                          filterValue={columnFilters[key] || null}
+                          onSort={() => handleColumnSort(key)}
+                          onFilterChange={(value) => handleColumnFilter(key, value)}
+                          filterType={columnInfo.filterType}
+                          filterOptions={
+                            key === "status" ? statusOptions : undefined
+                          }
+                        />
+                      );
+                    })}
+                  </SortableContext>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </DndContext>
+              </thead>
+
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredAndSortedOrganizations.length > 0 ? (
+                  filteredAndSortedOrganizations.map((org) => (
+                    <tr
+                      key={org.id}
+                      className="hover:bg-gray-50 cursor-pointer"
+                      onClick={() => handleViewOrganization(org.id)}
+                    >
+                      {/* Fixed checkbox */}
+                      <td
+                        className="px-6 py-4 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                          checked={selectedOrganizations.includes(org.id)}
+                          onChange={() => { }}
+                          onClick={(e) => handleSelectOrganization(org.id, e)}
+                        />
+                      </td>
+
+                      {/* Fixed Actions */}
+                      <td
+                        className="px-6 py-4 whitespace-nowrap text-sm"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ActionDropdown
+                          label="Actions"
+                          options={[
+                            { label: "View", action: () => handleViewOrganization(org.id) },
+                            {
+                              label: "Delete",
+                              action: async () => {
+                                if (
+                                  !window.confirm(
+                                    "Are you sure you want to delete this organization?"
+                                  )
+                                )
+                                  return;
+                                setIsDeleting(true);
+                                try {
+                                  const response = await fetch(
+                                    `/api/organizations/${org.id}`,
+                                    { method: "DELETE" }
+                                  );
+                                  if (!response.ok)
+                                    throw new Error("Failed to delete organization");
+                                  await fetchOrganizations();
+                                } catch (err) {
+                                  setDeleteError(
+                                    err instanceof Error
+                                      ? err.message
+                                      : "An error occurred"
+                                  );
+                                } finally {
+                                  setIsDeleting(false);
+                                }
+                              },
+                            },
+                          ]}
+                        />
+                      </td>
+
+                      <td className="px-6 py-4 text-black whitespace-nowrap">O {org?.id}</td>
+                      {columnFields.map((key) => (
+                        <td
+                          key={key}
+                          className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                        >
+                          {getColumnLabel(key).toLowerCase() === "status" ? (
+                            <span
+                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
+                            >
+                              {getColumnValue(org, key)}
+                            </span>
+                          ) : (getColumnValue(org, key) || "").toLowerCase().includes("@") ? (
+                            <a
+                              href={`mailto:${getColumnValue(org, key)}`}
+                              className="text-blue-600 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {getColumnValue(org, key)}
+                            </a>
+                          ) : (getColumnValue(org, key) || "").toLowerCase().startsWith("http") || (getColumnValue(org, key) || "").toLowerCase().startsWith("https") ? (
+                            <a
+                              href={(getColumnValue(org, key) || "")}
+                              className="text-blue-600 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >{(getColumnValue(org, key) || "")}</a>
+                          ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
+                            <RecordNameResolver
+                              id={String(getColumnValue(org, key) || "") || null}
+                              type={(getColumnInfo(key) as any)?.lookupType || "organizations"}
+                              clickable
+                              fallback={String(getColumnValue(org, key) || "") || ""}
+                            />
+                          ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(org, key) || "") ? (
+                            <a
+                              href={`tel:${(getColumnValue(org, key) || "").replace(/\D/g, "")}`}
+                              className="text-blue-600 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >{getColumnValue(org, key)}</a>
+                          ) : (
+                            getColumnValue(org, key)
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={3 + columnFields.length}
+                      className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
+                    >
+                      {searchTerm
+                        ? "No organizations found matching your search."
+                        : 'No organizations found. Click "Add Organization" to create one.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </DndContext>
         </div>
 
-      {/* Pagination */}
-      <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
-        <div className="flex-1 flex justify-between sm:hidden">
-          <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Previous
-          </button>
-          <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Next
-          </button>
-        </div>
-        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm text-gray-700">
-              Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">
-                {filteredAndSortedOrganizations.length}
-              </span>{" "}
-              of{" "}
-              <span className="font-medium">
-                {filteredAndSortedOrganizations.length}
-              </span>{" "}
-              results
-            </p>
+        {/* Pagination */}
+        <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
+          <div className="flex-1 flex justify-between sm:hidden">
+            <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+              Previous
+            </button>
+            <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+              Next
+            </button>
           </div>
-          {filteredAndSortedOrganizations.length > 0 && (
+          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
             <div>
-              <nav
-                className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
-                aria-label="Pagination"
-              >
-                <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Previous</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-                <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
-                  1
-                </button>
-                <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Next</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-              </nav>
+              <p className="text-sm text-gray-700">
+                Showing <span className="font-medium">1</span> to{" "}
+                <span className="font-medium">
+                  {filteredAndSortedOrganizations.length}
+                </span>{" "}
+                of{" "}
+                <span className="font-medium">
+                  {filteredAndSortedOrganizations.length}
+                </span>{" "}
+                results
+              </p>
             </div>
-          )}
+            {filteredAndSortedOrganizations.length > 0 && (
+              <div>
+                <nav
+                  className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
+                  aria-label="Pagination"
+                >
+                  <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                    <span className="sr-only">Previous</span>
+                    <svg
+                      className="h-5 w-5"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                  <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    1
+                  </button>
+                  <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                    <span className="sr-only">Next</span>
+                    <svg
+                      className="h-5 w-5"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                </nav>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
       </div>
 
       {/* Column Customization Modal */}
@@ -1482,7 +1497,7 @@ export default function OrganizationList() {
                 <FiX size={20} />
               </button>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1496,16 +1511,15 @@ export default function OrganizationList() {
                     if (e.target.value.trim()) setFavoriteNameError(null);
                   }}
                   placeholder="e.g. Active Organizations"
-                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${
-                    favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
-                  }`}
+                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
+                    }`}
                   autoFocus
                 />
                 {favoriteNameError && (
                   <p className="text-xs text-red-500 mt-1">{favoriteNameError}</p>
                 )}
               </div>
-              
+
               <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-800 space-y-1">
                 <p className="font-medium flex items-center gap-2">
                   <FiStar className="text-blue-600" size={14} />
@@ -1523,7 +1537,7 @@ export default function OrganizationList() {
                 </ul>
               </div>
             </div>
-            
+
             <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
               <button
                 onClick={() => setShowSaveFavoriteModal(false)}

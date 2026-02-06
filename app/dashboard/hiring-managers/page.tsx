@@ -7,6 +7,7 @@ import Image from 'next/image';
 import LoadingScreen from '@/components/LoadingScreen';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import RecordNameResolver from "@/components/RecordNameResolver";
 import {
   SortableContext,
   useSortable,
@@ -418,7 +419,13 @@ export default function HiringManagerList() {
           data = JSON.parse(raw);
         } catch { }
 
-        const fields = normalizeFields(data);
+        const fields =
+          data.customFields ||
+          data.fields ||
+          data.data?.fields ||
+          data.hiringManagerFields ||
+          data.data ||
+          [];
 
         console.log("LIST field-management status:", res.status);
         console.log("LIST fields count:", fields.length);
@@ -448,11 +455,15 @@ export default function HiringManagerList() {
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => {
         const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
+        const fieldType = (f as any)?.field_type;
+        const lookupType = (f as any)?.lookup_type || "";
         const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanize(name) : "");
         const isBackendCol = name && HM_BACKEND_COLUMN_KEYS.includes(name);
         let filterType: "text" | "select" | "number" = "text";
         if (name === "status") filterType = "select";
         return {
+          fieldType,
+          lookupType,
           key: isBackendCol ? name : `custom:${label || name}`,
           label: String(label || name),
           sortable: isBackendCol,
@@ -460,24 +471,29 @@ export default function HiringManagerList() {
         };
       });
 
-    const customKeySet = new Set<string>();
-    (hiringManagers || []).forEach((hm: any) => {
-      const cf = hm?.customFields || hm?.custom_fields || {};
-      Object.keys(cf).forEach((k) => customKeySet.add(k));
-    });
-    const alreadyHaveCustom = new Set(
-      fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
-    );
-    const fromList = Array.from(customKeySet)
-      .filter((k) => !alreadyHaveCustom.has(k))
-      .map((k) => ({
-        key: `custom:${k}`,
-        label: humanize(k),
-        sortable: false,
-        filterType: "text" as const,
-      }));
+      // console.log("availableFields", availableFields);
 
-    const merged = [...fromApi, ...fromList];
+    // console.log("fromApi", fromApi);
+
+    // const customKeySet = new Set<string>();
+    // (hiringManagers || []).forEach((hm: any) => {
+    //   const cf = hm?.customFields || hm?.custom_fields || {};
+    //   Object.keys(cf).forEach((k) => customKeySet.add(k));
+    // });
+    // const alreadyHaveCustom = new Set(
+    //   fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
+    // );
+    // const fromList = Array.from(customKeySet)
+    //   .filter((k) => !alreadyHaveCustom.has(k))
+    //   .map((k) => ({
+    //     key: `custom:${k}`,
+    //     label: humanize(k),
+    //     sortable: false,
+    //     filterType: "text" as const,
+    //   }));
+
+    const merged = [...fromApi];
+    console.log("merged", merged);
     const seen = new Set<string>();
     return merged.filter((x) => {
       if (seen.has(x.key)) return false;
@@ -496,39 +512,40 @@ export default function HiringManagerList() {
     if (key.startsWith("custom:")) {
       const rawKey = key.replace("custom:", "");
       const cf = hm?.customFields || hm?.custom_fields || {};
-      console.log("customFields", cf);
+      // console.log("customFields", cf);
+      // console.log("getColumnInfo", getColumnInfo(key));
       const val = cf?.[rawKey];
       return val === undefined || val === null || val === "" ? "—" : String(val);
     }
 
     // ✅ standard
-    switch (key) {
-      case "full_name":
-        return hm.full_name || `${hm.last_name}, ${hm.first_name}`;
-      case "status":
-        return hm.status || "—";
-      case "title":
-        return hm.title || "—";
-      case "organization_name": {
-        const orgId = hm.organization_id != null && hm.organization_id !== "" ? String(hm.organization_id) : null;
-        const orgName = hm.organization_name_from_org || hm.organization_name || null;
-        console.log("organization_name", orgId, orgName);
-        if (orgId && orgName) return `${orgId} - ${orgName}`;
-        if (orgName) return orgName;
-        if (orgId) return orgId;
-        return "—";
-      }
-      case "email":
-        return hm.email || "—";
-      case "phone":
-        return hm.phone || "—";
-      case "created_by_name":
-        return hm.created_by_name || "—";
-      case "created_at":
-        return formatDate(hm.created_at);
-      default:
-        return "—";
-    }
+    // switch (key) {
+    //   case "full_name":
+    //     return hm.full_name || `${hm.last_name}, ${hm.first_name}`;
+    //   case "status":
+    //     return hm.status || "—";
+    //   case "title":
+    //     return hm.title || "—";
+    //   case "organization_name": {
+    //     const orgId = hm.organization_id != null && hm.organization_id !== "" ? String(hm.organization_id) : null;
+    //     const orgName = hm.organization_name_from_org || hm.organization_name || null;
+    //     console.log("organization_name", orgId, orgName);
+    //     if (orgId && orgName) return `${orgId} - ${orgName}`;
+    //     if (orgName) return orgName;
+    //     if (orgId) return orgId;
+    //     return "—";
+    //   }
+    //   case "email":
+    //     return hm.email || "—";
+    //   case "phone":
+    //     return hm.phone || "—";
+    //   case "created_by_name":
+    //     return hm.created_by_name || "—";
+    //   case "created_at":
+    //     return formatDate(hm.created_at);
+    //   default:
+    //     return "—";
+    // }
   };
 
   // Fetch hiring managers data when component mounts
@@ -1116,7 +1133,7 @@ export default function HiringManagerList() {
                         key={key}
                         className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
                       >
-                        {key === "status" ? (
+                        {getColumnLabel(key).toLowerCase() === "status" ? (
                           <span
                             className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
                               hm.status
@@ -1124,14 +1141,39 @@ export default function HiringManagerList() {
                           >
                             {getColumnValue(hm, key)}
                           </span>
-                        ) : key === "email" ? (
+                        ) : (getColumnValue(hm, key) || "").toLowerCase().includes("@") ? (
                           <a
-                            href={`mailto:${hm.email}`}
+                            href={`mailto:${getColumnValue(hm, key)}`}
                             className="text-blue-600 hover:underline"
                             onClick={(e) => e.stopPropagation()}
                           >
                             {getColumnValue(hm, key)}
                           </a>
+                        ) : getColumnLabel(key).toLowerCase().includes("phone") ? (
+                          <a
+                            href={`tel:${(getColumnValue(hm, key) || "").replace(/\D/g, "")}`}
+                            className="text-blue-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >{getColumnValue(hm, key)}</a>
+                        ) : (getColumnValue(hm, key) || "").toLowerCase().startsWith("http") || (getColumnValue(hm, key) || "").toLowerCase().startsWith("https") ? (
+                          <a
+                            href={(getColumnValue(hm, key) || "")}
+                            className="text-blue-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >{(getColumnValue(hm, key) || "")}</a>
+                        ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
+                          <RecordNameResolver
+                            id={String(getColumnValue(hm, key) || "") || null}
+                            type={(getColumnInfo(key) as any)?.lookupType || "organizations"}
+                            clickable
+                            fallback={String(getColumnValue(hm, key) || "") || ""}
+                          />
+                        ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(hm, key) || "") ? (
+                          <a
+                            href={`tel:${(getColumnValue(hm, key) || "").replace(/\D/g, "")}`}
+                            className="text-blue-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >{getColumnValue(hm, key)}</a>
                         ) : (
                           getColumnValue(hm, key)
                         )}
@@ -1372,7 +1414,7 @@ export default function HiringManagerList() {
                 <FiX size={20} />
               </button>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1386,16 +1428,15 @@ export default function HiringManagerList() {
                     if (e.target.value.trim()) setFavoriteNameError(null);
                   }}
                   placeholder="e.g. Active Hiring Managers"
-                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${
-                    favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
-                  }`}
+                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
+                    }`}
                   autoFocus
                 />
                 {favoriteNameError && (
                   <p className="text-xs text-red-500 mt-1">{favoriteNameError}</p>
                 )}
               </div>
-              
+
               <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-800 space-y-1">
                 <p className="font-medium flex items-center gap-2">
                   <FiStar className="text-blue-600" size={14} />
@@ -1413,7 +1454,7 @@ export default function HiringManagerList() {
                 </ul>
               </div>
             </div>
-            
+
             <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
               <button
                 onClick={() => setShowSaveFavoriteModal(false)}

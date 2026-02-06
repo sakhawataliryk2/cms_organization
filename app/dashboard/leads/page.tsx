@@ -17,6 +17,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowDown, FiArrowUp, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
+import RecordNameResolver from "@/components/RecordNameResolver";
 
 interface Lead {
   id: string;
@@ -235,6 +236,49 @@ function SortableColumnHeader({
 export default function LeadList() {
   const router = useRouter();
 
+  const FAVORITES_STORAGE_KEY = "leadsFavorites";
+
+  // =====================
+  // TABLE COLUMNS (Overview List) – driven by admin field-management only
+  // =====================
+  const LEAD_BACKEND_COLUMN_KEYS = [
+    "name",
+    "status",
+    "email",
+    "phone",
+    "title",
+    "organization",
+    "owner",
+    "created_at",
+    "created_by_name",
+  ];
+
+  const {
+    columnFields,
+    setColumnFields,
+    showHeaderFieldModal: showColumnModal,
+    setShowHeaderFieldModal: setShowColumnModal,
+    saveHeaderConfig: saveColumnConfig,
+    isSaving: isSavingColumns,
+  } = useHeaderConfig({
+    entityType: "LEAD",
+    defaultFields: [], // populated from columnsCatalog when ready
+    configType: "columns",
+  });
+
+  // Save column order to localStorage whenever it changes
+  useEffect(() => {
+    if (columnFields.length > 0) {
+      localStorage.setItem("leadsColumnOrder", JSON.stringify(columnFields));
+    }
+  }, [columnFields]);
+
+  // Per-column sorting state
+  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
+
+  // Per-column filtering state
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+
   const [searchTerm, setSearchTerm] = useState("");
   const [leads, setLeads] = useState<Lead[]>([]);
   const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
@@ -246,11 +290,63 @@ export default function LeadList() {
 
   // Favorites State
   const [favorites, setFavorites] = useState<LeadsFavorite[]>([]);
-  const [selectedFavoriteId, setSelectedFavoriteId] = useState<string | null>(null);
+  const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
+  const favoritesMenuRef = useRef<HTMLDivElement>(null);
+  const favoritesMenuMobileRef = useRef<HTMLDivElement>(null);
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
   const [favoriteName, setFavoriteName] = useState("");
   const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
+
+  // =====================
+  // AVAILABLE FIELDS (from Modify Page)
+  // =====================
+  const [availableFields, setAvailableFields] = useState<any[]>([]);
+  const [isLoadingFields, setIsLoadingFields] = useState(false);
+
+  useEffect(() => {
+    const fetchAvailableFields = async () => {
+      setIsLoadingFields(true);
+      try {
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        );
+
+        const res = await fetch("/api/admin/field-management/leads", {
+          method: "GET",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          credentials: "include",
+        });
+
+        const raw = await res.text();
+        let data: any = {};
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          data = {};
+        }
+
+        const fields =
+          data.fields ||
+          data.data?.fields ||
+          data.customFields ||
+          data.data?.customFields ||
+          data.leadFields ||
+          data.data ||
+          [];
+
+        setAvailableFields(Array.isArray(fields) ? fields : []);
+      } catch (e) {
+        console.error("Error fetching available fields:", e);
+        setAvailableFields([]);
+      } finally {
+        setIsLoadingFields(false);
+      }
+    };
+
+    fetchAvailableFields();
+  }, []);
 
   // Load favorites from local storage
   useEffect(() => {
@@ -267,149 +363,168 @@ export default function LeadList() {
     }
   }, []);
 
-const DEFAULT_LEAD_COLUMNS: string[] = [
-  "name",
-  "status",
-  "email",
-  "phone",
-  "title",
-  "organization",
-  "owner",
-];
+  // Columns Catalog
+  const humanize = (s: string) =>
+    s
+      .replace(/[_\-]+/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .trim();
 
-// Column Catalog (field mappings like)
+  const columnsCatalog = useMemo(() => {
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => {
+        const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
+        const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanize(name) : "");
+        const isBackendCol = name && LEAD_BACKEND_COLUMN_KEYS.includes(name);
+        let filterType: "text" | "select" | "number" = "text";
+        if (name === "status") filterType = "select";
+        return {
+          key: isBackendCol ? name : `custom:${label || name}`,
+          label: String(label || name),
+          sortable: isBackendCol,
+          filterType,
+          fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
+          lookupType: (f as any)?.lookup_type ?? (f as any)?.lookupType ?? "",
+        };
+      });
 
-const humanize = (s: string) =>
-  s
-    .replace(/[_\-]+/g, " ")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .replace(/\b\w/g, (c) => c.toUpperCase())
-    .trim();
+    // const customKeySet = new Set<string>();
+    // (leads || []).forEach((lead: any) => {
+    //   const cf = lead?.customFields || lead?.custom_fields || {};
+    //   Object.keys(cf).forEach((k) => customKeySet.add(k));
+    // });
+    // const alreadyHaveCustom = new Set(
+    //   fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
+    // );
+    // const fromData = Array.from(customKeySet)
+    //   .filter((k) => !alreadyHaveCustom.has(k))
+    //   .map((k) => ({
+    //     key: `custom:${k}`,
+    //     label: humanize(k),
+    //     sortable: false,
+    //     filterType: "text" as const,
+    //   }));
 
-const columnsCatalog = useMemo(() => {
+    const merged = [...fromApi];
+    const seen = new Set<string>();
+    return merged.filter((x) => {
+      if (seen.has(x.key)) return false;
+      seen.add(x.key);
+      return true;
+    });
+  }, [leads, availableFields]);
 
-  const customKeySet = new Set<string>();
-  (leads || []).forEach((l: any) => {
-    const cf = l?.customFields || l?.custom_fields || {};
-    Object.keys(cf).forEach((k) => customKeySet.add(k));
-  });
+  // When catalog is ready, default columnFields to all catalog keys if empty (or validate saved)
+  useEffect(() => {
+    const catalogKeys = columnsCatalog.map((c) => c.key);
+    if (catalogKeys.length === 0) return;
+    const catalogSet = new Set(catalogKeys);
+    const savedOrder = localStorage.getItem("leadsColumnOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validOrder = parsed.filter((k: string) => catalogSet.has(k));
+          if (validOrder.length > 0) {
+            setColumnFields(validOrder);
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
+  }, [columnsCatalog]);
 
-  const custom = Array.from(customKeySet).map((k) => ({
-    key: `custom:${k}`,
-    label: humanize(k),
-    sortable: false,
-    filterType: "text" as const,
-  }));
+  const getColumnLabel = (key: string) =>
+    columnsCatalog.find((c) => c.key === key)?.label || key;
 
-  const merged = [...custom];
-  const seen = new Set<string>();
-  return merged.filter((x) => {
-    if (seen.has(x.key)) return false;
-    seen.add(x.key);
-    return true;
-  });
-}, [leads]);
+  const getColumnInfo = (key: string) =>
+    columnsCatalog.find((c) => c.key === key);
 
-const getColumnInfo = (key: string) =>
-  columnsCatalog.find((c) => c.key === key);
+  const getColumnValue = (lead: any, key: string) => {
+    if (key.startsWith("custom:")) {
+      const rawKey = key.replace("custom:", "");
+      const cf = lead?.customFields || lead?.custom_fields || {};
+      const val = cf?.[rawKey];
+      return val === undefined || val === null || val === ""
+        ? "N/A"
+        : String(val);
+    }
 
-const getColumnLabel = (key: string) =>
-  columnsCatalog.find((c) => c.key === key)?.label ?? key;
+    const fullName =
+      lead.full_name ||
+      `${lead.last_name || ""}, ${lead.first_name || ""}`.trim();
 
-const getColumnValue = (lead: any, key: string) => {
-  if (key.startsWith("custom:")) {
-    const rawKey = key.replace("custom:", "");
-    const cf = lead?.customFields || lead?.custom_fields || {};
-    const val = cf?.[rawKey];
-    return val === undefined || val === null || val === ""
-      ? "N/A"
-      : String(val);
-  }
-
-  const fullName =
-    lead.full_name ||
-    `${lead.last_name || ""}, ${lead.first_name || ""}`.trim();
-
-  switch (key) {
-    case "id":
-      return lead.id || "N/A";
-    case "name":
-      return fullName || "N/A";
-    case "status":
-      return lead.status || "N/A";
-    case "email":
-      return lead.email || "N/A";
-    case "phone":
-      return lead.phone || "N/A";
-    case "title":
-      return lead.title || "N/A";
-    case "organization":
-      return lead.organization_name_from_org || lead.organization_id || "N/A";
-    case "owner":
-      return lead.owner || "N/A";
-    default:
-      return "—";
-  }
-};
-
-const {
-  columnFields, 
-  setColumnFields, 
-  showHeaderFieldModal: showColumnModal,
-  setShowHeaderFieldModal: setShowColumnModal,
-  saveHeaderConfig: saveColumnConfig,
-  isSaving: isSavingColumns,
-} = useHeaderConfig({
-  entityType: "LEAD",
-  configType: "columns",
-  defaultFields: DEFAULT_LEAD_COLUMNS,
-});
-
-  // Per-column sorting state
-  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
-
-  // Per-column filtering state
-  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
-
-  // Favorites Logic
-  const persistFavorites = (updated: LeadsFavorite[]) => {
-    setFavorites(updated);
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updated));
+    switch (key) {
+      case "name":
+        return fullName || "N/A";
+      case "status":
+        return lead.status || "N/A";
+      case "email":
+        return lead.email || "N/A";
+      case "phone":
+        return lead.phone || "N/A";
+      case "title":
+        return lead.title || "N/A";
+      case "organization":
+        return lead.organization_name_from_org || lead.organization_id || "N/A";
+      case "owner":
+        return lead.owner || "N/A";
+      case "created_at":
+        return lead.created_at ? new Date(lead.created_at).toLocaleDateString() : "N/A";
+      case "created_by_name":
+        return lead.created_by_name || "N/A";
+      default:
+        return "N/A";
+    }
   };
 
-  const applyFavorite = (fav: LeadsFavorite) => {
-    // 1. Validate columns against current catalog
-    const catalogKeys = new Set(columnsCatalog.map((c) => c.key));
-    const validColumnFields = (fav.columnFields || []).filter((k) =>
-      catalogKeys.has(k)
-    );
+  useEffect(() => {
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (!favoritesMenuOpen) return;
+      const target = e.target as Node;
+      const inDesktop = favoritesMenuRef.current?.contains(target);
+      const inMobile = favoritesMenuMobileRef.current?.contains(target);
+      if (!inDesktop && !inMobile) setFavoritesMenuOpen(false);
+    };
 
-    // 2. Restore filters (only valid ones)
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [favoritesMenuOpen]);
+
+  const applyFavorite = (fav: LeadsFavorite) => {
+    const catalogKeys = new Set(columnsCatalog.map((c) => c.key));
+    const validColumnFields = (fav.columnFields || []).filter((k) => catalogKeys.has(k));
+
     const nextFilters: Record<string, ColumnFilterState> = {};
     for (const [k, v] of Object.entries(fav.columnFilters || {})) {
       if (!catalogKeys.has(k)) continue;
-      if (!v || !v.trim()) continue;
+      if (v === null || v === undefined) continue;
+      if (typeof v === "string" && v.trim() === "") continue;
       nextFilters[k] = v;
     }
 
-    // 3. Restore sorts (only valid ones)
     const nextSorts: Record<string, ColumnSortState> = {};
     for (const [k, v] of Object.entries(fav.columnSorts || {})) {
       if (!catalogKeys.has(k)) continue;
-      if (v !== "asc" && v !== "desc") continue;
+      if (v !== "asc" && v !== "desc" && v !== null) continue;
+      if (v === null) continue;
       nextSorts[k] = v;
     }
 
-    // 4. Apply everything
     setSearchTerm(fav.searchTerm || "");
     setColumnFilters(nextFilters);
     setColumnSorts(nextSorts);
-    if (validColumnFields.length > 0) {
-      setColumnFields(validColumnFields);
-    }
+    if (validColumnFields.length > 0) setColumnFields(validColumnFields);
+  };
 
-    setSelectedFavoriteId(fav.id);
-    setFavoritesMenuOpen(false);
+  const persistFavorites = (next: LeadsFavorite[]) => {
+    setFavorites(next);
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
   };
 
   const handleOpenSaveFavoriteModal = () => {
@@ -442,48 +557,13 @@ const {
     setShowSaveFavoriteModal(false);
   };
 
-  const handleDeleteFavorite = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const updated = favorites.filter((f) => f.id !== id);
-    persistFavorites(updated);
-    if (selectedFavoriteId === id) {
-      setSelectedFavoriteId(null);
-    }
-  };
-
   const handleClearAllFilters = () => {
     setSearchTerm("");
     setColumnFilters({});
     setColumnSorts({});
-    setSelectedFavoriteId(null);
+    setSelectedFavoriteId("");
   };
 
-  // Load column order from localStorage on mount
-  useEffect(() => {
-    const savedOrder = localStorage.getItem("leadsColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const validOrder = parsed.filter((key) =>
-            [...DEFAULT_LEAD_COLUMNS, ...columnFields].includes(key)
-          );
-          if (validOrder.length > 0) {
-            setColumnFields(validOrder);
-          }
-        }
-      } catch (e) {
-        console.error("Error loading column order:", e);
-      }
-    }
-  }, []);
-
-  // Save column order to localStorage whenever it changes
-  useEffect(() => {
-    if (columnFields.length > 0) {
-      localStorage.setItem("leadsColumnOrder", JSON.stringify(columnFields));
-    }
-  }, [columnFields]);
 
 
   // Fetch leads on component mount
@@ -523,18 +603,17 @@ const {
     // Apply global search
     if (searchTerm.trim() !== "") {
       const term = searchTerm.toLowerCase();
-      result = result.filter(
-        (lead) =>
-          `${lead.first_name} ${lead.last_name}`.toLowerCase().includes(term) ||
-          (lead.full_name && lead.full_name.toLowerCase().includes(term)) ||
-          (lead.email && lead.email.toLowerCase().includes(term)) ||
-          (lead.phone && lead.phone.toLowerCase().includes(term)) ||
-          (lead.status && lead.status.toLowerCase().includes(term)) ||
-          (lead.title && lead.title.toLowerCase().includes(term)) ||
-          (lead.organization_name_from_org &&
-            lead.organization_name_from_org.toLowerCase().includes(term)) ||
-          (lead.owner && lead.owner.toLowerCase().includes(term)) ||
-          lead.id?.toString().toLowerCase().includes(term)
+      result = result.filter((lead) =>
+        (lead.first_name || "").toLowerCase().includes(term) ||
+        (lead.last_name || "").toLowerCase().includes(term) ||
+        (lead.full_name || "").toLowerCase().includes(term) ||
+        String(lead.id || "").toLowerCase().includes(term) ||
+        (lead.email || "").toLowerCase().includes(term) ||
+        (lead.phone || "").toLowerCase().includes(term) ||
+        (lead.status || "").toLowerCase().includes(term) ||
+        (lead.title || "").toLowerCase().includes(term) ||
+        (lead.organization_name_from_org || "").toLowerCase().includes(term) ||
+        (lead.owner || "").toLowerCase().includes(term)
       );
     }
 
@@ -780,8 +859,8 @@ const {
               Delete Selected ({selectedLeads.length})
             </button>
           )}
-          {/* Favorites Dropdown */}
-          <div className="relative">
+          {/* Favorites Dropdown - ref on wrapper so click-outside works for both desktop and mobile */}
+          <div ref={favoritesMenuRef} className="relative">
             <button
               onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)}
               className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
@@ -819,13 +898,24 @@ const {
                         className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${
                           selectedFavoriteId === fav.id ? "bg-blue-50" : ""
                         }`}
-                        onClick={() => applyFavorite(fav)}
+                        onClick={() => {
+                          setSelectedFavoriteId(fav.id);
+                          applyFavorite(fav);
+                          setFavoritesMenuOpen(false);
+                        }}
                       >
                         <span className="text-sm text-gray-700 truncate flex-1">
                           {fav.name}
                         </span>
                         <button
-                          onClick={(e) => handleDeleteFavorite(fav.id, e)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const updated = favorites.filter((f) => f.id !== fav.id);
+                            persistFavorites(updated);
+                            if (selectedFavoriteId === fav.id) {
+                              setSelectedFavoriteId("");
+                            }
+                          }}
                           className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
                           title="Delete favorite"
                         >
@@ -863,6 +953,95 @@ const {
               />
             </svg>
             Add Lead
+          </button>
+        </div>
+
+        {/* Mobile: Favorites - full width */}
+        <div className="w-full md:hidden" ref={favoritesMenuMobileRef}>
+          <div className="relative">
+            <button
+              onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)}
+              className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-between gap-2 bg-white"
+            >
+              <span className="flex items-center gap-2">
+                <FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} />
+                <span className="truncate">
+                  {selectedFavoriteId
+                    ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites"
+                    : "Favorites"}
+                </span>
+              </span>
+              <FiChevronDown className="shrink-0" />
+            </button>
+            {favoritesMenuOpen && (
+              <div className="absolute left-0 right-0 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                <div className="p-2 border-b border-gray-100">
+                  <button
+                    onClick={handleOpenSaveFavoriteModal}
+                    className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors font-medium flex items-center gap-2"
+                  >
+                    <FiStar className="text-blue-500" />
+                    Save Current Search
+                  </button>
+                </div>
+                <div className="max-h-60 overflow-y-auto py-1">
+                  {favorites.length === 0 ? (
+                    <p className="text-xs text-gray-400 text-center py-4">No saved favorites yet</p>
+                  ) : (
+                    favorites.map((fav) => (
+                      <div
+                        key={fav.id}
+                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""}`}
+                        onClick={() => {
+                          setSelectedFavoriteId(fav.id);
+                          applyFavorite(fav);
+                          setFavoritesMenuOpen(false);
+                        }}
+                      >
+                        <span className="text-sm text-gray-700 truncate flex-1">{fav.name}</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const updated = favorites.filter((f) => f.id !== fav.id);
+                            persistFavorites(updated);
+                            if (selectedFavoriteId === fav.id) setSelectedFavoriteId("");
+                          }}
+                          className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                          title="Delete favorite"
+                        >
+                          <FiX size={14} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile: Delete Selected - full width (when any selected) */}
+        {selectedLeads.length > 0 && (
+          <div className="w-full md:hidden">
+            <button
+              onClick={deleteSelectedLeads}
+              className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center justify-center gap-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+              </svg>
+              Delete Selected ({selectedLeads.length})
+            </button>
+          </div>
+        )}
+
+        {/* Mobile: Columns - full width */}
+        <div className="w-full md:hidden">
+          <button
+            onClick={() => setShowColumnModal(true)}
+            className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center"
+          >
+            Columns
           </button>
         </div>
       </div>
@@ -919,50 +1098,36 @@ const {
         </div>
       </div>
 
-      {/* Leads Table */}
-      <div className="overflow-x-auto">
-        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                {/* Fixed checkbox header */}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                    checked={selectAll}
-                    onChange={handleSelectAll}
-                  />
-                </th>
+      <div className="w-full max-w-full overflow-x-hidden">
+        <div className="overflow-x-auto">
+          <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  {/* Fixed checkbox header */}
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                      checked={selectAll}
+                      onChange={handleSelectAll}
+                    />
+                  </th>
 
-                {/* Fixed Actions header (LOCKED) */}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
+                  {/* Fixed Actions header */}
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
 
-                {/* Fixed ID header */}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200">
-                  <button
-                    onClick={() => handleColumnSort("id")}
-                    className="hover:text-gray-700 flex items-center gap-2"
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    ID
+                  </th>
+                  {/* Draggable Dynamic headers */}
+                  <SortableContext
+                    items={columnFields}
+                    strategy={horizontalListSortingStrategy}
                   >
-                    <span>ID</span>
-                    {columnSorts["id"] === "asc" ? (
-                      <FiArrowUp size={14} />
-                    ) : columnSorts["id"] === "desc" ? (
-                      <FiArrowDown size={14} />
-                    ) : null}
-                  </button>
-                </th>
-
-                {/* Dynamic headers */}
-                <SortableContext
-                  items={columnFields.filter((key) => key !== "id" && key !== "custom_fields")}
-                  strategy={horizontalListSortingStrategy}
-                >
-                  {columnFields
-                    .filter((key) => key !== "id" && key !== "custom_fields")
-                    .map((key) => {
+                    {columnFields.map((key) => {
                       const columnInfo = getColumnInfo(key);
                       if (!columnInfo) return null;
 
@@ -1051,35 +1216,47 @@ const {
                   />
                 </td>
 
-                {/* Fixed ID */}
-                <td className="px-6 py-4 whitespace-nowrap">
-                  <div className="text-sm font-medium text-gray-900">
-                    L {lead.id}
-                  </div>
-                </td>
-
-                {/* Dynamic cells */}
-                {columnFields
-                  .filter((key) => key !== "id" && key !== "custom_fields")
-                  .map((key) => (
+                <td className="px-6 py-4 text-black whitespace-nowrap">L {lead?.id}</td>
+                {columnFields.map((key) => (
                     <td
                       key={key}
                       className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
                     >
-                      {key === "status" ? (
-                        <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">
+                      {getColumnLabel(key).toLowerCase() === "status" ? (
+                        <span
+                          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
+                        >
                           {getColumnValue(lead, key)}
                         </span>
-                      ) : key === "email" ? (
+                      ) : (getColumnValue(lead, key) || "").toLowerCase().includes("@") ? (
                         <a
-                          href={`mailto:${lead.email}`}
+                          href={`mailto:${getColumnValue(lead, key)}`}
                           className="text-blue-600 hover:underline"
                           onClick={(e) => e.stopPropagation()}
                         >
                           {getColumnValue(lead, key)}
                         </a>
+                      ) : (getColumnValue(lead, key) || "").toLowerCase().startsWith("http") || (getColumnValue(lead, key) || "").toLowerCase().startsWith("https") ? (
+                        <a
+                          href={(getColumnValue(lead, key) || "")}
+                          className="text-blue-600 hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >{(getColumnValue(lead, key) || "")}</a>
+                      ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
+                        <RecordNameResolver
+                          id={String(getColumnValue(lead, key) || "") || null}
+                          type={(getColumnInfo(key) as any)?.lookupType || "leads"}
+                          clickable
+                          fallback={String(getColumnValue(lead, key) || "") || ""}
+                        />
+                      ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(lead, key) || "") ? (
+                        <a
+                          href={`tel:${(getColumnValue(lead, key) || "").replace(/\D/g, "")}`}
+                          className="text-blue-600 hover:underline"
+                          onClick={(e) => e.stopPropagation()}
+                        >{getColumnValue(lead, key)}</a>
                       ) : (
-                        <span>{getColumnValue(lead, key)}</span>
+                        getColumnValue(lead, key)
                       )}
                     </td>
                   ))}
@@ -1088,7 +1265,7 @@ const {
             ) : (
               <tr>
                 <td
-                  colSpan={3 + columnFields.filter((key) => key !== "id" && key !== "custom_fields").length}
+                  colSpan={3 + columnFields.length}
                   className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                 >
                   {searchTerm
@@ -1100,10 +1277,10 @@ const {
           </tbody>
         </table>
         </DndContext>
-      </div>
+        </div>
 
-      {/* Pagination */}
-      <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+        {/* Pagination */}
+        <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
         <div className="flex-1 flex justify-between sm:hidden">
           <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
             Previous
@@ -1166,6 +1343,8 @@ const {
           )}
         </div>
       </div>
+      </div>
+
       {showColumnModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
@@ -1283,7 +1462,7 @@ const {
                 <div className="flex justify-end gap-2 mt-4">
                   <button
                     className="px-4 py-2 border rounded hover:bg-gray-50"
-                    onClick={() => setColumnFields(DEFAULT_LEAD_COLUMNS)}
+                    onClick={() => setColumnFields(columnsCatalog.map((c) => c.key))}
                   >
                     Reset
                   </button>

@@ -17,6 +17,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
+import RecordNameResolver from "@/components/RecordNameResolver";
 
 interface Job {
   id: string;
@@ -151,7 +152,7 @@ function SortableColumnHeader({
             <FiArrowDown size={14} />
           )}
         </button>
-        
+
         {/* Filter Toggle */}
         <button
           ref={filterToggleRef}
@@ -226,33 +227,24 @@ function SortableColumnHeader({
   );
 }
 
-const JOB_DEFAULT_COLUMNS = [
-  "id",
-  "job_title",
-  "job_type",
-  "category",
-  "organization_name",
-  "worksite_location",
-  "status",
-  "created_at",
-  "created_by_name",
-] as const;
-
 export default function JobList() {
   const router = useRouter();
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
-  const [selectAll, setSelectAll] = useState(false);
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const FAVORITES_STORAGE_KEY = "jobsFavorites";
 
-  // Per-column sorting state
-  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
-
-  // Per-column filtering state
-  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+  // =====================
+  // TABLE COLUMNS (Overview List) – driven by admin field-management only
+  // =====================
+  const JOB_BACKEND_COLUMN_KEYS = [
+    "job_title",
+    "job_type",
+    "category",
+    "organization_name",
+    "worksite_location",
+    "status",
+    "created_at",
+    "created_by_name",
+  ];
 
   const {
     columnFields,
@@ -263,11 +255,30 @@ export default function JobList() {
     isSaving: isSavingColumns,
   } = useHeaderConfig({
     entityType: "JOB",
-    defaultFields: [...JOB_DEFAULT_COLUMNS],
+    defaultFields: [], // populated from columnsCatalog when ready
     configType: "columns",
   });
 
-  const FAVORITES_STORAGE_KEY = "jobsFavorites";
+  // Save column order to localStorage whenever it changes
+  useEffect(() => {
+    if (columnFields.length > 0) {
+      localStorage.setItem("jobsColumnOrder", JSON.stringify(columnFields));
+    }
+  }, [columnFields]);
+
+  // Per-column sorting state
+  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
+
+  // Per-column filtering state
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+
+  const [searchTerm, setSearchTerm] = useState("");
+  const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
+  const [selectAll, setSelectAll] = useState(false);
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [favorites, setFavorites] = useState<JobsFavorite[]>([]);
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
@@ -276,6 +287,56 @@ export default function JobList() {
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
   const [favoriteName, setFavoriteName] = useState("");
   const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
+
+  // =====================
+  // AVAILABLE FIELDS (from Modify Page)
+  // =====================
+  const [availableFields, setAvailableFields] = useState<any[]>([]);
+  const [isLoadingFields, setIsLoadingFields] = useState(false);
+
+  useEffect(() => {
+    const fetchAvailableFields = async () => {
+      setIsLoadingFields(true);
+      try {
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        );
+
+        const res = await fetch("/api/admin/field-management/jobs", {
+          method: "GET",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          credentials: "include",
+        });
+
+        const raw = await res.text();
+        let data: any = {};
+        try {
+          data = JSON.parse(raw);
+        } catch {
+          data = {};
+        }
+
+        const fields =
+          data.fields ||
+          data.data?.fields ||
+          data.customFields ||
+          data.data?.customFields ||
+          data.jobFields ||
+          data.data ||
+          [];
+
+        setAvailableFields(Array.isArray(fields) ? fields : []);
+      } catch (e) {
+        console.error("Error fetching available fields:", e);
+        setAvailableFields([]);
+      } finally {
+        setIsLoadingFields(false);
+      }
+    };
+
+    fetchAvailableFields();
+  }, []);
 
   useEffect(() => {
     const raw = localStorage.getItem(FAVORITES_STORAGE_KEY);
@@ -371,33 +432,6 @@ export default function JobList() {
     setSelectedFavoriteId("");
   };
 
-  // Load column order from localStorage on mount
-  useEffect(() => {
-    const savedOrder = localStorage.getItem("jobsColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const validOrder = parsed.filter((key) =>
-            [...JOB_DEFAULT_COLUMNS, ...columnFields].includes(key)
-          );
-          if (validOrder.length > 0) {
-            setColumnFields(validOrder);
-          }
-        }
-      } catch (e) {
-        console.error("Error loading column order:", e);
-      }
-    }
-  }, []);
-
-  // Save column order to localStorage whenever it changes
-  useEffect(() => {
-    if (columnFields.length > 0) {
-      localStorage.setItem("jobsColumnOrder", JSON.stringify(columnFields));
-    }
-  }, [columnFields]);
-
   // Fetch jobs data when component mounts
   useEffect(() => {
     fetchJobs();
@@ -434,34 +468,84 @@ export default function JobList() {
     }
   };
 
+  // Columns Catalog
+  const humanize = (s: string) =>
+    s
+      .replace(/[_\-]+/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .trim();
+
   const columnsCatalog = useMemo(() => {
-    const standard = [
-      { key: "id", label: "ID", sortable: true, filterType: "text" as const },
-      { key: "job_title", label: "Job Title", sortable: true, filterType: "text" as const },
-      { key: "job_type", label: "Job Type", sortable: true, filterType: "text" as const },
-      { key: "category", label: "Category", sortable: true, filterType: "text" as const },
-      { key: "organization_name", label: "Organization", sortable: true, filterType: "text" as const },
-      { key: "worksite_location", label: "Location", sortable: true, filterType: "text" as const },
-      { key: "status", label: "Status", sortable: true, filterType: "select" as const },
-      { key: "created_at", label: "Created At", sortable: true, filterType: "text" as const },
-      { key: "created_by_name", label: "Created By", sortable: true, filterType: "text" as const },
-    ];
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => {
+        const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
+        const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanize(name) : "");
+        const isBackendCol = name && JOB_BACKEND_COLUMN_KEYS.includes(name);
+        let filterType: "text" | "select" | "number" = "text";
+        if (name === "status") filterType = "select";
+        return {
+          key: isBackendCol ? name : `custom:${label || name}`,
+          label: String(label || name),
+          sortable: isBackendCol,
+          filterType,
+          fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
+          lookupType: (f as any)?.lookup_type ?? (f as any)?.lookupType ?? "",
+        };
+      });
+
+    console.log("availableFields", availableFields);
+    // console.log("fromApi", fromApi);
 
     const customKeySet = new Set<string>();
-    jobs.forEach((job) => {
+    (jobs || []).forEach((job: any) => {
       const cf = job?.customFields || job?.custom_fields || {};
       Object.keys(cf).forEach((k) => customKeySet.add(k));
     });
+    const alreadyHaveCustom = new Set(
+      fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
+    );
+    const fromData = Array.from(customKeySet)
+      .filter((k) => !alreadyHaveCustom.has(k))
+      .map((k) => ({
+        key: `custom:${k}`,
+        label: humanize(k),
+        sortable: false,
+        filterType: "text" as const,
+      }));
 
-    const custom = Array.from(customKeySet).map((k) => ({
-      key: `custom:${k}`,
-      label: k.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
-      sortable: false,
-      filterType: "text" as const,
-    }));
+    const merged = [...fromApi, ...fromData];
+    const seen = new Set<string>();
+    return merged.filter((x) => {
+      if (seen.has(x.key)) return false;
+      seen.add(x.key);
+      return true;
+    });
+  }, [jobs, availableFields]);
 
-    return [...standard, ...custom];
-  }, [jobs]);
+  // When catalog is ready, default columnFields to all catalog keys if empty (or validate saved)
+  useEffect(() => {
+    const catalogKeys = columnsCatalog.map((c) => c.key);
+    if (catalogKeys.length === 0) return;
+    const catalogSet = new Set(catalogKeys);
+    const savedOrder = localStorage.getItem("jobsColumnOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validOrder = parsed.filter((k: string) => catalogSet.has(k));
+          if (validOrder.length > 0) {
+            setColumnFields(validOrder);
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
+  }, [columnsCatalog]);
 
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
@@ -473,12 +557,32 @@ export default function JobList() {
     if (key.startsWith("custom:")) {
       const rawKey = key.replace("custom:", "");
       const cf = job?.customFields || job?.custom_fields || {};
-      return cf?.[rawKey] || "-";
+      const val = cf?.[rawKey];
+      return val === undefined || val === null || val === ""
+        ? "N/A"
+        : String(val);
     }
-    const v = job?.[key];
-    if (v === null || v === undefined || v === "") return "-";
-    if (key === 'id') return `J ${v}`;
-    return String(v);
+
+    // switch (key) {
+    //   case "job_title":
+    //     return job.job_title || "N/A";
+    //   case "job_type":
+    //     return job.job_type || "N/A";
+    //   case "category":
+    //     return job.category || "N/A";
+    //   case "organization_name":
+    //     return job.organization_name || "N/A";
+    //   case "worksite_location":
+    //     return job.worksite_location || "N/A";
+    //   case "status":
+    //     return job.status || "N/A";
+    //   case "created_at":
+    //     return job.created_at ? new Date(job.created_at).toLocaleDateString() : "N/A";
+    //   case "created_by_name":
+    //     return job.created_by_name || "N/A";
+    //   default:
+    //     return "N/A";
+    // }
   };
 
   // Get unique status values for filter dropdown
@@ -493,17 +597,18 @@ export default function JobList() {
   const filteredAndSortedJobs = useMemo(() => {
     let result = [...jobs];
 
-    // Apply global search
+      // Apply global search
     if (searchTerm.trim() !== "") {
       const term = searchTerm.toLowerCase();
       result = result.filter(
         (job) =>
-          job.job_title?.toLowerCase().includes(term) ||
-          job.job_type?.toLowerCase().includes(term) ||
-          job.organization_name?.toLowerCase().includes(term) ||
-          job.id?.toString().toLowerCase().includes(term) ||
-          job.category?.toLowerCase().includes(term) ||
-          (job.status || "").toLowerCase().includes(term)
+          (job.job_title || "").toLowerCase().includes(term) ||
+          String(job.id || "").toLowerCase().includes(term) ||
+          (job.job_type || "").toLowerCase().includes(term) ||
+          (job.organization_name || "").toLowerCase().includes(term) ||
+          (job.category || "").toLowerCase().includes(term) ||
+          (job.status || "").toLowerCase().includes(term) ||
+          (job.worksite_location || "").toLowerCase().includes(term)
       );
     }
 
@@ -512,10 +617,7 @@ export default function JobList() {
       if (!filterValue || filterValue.trim() === "") return;
 
       result = result.filter((job) => {
-        let value = getColumnValue(job, columnKey);
-        // Clean up display values for comparison
-        if (columnKey === 'id') value = job.id; // Compare raw ID for filtering usually, or display? Let's use display since filter is text input usually
-
+        const value = getColumnValue(job, columnKey);
         const valueStr = String(value).toLowerCase();
         const filterStr = String(filterValue).toLowerCase();
 
@@ -535,18 +637,8 @@ export default function JobList() {
     if (activeSorts.length > 0) {
       const [sortKey, sortDir] = activeSorts[0];
       result.sort((a, b) => {
-        let aValue: any = getColumnValue(a, sortKey);
-        let bValue: any = getColumnValue(b, sortKey);
-
-        // Handle dates properly
-        if (sortKey === 'created_at') {
-          aValue = new Date(a.created_at).getTime();
-          bValue = new Date(b.created_at).getTime();
-        } else if (sortKey === 'id') {
-          // extract number from "J 123" or just use raw id which is numeric string usually
-          aValue = parseInt(a.id) || a.id;
-          bValue = parseInt(b.id) || b.id;
-        }
+        const aValue = getColumnValue(a, sortKey);
+        const bValue = getColumnValue(b, sortKey);
 
         // Handle numeric values
         const aNum = typeof aValue === "number" ? aValue : Number(aValue);
@@ -948,10 +1040,10 @@ export default function JobList() {
         </div>
       </div>
 
-      {/* Jobs Table */}
-      <div className="overflow-x-auto">
-        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <table className="min-w-full divide-y divide-gray-200">
+      <div className="w-full max-w-full overflow-x-hidden">
+        <div className="overflow-x-auto">
+          <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -966,12 +1058,18 @@ export default function JobList() {
                   Actions
                 </th>
 
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  ID
+                </th>
+                {/* Draggable Dynamic headers */}
                 <SortableContext
                   items={columnFields}
                   strategy={horizontalListSortingStrategy}
                 >
                   {columnFields.map((key) => {
                     const columnInfo = getColumnInfo(key);
+                    if (!columnInfo) return null;
+
                     return (
                       <SortableColumnHeader
                         key={key}
@@ -982,7 +1080,7 @@ export default function JobList() {
                         filterValue={columnFilters[key] || null}
                         onSort={() => handleColumnSort(key)}
                         onFilterChange={(value) => handleColumnFilter(key, value)}
-                        filterType={columnInfo?.filterType || 'text'}
+                        filterType={columnInfo.filterType}
                         filterOptions={
                           key === "status" ? statusOptions : undefined
                         }
@@ -1055,43 +1153,47 @@ export default function JobList() {
                       />
                     </td>
 
-                    {columnFields.map((colKey) => (
-                      <td key={colKey} className="px-6 py-4 whitespace-nowrap">
-                        {colKey === 'status' ? (
+                    <td className="px-6 py-4 text-black whitespace-nowrap">J {job?.id}</td>
+                    {columnFields.map((key) => (
+                      <td
+                        key={key}
+                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                      >
+                        {getColumnLabel(key).toLowerCase() === "status" ? (
                           <span
-                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
-                              job.status
-                            )}`}
+                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
                           >
-                            {job.status}
+                            {getColumnValue(job, key)}
                           </span>
-                        ) : colKey === 'job_title' ? (
-                          <>
-                            <div className="text-sm font-medium text-gray-900">
-                              {job.job_title}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {job.employment_type}
-                            </div>
-                          </>
-                        ) : colKey === 'job_type' ? (
-                          <>
-                            <div className="capitalize text-sm font-medium text-gray-900">
-                              {job.job_type || "-"}
-                            </div>
-                          </>
-                        ) : colKey === 'organization_name' ? (
-                          <div className="text-sm text-blue-600">
-                            {getColumnValue(job, colKey)}
-                          </div>
-                        ) : colKey === 'created_at' ? (
-                          <div className="text-sm text-gray-500">
-                            {formatDate(job.created_at)}
-                          </div>
+                        ) : (getColumnValue(job, key) || "").toLowerCase().includes("@") ? (
+                          <a
+                            href={`mailto:${getColumnValue(job, key)}`}
+                            className="text-blue-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {getColumnValue(job, key)}
+                          </a>
+                        ) : (getColumnValue(job, key) || "").toLowerCase().startsWith("http") || (getColumnValue(job, key) || "").toLowerCase().startsWith("https") ? (
+                          <a
+                            href={(getColumnValue(job, key) || "")}
+                            className="text-blue-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >{(getColumnValue(job, key) || "")}</a>
+                        ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
+                          <RecordNameResolver
+                            id={String(getColumnValue(job, key) || "") || null}
+                            type={(getColumnInfo(key) as any)?.lookupType || "jobs"}
+                            clickable
+                            fallback={String(getColumnValue(job, key) || "") || ""}
+                          />
+                        ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(job, key) || "") ? (
+                          <a
+                            href={`tel:${(getColumnValue(job, key) || "").replace(/\D/g, "")}`}
+                            className="text-blue-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >{getColumnValue(job, key)}</a>
                         ) : (
-                          <div className="text-sm text-gray-500">
-                            {getColumnValue(job, colKey)}
-                          </div>
+                          getColumnValue(job, key)
                         )}
                       </td>
                     ))}
@@ -1100,7 +1202,7 @@ export default function JobList() {
               ) : (
                 <tr>
                   <td
-                    colSpan={columnFields.length + 2}
+                    colSpan={3 + columnFields.length}
                     className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                   >
                     {searchTerm
@@ -1112,10 +1214,10 @@ export default function JobList() {
             </tbody>
           </table>
         </DndContext>
-      </div>
+        </div>
 
-      {/* Pagination */}
-      <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+        {/* Pagination */}
+        <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
         <div className="flex-1 flex justify-between sm:hidden">
           <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
             Previous
@@ -1179,6 +1281,7 @@ export default function JobList() {
             </div>
           )}
         </div>
+      </div>
       </div>
 
       {showColumnModal && (
@@ -1295,7 +1398,7 @@ export default function JobList() {
                 <div className="flex justify-end gap-2 mt-4">
                   <button
                     className="px-4 py-2 border rounded hover:bg-gray-50"
-                    onClick={() => setColumnFields([...JOB_DEFAULT_COLUMNS])}
+                    onClick={() => setColumnFields(columnsCatalog.map((c) => c.key))}
                   >
                     Reset
                   </button>
@@ -1328,7 +1431,7 @@ export default function JobList() {
                 <FiX size={20} />
               </button>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1342,16 +1445,15 @@ export default function JobList() {
                     if (e.target.value.trim()) setFavoriteNameError(null);
                   }}
                   placeholder="e.g. Active Jobs"
-                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${
-                    favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
-                  }`}
+                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
+                    }`}
                   autoFocus
                 />
                 {favoriteNameError && (
                   <p className="text-xs text-red-500 mt-1">{favoriteNameError}</p>
                 )}
               </div>
-              
+
               <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-800 space-y-1">
                 <p className="font-medium flex items-center gap-2">
                   <FiStar className="text-blue-600" size={14} />
@@ -1369,7 +1471,7 @@ export default function JobList() {
                 </ul>
               </div>
             </div>
-            
+
             <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
               <button
                 onClick={() => setShowSaveFavoriteModal(false)}

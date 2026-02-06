@@ -16,6 +16,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
+import RecordNameResolver from "@/components/RecordNameResolver";
 
 interface Task {
   id: string;
@@ -292,8 +293,6 @@ export default function TaskList() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [sortField, setSortField] = useState<string>('created_at');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('desc');
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
 
@@ -341,6 +340,8 @@ export default function TaskList() {
           label: String(label || name),
           sortable: isBackendCol,
           filterType,
+          fieldType: (f as any)?.field_type,
+          lookupType: (f as any)?.lookup_type || "",
         };
       });
     return fromApi;
@@ -405,6 +406,9 @@ export default function TaskList() {
   const getColumnLabel = (key: string) =>
     taskColumnsCatalog.find((c) => c.key === key)?.label ?? key;
 
+  const getColumnInfo = (key: string) =>
+    taskColumnsCatalog.find((c) => c.key === key);
+
   const getColumnValue = (task: any, key: string) => {
     if (key.startsWith("custom:")) {
       const rawKey = key.replace("custom:", "");
@@ -413,52 +417,52 @@ export default function TaskList() {
       return val === undefined || val === null || val === "" ? "—" : String(val);
     }
 
-    switch (key) {
-      case "completed":
-        return task.is_completed ? "Yes" : "No";
+    // switch (key) {
+    //   case "completed":
+    //     return task.is_completed ? "Yes" : "No";
 
-      case "due":
-        return formatDateTime(task.due_date, task.due_time) || "Not set";
+    //   case "due":
+    //     return formatDateTime(task.due_date, task.due_time) || "Not set";
 
-      case "job_seeker":
-        return task.job_seeker_name || "—";
+    //   case "job_seeker":
+    //     return task.job_seeker_name || "—";
 
-      case "hiring_manager":
-        return task.hiring_manager_name || "—";
+    //   case "hiring_manager":
+    //     return task.hiring_manager_name || "—";
 
-      case "job":
-        return task.job_title || "—";
+    //   case "job":
+    //     return task.job_title || "—";
 
-      case "lead":
-        return task.lead_name || "—";
+    //   case "lead":
+    //     return task.lead_name || "—";
 
-      case "placement":
-        return task.placement_id || "—";
+    //   case "placement":
+    //     return task.placement_id || "—";
 
-      case "owner":
-        return task.owner || task.created_by_name || "—";
+    //   case "owner":
+    //     return task.owner || task.created_by_name || "—";
 
-      case "priority":
-        return task.priority || "—";
+    //   case "priority":
+    //     return task.priority || "—";
 
-      case "status":
-        return task.status || "—";
+    //   case "status":
+    //     return task.status || "—";
 
-      case "title":
-        return task.title || "—";
+    //   case "title":
+    //     return task.title || "—";
 
-      case "dateCreated":
-        return formatDateTime(task.created_at) || "—";
+    //   case "dateCreated":
+    //     return formatDateTime(task.created_at) || "—";
 
-      case "createdBy":
-        return task.created_by_name || "—";
+    //   case "createdBy":
+    //     return task.created_by_name || "—";
 
-      case "assignedTo":
-        return task.assigned_to_name || "—";
+    //   case "assignedTo":
+    //     return task.assigned_to_name || "—";
 
-      default:
-        return "—";
-    }
+    //   default:
+    //     return "—";
+    // }
   };
 
   const {
@@ -473,6 +477,13 @@ export default function TaskList() {
     configType: "columns",
     defaultFields: [],
   });
+
+  // Save column order to localStorage whenever it changes
+  useEffect(() => {
+    if (columnFields.length > 0) {
+      localStorage.setItem("tasksColumnOrder", JSON.stringify(columnFields));
+    }
+  }, [columnFields]);
 
   useEffect(() => {
     const catalogKeys = taskColumnsCatalog.map((c) => c.key);
@@ -498,8 +509,10 @@ export default function TaskList() {
 
   // Favorites State
   const [favorites, setFavorites] = useState<TaskFavorite[]>([]);
-  const [selectedFavoriteId, setSelectedFavoriteId] = useState<string | null>(null);
+  const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
+  const favoritesMenuRef = useRef<HTMLDivElement>(null);
+  const favoritesMenuMobileRef = useRef<HTMLDivElement>(null);
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
   const [favoriteName, setFavoriteName] = useState("");
   const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
@@ -519,45 +532,49 @@ export default function TaskList() {
     }
   }, []);
 
-  // Favorites Logic
-  const persistFavorites = (updated: TaskFavorite[]) => {
-    setFavorites(updated);
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updated));
-  };
+
+  useEffect(() => {
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (!favoritesMenuOpen) return;
+      const target = e.target as Node;
+      const inDesktop = favoritesMenuRef.current?.contains(target);
+      const inMobile = favoritesMenuMobileRef.current?.contains(target);
+      if (!inDesktop && !inMobile) setFavoritesMenuOpen(false);
+    };
+
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [favoritesMenuOpen]);
 
   const applyFavorite = (fav: TaskFavorite) => {
-    // 1. Validate columns against current catalog
     const catalogKeys = new Set(taskColumnsCatalog.map((c) => c.key));
-    const validColumnFields = (fav.columnFields || []).filter((k) =>
-      catalogKeys.has(k)
-    );
+    const validColumnFields = (fav.columnFields || []).filter((k) => catalogKeys.has(k));
 
-    // 2. Restore filters (only valid ones)
     const nextFilters: Record<string, ColumnFilterState> = {};
     for (const [k, v] of Object.entries(fav.columnFilters || {})) {
       if (!catalogKeys.has(k)) continue;
-      if (!v || !v.trim()) continue;
+      if (v === null || v === undefined) continue;
+      if (typeof v === "string" && v.trim() === "") continue;
       nextFilters[k] = v;
     }
 
-    // 3. Restore sorts (only valid ones)
     const nextSorts: Record<string, ColumnSortState> = {};
     for (const [k, v] of Object.entries(fav.columnSorts || {})) {
       if (!catalogKeys.has(k)) continue;
-      if (v !== "asc" && v !== "desc") continue;
+      if (v !== "asc" && v !== "desc" && v !== null) continue;
+      if (v === null) continue;
       nextSorts[k] = v;
     }
 
-    // 4. Apply everything
     setSearchTerm(fav.searchTerm || "");
     setColumnFilters(nextFilters);
     setColumnSorts(nextSorts);
-    if (validColumnFields.length > 0) {
-      setColumnFields(validColumnFields);
-    }
+    if (validColumnFields.length > 0) setColumnFields(validColumnFields);
+  };
 
-    setSelectedFavoriteId(fav.id);
-    setFavoritesMenuOpen(false);
+  const persistFavorites = (next: TaskFavorite[]) => {
+    setFavorites(next);
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
   };
 
   const handleOpenSaveFavoriteModal = () => {
@@ -590,24 +607,12 @@ export default function TaskList() {
     setShowSaveFavoriteModal(false);
   };
 
-  const handleDeleteFavorite = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const updated = favorites.filter((f) => f.id !== id);
-    persistFavorites(updated);
-    if (selectedFavoriteId === id) {
-      setSelectedFavoriteId(null);
-    }
-  };
-
   const handleClearAllFilters = () => {
     setSearchTerm("");
     setColumnFilters({});
     setColumnSorts({});
-    setSelectedFavoriteId(null);
+    setSelectedFavoriteId("");
   };
-
-  const getColumnInfo = (key: string) =>
-    taskColumnsCatalog.find((c) => c.key === key);
 
   // Handle column sort toggle
   const handleColumnSort = (columnKey: string) => {
@@ -651,32 +656,6 @@ export default function TaskList() {
     }
   };
 
-  // Load column order from localStorage on mount
-  useEffect(() => {
-    const savedOrder = localStorage.getItem("tasksColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const validOrder = parsed.filter((key) =>
-            [...columnFields].includes(key)
-          );
-          if (validOrder.length > 0) {
-            setColumnFields(validOrder);
-          }
-        }
-      } catch (e) {
-        console.error("Error loading column order:", e);
-      }
-    }
-  }, []);
-
-  // Save column order to localStorage whenever it changes
-  useEffect(() => {
-    if (columnFields.length > 0) {
-      localStorage.setItem("tasksColumnOrder", JSON.stringify(columnFields));
-    }
-  }, [columnFields]);
 
   // Unique options for select filters
   const statusOptions = useMemo(() => {
@@ -792,13 +771,13 @@ export default function TaskList() {
 
         // Handle dates for "due"
         if (sortKey === "due") {
-          aValue = a.due_date ? new Date(a.due_date).getTime() : 0;
-          bValue = b.due_date ? new Date(b.due_date).getTime() : 0;
+          aValue = a.due_date ? new Date(a.due_date).getTime().toString() : undefined;
+          bValue = b.due_date ? new Date(b.due_date).getTime().toString() : undefined;
         }
 
         // Handle numeric values
-        const aNum = typeof aValue === "number" ? aValue : Number(aValue);
-        const bNum = typeof bValue === "number" ? bValue : Number(bValue);
+        const aNum = typeof aValue === "string" ? Number(aValue) : Number(aValue);
+        const bNum = typeof bValue === "string" ? Number(bValue) : Number(bValue);
 
         let cmp = 0;
         if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
@@ -943,37 +922,23 @@ export default function TaskList() {
               onClick={deleteSelectedTasks}
               className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center"
             >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5 mr-1"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-                  clipRule="evenodd"
-                />
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
               </svg>
               Delete Selected ({selectedTasks.length})
             </button>
           )}
-
-          {/* Favorites Dropdown */}
-          <div className="relative">
+          <div className="relative" ref={favoritesMenuRef}>
             <button
               onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)}
               className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2 bg-white"
             >
               <FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} />
               <span className="max-w-[100px] truncate">
-                {selectedFavoriteId
-                  ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites"
-                  : "Favorites"}
+                {selectedFavoriteId ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites" : "Favorites"}
               </span>
               <FiChevronDown />
             </button>
-
             {favoritesMenuOpen && (
               <div className="absolute right-0 top-full mt-1 w-64 bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
                 <div className="p-2 border-b border-gray-100">
@@ -985,25 +950,28 @@ export default function TaskList() {
                     Save Current Search
                   </button>
                 </div>
-
                 <div className="max-h-60 overflow-y-auto py-1">
                   {favorites.length === 0 ? (
-                    <p className="text-xs text-gray-400 text-center py-4">
-                      No saved favorites yet
-                    </p>
+                    <p className="text-xs text-gray-400 text-center py-4">No saved favorites yet</p>
                   ) : (
                     favorites.map((fav) => (
                       <div
                         key={fav.id}
-                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""
-                          }`}
-                        onClick={() => applyFavorite(fav)}
+                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""}`}
+                        onClick={() => {
+                          setSelectedFavoriteId(fav.id);
+                          applyFavorite(fav);
+                          setFavoritesMenuOpen(false);
+                        }}
                       >
-                        <span className="text-sm text-gray-700 truncate flex-1">
-                          {fav.name}
-                        </span>
+                        <span className="text-sm text-gray-700 truncate flex-1">{fav.name}</span>
                         <button
-                          onClick={(e) => handleDeleteFavorite(fav.id, e)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const updated = favorites.filter((f) => f.id !== fav.id);
+                            persistFavorites(updated);
+                            if (selectedFavoriteId === fav.id) setSelectedFavoriteId("");
+                          }}
                           className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
                           title="Delete favorite"
                         >
@@ -1016,7 +984,6 @@ export default function TaskList() {
               </div>
             )}
           </div>
-
           <button
             onClick={() => setShowColumnModal(true)}
             className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
@@ -1025,21 +992,84 @@ export default function TaskList() {
           </button>
           <button
             onClick={handleAddTask}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
+            className="hidden md:flex px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 items-center"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 mr-1"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
-                clipRule="evenodd"
-              />
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
             </svg>
             Add Task
+          </button>
+        </div>
+        <div className="flex flex-col gap-2 w-full md:hidden">
+          <div className="w-full" ref={favoritesMenuMobileRef}>
+            <button
+              onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)}
+              className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-between bg-white"
+            >
+              <span className="flex items-center gap-2">
+                <FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} />
+                {selectedFavoriteId ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites" : "Favorites"}
+              </span>
+              <FiChevronDown />
+            </button>
+            {favoritesMenuOpen && (
+              <div className="mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                <div className="p-2 border-b border-gray-100">
+                  <button
+                    onClick={handleOpenSaveFavoriteModal}
+                    className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors font-medium flex items-center gap-2"
+                  >
+                    <FiStar className="text-blue-500" />
+                    Save Current Search
+                  </button>
+                </div>
+                <div className="max-h-48 overflow-y-auto py-1">
+                  {favorites.length === 0 ? (
+                    <p className="text-xs text-gray-400 text-center py-4">No saved favorites yet</p>
+                  ) : (
+                    favorites.map((fav) => (
+                      <div
+                        key={fav.id}
+                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""}`}
+                        onClick={() => {
+                          setSelectedFavoriteId(fav.id);
+                          applyFavorite(fav);
+                          setFavoritesMenuOpen(false);
+                        }}
+                      >
+                        <span className="text-sm text-gray-700 truncate flex-1">{fav.name}</span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const updated = favorites.filter((f) => f.id !== fav.id);
+                            persistFavorites(updated);
+                            if (selectedFavoriteId === fav.id) setSelectedFavoriteId("");
+                          }}
+                          className="text-gray-400 hover:text-red-500 p-1"
+                          title="Delete favorite"
+                        >
+                          <FiX size={14} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          {selectedTasks.length > 0 && (
+            <button
+              onClick={deleteSelectedTasks}
+              className="w-full md:hidden px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center justify-center"
+            >
+              Delete Selected ({selectedTasks.length})
+            </button>
+          )}
+          <button
+            onClick={() => setShowColumnModal(true)}
+            className="w-full md:hidden px-4 py-2 border border-gray-300 rounded hover:bg-gray-50"
+          >
+            Columns
           </button>
         </div>
       </div>
@@ -1090,272 +1120,316 @@ export default function TaskList() {
       </div>
 
       {/* Tasks Table */}
-      <div className="overflow-x-auto">
-        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                {/* Fixed checkbox */}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                    checked={selectAll}
-                    onChange={handleSelectAll}
-                  />
-                </th>
-
-                {/* Fixed Actions */}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-
-                {/* Fixed ID */}
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ID
-                </th>
-
-                {/* Draggable Dynamic headers */}
-                <SortableContext
-                  items={columnFields}
-                  strategy={horizontalListSortingStrategy}
-                >
-                  {columnFields.map((key) => {
-                    const columnInfo = getColumnInfo(key);
-                    if (!columnInfo) return null;
-
-                    return (
-                      <SortableColumnHeader
-                        key={key}
-                        id={key}
-                        columnKey={key}
-                        label={getColumnLabel(key)}
-                        sortState={columnSorts[key] || null}
-                        filterValue={columnFilters[key] || null}
-                        onSort={() => handleColumnSort(key)}
-                        onFilterChange={(value) => handleColumnFilter(key, value)}
-                        filterType={columnInfo.filterType}
-                        filterOptions={
-                          key === "status"
-                            ? statusOptions
-                            : key === "priority"
-                              ? priorityOptions
-                              : key === "completed"
-                                ? completedOptions
-                                : undefined
-                        }
-                      />
-                    );
-                  })}
-                </SortableContext>
-              </tr>
-            </thead>
-
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredAndSortedTasks.length > 0 ? (
-                filteredAndSortedTasks.map((task) => (
-                  <tr
-                    key={task.id}
-                    className="hover:bg-gray-50 cursor-pointer"
-                    onClick={() => handleViewTask(task.id)}
-                  >
-                    {/* Fixed checkbox */}
-                    <td
-                      className="px-6 py-4 whitespace-nowrap"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                        checked={selectedTasks.includes(task.id)}
-                        onChange={() => { }}
-                        onClick={(e) => handleSelectTask(task.id, e)}
-                      />
-                    </td>
-
-                    {/* Fixed Actions */}
-                    <td
-                      className="px-6 py-4 whitespace-nowrap text-sm"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <ActionDropdown
-                        label="Actions"
-                        options={[
-                          { label: "View", action: () => handleViewTask(task.id) },
-                          {
-                            label: "Delete",
-                            action: async () => {
-                              if (
-                                !window.confirm(
-                                  "Are you sure you want to delete this task?"
-                                )
-                              )
-                                return;
-                              setIsLoading(true);
-                              try {
-                                const token = document.cookie
-                                  .split("; ")
-                                  .find((row) => row.startsWith("token="))
-                                  ?.split("=")[1];
-                                const res = await fetch(
-                                  `/api/tasks/${task.id}`,
-                                  {
-                                    method: "DELETE",
-                                    headers: token
-                                      ? { Authorization: `Bearer ${token}` }
-                                      : undefined,
-                                  }
-                                );
-                                if (!res.ok)
-                                  throw new Error("Failed to delete task");
-                                await fetchTasks();
-                              } catch (err) {
-                                setError(
-                                  err instanceof Error
-                                    ? err.message
-                                    : "Delete failed"
-                                );
-                              } finally {
-                                setIsLoading(false);
-                              }
-                            },
-                          },
-                        ]}
-                      />
-                    </td>
-
-                    {/* Fixed ID */}
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        T {task.id}
-                      </div>
-                    </td>
-
-                    {/* Dynamic cells */}
-                    {columnFields.map((key) => (
-                      <td
-                        key={key}
-                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                      >
-                        {key === "completed" ? (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleTaskComplete(task.id, task.is_completed);
-                            }}
-                            className={`px-2 py-1 rounded text-xs font-semibold ${task.is_completed
-                              ? "bg-green-100 text-green-800"
-                              : "bg-gray-100 text-gray-800 hover:bg-gray-200"
-                              }`}
-                          >
-                            {task.is_completed ? "✓ Yes" : "○ No"}
-                          </button>
-                        ) : key === "priority" ? (
-                          <span
-                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getPriorityColor(
-                              task.priority
-                            )}`}
-                          >
-                            {getColumnValue(task, key)}
-                          </span>
-                        ) : key === "status" ? (
-                          <span
-                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
-                              task.status
-                            )}`}
-                          >
-                            {getColumnValue(task, key)}
-                          </span>
-                        ) : (
-                          getColumnValue(task, key)
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : (
+      <div className="w-full max-w-full overflow-x-hidden">
+        <div className="overflow-x-auto">
+          <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
                 <tr>
-                  <td
-                    colSpan={3 + columnFields.length}
-                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
+                  {/* Fixed checkbox */}
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                      checked={selectAll}
+                      onChange={handleSelectAll}
+                    />
+                  </th>
+
+                  {/* Fixed Actions */}
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+
+                  {/* Fixed ID */}
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    ID
+                  </th>
+
+                  {/* Draggable Dynamic headers */}
+                  <SortableContext
+                    items={columnFields}
+                    strategy={horizontalListSortingStrategy}
                   >
-                    {searchTerm
-                      ? "No tasks found matching your search."
-                      : 'No tasks found. Click "Add Task" to create one.'}
-                  </td>
+                    {columnFields.map((key) => {
+                      const columnInfo = getColumnInfo(key);
+                      if (!columnInfo) return null;
+
+                      return (
+                        <SortableColumnHeader
+                          key={key}
+                          id={key}
+                          columnKey={key}
+                          label={getColumnLabel(key)}
+                          sortState={columnSorts[key] || null}
+                          filterValue={columnFilters[key] || null}
+                          onSort={() => handleColumnSort(key)}
+                          onFilterChange={(value) => handleColumnFilter(key, value)}
+                          filterType={columnInfo.filterType}
+                          filterOptions={
+                            key === "status"
+                              ? statusOptions
+                              : key === "priority"
+                                ? priorityOptions
+                                : key === "completed"
+                                  ? completedOptions
+                                  : undefined
+                          }
+                        />
+                      );
+                    })}
+                  </SortableContext>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </DndContext>
+              </thead>
+
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredAndSortedTasks.length > 0 ? (
+                  filteredAndSortedTasks.map((task) => (
+                    <tr
+                      key={task.id}
+                      className="hover:bg-gray-50 cursor-pointer"
+                      onClick={() => handleViewTask(task.id)}
+                    >
+                      {/* Fixed checkbox */}
+                      <td
+                        className="px-6 py-4 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                          checked={selectedTasks.includes(task.id)}
+                          onChange={() => { }}
+                          onClick={(e) => handleSelectTask(task.id, e)}
+                        />
+                      </td>
+
+                      {/* Fixed Actions */}
+                      <td
+                        className="px-6 py-4 whitespace-nowrap text-sm"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ActionDropdown
+                          label="Actions"
+                          options={[
+                            { label: "View", action: () => handleViewTask(task.id) },
+                            {
+                              label: "Delete",
+                              action: async () => {
+                                if (
+                                  !window.confirm(
+                                    "Are you sure you want to delete this task?"
+                                  )
+                                )
+                                  return;
+                                setIsLoading(true);
+                                try {
+                                  const token = document.cookie
+                                    .split("; ")
+                                    .find((row) => row.startsWith("token="))
+                                    ?.split("=")[1];
+                                  const res = await fetch(
+                                    `/api/tasks/${task.id}`,
+                                    {
+                                      method: "DELETE",
+                                      headers: token
+                                        ? { Authorization: `Bearer ${token}` }
+                                        : undefined,
+                                    }
+                                  );
+                                  if (!res.ok)
+                                    throw new Error("Failed to delete task");
+                                  await fetchTasks();
+                                } catch (err) {
+                                  setError(
+                                    err instanceof Error
+                                      ? err.message
+                                      : "Delete failed"
+                                  );
+                                } finally {
+                                  setIsLoading(false);
+                                }
+                              },
+                            },
+                          ]}
+                        />
+                      </td>
+
+                      {/* Fixed ID */}
+                      <td className="px-6 py-4 text-black whitespace-nowrap">
+                        T {task?.id}
+                      </td>
+
+                      {/* Dynamic cells */}
+                      {/* {columnFields.map((key) => (
+                        <td
+                          key={key}
+                          className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                        >
+                          {key === "completed" ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                toggleTaskComplete(task.id, task.is_completed);
+                              }}
+                              className={`px-2 py-1 rounded text-xs font-semibold ${task.is_completed
+                                ? "bg-green-100 text-green-800"
+                                : "bg-gray-100 text-gray-800 hover:bg-gray-200"
+                                }`}
+                            >
+                              {task.is_completed ? "✓ Yes" : "○ No"}
+                            </button>
+                          ) : key === "priority" ? (
+                            <span
+                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getPriorityColor(
+                                task.priority
+                              )}`}
+                            >
+                              {getColumnValue(task, key)}
+                            </span>
+                          ) : key === "status" ? (
+                            <span
+                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
+                                task.status
+                              )}`}
+                            >
+                              {getColumnValue(task, key)}
+                            </span>
+                          ) : (
+                            getColumnValue(task, key)
+                          )}
+                        </td>
+                      ))} */}
+                      {columnFields.map((key) => (
+                        <td
+                          key={key}
+                          className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                        >
+                          {getColumnLabel(key).toLowerCase() === "status" ? (
+                            <span
+                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
+                            >
+                              {getColumnValue(task, key)}
+                            </span>
+                          ) : (getColumnValue(task, key) || "").toLowerCase().includes("@") ? (
+                            <a
+                              href={`mailto:${getColumnValue(task, key)}`}
+                              className="text-blue-600 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {getColumnValue(task, key)}
+                            </a>
+                          ) : (getColumnValue(task, key) || "").toLowerCase().startsWith("http") || (getColumnValue(task, key) || "").toLowerCase().startsWith("https") ? (
+                            <a
+                              href={(getColumnValue(task, key) || "")}
+                              className="text-blue-600 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >{(getColumnValue(task, key) || "")}</a>
+                          ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
+                            <RecordNameResolver
+                              id={String(getColumnValue(task, key) || "") || null}
+                              type={(getColumnInfo(key) as any)?.lookupType || "tasks"}
+                              clickable
+                              fallback={String(getColumnValue(task, key) || "") || ""}
+                            />
+                          ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(task, key) || "") ? (
+                            <a
+                              href={`tel:${(getColumnValue(task, key) || "").replace(/\D/g, "")}`}
+                              className="text-blue-600 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >{getColumnValue(task, key)}</a>
+                          ) : (
+                            getColumnValue(task, key)
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={3 + columnFields.length}
+                      className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
+                    >
+                      {searchTerm
+                        ? "No tasks found matching your search."
+                        : 'No tasks found. Click "Add Task" to create one.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </DndContext>
+        </div>
+
+        {/* Pagination */}
+        <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
+          <div className="flex-1 flex justify-between sm:hidden">
+            <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+              Previous
+            </button>
+            <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+              Next
+            </button>
+          </div>
+          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm text-gray-700">
+                Showing <span className="font-medium">1</span> to{" "}
+                <span className="font-medium">{filteredAndSortedTasks.length}</span>{" "}
+                of{" "}
+                <span className="font-medium">{filteredAndSortedTasks.length}</span>{" "}
+                results
+              </p>
+            </div>
+            {filteredAndSortedTasks.length > 0 && (
+              <div>
+                <nav
+                  className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
+                  aria-label="Pagination"
+                >
+                  <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                    <span className="sr-only">Previous</span>
+                    <svg
+                      className="h-5 w-5"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                  <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    1
+                  </button>
+                  <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                    <span className="sr-only">Next</span>
+                    <svg
+                      className="h-5 w-5"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                </nav>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
-      {/* Pagination */}
-      <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
-        <div className="flex-1 flex justify-between sm:hidden">
-          <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Previous
-          </button>
-          <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Next
-          </button>
-        </div>
-        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm text-gray-700">
-              Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">{filteredAndSortedTasks.length}</span>{" "}
-              of{" "}
-              <span className="font-medium">{filteredAndSortedTasks.length}</span>{" "}
-              results
-            </p>
-          </div>
-          {filteredAndSortedTasks.length > 0 && (
-            <div>
-              <nav
-                className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
-                aria-label="Pagination"
-              >
-                <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Previous</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-                <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
-                  1
-                </button>
-                <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Next</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-              </nav>
-            </div>
-          )}
-        </div>
-      </div>
       {showColumnModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
@@ -1509,7 +1583,7 @@ export default function TaskList() {
                 <FiX size={20} />
               </button>
             </div>
-            
+
             <div className="p-6 space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -1523,16 +1597,15 @@ export default function TaskList() {
                     if (e.target.value.trim()) setFavoriteNameError(null);
                   }}
                   placeholder="e.g. High Priority Tasks"
-                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${
-                    favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
-                  }`}
+                  className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
+                    }`}
                   autoFocus
                 />
                 {favoriteNameError && (
                   <p className="text-xs text-red-500 mt-1">{favoriteNameError}</p>
                 )}
               </div>
-              
+
               <div className="bg-blue-50 p-3 rounded-md text-sm text-blue-800 space-y-1">
                 <p className="font-medium flex items-center gap-2">
                   <FiStar className="text-blue-600" size={14} />
@@ -1550,7 +1623,7 @@ export default function TaskList() {
                 </ul>
               </div>
             </div>
-            
+
             <div className="p-4 border-t border-gray-100 flex justify-end gap-3 bg-gray-50">
               <button
                 onClick={() => setShowSaveFavoriteModal(false)}

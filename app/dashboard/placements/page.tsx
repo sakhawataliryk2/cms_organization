@@ -415,6 +415,8 @@ export default function PlacementList() {
           label: String(label || name),
           sortable: isBackendCol,
           filterType,
+          fieldType: (f as any)?.field_type,
+          lookupType: (f as any)?.lookup_type || "",
         };
       });
     return fromApi;
@@ -423,6 +425,8 @@ export default function PlacementList() {
   const getColumnLabel = (key: string) =>
     placementColumnsCatalog.find((c) => c.key === key)?.label ?? key;
 
+  const getColumnInfo = (key: string) =>
+    placementColumnsCatalog.find((c) => c.key === key);
 
   const getColumnValue = (p: any, key: string) => {
     if (key.startsWith("custom:")) {
@@ -492,9 +496,6 @@ export default function PlacementList() {
     setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
   }, [placementColumnsCatalog]);
 
-  const getColumnInfo = (key: string) =>
-    placementColumnsCatalog.find((c) => c.key === key);
-
   // Handle column sort toggle
   const handleColumnSort = (columnKey: string) => {
     setColumnSorts((prev) => {
@@ -558,7 +559,13 @@ export default function PlacementList() {
         const data = await res.json();
 
         const fields =
-          data?.customFields || data?.fields || data?.data?.fields || [];
+        data.customFields ||
+          (data as any).fields ||
+          (data as any).data?.customFields ||
+          (data as any).data?.fields ||
+          (data as any).placementFields ||
+          (data as any).data ||
+          [];
 
         setAvailableFields(fields);
       } catch (e) {
@@ -1026,44 +1033,48 @@ export default function PlacementList() {
 
                     {/* Dynamic cells */}
                     {columnFields.map((key) => (
-                      <td
-                        key={key}
-                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                      >
-                        {getColumnLabel(key).toLowerCase() === "status" ? (
-                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                            {getColumnValue(placement, key)}
-                          </span>
-                        ) :
-                          getColumnLabel(key).toLowerCase() === "candidate" || getColumnLabel(key).toLowerCase() === "job seeker" ? (
+                        <td
+                          key={key}
+                          className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                        >
+                          {getColumnLabel(key).toLowerCase() === "status" ? (
+                            <span
+                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
+                            >
+                              {getColumnValue(placement, key)}
+                            </span>
+                          ) : (getColumnValue(placement, key) || "").toLowerCase().includes("@") ? (
+                            <a
+                              href={`mailto:${getColumnValue(placement, key)}`}
+                              className="text-blue-600 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {getColumnValue(placement, key)}
+                            </a>
+                          ) : (getColumnValue(placement, key) || "").toLowerCase().startsWith("http") || (getColumnValue(placement, key) || "").toLowerCase().startsWith("https") ? (
+                            <a
+                              href={(getColumnValue(placement, key) || "")}
+                              className="text-blue-600 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >{(getColumnValue(placement, key) || "")}</a>
+                          ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
                             <RecordNameResolver
-                              id={String(getColumnValue(placement, key)) || null}
-                              type="jobSeeker"
+                              id={String(getColumnValue(placement, key) || "") || null}
+                              type={(getColumnInfo(key) as any)?.lookupType || "placements"}
                               clickable
-                              fallback={String(getColumnValue(placement, key)) || ""}
+                              fallback={String(getColumnValue(placement, key) || "") || ""}
                             />
-                          ) :
-                            getColumnLabel(key).toLowerCase() === "job" ? (
-                              <RecordNameResolver
-                                id={String(getColumnValue(placement, key)) || null}
-                                type="job"
-                                clickable
-                                fallback={String(getColumnValue(placement, key)) || ""}
-                              />
-                            ) :
-                            getColumnLabel(key).toLowerCase() === "organization" ? (
-                              <RecordNameResolver
-                                id={String(getColumnValue(placement, key)) || null}
-                                type="organization"
-                                clickable
-                                fallback={String(getColumnValue(placement, key)) || ""}
-                              />
-                            ) :
-                            (
-                              getColumnValue(placement, key)
-                            )}
-                      </td>
-                    ))}
+                          ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(placement, key) || "") ? (
+                            <a
+                              href={`tel:${(getColumnValue(placement, key) || "").replace(/\D/g, "")}`}
+                              className="text-blue-600 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >{getColumnValue(placement, key)}</a>
+                          ) : (
+                            getColumnValue(placement, key)
+                          )}
+                        </td>
+                      ))}
                   </tr>
                 ))
               ) : (

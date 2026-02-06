@@ -17,6 +17,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
+import RecordNameResolver from "@/components/RecordNameResolver";
 
 interface JobSeeker {
   id: string;
@@ -341,7 +342,6 @@ export default function JobSeekerList() {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           credentials: "include",
         });
-
         const raw = await res.text();
         let data: any = {};
         try {
@@ -351,6 +351,7 @@ export default function JobSeekerList() {
         }
 
         const fields =
+          data.customFields ||
           data.fields ||
           data.data?.fields ||
           data.jobSeekerFields ||
@@ -398,30 +399,32 @@ export default function JobSeekerList() {
           label: String(label || name),
           sortable: isBackendCol,
           filterType,
+          fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
+          lookupType: (f as any)?.lookup_type ?? (f as any)?.lookupType ?? "",
         };
       });
 
-    const customKeySet = new Set<string>();
-    (jobSeekers || []).forEach((js: any) => {
-      const cf = js?.customFields || js?.custom_fields || {};
-      Object.keys(cf).forEach((k) => customKeySet.add(k));
-    });
-    const alreadyHaveCustom = new Set(
-      fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
-    );
-    const fromData = Array.from(customKeySet)
-      .filter((k) => !alreadyHaveCustom.has(k))
-      .map((k) => ({
-        key: `custom:${k}`,
-        label: humanize(k),
-        sortable: false,
-        filterType: "text" as const,
-      }));
+    // const customKeySet = new Set<string>();
+    // (jobSeekers || []).forEach((js: any) => {
+    //   const cf = js?.customFields || js?.custom_fields || {};
+    //   Object.keys(cf).forEach((k) => customKeySet.add(k));
+    // });
+    // const alreadyHaveCustom = new Set(
+    //   fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
+    // );
+    // const fromData = Array.from(customKeySet)
+    //   .filter((k) => !alreadyHaveCustom.has(k))
+    //   .map((k) => ({
+    //     key: `custom:${k}`,
+    //     label: humanize(k),
+    //     sortable: false,
+    //     filterType: "text" as const,
+    //   }));
 
-      console.log("fromData", fromData);
-      console.log("fromApi", fromApi);
+    console.log("availableFields", availableFields);
+    // console.log("fromApi", fromApi);
 
-    const merged = [...fromApi, ...fromData];
+    const merged = [...fromApi];
     const seen = new Set<string>();
     return merged.filter((x) => {
       if (seen.has(x.key)) return false;
@@ -1095,30 +1098,43 @@ export default function JobSeekerList() {
                     {columnFields.map((key) => (
                       <td
                         key={key}
-                        className="px-6 py-4 whitespace-nowrap text-sm"
+                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
                       >
-                        {key === "status" ? (
+                        {getColumnLabel(key).toLowerCase() === "status" ? (
                           <span
-                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
-                              getColumnValue(jobSeeker, key || "")
-                            )}`}
+                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
                           >
-                            {getColumnValue(jobSeeker, key || "")}
-                          </span>
-                        ) : key === "email" ? (
-                          <div className="text-sm text-blue-600">
-                            {getColumnValue(jobSeeker, key || "")}
-                          </div>
-                        ) : key === "last_contact_date" ? (
-                          <span className="text-sm text-gray-500">
-                            {getColumnValue(jobSeeker, key || "") !== "N/A"
-                              ? formatDate(getColumnValue(jobSeeker, key || ""))
-                              : "Not contacted"}
-                          </span>
-                        ) : (
-                          <span className="text-sm text-gray-900">
                             {getColumnValue(jobSeeker, key)}
                           </span>
+                        ) : (getColumnValue(jobSeeker, key) || "").toLowerCase().includes("@") ? (
+                          <a
+                            href={`mailto:${getColumnValue(jobSeeker, key)}`}
+                            className="text-blue-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {getColumnValue(jobSeeker, key)}
+                          </a>
+                        ) : (getColumnValue(jobSeeker, key) || "").toLowerCase().startsWith("http") || (getColumnValue(jobSeeker, key) || "").toLowerCase().startsWith("https") ? (
+                          <a
+                            href={(getColumnValue(jobSeeker, key) || "")}
+                            className="text-blue-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >{(getColumnValue(jobSeeker, key) || "")}</a>
+                        ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
+                          <RecordNameResolver
+                            id={String(getColumnValue(jobSeeker, key) || "") || null}
+                            type={(getColumnInfo(key) as any)?.lookupType || "jobSeekers"}
+                            clickable
+                            fallback={String(getColumnValue(jobSeeker, key) || "") || ""}
+                          />
+                        ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(jobSeeker, key) || "") ? (
+                          <a
+                            href={`tel:${(getColumnValue(jobSeeker, key) || "").replace(/\D/g, "")}`}
+                            className="text-blue-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >{getColumnValue(jobSeeker, key)}</a>
+                        ) : (
+                          getColumnValue(jobSeeker, key)
                         )}
                       </td>
                     ))}
