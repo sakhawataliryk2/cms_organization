@@ -222,10 +222,10 @@ function SortableHeaderCell({
     }
     const btnRect = filterToggleRef.current.getBoundingClientRect();
     const headerRect = headerRef.current.getBoundingClientRect();
-    setFilterPosition({ 
-      top: btnRect.bottom + 4, 
-      left: headerRect.left, 
-      width: Math.max(150, Math.min(250, headerRect.width)) 
+    setFilterPosition({
+      top: btnRect.bottom + 4,
+      left: headerRect.left,
+      width: Math.max(150, Math.min(250, headerRect.width))
     });
   }, [showFilter]);
 
@@ -295,7 +295,7 @@ function SortableHeaderCell({
       {showFilter && filterPosition && typeof document !== "undefined" && createPortal(
         <div
           ref={filterRef}
-                  className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
+          className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
           style={{ position: "fixed", top: filterPosition.top, left: filterPosition.left, width: filterPosition.width }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -373,7 +373,7 @@ export default function TbiPage() {
   const [selectedRows, setSelectedRows] = useState<Set<number>>(new Set());
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showColumnsMenu, setShowColumnsMenu] = useState(false);
-  
+
   // Column sort and filter state
   const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
@@ -476,7 +476,7 @@ export default function TbiPage() {
         return name.includes(term) || id.includes(term) || email.includes(term) || title.includes(term);
       });
     }
-    
+
     // Apply column filters
     Object.entries(timesheetsColumnFilters).forEach(([header, filterValue]) => {
       if (!filterValue || filterValue.trim() === "") return;
@@ -683,19 +683,19 @@ export default function TbiPage() {
     // Find the header names from the IDs
     const activeId = String(active.id);
     const overId = String(over.id);
-    
+
     // Try to find the header by matching the ID in columnIds
     const activeIndex = columnIds.indexOf(activeId);
     const overIndex = columnIds.indexOf(overId);
-    
+
     if (activeIndex === -1 || overIndex === -1) return;
-    
+
     // Get the actual headers from columnHeaders
     const activeHeader = columnHeaders[activeIndex];
     const overHeader = columnHeaders[overIndex];
-    
+
     if (!activeHeader || !overHeader) return;
-    
+
     // Reorder based on header names
     setColumnOrder((prev) => {
       const oldIndex = prev.indexOf(activeHeader);
@@ -1021,9 +1021,8 @@ export default function TbiPage() {
                             const mon = getMonday(cell.date);
                             setTimesheetsWeekStart(mon);
                           }}
-                          className={`py-1.5 rounded text-sm ${
-                            !cell.isCurrentMonth ? "text-gray-300" : cell.isInWeek ? "bg-blue-600 text-white" : "text-gray-700 hover:bg-gray-200"
-                          }`}
+                          className={`py-1.5 rounded text-sm ${!cell.isCurrentMonth ? "text-gray-300" : cell.isInWeek ? "bg-blue-600 text-white" : "text-gray-700 hover:bg-gray-200"
+                            }`}
                         >
                           {cell.date.getDate()}
                         </button>
@@ -1062,9 +1061,9 @@ export default function TbiPage() {
                           Actions
                         </div>
                         {timesheetsColumnOrder.map((header) => (
-                          <SortableHeaderCell 
-                            key={header} 
-                            id={header} 
+                          <SortableHeaderCell
+                            key={header}
+                            id={header}
                             header={header}
                             sortState={timesheetsColumnSorts[header] || null}
                             filterValue={timesheetsColumnFilters[header] || null}
@@ -1144,127 +1143,126 @@ export default function TbiPage() {
           </div>
         ) : (
           <div className="flex-1 min-w-0 overflow-auto bg-white">
-          <div className="inline-block min-w-full min-h-full">
-            {/* Sticky column headers row – draggable to reorder */}
-            <DndContext
-              collisionDetection={closestCenter}
-              onDragEnd={handleColumnDragEnd}
-              modifiers={[restrictToHorizontalAxis]}
-            >
-              <SortableContext items={columnIds} strategy={horizontalListSortingStrategy}>
-                <div className="flex sticky top-0 z-20">
-                  <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: HEADER_HEIGHT }}>
-                    #
-                  </div>
-                  <div
-                    className="shrink-0 bg-teal-500 text-white px-2 py-2 border-r border-b border-black flex items-center justify-center gap-2 font-medium text-sm shadow-sm"
-                    style={{ width: ACTIONS_CELL_WIDTH, minWidth: ACTIONS_CELL_WIDTH, height: HEADER_HEIGHT }}
-                  >
-                    <input
-                      type="checkbox"
-                      className="h-4 w-4 text-teal-600 border-gray-300 rounded cursor-pointer"
-                      checked={selectAll}
-                      onChange={handleSelectAll}
-                      title="Select all"
-                    />
-                    <span className="text-xs">Actions</span>
-                  </div>
-                  {columnHeaders.map((header, index) => {
-                    const colId = columnIds[index];
-                    return (
-                      <SortableHeaderCell
-                        key={colId}
-                        id={colId}
-                        header={header}
-                        sortState={columnSorts[header] || null}
-                        filterValue={columnFilters[header] || null}
-                        onSort={() => handleColumnSort(header)}
-                        onFilterChange={(val) => handleColumnFilter(header, val)}
-                      />
-                    );
-                  })}
-                </div>
-              </SortableContext>
-            </DndContext>
-
-
-
-            {/* Many data rows - clickable and selectable; Organization view shows orgs with approved placements */}
-            {tbiOrgsLoading && selectedRow === "Organization" && (
-              <div className="flex items-center justify-center py-8 text-gray-500 text-sm">
-                Loading...
-              </div>
-            )}
-            {tbiOrgsError && selectedRow === "Organization" && (
-              <div className="flex items-center justify-center py-4 text-red-600 text-sm">
-                {tbiOrgsError}
-              </div>
-            )}
-
-            {!tbiOrgsLoading && (() => {
-              const displayOrgs = selectedRow === "Organization" ? filteredAndSortedOrgs : [];
-              // Always show DATA_ROW_COUNT rows, even if empty
-              const rowCount = DATA_ROW_COUNT;
-              
-              return Array.from({ length: rowCount }, (_, rowIndex) => {
-                const isRowSelected = selectedRows.has(rowIndex);
-                const org = selectedRow === "Organization" && rowIndex < displayOrgs.length ? displayOrgs[rowIndex] : null;
-                return (
-                  <div key={rowIndex} className="flex">
-                    <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: ROW_HEIGHT }}>
-                      {rowIndex + 1}
+            <div className="inline-block min-w-full min-h-full">
+              {/* Sticky column headers row – draggable to reorder */}
+              <DndContext
+                collisionDetection={closestCenter}
+                onDragEnd={handleColumnDragEnd}
+                modifiers={[restrictToHorizontalAxis]}
+              >
+                <SortableContext items={columnIds} strategy={horizontalListSortingStrategy}>
+                  <div className="flex sticky top-0 z-20">
+                    <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: HEADER_HEIGHT }}>
+                      #
                     </div>
                     <div
-                      className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center gap-1.5 ${rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
-                      style={{ width: ACTIONS_CELL_WIDTH, minWidth: ACTIONS_CELL_WIDTH, height: ROW_HEIGHT }}
+                      className="shrink-0 bg-teal-500 text-white px-2 py-2 border-r border-b border-black flex items-center justify-center gap-2 font-medium text-sm shadow-sm"
+                      style={{ width: ACTIONS_CELL_WIDTH, minWidth: ACTIONS_CELL_WIDTH, height: HEADER_HEIGHT }}
                     >
-                      {selectedRow === "Organization" && org ? (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDetailOrganization(org);
-                          }}
-                          className="p-1.5 rounded text-gray-600 hover:bg-teal-100 hover:text-teal-700 transition-colors shrink-0 inline-flex items-center justify-center"
-                          title="View details"
-                          aria-label="View organization details"
-                        >
-                          <TbBinoculars size={20} />
-                        </button>
-                      ) : (
-                        <span className="p-1.5 shrink-0 inline-flex items-center justify-center text-gray-300" aria-hidden><TbBinoculars size={20} /></span>
-                      )}
+                      <span className="p-1.5 shrink-0 inline-flex items-center justify-center text-gray-700" aria-hidden><TbBinoculars size={20} /></span>
                       <input
                         type="checkbox"
-                        checked={isRowSelected}
-                        onChange={() => toggleDataRow(rowIndex)}
-                        className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer shrink-0"
-                        aria-label={`Select row ${rowIndex + 1}`}
+                        className="h-4 w-4 text-teal-600 border-gray-300 rounded cursor-pointer"
+                        checked={selectAll}
+                        onChange={handleSelectAll}
+                        title="Select all"
                       />
                     </div>
-                    {columnHeaders.map((header, colIndex) => {
-                      const cellValue = org ? getOrgCellValue(org, header) : "";
+                    {columnHeaders.map((header, index) => {
+                      const colId = columnIds[index];
                       return (
-                        <div
-                          key={colIndex}
-                          className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center text-sm select-none text-left px-1 ${isRowSelected
-                            ? "bg-teal-200 ring-1 ring-teal-500"
-                            : rowIndex % 2 === 0
-                              ? "bg-white"
-                              : "bg-gray-50"
-                            }`}
-                          style={{ width: CELL_WIDTH, minWidth: CELL_WIDTH, height: ROW_HEIGHT }}
-                        >
-                          <span className="truncate w-full text-center">{cellValue || "\u00A0"}</span>
-                        </div>
+                        <SortableHeaderCell
+                          key={colId}
+                          id={colId}
+                          header={header}
+                          sortState={columnSorts[header] || null}
+                          filterValue={columnFilters[header] || null}
+                          onSort={() => handleColumnSort(header)}
+                          onFilterChange={(val) => handleColumnFilter(header, val)}
+                        />
                       );
                     })}
                   </div>
-                );
-              });
-            })()}
+                </SortableContext>
+              </DndContext>
+
+
+              {/* Many data rows - clickable and selectable; Organization view shows orgs with approved placements */}
+              {tbiOrgsLoading && selectedRow === "Organization" && (
+                <div className="flex items-center justify-center py-8 text-gray-500 text-sm">
+                  Loading...
+                </div>
+              )}
+              {tbiOrgsError && selectedRow === "Organization" && (
+                <div className="flex items-center justify-center py-4 text-red-600 text-sm">
+                  {tbiOrgsError}
+                </div>
+              )}
+
+              {!tbiOrgsLoading && (() => {
+                const displayOrgs = selectedRow === "Organization" ? filteredAndSortedOrgs : [];
+                // Always show DATA_ROW_COUNT rows, even if empty
+                const rowCount = DATA_ROW_COUNT;
+
+                return Array.from({ length: rowCount }, (_, rowIndex) => {
+                  const isRowSelected = selectedRows.has(rowIndex);
+                  const org = selectedRow === "Organization" && rowIndex < displayOrgs.length ? displayOrgs[rowIndex] : null;
+                  return (
+                    <div key={rowIndex} className="flex">
+                      <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: ROW_HEIGHT }}>
+                        {rowIndex + 1}
+                      </div>
+                      <div
+                        className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center gap-1.5 ${rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
+                        style={{ width: ACTIONS_CELL_WIDTH, minWidth: ACTIONS_CELL_WIDTH, height: ROW_HEIGHT }}
+                      >
+                        {selectedRow === "Organization" && org ? (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDetailOrganization(org);
+                            }}
+                            className="p-1.5 rounded text-gray-600 hover:bg-teal-100 hover:text-teal-700 transition-colors shrink-0 inline-flex items-center justify-center"
+                            title="View details"
+                            aria-label="View organization details"
+                          >
+                            <TbBinoculars size={20} />
+                          </button>
+                        ) : (
+                          <span className="p-1.5 shrink-0 inline-flex items-center justify-center text-gray-300" aria-hidden><TbBinoculars size={20} /></span>
+                        )}
+                        <input
+                          type="checkbox"
+                          checked={isRowSelected}
+                          onChange={() => toggleDataRow(rowIndex)}
+                          className="h-4 w-4 rounded border-gray-300 text-teal-600 focus:ring-teal-500 cursor-pointer shrink-0"
+                          aria-label={`Select row ${rowIndex + 1}`}
+                        />
+                      </div>
+                      {columnHeaders.map((header, colIndex) => {
+                        const cellValue = org ? getOrgCellValue(org, header) : "";
+                        return (
+                          <div
+                            key={colIndex}
+                            className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center text-sm select-none text-left px-1 ${isRowSelected
+                              ? "bg-teal-200 ring-1 ring-teal-500"
+                              : rowIndex % 2 === 0
+                                ? "bg-white"
+                                : "bg-gray-50"
+                              }`}
+                            style={{ width: CELL_WIDTH, minWidth: CELL_WIDTH, height: ROW_HEIGHT }}
+                          >
+                            <span className="truncate w-full text-center">{cellValue || "\u00A0"}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                });
+              })()}
+            </div>
           </div>
-        </div>
         )}
       </div>
 
@@ -1273,8 +1271,8 @@ export default function TbiPage() {
         <OrganizationDetailPanel
           organization={detailOrganization}
           onClose={() => setDetailOrganization(null)}
-          onSave={() => {}}
-          onDelete={() => {}}
+          onSave={() => { }}
+          onDelete={() => { }}
         />
       )}
 
