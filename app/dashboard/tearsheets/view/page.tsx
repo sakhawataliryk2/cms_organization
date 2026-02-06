@@ -556,6 +556,32 @@ export default function TearsheetView() {
     fetchTearsheet();
   }, [tearsheetId]);
 
+  // Fetch organizations count for statistics (always fetch, regardless of active tab)
+  useEffect(() => {
+    if (!tearsheetId) return;
+
+    const fetchOrganizationsCount = async () => {
+      try {
+        const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+        const response = await fetch(`/api/tearsheets/${tearsheetId}/organizations`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          cache: 'no-store',
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+          setOrganizations(data.organizations || []);
+        }
+      } catch (err) {
+        console.error('Error fetching organizations count:', err);
+      }
+    };
+
+    fetchOrganizationsCount();
+  }, [tearsheetId]);
+
   // Fetch tab-specific data
   useEffect(() => {
     if (!tearsheetId || !activeTab || activeTab === "overview") return;
@@ -741,7 +767,10 @@ export default function TearsheetView() {
         hiring_managers: tearsheet.hiring_manager_count || 0,
         job_orders: tearsheet.job_order_count || 0,
         leads: tearsheet.lead_count || 0,
-        organizations: tearsheet.organization_count || 0,
+        // Use actual organizations array length (fetched separately to include direct links)
+        // This ensures accurate count including organizations directly linked via tearsheet_organizations table
+        // Falls back to tearsheet.organization_count during initial render before fetch completes
+        organizations: organizations.length || (tearsheet.organization_count || 0),
         placements: tearsheet.placement_count || 0,
       },
     };
@@ -816,7 +845,7 @@ export default function TearsheetView() {
       return (
         <SortablePanel key={panelId} id={panelId}>
           <PanelWithHeader
-            title="Statistics:"
+            title="Statistics"
             onEdit={() => handleEditPanel("statistics")}
           >
             <div className="space-y-0 border border-gray-200 rounded">
