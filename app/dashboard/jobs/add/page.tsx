@@ -471,9 +471,9 @@ export default function AddJob() {
     }
   }, [hiringManagerValue, isEditMode, jobType, organizationIdFromUrl]);
 
-  // Fetch HMs for: (1) org HM-first step, (2) form inline dropdown (no modal)
+  // Fetch HMs for: (1) org HM-first step, (2) form inline dropdown / modal (add and edit mode)
   const needHiringManagerOptions =
-    showOrgHmFirstStep || (!isEditMode && jobStep === 3 && (organizationIdFromUrl || currentOrganizationId || !organizationIdFromUrl));
+    showOrgHmFirstStep || (jobStep === 3 && (organizationIdFromUrl || currentOrganizationId || !organizationIdFromUrl));
   useEffect(() => {
     if (!needHiringManagerOptions) return;
 

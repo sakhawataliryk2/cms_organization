@@ -50,6 +50,7 @@ import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFil
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import { sendCalendarInvite, type CalendarEvent } from "@/lib/office365";
 import { toast } from "sonner";
+import RecordNameResolver from '@/components/RecordNameResolver';
 
 // SortablePanel helper
 function SortablePanel({ id, children, isOverlay = false }: { id: string; children: React.ReactNode; isOverlay?: boolean }) {
@@ -1340,59 +1341,59 @@ export default function JobView() {
     });
 
     const renderJobDetailsRow = (key: string) => {
-      if (key === "title") {
-        return (
-          <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Title:</div>
-            <div className="flex-1 p-2">
-              <span className="text-blue-600 font-semibold">{job.title}</span>
-              <div className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">{job.employmentType}</div>
-            </div>
-          </div>
-        );
-      }
-      if (key === "description") {
-        return (
-          <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Description:</div>
-            <div className="flex-1 p-2 whitespace-pre-line text-gray-700">{job.description}</div>
-          </div>
-        );
-      }
-      if (key === "benefits") {
-        return (
-          <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Benefits:</div>
-            <div className="flex-1 p-2">
-              {job.benefits?.length > 0 ? (
-                <ul className="list-disc pl-5">
-                  {job.benefits.map((benefit: string, index: number) => (
-                    <li key={index} className="text-gray-700 mb-1">{benefit}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-gray-500 italic">No benefits listed</p>
-              )}
-            </div>
-          </div>
-        );
-      }
-      if (key === "requiredSkills") {
-        return (
-          <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Required Skills:</div>
-            <div className="flex-1 p-2 text-gray-700">{job.requiredSkills || "-"}</div>
-          </div>
-        );
-      }
-      if (key === "salaryRange") {
-        return (
-          <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-            <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Salary Range:</div>
-            <div className="flex-1 p-2 text-gray-700">{job.salaryRange}</div>
-          </div>
-        );
-      }
+      // if (key === "title") {
+      //   return (
+      //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+      //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Title:</div>
+      //       <div className="flex-1 p-2">
+      //         <span className="text-blue-600 font-semibold">{job.title}</span>
+      //         <div className="bg-green-100 text-green-800 text-xs px-2 py-1 rounded">{job.employmentType}</div>
+      //       </div>
+      //     </div>
+      //   );
+      // }
+      // if (key === "description") {
+      //   return (
+      //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+      //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Description:</div>
+      //       <div className="flex-1 p-2 whitespace-pre-line text-gray-700">{job.description}</div>
+      //     </div>
+      //   );
+      // }
+      // if (key === "benefits") {
+      //   return (
+      //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+      //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Benefits:</div>
+      //       <div className="flex-1 p-2">
+      //         {job.benefits?.length > 0 ? (
+      //           <ul className="list-disc pl-5">
+      //             {job.benefits.map((benefit: string, index: number) => (
+      //               <li key={index} className="text-gray-700 mb-1">{benefit}</li>
+      //             ))}
+      //           </ul>
+      //         ) : (
+      //           <p className="text-gray-500 italic">No benefits listed</p>
+      //         )}
+      //       </div>
+      //     </div>
+      //   );
+      // }
+      // if (key === "requiredSkills") {
+      //   return (
+      //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+      //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Required Skills:</div>
+      //       <div className="flex-1 p-2 text-gray-700">{job.requiredSkills || "-"}</div>
+      //     </div>
+      //   );
+      // }
+      // if (key === "salaryRange") {
+      //   return (
+      //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+      //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Salary Range:</div>
+      //       <div className="flex-1 p-2 text-gray-700">{job.salaryRange}</div>
+      //     </div>
+      //   );
+      // }
       // Custom field
       const field = customFieldDefs.find(
         (f: any) =>
@@ -1405,10 +1406,34 @@ export default function JobView() {
         (field?.field_label ? (customObj as any)?.[field.field_label] : undefined) ??
         (field?.field_name ? (customObj as any)?.[field.field_name] : undefined);
       const label = field?.field_label || field?.field_name || key;
+      const fieldValue = value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
+      const lookupType = (field?.lookup_type || field?.lookupType || "") as any;
       return (
         <div key={key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
-          <div className="flex-1 p-2">{value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-"}</div>
+          <div className="flex-1 p-2">{
+                /\(\d{3}\)\s\d{3}-\d{4}/.test(fieldValue || "") ? (
+                  <a href={`tel:${String(fieldValue)}`} className="text-blue-600 hover:underline">
+                    {String(fieldValue)}
+                  </a>
+                ) : String(fieldValue)?.includes("@") ? (
+                  <a href={`mailto:${String(fieldValue)}`} className="text-blue-600 hover:underline">
+                    {String(fieldValue)}
+                  </a>
+                ) : String(fieldValue)?.startsWith("http") || String(fieldValue)?.startsWith("https") ? (
+                  <a href={String(fieldValue)} className="text-blue-600 hover:underline">
+                    {String(fieldValue)}
+                  </a>
+                ) : lookupType && fieldValue ? (
+                  <RecordNameResolver
+                    id={String(fieldValue || "") || null}
+                    type={lookupType as any}
+                    clickable
+                    fallback={String(fieldValue || "") || ""}
+                  />) : (
+                  String(fieldValue)
+                )}
+              </div>
         </div>
       );
     };
@@ -1434,72 +1459,96 @@ export default function JobView() {
         <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
       );
       switch (key) {
-        case "status":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <LabelCell />
-              <div className="flex-1 p-2">
-                <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{job.status}</span>
-              </div>
-            </div>
-          );
-        case "priority":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <LabelCell />
-              <div className="flex-1 p-2">{job.priority ?? "-"}</div>
-            </div>
-          );
-        case "employmentType":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <LabelCell />
-              <div className="flex-1 p-2">{job.employmentType ?? "-"}</div>
-            </div>
-          );
-        case "startDate":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <LabelCell />
-              <div className="flex-1 p-2">{job.startDate ?? "-"}</div>
-            </div>
-          );
-        case "worksite":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <LabelCell />
-              <div className="flex-1 p-2">{job.worksite ?? "-"}</div>
-            </div>
-          );
-        case "dateAdded":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <LabelCell />
-              <div className="flex-1 p-2">{job.dateAdded ?? "-"}</div>
-            </div>
-          );
-        case "jobBoardStatus":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <LabelCell />
-              <div className="flex-1 p-2">{job.jobBoardStatus ?? "-"}</div>
-            </div>
-          );
-        case "owner":
-          return (
-            <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-              <LabelCell />
-              <div className="flex-1 p-2">{job.owner ?? "-"}</div>
-            </div>
-          );
+        // case "status":
+        //   return (
+        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+        //       <LabelCell />
+        //       <div className="flex-1 p-2">
+        //         <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{job.status}</span>
+        //       </div>
+        //     </div>
+        //   );
+        // case "priority":
+        //   return (
+        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+        //       <LabelCell />
+        //       <div className="flex-1 p-2">{job.priority ?? "-"}</div>
+        //     </div>
+        //   );
+        // case "employmentType":
+        //   return (
+        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+        //       <LabelCell />
+        //       <div className="flex-1 p-2">{job.employmentType ?? "-"}</div>
+        //     </div>
+        //   );
+        // case "startDate":
+        //   return (
+        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+        //       <LabelCell />
+        //       <div className="flex-1 p-2">{job.startDate ?? "-"}</div>
+        //     </div>
+        //   );
+        // case "worksite":
+        //   return (
+        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+        //       <LabelCell />
+        //       <div className="flex-1 p-2">{job.worksite ?? "-"}</div>
+        //     </div>
+        //   );
+        // case "dateAdded":
+        //   return (
+        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+        //       <LabelCell />
+        //       <div className="flex-1 p-2">{job.dateAdded ?? "-"}</div>
+        //     </div>
+        //   );
+        // case "jobBoardStatus":
+        //   return (
+        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+        //       <LabelCell />
+        //       <div className="flex-1 p-2">{job.jobBoardStatus ?? "-"}</div>
+        //     </div>
+        //   );
+        // case "owner":
+        //   return (
+        //     <div key={key} className="flex border-b border-gray-200 last:border-b-0">
+        //       <LabelCell />
+        //       <div className="flex-1 p-2">{job.owner ?? "-"}</div>
+        //     </div>
+        //   );
         default: {
           const field = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
           const fieldLabel = field?.field_label || field?.field_name || key;
-          const fieldValue = job.customFields?.[fieldLabel] ?? "-";
+          const lookupType = field?.lookup_type || field?.lookupType || "";
+          console.log("lookupType", lookupType);
+          const fieldValue = job.customFields?.[fieldLabel] ?? job?.custom_fields?.[fieldLabel] ?? "-";
           return (
             <div key={key} className="flex border-b border-gray-200 last:border-b-0">
               <LabelCell />
-              <div className="flex-1 p-2">{String(fieldValue)}</div>
+              <div className="flex-1 p-2">{
+                /\(\d{3}\)\s\d{3}-\d{4}/.test(fieldValue || "") ? (
+                  <a href={`tel:${String(fieldValue)}`} className="text-blue-600 hover:underline">
+                    {String(fieldValue)}
+                  </a>
+                ) : String(fieldValue)?.includes("@") ? (
+                  <a href={`mailto:${String(fieldValue)}`} className="text-blue-600 hover:underline">
+                    {String(fieldValue)}
+                  </a>
+                ) : String(fieldValue)?.startsWith("http") || String(fieldValue)?.startsWith("https") ? (
+                  <a href={String(fieldValue)} className="text-blue-600 hover:underline">
+                    {String(fieldValue)}
+                  </a>
+                ) : lookupType && fieldValue ? (
+                  <RecordNameResolver
+                    id={String(fieldValue || "") || null}
+                    type={lookupType as any}
+                    clickable
+                    fallback={String(fieldValue || "") || ""}
+                  />) : (
+                  String(fieldValue) || "-"
+                )}
+              </div>
             </div>
           );
         }
@@ -1597,34 +1646,70 @@ export default function JobView() {
       );
       if (!hm) return null;
       switch (key) {
-        case "status":
-          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.status || "-"}</div></div>);
-        case "organization":
-          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm text-blue-600">{hm.organization?.name || "-"}</div></div>);
-        case "department":
-          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.department || "-"}</div></div>);
-        case "email":
-          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.email && hm.email !== "(Not provided)" ? <a href={`mailto:${hm.email}`} className="text-blue-600 hover:underline">{hm.email}</a> : "-"}</div></div>);
-        case "email2":
-          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.email2 && hm.email2 !== "(Not provided)" ? <a href={`mailto:${hm.email2}`} className="text-blue-600 hover:underline">{hm.email2}</a> : "-"}</div></div>);
-        case "mobilePhone":
-          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.mobilePhone && hm.mobilePhone !== "(Not provided)" ? <a href={`tel:${hm.mobilePhone}`} className="text-blue-600 hover:underline">{hm.mobilePhone}</a> : "-"}</div></div>);
-        case "directLine":
-          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.directLine && hm.directLine !== "(Not provided)" ? <a href={`tel:${hm.directLine}`} className="text-blue-600 hover:underline">{hm.directLine}</a> : "-"}</div></div>);
-        case "reportsTo":
-          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.reportsTo || "-"}</div></div>);
-        case "linkedinUrl":
-          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.linkedinUrl && hm.linkedinUrl !== "Not provided" ? <a href={hm.linkedinUrl.startsWith("http") ? hm.linkedinUrl : `https://${hm.linkedinUrl}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{hm.linkedinUrl}</a> : "-"}</div></div>);
-        case "dateAdded":
-          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.dateAdded || "-"}</div></div>);
-        case "owner":
-          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.owner || "-"}</div></div>);
+        // case "status":
+        //   return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.status || "-"}</div></div>);
+        // case "organization":
+        //   return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm text-blue-600">{hm.organization?.name || "-"}</div></div>);
+        // case "department":
+        //   return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.department || "-"}</div></div>);
+        // case "email":
+        //   return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.email && hm.email !== "(Not provided)" ? <a href={`mailto:${hm.email}`} className="text-blue-600 hover:underline">{hm.email}</a> : "-"}</div></div>);
+        // case "email2":
+        //   return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.email2 && hm.email2 !== "(Not provided)" ? <a href={`mailto:${hm.email2}`} className="text-blue-600 hover:underline">{hm.email2}</a> : "-"}</div></div>);
+        // case "mobilePhone":
+        //   return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.mobilePhone && hm.mobilePhone !== "(Not provided)" ? <a href={`tel:${hm.mobilePhone}`} className="text-blue-600 hover:underline">{hm.mobilePhone}</a> : "-"}</div></div>);
+        // case "directLine":
+        //   return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.directLine && hm.directLine !== "(Not provided)" ? <a href={`tel:${hm.directLine}`} className="text-blue-600 hover:underline">{hm.directLine}</a> : "-"}</div></div>);
+        // case "reportsTo":
+        //   return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.reportsTo || "-"}</div></div>);
+        // case "linkedinUrl":
+        //   return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.linkedinUrl && hm.linkedinUrl !== "Not provided" ? <a href={hm.linkedinUrl.startsWith("http") ? hm.linkedinUrl : `https://${hm.linkedinUrl}`} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">{hm.linkedinUrl}</a> : "-"}</div></div>);
+        // case "dateAdded":
+        //   return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.dateAdded || "-"}</div></div>);
+        // case "owner":
+        //   return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{hm.owner || "-"}</div></div>);
         case "address":
           return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{getCombinedAddress()}</div></div>);
         default: {
           const cv = getCustomValue(label);
           const val = cv ?? (hm as any)[key];
-          return (<div key={key} className="flex border-b border-gray-200 last:border-b-0"><LabelCell /><div className="flex-1 p-2 text-sm">{val !== undefined && val !== null && String(val).trim() !== "" ? String(val) : "-"}</div></div>);
+          const lookupType = (customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key)?.lookup_type || customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key)?.lookupType || "") as any;
+          const fieldValue = val !== undefined && val !== null && String(val).trim() !== "" ? String(val) : "-";
+          console.log("lookupType", lookupType);
+          return (
+            <div
+              key={key}
+              className="flex border-b border-gray-200 last:border-b-0"
+            >
+              <LabelCell />
+              <div className="flex-1 p-2 text-sm">
+                {
+                  /\(\d{3}\)\s\d{3}-\d{4}/.test(fieldValue || "") ? (
+                    <a href={`tel:${String(fieldValue)}`} className="text-blue-600 hover:underline">
+                      {String(fieldValue)}
+                    </a>
+                  ) : String(fieldValue)?.includes("@") ? (
+                    <a href={`mailto:${String(fieldValue)}`} className="text-blue-600 hover:underline">
+                      {String(fieldValue)}
+                    </a>
+                  ) : String(fieldValue)?.startsWith("http") || String(fieldValue)?.startsWith("https") ? (
+                    <a href={String(fieldValue)} className="text-blue-600 hover:underline">
+                      {String(fieldValue)}
+                    </a>
+                  ) : lookupType && fieldValue ? (
+                    <RecordNameResolver
+                      id={String(fieldValue || "") || null}
+                      type={lookupType as any}
+                      clickable
+                      fallback={String(fieldValue || "") || ""}
+                    />
+                  ) : (
+                    String(fieldValue)
+                  )
+                }
+              </div>
+            </div>
+          );
         }
       }
     };

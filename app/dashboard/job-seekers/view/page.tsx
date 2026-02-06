@@ -15,6 +15,7 @@ import { TbGripVertical } from "react-icons/tb";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import OnboardingTab from "./onboarding/OnboardingTab";
+import RecordNameResolver from '@/components/RecordNameResolver';
 import {
   buildPinnedKey,
   isPinnedRecord,
@@ -4052,19 +4053,35 @@ Best regards`;
         (field?.field_label ? (customObj as any)?.[field.field_label] : undefined) ??
         (field?.field_name ? (customObj as any)?.[field.field_name] : undefined);
       const label = field?.field_label || field?.field_name || key;
-      const displayValue = value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
+      const fieldValue = value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
+      const lookupType = (field?.lookup_type || field?.lookupType || "") as any;
       return (
         <div key={key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
-          <div className="flex-1 p-2 text-sm">
-            {key === "status" ? (
-              <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">{displayValue}</span>
-            ) : (key === "email" || (field?.field_label && field.field_label.toLowerCase() === "email")) && displayValue !== "-" ? (
-              <a href={`mailto:${displayValue}`} className="text-blue-600 hover:underline">{displayValue}</a>
-            ) : (
-              displayValue
+          <div className="flex-1 p-2 text-sm">{
+            /\(\d{3}\)\s\d{3}-\d{4}/.test(fieldValue || "") ? (
+              <a href={`tel:${String(fieldValue)}`} className="text-blue-600 hover:underline">
+                {String(fieldValue)}
+              </a>
+            ) : String(fieldValue)?.includes("@") ? (
+              <a href={`mailto:${String(fieldValue)}`} className="text-blue-600 hover:underline">
+                {String(fieldValue)}
+              </a>
+            ) : String(fieldValue)?.startsWith("http") || String(fieldValue)?.startsWith("https") ? (
+              <a href={String(fieldValue)} className="text-blue-600 hover:underline">
+                {String(fieldValue)}
+              </a>
+            ) : lookupType && fieldValue ? (
+              <RecordNameResolver
+                id={String(fieldValue || "") || null}
+                type={lookupType as any}
+                clickable
+                fallback={String(fieldValue || "") || ""}
+              />) : (
+              String(fieldValue) || "-"
             )}
           </div>
+          {/* </div> */}
         </div>
       );
     };
@@ -4164,10 +4181,34 @@ Best regards`;
         (field?.field_label ? (customObj as any)?.[field.field_label] : undefined) ??
         (field?.field_name ? (customObj as any)?.[field.field_name] : undefined);
       const label = field?.field_label || field?.field_name || key;
+      const fieldValue = value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
+      const lookupType = (field?.lookup_type || field?.lookupType || "") as any;
       return (
         <div key={key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
-          <div className="flex-1 p-2 text-sm">{value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-"}</div>
+          <div className="flex-1 p-2 text-sm">{
+            /\(\d{3}\)\s\d{3}-\d{4}/.test(fieldValue || "") ? (
+              <a href={`tel:${String(fieldValue)}`} className="text-blue-600 hover:underline">
+                {String(fieldValue)}
+              </a>
+            ) : String(fieldValue)?.includes("@") ? (
+              <a href={`mailto:${String(fieldValue)}`} className="text-blue-600 hover:underline">
+                {String(fieldValue)}
+              </a>
+            ) : String(fieldValue)?.startsWith("http") || String(fieldValue)?.startsWith("https") ? (
+              <a href={String(fieldValue)} className="text-blue-600 hover:underline">
+                {String(fieldValue)}
+              </a>
+            ) : lookupType && fieldValue ? (
+              <RecordNameResolver
+                id={String(fieldValue || "") || null}
+                type={lookupType as any}
+                clickable
+                fallback={String(fieldValue || "") || ""}
+              />) : (
+              String(fieldValue) || "-"
+            )}
+          </div>
         </div>
       );
     };
@@ -4298,25 +4339,55 @@ Best regards`;
                 No header fields selected
               </span>
             ) : (
-              headerFields.map((fk) => (
-                <div key={fk} className="min-w-[120px] sm:min-w-[140px]">
-                  <div className="text-xs text-gray-500">
-                    {getHeaderFieldLabel(fk)}
-                  </div>
-                  {(fk === "email" || fk === "custom:email") && getHeaderFieldValue(fk) !== "-" ? (
-                    <a
-                      href={`mailto:${getHeaderFieldValue(fk)}`}
-                      className="text-sm font-medium text-blue-600 hover:underline"
-                    >
-                      {getHeaderFieldValue(fk)}
-                    </a>
-                  ) : (
-                    <div className="text-sm font-medium text-gray-900">
-                      {getHeaderFieldValue(fk)}
+              headerFields.map((fk) => {
+                const customFieldDefs = (availableFields || []).filter((f: any) => {
+                  const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
+                  return !isHidden;
+                });
+                const field = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === fk);
+                const lookupType = (field?.lookup_type || field?.lookupType || "") as any;
+                return (
+                  <div key={fk} className="min-w-[120px] sm:min-w-[140px]">
+                    <div className="text-xs text-gray-500">
+                      {getHeaderFieldLabel(fk)}
                     </div>
-                  )}
-                </div>
-              ))
+                    {getHeaderFieldValue(fk).toLowerCase().includes("@") ? (
+                      <a
+                        href={`mailto:${getHeaderFieldValue(fk)}`}
+                        className="text-sm font-medium text-blue-600 hover:underline"
+                      >
+                        {getHeaderFieldValue(fk)}
+                      </a>
+                    ) : getHeaderFieldValue(fk).toLowerCase().startsWith("http") || getHeaderFieldValue(fk).toLowerCase().startsWith("https") ? (
+                      <a
+                        href={getHeaderFieldValue(fk)}
+                        className="text-sm font-medium text-blue-600 hover:underline"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        {getHeaderFieldValue(fk)}
+                      </a>
+                    ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getHeaderFieldValue(fk) || "") ? (
+                      <a
+                        href={`tel:${getHeaderFieldValue(fk).replace(/\D/g, "")}`}
+                        className="text-sm font-medium text-blue-600 hover:underline"
+                      >
+                        {getHeaderFieldValue(fk)}
+                      </a>
+                    ) : lookupType && getHeaderFieldValue(fk) ? (
+                      <RecordNameResolver
+                        id={String(getHeaderFieldValue(fk) || "") || null}
+                        type={lookupType as any}
+                        clickable
+                        fallback={String(getHeaderFieldValue(fk) || "") || ""}
+                      />
+                    ) : (
+                      <div className="text-sm font-medium text-gray-900">
+                        {getHeaderFieldValue(fk)}
+                      </div>
+                    )}
+                  </div>)
+              })
             )}
           </div>
 
