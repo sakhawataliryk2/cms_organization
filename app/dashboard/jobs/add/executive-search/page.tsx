@@ -1,7 +1,8 @@
 // app/dashboard/jobs/add/executive-search/page.tsx
 "use client";
 
-import { useState, useEffect, useMemo, useRef, KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
@@ -166,12 +167,169 @@ function MultiValueSearchTagInput({
   );
 }
 
+interface HiringManagerSearchSelectProps {
+  value: string;
+  options: Array<{ id: string; name: string }>;
+  onChange: (id: string, opt: { id: string; name: string }) => void;
+  placeholder?: string;
+  loading?: boolean;
+  className?: string;
+  disabled?: boolean;
+}
+
+function HiringManagerSearchSelect({
+  value,
+  options,
+  onChange,
+  placeholder = "Search or select Hiring Manager",
+  loading = false,
+  className = "",
+  disabled = false,
+}: HiringManagerSearchSelectProps) {
+  const [search, setSearch] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(0);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const selectedOption = options.find((o) => String(o.id) === value);
+  const displayValue = selectedOption?.name ?? "";
+
+  const filteredOptions = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return options;
+    return options.filter((opt) =>
+      (opt.name || "").toLowerCase().includes(q)
+    );
+  }, [search, options]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    setHighlightIndex(0);
+  }, [search, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !listRef.current) return;
+    const el = listRef.current.querySelector(`[data-index="${highlightIndex}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [highlightIndex, isOpen]);
+
+  const handleKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (!isOpen) {
+      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+        e.preventDefault();
+        setIsOpen(true);
+      }
+      return;
+    }
+    if (e.key === "Escape") {
+      setIsOpen(false);
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightIndex((i) => Math.min(i + 1, filteredOptions.length - 1));
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightIndex((i) => Math.max(i - 1, 0));
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const opt = filteredOptions[highlightIndex];
+      if (opt) {
+        onChange(opt.id, opt);
+        setIsOpen(false);
+        setSearch("");
+      }
+    }
+  };
+
+  const handleSelect = (opt: { id: string; name: string }) => {
+    onChange(opt.id, opt);
+    setIsOpen(false);
+    setSearch("");
+  };
+
+  return (
+    <div ref={wrapperRef} className={`relative ${className}`}>
+      <div
+        className={`w-full max-w-md p-2 border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 flex items-center gap-2 bg-white ${disabled ? "bg-gray-50 cursor-not-allowed" : ""}`}
+      >
+        <input
+          type="text"
+          value={isOpen ? search : displayValue}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => !disabled && setIsOpen(true)}
+          onKeyDown={handleKeyDown}
+          placeholder={displayValue ? "" : placeholder}
+          disabled={disabled}
+          className="flex-1 min-w-0 outline-none bg-transparent"
+          autoComplete="off"
+        />
+        <span className="text-gray-400 pointer-events-none shrink-0">
+          {isOpen ? (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          )}
+        </span>
+      </div>
+      {loading && (
+        <p className="text-sm text-gray-500 mt-1">Loading...</p>
+      )}
+      {isOpen && (
+        <div
+          ref={listRef}
+          className="absolute z-20 mt-1 w-full max-w-md bg-white border border-gray-200 rounded shadow-lg max-h-56 overflow-auto"
+        >
+          {filteredOptions.length === 0 ? (
+            <div className="px-3 py-4 text-sm text-gray-500 text-center">
+              No hiring managers match your search
+            </div>
+          ) : (
+            filteredOptions.map((opt, idx) => (
+              <button
+                key={opt.id}
+                type="button"
+                data-index={idx}
+                onClick={() => handleSelect(opt)}
+                className={`w-full text-left px-3 py-2.5 text-sm text-gray-800 hover:bg-gray-50 ${idx === highlightIndex ? "bg-blue-50" : ""} ${String(opt.id) === value ? "font-medium text-blue-700" : ""}`}
+              >
+                {opt.name}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AddExecutiveSearchJob() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const jobId = searchParams.get("id"); // Get job ID from URL if present
   const leadId = searchParams.get("leadId") || searchParams.get("lead_id");
-  const organizationIdFromUrl = searchParams.get("organizationId");
+  const organizationIdFromUrl = searchParams.get("organizationId") || searchParams.get("organization_id");
   const hasPrefilledFromLeadRef = useRef(false);
   const hasPrefilledOrgRef = useRef(false);
   const hasInitializedOrgSyncRef = useRef(false);
@@ -260,14 +418,17 @@ export default function AddExecutiveSearchJob() {
       setJobStep(3);
       return;
     }
-
-    if (hiringManagerValue && hiringManagerValue.trim() !== "") {
+    // No HM step on this page (org HM is on main add page); always show form when adding
+    if (!jobId) {
       setJobStep(3);
     }
-  }, [hiringManagerValue, isEditMode]);
+  }, [jobId, isEditMode]);
 
+  // Fetch HMs for form inline search select (and edit modal)
+  const needHiringManagerOptions =
+    jobStep === 3 && (organizationIdFromUrl || currentOrganizationId || !organizationIdFromUrl);
   useEffect(() => {
-    if (!isHiringManagerModalOpen) return;
+    if (!needHiringManagerOptions) return;
 
     const fetchHiringManagers = async () => {
       setIsHiringManagerOptionsLoading(true);
@@ -315,7 +476,7 @@ export default function AddExecutiveSearchJob() {
     };
 
     fetchHiringManagers();
-  }, [isHiringManagerModalOpen, currentOrganizationId, organizationIdFromUrl]);
+  }, [needHiringManagerOptions, currentOrganizationId, organizationIdFromUrl]);
 
   // Calculate Client Bill Rate (Field_13) from Pay Rate (Field_11) and Mark-up % (Field_12 or Field_512)
   const calculateClientBillRate = (payRate: string, markupPercent: string): string => {
@@ -1183,58 +1344,37 @@ export default function AddExecutiveSearchJob() {
           </div>
         )}
 
-        {!isEditMode && jobStep === 2 && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-4">
+        {/* Form: from org HM may be prefilled; from job overview HM is inline search select (no modal) */}
+        {(isEditMode || jobStep === 3) && (
+          <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 gap-4">
+            {!isEditMode && hiringManagerCustomField && (
               <div className="flex items-center mb-3">
                 <label className="w-48 font-medium flex items-center">
                   Hiring Manager:
                 </label>
-                <div className="flex-1 flex items-center gap-3">
-                  <div className="flex-1 p-2 border-b border-gray-300 text-gray-800">
-                    {hiringManagerDisplayValue && hiringManagerDisplayValue.trim() !== ""
-                      ? hiringManagerDisplayValue
-                      : "Select hiring manager to continue"}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsHiringManagerModalOpen(true)}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                  >
-                    Choose
-                  </button>
+                <div className="flex-1">
+                  <HiringManagerSearchSelect
+                    value={hiringManagerValue}
+                    options={hiringManagerOptions}
+                    onChange={(id, opt) => {
+                      setCustomFieldValues((prev) => ({
+                        ...prev,
+                        [hiringManagerCustomField.field_name]: id,
+                      }));
+                      setFormFields((prev) =>
+                        prev.map((f) =>
+                          f.name === "hiringManager" ? { ...f, value: opt.name } : f
+                        )
+                      );
+                    }}
+                    placeholder="Search or select Hiring Manager"
+                    loading={isHiringManagerOptionsLoading}
+                  />
                 </div>
               </div>
-            </div>
-            <div className="flex justify-end space-x-4 mt-8">
-              <button
-                type="button"
-                onClick={handleGoBack}
-                className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                disabled={!hiringManagerValue || hiringManagerValue.trim() === ""}
-                onClick={() => setJobStep(3)}
-                className={`px-4 py-2 rounded text-white ${
-                  !hiringManagerValue || hiringManagerValue.trim() === ""
-                    ? "bg-gray-300 cursor-not-allowed"
-                    : "bg-blue-500 hover:bg-blue-600"
-                }`}
-              >
-                Continue
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Form */}
-        {(isEditMode || jobStep === 3) && (
-          <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-1 gap-4">
-            {!isEditMode && (
+            )}
+            {isEditMode && (
               <div className="flex items-center mb-3">
                 <label className="w-48 font-medium flex items-center">
                   Hiring Manager:

@@ -353,7 +353,7 @@ function SortableColumnHeader({
   );
 }
 
-const ORG_VIEW_TAB_IDS = ["summary", "modify", "notes", "history", "quotes", "invoices", "contacts", "docs", "opportunities", "jobs"];
+const ORG_VIEW_TAB_IDS = ["summary", "modify", "notes", "history", "quotes", "invoices", "contacts", "docs", "opportunities", "jobs", "placements"];
 
 export default function OrganizationView() {
   const router = useRouter();
@@ -536,6 +536,10 @@ export default function OrganizationView() {
   const [jobs, setJobs] = useState<Array<any>>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
   const [jobsError, setJobsError] = useState<string | null>(null);
+
+  const [placements, setPlacements] = useState<Array<any>>([]);
+  const [isLoadingPlacements, setIsLoadingPlacements] = useState(false);
+  const [placementsError, setPlacementsError] = useState<string | null>(null);
   const filteredJobs = hmFilter
     ? jobs.filter((j: any) => norm(j.hiring_manager) === norm(hmFilter))
     : jobs;
@@ -834,6 +838,13 @@ export default function OrganizationView() {
       fetchTasks(organizationId);
     }
   }, [organizationId, isLoadingHiringManagers, isLoadingJobs]);
+
+  // Fetch placements when user switches to Placements tab
+  useEffect(() => {
+    if (organizationId && activeTab === "placements") {
+      fetchPlacements(organizationId);
+    }
+  }, [organizationId, activeTab]);
 
   // Fetch available fields after organization is loaded
   useEffect(() => {
@@ -2117,6 +2128,42 @@ export default function OrganizationView() {
     }
   };
 
+  // Fetch placements for organization
+  const fetchPlacements = async (organizationId: string) => {
+    setIsLoadingPlacements(true);
+    setPlacementsError(null);
+    try {
+      const response = await fetch(
+        `/api/placements/organization/${organizationId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        }
+      );
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || "Failed to fetch placements");
+      }
+      const data = await response.json();
+      const list = data.placements ?? data ?? [];
+      setPlacements(Array.isArray(list) ? list : []);
+    } catch (err) {
+      console.error("Error fetching placements:", err);
+      setPlacementsError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while fetching placements"
+      );
+      setPlacements([]);
+    } finally {
+      setIsLoadingPlacements(false);
+    }
+  };
+
   // Fetch tasks for organization (only non-completed tasks)
   const fetchTasks = async (organizationId: string) => {
     setIsLoadingTasks(true);
@@ -3008,26 +3055,86 @@ export default function OrganizationView() {
       );
     }
     if (panelId === "websiteJobs") {
+      const openJobs = jobs.filter((j: any) => (j.status || "").toLowerCase() === "open");
       return (
         <SortablePanel key={panelId} id={panelId}>
           <PanelWithHeader title="Open Jobs from Website:">
             <div className="border border-gray-200 rounded">
-              <div className="p-2">
-                <p className="text-gray-500 italic">No open jobs found</p>
-              </div>
+              {isLoadingJobs ? (
+                <div className="flex justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500" />
+                </div>
+              ) : openJobs.length > 0 ? (
+                <div className="divide-y divide-gray-200">
+                  {openJobs.slice(0, 5).map((job: any) => (
+                    <div
+                      key={job.id}
+                      className="p-3 hover:bg-gray-50 cursor-pointer"
+                      onClick={() => router.push(`/dashboard/jobs/view?id=${job.id}`)}
+                    >
+                      <div className="font-medium text-blue-600 hover:underline">
+                        {job.job_title || "Untitled Job"}
+                      </div>
+                      <div className="text-xs text-gray-500">{job.worksite_location || job.category || ""}</div>
+                    </div>
+                  ))}
+                  {openJobs.length > 5 && (
+                    <button
+                      onClick={() => setActiveTab("jobs")}
+                      className="w-full p-2 text-blue-500 text-sm hover:underline"
+                    >
+                      View all {openJobs.length} jobs
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="p-2">
+                  <p className="text-gray-500 italic">No open jobs found</p>
+                </div>
+              )}
             </div>
           </PanelWithHeader>
         </SortablePanel>
       );
     }
     if (panelId === "ourJobs") {
+      const openJobs = jobs.filter((j: any) => (j.status || "").toLowerCase() === "open");
       return (
         <SortablePanel key={panelId} id={panelId}>
           <PanelWithHeader title="Our Open Jobs:">
             <div className="border border-gray-200 rounded">
-              <div className="p-2">
-                <p className="text-gray-500 italic">No open jobs</p>
-              </div>
+              {isLoadingJobs ? (
+                <div className="flex justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500" />
+                </div>
+              ) : openJobs.length > 0 ? (
+                <div className="divide-y divide-gray-200">
+                  {openJobs.slice(0, 5).map((job: any) => (
+                    <div
+                      key={job.id}
+                      className="p-3 hover:bg-gray-50 cursor-pointer"
+                      onClick={() => router.push(`/dashboard/jobs/view?id=${job.id}`)}
+                    >
+                      <div className="font-medium text-blue-600 hover:underline">
+                        {job.job_title || "Untitled Job"}
+                      </div>
+                      <div className="text-xs text-gray-500">{job.worksite_location || job.category || ""}</div>
+                    </div>
+                  ))}
+                  {openJobs.length > 5 && (
+                    <button
+                      onClick={() => setActiveTab("jobs")}
+                      className="w-full p-2 text-blue-500 text-sm hover:underline"
+                    >
+                      View all {openJobs.length} jobs
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <div className="p-2">
+                  <p className="text-gray-500 italic">No open jobs</p>
+                </div>
+              )}
             </div>
           </PanelWithHeader>
         </SortablePanel>
@@ -5195,7 +5302,10 @@ export default function OrganizationView() {
                 <button
                   key={action.id}
                   className="bg-white px-4 py-1 rounded-full shadow font-medium"
-                  onClick={() => setActiveTab("summary")}
+                  onClick={() => {
+                    setNoteActionFilter("Client Visit");
+                    setActiveTab("notes");
+                  }}
                 >
                   {isLoadingSummaryCounts
                     ? "Loading..."
@@ -5223,7 +5333,10 @@ export default function OrganizationView() {
                 <button
                   key={action.id}
                   className="bg-white px-4 py-1 rounded-full shadow font-medium"
-                  onClick={() => setActiveTab("notes")}
+                  onClick={() => {
+                    setNoteActionFilter("Submission");
+                    setActiveTab("notes");
+                  }}
                 >
                   {isLoadingSummaryCounts
                     ? "Loading..."
@@ -5237,7 +5350,10 @@ export default function OrganizationView() {
                 <button
                   key={action.id}
                   className="bg-white px-4 py-1 rounded-full shadow font-medium"
-                  onClick={() => setActiveTab("notes")}
+                  onClick={() => {
+                    setNoteActionFilter("Client Submission");
+                    setActiveTab("notes");
+                  }}
                 >
                   {isLoadingSummaryCounts
                     ? "Loading..."
@@ -5251,7 +5367,10 @@ export default function OrganizationView() {
                 <button
                   key={action.id}
                   className="bg-white px-4 py-1 rounded-full shadow font-medium"
-                  onClick={() => setActiveTab("notes")}
+                  onClick={() => {
+                    setNoteActionFilter("Interview");
+                    setActiveTab("notes");
+                  }}
                 >
                   {isLoadingSummaryCounts
                     ? "Loading..."
@@ -5265,7 +5384,7 @@ export default function OrganizationView() {
                 <button
                   key={action.id}
                   className="bg-white px-4 py-1 rounded-full shadow font-medium"
-                  onClick={() => setActiveTab("summary")}
+                  onClick={() => setActiveTab("placements")}
                 >
                   {isLoadingSummaryCounts
                     ? "Loading..."
@@ -6034,6 +6153,59 @@ export default function OrganizationView() {
                   Add First Job
                 </button>
               </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "placements" && (
+          <div className="bg-white p-4 rounded shadow-sm">
+            <h2 className="text-lg font-semibold mb-4">Organization Placements</h2>
+            {isLoadingPlacements ? (
+              <div className="flex justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500" />
+              </div>
+            ) : placementsError ? (
+              <div className="text-red-500 py-2">{placementsError}</div>
+            ) : placements.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100 border-b">
+                      <th className="text-left p-3 font-medium">ID</th>
+                      <th className="text-left p-3 font-medium">Job Seeker</th>
+                      <th className="text-left p-3 font-medium">Job Title</th>
+                      <th className="text-left p-3 font-medium">Status</th>
+                      <th className="text-left p-3 font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {placements.map((placement: any) => (
+                      <tr key={placement.id} className="border-b hover:bg-gray-50">
+                        <td className="p-3">{formatRecordId(placement.id, "placement")}</td>
+                        <td className="p-3">{placement.jobSeekerName ?? placement.job_seeker_name ?? "-"}</td>
+                        <td className="p-3">{placement.jobTitle ?? placement.job_title ?? "-"}</td>
+                        <td className="p-3">
+                          <span className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800">
+                            {placement.status ?? "-"}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <button
+                            onClick={() =>
+                              router.push(`/dashboard/placements/view?id=${placement.id}`)
+                            }
+                            className="text-blue-500 hover:text-blue-700 text-sm"
+                          >
+                            View
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="text-gray-500 italic py-4">No placements for this organization yet.</p>
             )}
           </div>
         )}

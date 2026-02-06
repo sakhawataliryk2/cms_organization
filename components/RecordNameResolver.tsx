@@ -195,6 +195,7 @@ export default function RecordNameResolver({
         href={href}
         className={`text-blue-600 hover:underline ${className}`.trim()}
         onClick={(e) => {
+          e.stopPropagation();
           e.preventDefault();
           router.push(href);
         }}

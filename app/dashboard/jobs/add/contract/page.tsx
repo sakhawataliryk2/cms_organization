@@ -277,7 +277,7 @@ function HiringManagerSearchSelect({
   return (
     <div ref={wrapperRef} className={`relative ${className}`}>
       <div
-        className={`w-full p-2 border-b border-gray-300 focus-within:border-blue-500 flex items-center gap-2 bg-white ${disabled ? "bg-gray-50 cursor-not-allowed" : ""}`}
+        className={`w-full max-w-md p-2 border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500 flex items-center gap-2 bg-white ${disabled ? "bg-gray-50 cursor-not-allowed" : ""}`}
       >
         <input
           type="text"
@@ -293,7 +293,7 @@ function HiringManagerSearchSelect({
           className="flex-1 min-w-0 outline-none bg-transparent"
           autoComplete="off"
         />
-        {/* <span className="text-gray-400 pointer-events-none shrink-0">
+        <span className="text-gray-400 pointer-events-none shrink-0">
           {isOpen ? (
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
@@ -303,40 +303,32 @@ function HiringManagerSearchSelect({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
             </svg>
           )}
-        </span> */}
+        </span>
       </div>
+      {loading && (
+        <p className="text-sm text-gray-500 mt-1">Loading...</p>
+      )}
       {isOpen && (
-
-        // {loading(
-        //   <p className="text-sm text-gray-500 mt-1">Loading...</p>
-        // ) : (
         <div
           ref={listRef}
-          className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded shadow-sm max-h-56 overflow-auto"
+          className="absolute z-20 mt-1 w-full max-w-md bg-white border border-gray-200 rounded shadow-lg max-h-56 overflow-auto"
         >
-          {loading ? (
-            <p className="px-3 py-4 text-sm text-gray-500 mt-1">Loading...</p>
+          {filteredOptions.length === 0 ? (
+            <div className="px-3 py-4 text-sm text-gray-500 text-center">
+              No hiring managers match your search
+            </div>
           ) : (
-            // {
-            filteredOptions.length === 0 ? (
-              <div className="px-3 py-4 text-sm text-gray-500 text-center">
-                No hiring managers match your search
-              </div>
-            ) : (
-              filteredOptions.map((opt, idx) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  data-index={idx}
-                  onClick={() => handleSelect(opt)}
-                  className={`w-full text-left px-3 py-2.5 text-sm text-gray-800 hover:bg-gray-50 ${idx === highlightIndex ? "bg-blue-50" : ""
-                    } ${String(opt.id) === value ? "font-medium text-blue-700" : ""}`}
-                >
-                  {opt.name}
-                </button>
-              ))
-            )
-            // }
+            filteredOptions.map((opt, idx) => (
+              <button
+                key={opt.id}
+                type="button"
+                data-index={idx}
+                onClick={() => handleSelect(opt)}
+                className={`w-full text-left px-3 py-2.5 text-sm text-gray-800 hover:bg-gray-50 ${idx === highlightIndex ? "bg-blue-50" : ""} ${String(opt.id) === value ? "font-medium text-blue-700" : ""}`}
+              >
+                {opt.name}
+              </button>
+            ))
           )}
         </div>
       )}
