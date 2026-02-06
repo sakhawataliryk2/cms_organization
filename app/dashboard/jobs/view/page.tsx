@@ -3455,10 +3455,15 @@ export default function JobView() {
     }, 600);
   };
 
-  // FIXED: Update this to work with Modify tab too
+  // FIXED: Update this to work with Modify tab too - route to correct add page by job type
   const handleEdit = () => {
     if (jobId) {
-      router.push(`/dashboard/jobs/add?id=${jobId}`);
+      const type = String(job?.jobType || "").toLowerCase().replace(/\s+/g, "-");
+      const addPath =
+        type === "direct-hire" ? "/dashboard/jobs/add/direct-hire" :
+        type === "executive-search" ? "/dashboard/jobs/add/executive-search" :
+        "/dashboard/jobs/add/contract";
+      router.push(`${addPath}?id=${jobId}`);
     }
   };
 

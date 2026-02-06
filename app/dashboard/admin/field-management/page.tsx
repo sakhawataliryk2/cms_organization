@@ -15,7 +15,7 @@ export default function FieldManagement() {
     const router = useRouter();
     const [sections] = useState<Section[]>([
         { id: 'organizations', name: 'Organizations' },
-        { id: 'jobs', name: 'Jobs' },
+        { id: 'jobs', name: 'Jobs Contract' },
         { id: 'jobs-direct-hire', name: 'Jobs Direct Hire' },
         { id: 'jobs-executive-search', name: 'Jobs Executive Search'},
         { id: 'job-seekers', name: 'Job Seekers' },
@@ -25,7 +25,7 @@ export default function FieldManagement() {
         { id: 'tasks', name: 'Tasks' },
         { id: 'placements', name: 'Placements' },
         { id: 'goals-quotas', name: 'Goals and Quotas' },
-        { id: 'tearsheets', name: 'Tearsheets' },
+        // { id: 'tearsheets', name: 'Tearsheets' },
     ]);
 
     const handleSectionClick = (sectionId: string) => {
