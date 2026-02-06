@@ -3954,20 +3954,8 @@ Best regards`;
         <div className="space-y-0 border border-gray-200 rounded">
           {visibleFields.resume.includes("profile") && (
             <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Profile:</div>
+              {/* <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Profile:</div> */}
               <div className="flex-1 p-2 text-sm">{jobSeeker.resume.profile}</div>
-            </div>
-          )}
-          {visibleFields.resume.includes("skills") && jobSeeker.skills?.length > 0 && (
-            <div className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Skills:</div>
-              <div className="flex-1 p-2">
-                <div className="flex flex-wrap gap-2">
-                  {jobSeeker.skills.map((skill: string, index: number) => (
-                    <span key={index} className="bg-gray-100 text-gray-800 px-2 py-1 rounded text-sm">{skill}</span>
-                  ))}
-                </div>
-              </div>
             </div>
           )}
         </div>
