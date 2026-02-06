@@ -1051,6 +1051,14 @@ export default function PlacementList() {
                                 fallback={String(getColumnValue(placement, key)) || ""}
                               />
                             ) :
+                            getColumnLabel(key).toLowerCase() === "organization" ? (
+                              <RecordNameResolver
+                                id={String(getColumnValue(placement, key)) || null}
+                                type="organization"
+                                clickable
+                                fallback={String(getColumnValue(placement, key)) || ""}
+                              />
+                            ) :
                             (
                               getColumnValue(placement, key)
                             )}

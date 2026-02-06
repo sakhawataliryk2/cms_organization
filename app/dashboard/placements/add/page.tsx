@@ -7,6 +7,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import CustomFieldRenderer, {
   useCustomFields,
 } from "@/components/CustomFieldRenderer";
+import LookupField from "@/components/LookupField";
 
 // Map admin field labels to placement backend columns (all fields driven by admin; no hardcoded standard fields)
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
@@ -75,6 +76,22 @@ export default function AddPlacement() {
     fetchJobs();
   }, []);
 
+  // Auto-populate organization when job is selected and jobs are loaded
+  useEffect(() => {
+    if (jobField && organizationField && jobs.length > 0) {
+      const selectedJobId = customFieldValues[jobField.field_name];
+      if (selectedJobId && (!customFieldValues[organizationField.field_name] || customFieldValues[organizationField.field_name] === "")) {
+        const job = jobs.find((j: any) => String(j.id) === String(selectedJobId));
+        if (job) {
+          const orgId = job.organization_id ?? job.organizationId ?? job.organization?.id;
+          if (orgId != null) {
+            handleCustomFieldChange(organizationField.field_name, String(orgId));
+          }
+        }
+      }
+    }
+  }, [jobs, customFieldValues, jobField, organizationField, handleCustomFieldChange]);
+
   const fetchJobSeekers = async () => {
     setIsLoadingJobSeekers(true);
     try {
@@ -112,8 +129,11 @@ export default function AddPlacement() {
       if (field && BACKEND_COLUMN_BY_LABEL[field.field_label] === "job_id" && organizationField) {
         const job = jobs.find((j: any) => String(j.id) === String(value));
         if (job) {
-          const orgName = job.organization_name ?? job.organizationName ?? job.organization?.name ?? "";
-          handleCustomFieldChange(organizationField.field_name, orgName);
+          // Store organization ID instead of name
+          const orgId = job.organization_id ?? job.organizationId ?? job.organization?.id;
+          if (orgId != null) {
+            handleCustomFieldChange(organizationField.field_name, String(orgId));
+          }
         }
       }
     },
@@ -145,8 +165,26 @@ export default function AddPlacement() {
           const col = BACKEND_COLUMN_BY_LABEL[field.field_label];
           if (col) {
             let v = get(col);
-            if (col === "organization_id" && (v == null || v === "")) {
-              v = placement.organization_name ?? placement.organizationName ?? placement.organization?.name ?? "";
+            // For organization_id, ensure we store the ID, not the name
+            if (col === "organization_id") {
+              // First try to get the ID directly from placement
+              v = placement.organization_id ?? placement.organizationId ?? placement.organization?.id ?? v;
+              
+              // If v is still a name (string that's not a number), try to find the ID from the job
+              if (v && isNaN(Number(v)) && placement.job_id) {
+                const job = jobs.find((j: any) => String(j.id) === String(placement.job_id));
+                if (job) {
+                  v = job.organization_id ?? job.organizationId ?? job.organization?.id ?? v;
+                }
+              }
+              
+              // If still not a valid ID, try to get from job if available
+              if ((!v || isNaN(Number(v))) && placement.job_id && jobs.length > 0) {
+                const job = jobs.find((j: any) => String(j.id) === String(placement.job_id));
+                if (job) {
+                  v = job.organization_id ?? job.organizationId ?? job.organization?.id;
+                }
+              }
             }
             if (v !== undefined && v !== null) mapped[field.field_name] = String(v);
           }
@@ -168,6 +206,20 @@ export default function AddPlacement() {
           }
         });
 
+        // Auto-populate organization_id from job if not set
+        if (organizationField && (!mapped[organizationField.field_name] || mapped[organizationField.field_name] === "")) {
+          const jobId = mapped[jobField?.field_name || ""] || placement.job_id;
+          if (jobId && jobs.length > 0) {
+            const job = jobs.find((j: any) => String(j.id) === String(jobId));
+            if (job) {
+              const orgId = job.organization_id ?? job.organizationId ?? job.organization?.id;
+              if (orgId != null) {
+                mapped[organizationField.field_name] = String(orgId);
+              }
+            }
+          }
+        }
+
         setCustomFieldValues((prev: Record<string, any>) => ({ ...prev, ...mapped }));
       } catch (err) {
         console.error("Error fetching placement:", err);
@@ -176,7 +228,7 @@ export default function AddPlacement() {
         setIsLoading(false);
       }
     },
-    [sortedCustomFields, setCustomFieldValues]
+    [sortedCustomFields, setCustomFieldValues, jobs, organizationField, jobField]
   );
 
   useEffect(() => {
@@ -210,11 +262,9 @@ export default function AddPlacement() {
         if (value === undefined || value === null) return;
         const column = BACKEND_COLUMN_BY_LABEL[label];
         if (column) {
-          if (column === "job_seeker_id" || column === "job_id") {
+          if (column === "job_seeker_id" || column === "job_id" || column === "organization_id") {
             const n = Number(value);
             apiData[column] = !isNaN(n) ? n : null;
-          } else if (column === "organization_id") {
-            apiData[column] = value;
           } else {
             apiData[column] = value;
           }
@@ -222,12 +272,25 @@ export default function AddPlacement() {
         customFieldsForDB[label] = value;
       });
 
+      // Ensure organization_id is set from job if not already set
       if (apiData.job_id != null && jobs.length > 0) {
         const job = jobs.find((j: any) => String(j.id) === String(apiData.job_id));
         if (job) {
           const orgId = job.organization_id ?? job.organizationId ?? job.organization?.id;
-          if (orgId != null) apiData.organization_id = Number(orgId);
+          if (orgId != null) {
+            apiData.organization_id = Number(orgId);
+            // Also update the custom field value to ensure consistency
+            if (organizationField) {
+              customFieldsForDB[organizationField.field_label] = String(orgId);
+            }
+          }
         }
+      }
+
+      // Convert organization_id to number if it's a string
+      if (apiData.organization_id !== undefined && apiData.organization_id !== null) {
+        const orgIdNum = Number(apiData.organization_id);
+        apiData.organization_id = !isNaN(orgIdNum) ? orgIdNum : null;
       }
 
       apiData.custom_fields =
@@ -297,7 +360,8 @@ export default function AddPlacement() {
 
   const handleGoBack = () => router.back();
 
-  const organizationDisplayValue = organizationField ? (customFieldValues[organizationField.field_name] ?? "") : "";
+  // Get organization ID value for LookupField
+  const organizationIdValue = organizationField ? (customFieldValues[organizationField.field_name] ?? "") : "";
 
   const canSubmit = useMemo(() => {
     const validation = validateCustomFields();
@@ -414,9 +478,23 @@ export default function AddPlacement() {
                 if (column === "organization_id") {
                   return (
                     <div key={field.id} className="flex items-center">
-                      <label className="w-48 font-medium shrink-0">{field.field_label}</label>
-                      <div className="flex-1 p-2 border border-gray-200 bg-gray-50 text-gray-700 rounded">
-                        {organizationDisplayValue || "—"}
+                      <label className="w-48 font-medium shrink-0">
+                        {field.field_label}
+                        {field.is_required && <span className="text-red-500 ml-1">*</span>}
+                      </label>
+                      <div className="flex-1">
+                        <LookupField
+                          value={String(organizationIdValue)}
+                          onChange={(value) => {
+                            // Store the organization ID
+                            handleCustomFieldChange(field.field_name, value);
+                          }}
+                          lookupType="organizations"
+                          placeholder="Select an organization"
+                          required={field.is_required}
+                          disabled={true}
+                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                        />
                       </div>
                     </div>
                   );

@@ -3329,6 +3329,13 @@ export default function PlacementView() {
                     clickable
                     fallback={String(fieldValue) || ""}
                   />
+                ) : fieldLabel.toLowerCase() === "organization" ? (
+                  <RecordNameResolver
+                    id={String(fieldValue) || null}
+                    type="organization"
+                    clickable
+                    fallback={String(fieldValue) || ""}
+                  />
                 ) : (
                   fieldValue
                 )}
@@ -3399,6 +3406,13 @@ export default function PlacementView() {
                   <RecordNameResolver
                     id={fieldValue || null}
                     type="job"
+                    clickable
+                    fallback={String(fieldValue) || ""}
+                  />
+                ) : fieldLabel.toLowerCase() === "organization" ? (
+                  <RecordNameResolver
+                    id={String(fieldValue) || null}
+                    type="organization"
                     clickable
                     fallback={String(fieldValue) || ""}
                   />
@@ -3759,6 +3773,13 @@ export default function PlacementView() {
                         <RecordNameResolver
                           id={String(getHeaderFieldValue(fk)) || null}
                           type="job"
+                          clickable
+                          fallback={String(getHeaderFieldValue(fk)) || ""}
+                        />
+                      ) : getHeaderFieldLabel(fk).toLowerCase() === "organization" ? (
+                        <RecordNameResolver
+                          id={String(getHeaderFieldValue(fk)) || null}
+                          type="organization"
                           clickable
                           fallback={String(getHeaderFieldValue(fk)) || ""}
                         />
