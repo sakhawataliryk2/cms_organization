@@ -378,7 +378,7 @@ export default function AddJob() {
     const queryString = params.toString();
     const query = queryString ? `?${queryString}` : "";
 
-    // Redirect based on selected type
+    //  based on selected type
     if (type === "direct-hire") {
       router.push(`/dashboard/jobs/add/direct-hire${query}`);
     } else if (type === "executive-search") {
