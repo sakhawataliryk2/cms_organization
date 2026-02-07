@@ -334,7 +334,7 @@ export default function TbiPage() {
     "Placements",
     "TimeSheets",
     "Exports",
-    "Receivables",
+    "Invoices",
   ];
 
   const columnHeadersMap: Record<string, string[]> = {
@@ -360,7 +360,7 @@ export default function TbiPage() {
     ],
     TimeSheets: ["Name", "JobSeeker ID", "Approved", "Submitted", "Status", "Payroll Cycle", "Phone Number", "Email", "Week Ending", "Hours"],
     Exports: ["Documents", "ID Number", "Date Exported", "Report Name", "Status"],
-    Receivables: ["Invoice #", "Organization", "Amount", "Due Date", "Status", "Paid Date", "Notes"],
+    Invoices: ["Invoice #", "Organization", "Amount", "Due Date", "Status", "Paid Date", "Notes", "Invoice Type"],
   };
 
   const defaultColumns = [

@@ -908,7 +908,7 @@ export default function AddHiringManager() {
         )}
 
         {/* Validation debug: show why Save is disabled when form is invalid */}
-        {!isFormValid && validationResult.message && (
+        {/* {!isFormValid && validationResult.message && (
           <div className="bg-amber-50 border border-amber-300 text-amber-800 px-4 py-3 mb-4 rounded flex items-start gap-2">
             <span className="shrink-0 font-semibold" title="Validation debug">
               ⚠
@@ -918,7 +918,7 @@ export default function AddHiringManager() {
               <p className="text-sm mt-1">{validationResult.message}</p>
             </div>
           </div>
-        )}
+        )} */}
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">

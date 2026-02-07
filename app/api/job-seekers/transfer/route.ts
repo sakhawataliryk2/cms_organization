@@ -1,0 +1,49 @@
+import { NextRequest, NextResponse } from "next/server";
+import { cookies } from "next/headers";
+
+export async function POST(request: NextRequest) {
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get("token")?.value;
+
+    if (!token) {
+      return NextResponse.json(
+        { success: false, message: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const body = await request.json();
+
+    const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
+    const response = await fetch(`${apiUrl}/api/job-seekers/transfer`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { success: false, message: data.message || "Failed to create transfer request" },
+        { status: response.status }
+      );
+    }
+
+    return NextResponse.json(data);
+  } catch (error) {
+    console.error("Error creating job seeker transfer:", error);
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Failed to create transfer request",
+        error: error instanceof Error ? error.message : "Unknown error",
+      },
+      { status: 500 }
+    );
+  }
+}

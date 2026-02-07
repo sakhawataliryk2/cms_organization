@@ -1,12 +1,13 @@
-"use client";
+'use client'
 
 import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
-import Image from "next/image";
-import LoadingScreen from "@/components/LoadingScreen";
+import { useRouter } from 'next/navigation';
+import Image from 'next/image';
+import LoadingScreen from '@/components/LoadingScreen';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
+import RecordNameResolver from "@/components/RecordNameResolver";
 import {
   SortableContext,
   useSortable,
@@ -17,7 +18,6 @@ import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
-import RecordNameResolver from "@/components/RecordNameResolver";
 
 interface JobSeeker {
   id: string;
@@ -29,15 +29,18 @@ interface JobSeeker {
   status: string;
   last_contact_date: string;
   owner: string;
+  created_at: string;
   created_by_name: string;
   customFields?: Record<string, any>;
   custom_fields?: Record<string, any>;
+  archived_at?: string | null;
+  archive_reason?: string | null;
 }
 
 type ColumnSortState = "asc" | "desc" | null;
 type ColumnFilterState = string | null;
 
-type JobSeekersFavorite = {
+type JobSeekerFavorite = {
   id: string;
   name: string;
   searchTerm: string;
@@ -46,6 +49,8 @@ type JobSeekersFavorite = {
   columnFields: string[];
   createdAt: number;
 };
+
+const FAVORITES_STORAGE_KEY = "jobSeekersArchivedFavorites";
 
 // Sortable Column Header Component
 function SortableColumnHeader({
@@ -227,32 +232,343 @@ function SortableColumnHeader({
   );
 }
 
-export default function JobSeekerList() {
+export default function ArchivedJobSeekersList() {
   const router = useRouter();
+  const [selectedJobSeekers, setSelectedJobSeekers] = useState<
+    string[]
+  >([]);
+  const [selectAll, setSelectAll] = useState(false);
+  const [jobSeekers, setJobSeekers] = useState<JobSeeker[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState("");
 
   // Favorites State
-  const FAVORITES_STORAGE_KEY = "jobSeekersFavorites";
-  const [favorites, setFavorites] = useState<JobSeekersFavorite[]>([]);
-  const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
+  const [favorites, setFavorites] = useState<JobSeekerFavorite[]>([]);
+  const [selectedFavoriteId, setSelectedFavoriteId] = useState<string | null>(null);
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
-  const favoritesMenuRef = useRef<HTMLDivElement>(null);
-  const favoritesMenuMobileRef = useRef<HTMLDivElement>(null);
   const [showSaveFavoriteModal, setShowSaveFavoriteModal] = useState(false);
   const [favoriteName, setFavoriteName] = useState("");
   const [favoriteNameError, setFavoriteNameError] = useState<string | null>(null);
 
-  // =====================
-  // TABLE COLUMNS (Overview List) – driven by admin field-management only
-  // =====================
+  // Load favorites from local storage
+  useEffect(() => {
+    const saved = localStorage.getItem(FAVORITES_STORAGE_KEY);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          setFavorites(parsed);
+        }
+      } catch (e) {
+        console.error("Failed to parse favorites", e);
+      }
+    }
+  }, []);
+
+  // Per-column sorting state
+  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
+
+  // Per-column filtering state
+  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+
+  // Favorites Logic
+  const persistFavorites = (updated: JobSeekerFavorite[]) => {
+    setFavorites(updated);
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updated));
+  };
+
+  const applyFavorite = (fav: JobSeekerFavorite) => {
+    // 1. Validate columns against current catalog
+    const catalogKeys = new Set(jsColumnsCatalog.map((c) => c.key));
+    const validColumnFields = (fav.columnFields || []).filter((k) =>
+      catalogKeys.has(k)
+    );
+
+    // 2. Restore filters (only valid ones)
+    const nextFilters: Record<string, ColumnFilterState> = {};
+    for (const [k, v] of Object.entries(fav.columnFilters || {})) {
+      if (!catalogKeys.has(k)) continue;
+      if (!v || !v.trim()) continue;
+      nextFilters[k] = v;
+    }
+
+    // 3. Restore sorts (only valid ones)
+    const nextSorts: Record<string, ColumnSortState> = {};
+    for (const [k, v] of Object.entries(fav.columnSorts || {})) {
+      if (!catalogKeys.has(k)) continue;
+      if (v !== "asc" && v !== "desc") continue;
+      nextSorts[k] = v;
+    }
+
+    // 4. Apply everything
+    setSearchTerm(fav.searchTerm || "");
+    setColumnFilters(nextFilters);
+    setColumnSorts(nextSorts);
+    if (validColumnFields.length > 0) {
+      setColumnFields(validColumnFields);
+    }
+
+    setSelectedFavoriteId(fav.id);
+    setFavoritesMenuOpen(false);
+  };
+
+  const handleOpenSaveFavoriteModal = () => {
+    setFavoriteName("");
+    setFavoriteNameError(null);
+    setShowSaveFavoriteModal(true);
+    setFavoritesMenuOpen(false);
+  };
+
+  const handleConfirmSaveFavorite = () => {
+    const trimmed = favoriteName.trim();
+    if (!trimmed) {
+      setFavoriteNameError("Please enter a name for this favorite.");
+      return;
+    }
+
+    const newFav: JobSeekerFavorite = {
+      id: crypto.randomUUID(),
+      name: trimmed,
+      searchTerm,
+      columnFilters,
+      columnSorts,
+      columnFields,
+      createdAt: Date.now(),
+    };
+
+    const updated = [...favorites, newFav];
+    persistFavorites(updated);
+    setSelectedFavoriteId(newFav.id);
+    setShowSaveFavoriteModal(false);
+  };
+
+  const handleDeleteFavorite = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = favorites.filter((f) => f.id !== id);
+    persistFavorites(updated);
+    if (selectedFavoriteId === id) {
+      setSelectedFavoriteId(null);
+    }
+  };
+
+  const handleClearAllFilters = () => {
+    setSearchTerm("");
+    setColumnFilters({});
+    setColumnSorts({});
+    setSelectedFavoriteId(null);
+  };
+
   const JS_BACKEND_COLUMN_KEYS = [
     "full_name",
+    "status",
+    "archive_reason",
     "email",
     "phone",
-    "status",
     "last_contact_date",
     "owner",
+    "created_by_name",
+    "created_at",
   ];
+  // =====================
+  // AVAILABLE FIELDS (from Modify Page)
+  // =====================
+  const [availableFields, setAvailableFields] = useState<any[]>([]);
+  const [isLoadingFields, setIsLoadingFields] = useState(false);
 
+  const normalizeFields = (payload: any) => {
+    const root =
+      payload?.customFields ?? // ✅ same as view file
+      payload?.fields ??
+      payload?.data?.fields ??
+      payload?.data?.data?.fields ??
+      payload?.hiringManagerFields ??
+      payload?.data ??
+      payload?.data?.data ??
+      [];
+
+    const list: any[] = Array.isArray(root) ? root : [];
+
+    const flat = list.flatMap((x: any) => {
+      if (!x) return [];
+      if (Array.isArray(x.fields)) return x.fields;
+      if (Array.isArray(x.children)) return x.children;
+      return [x];
+    });
+
+    return flat.filter(Boolean);
+  };
+
+  useEffect(() => {
+    const fetchAvailableFields = async () => {
+      setIsLoadingFields(true);
+      try {
+        const token = document.cookie
+          .split("; ")
+          .find((r) => r.startsWith("token="))
+          ?.split("=")[1];
+
+        const res = await fetch("/api/admin/field-management/job-seekers", {
+          method: "GET",
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+          credentials: "include",
+        });
+
+        const raw = await res.text();
+        let data: any = {};
+        try {
+          data = JSON.parse(raw);
+        } catch { }
+
+        const fields =
+          data.customFields ||
+          data.fields ||
+          data.data?.fields ||
+          data.jobSeekerFields ||
+          data.data ||
+          [];
+
+        console.log("LIST field-management status:", res.status);
+        console.log("LIST fields count:", fields.length);
+        console.log("LIST fields sample:", fields.slice(0, 5));
+
+        setAvailableFields(fields);
+      } catch (e) {
+        console.error("LIST field-management error:", e);
+        setAvailableFields([]);
+      } finally {
+        setIsLoadingFields(false);
+      }
+    };
+
+    fetchAvailableFields();
+  }, []);
+
+  const humanize = (s: string) =>
+    s
+      .replace(/[_\-]+/g, " ")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/\b\w/g, (c) => c.toUpperCase())
+      .trim();
+
+  const jsColumnsCatalog = useMemo(() => {
+    const fromApi = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => {
+        const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
+        const fieldType = (f as any)?.field_type;
+        const lookupType = (f as any)?.lookup_type || "";
+        const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanize(name) : "");
+        const isBackendCol = name && JS_BACKEND_COLUMN_KEYS.includes(name);
+        let filterType: "text" | "select" | "number" = "text";
+        if (name === "status" || name === "archive_reason") filterType = "select";
+        return {
+          fieldType,
+          lookupType,
+          key: isBackendCol ? name : `custom:${label || name}`,
+          label: String(label || name),
+          sortable: isBackendCol,
+          filterType,
+        };
+      });
+
+      // console.log("availableFields", availableFields);
+
+    // console.log("fromApi", fromApi);
+
+    // const customKeySet = new Set<string>();
+    // (hiringManagers || []).forEach((hm: any) => {
+    //   const cf = hm?.customFields || hm?.custom_fields || {};
+    //   Object.keys(cf).forEach((k) => customKeySet.add(k));
+    // });
+    // const alreadyHaveCustom = new Set(
+    //   fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
+    // );
+    // const fromList = Array.from(customKeySet)
+    //   .filter((k) => !alreadyHaveCustom.has(k))
+    //   .map((k) => ({
+    //     key: `custom:${k}`,
+    //     label: humanize(k),
+    //     sortable: false,
+    //     filterType: "text" as const,
+    //   }));
+
+    const merged = [...fromApi];
+    if (!merged.some((x) => x.key === "archive_reason")) {
+      merged.push({
+        fieldType: undefined,
+        lookupType: "",
+        key: "archive_reason",
+        label: "Archive Reason",
+        sortable: true,
+        filterType: "select",
+      });
+    }
+    const seen = new Set<string>();
+    return merged.filter((x) => {
+      if (seen.has(x.key)) return false;
+      seen.add(x.key);
+      return true;
+    });
+  }, [availableFields, jobSeekers]);
+  const getColumnLabel = (key: string) =>
+    jsColumnsCatalog.find((c) => c.key === key)?.label ?? key;
+
+  const getColumnInfo = (key: string) =>
+    jsColumnsCatalog.find((c) => c.key === key);
+
+  const getColumnValue = (js: any, key: string) => {
+    // ✅ custom
+    if (key.startsWith("custom:")) {
+      const rawKey = key.replace("custom:", "");
+      const cf = js?.customFields || js?.custom_fields || {};
+      const val = cf?.[rawKey];
+      return val === undefined || val === null || val === "" ? "—" : String(val);
+    }
+
+    if (key === "archive_reason") {
+      return js.archive_reason || "N/A";
+    }
+    // Standard backend keys (fallback from API shape)
+    const val = js[key];
+    if (val === undefined || val === null || val === "") return "—";
+    if ((key === "created_at" || key === "last_contact_date") && typeof val === "string") return formatDate(val);
+    return String(val);
+
+    // ✅ standard (commented original)
+    // switch (key) {
+    //   case "full_name":
+    //     return hm.full_name || `${hm.last_name}, ${hm.first_name}`;
+    //   case "status":
+    //     return hm.status || "—";
+    //   case "title":
+    //     return hm.title || "—";
+    //   case "organization_name": {
+    //     const orgId = hm.organization_id != null && hm.organization_id !== "" ? String(hm.organization_id) : null;
+    //     const orgName = hm.organization_name_from_org || hm.organization_name || null;
+    //     console.log("organization_name", orgId, orgName);
+    //     if (orgId && orgName) return `${orgId} - ${orgName}`;
+    //     if (orgName) return orgName;
+    //     if (orgId) return orgId;
+    //     return "—";
+    //   }
+    //   case "email":
+    //     return hm.email || "—";
+    //   case "phone":
+    //     return hm.phone || "—";
+    //   case "created_by_name":
+    //     return hm.created_by_name || "—";
+    //   case "created_at":
+    //     return formatDate(hm.created_at);
+    //   default:
+    //     return "—";
+    // }
+  };
+
+  // Fetch hiring managers data when component mounts
+  useEffect(() => {
+    fetchJobSeekers();
+  }, []);
   const {
     columnFields,
     setColumnFields,
@@ -262,22 +578,68 @@ export default function JobSeekerList() {
     isSaving: isSavingColumns,
   } = useHeaderConfig({
     entityType: "JOB_SEEKER",
-    defaultFields: [],
     configType: "columns",
+    defaultFields: [],
   });
+
+  useEffect(() => {
+    const catalogKeys = jsColumnsCatalog.map((c) => c.key);
+    if (catalogKeys.length === 0) return;
+    const catalogSet = new Set(catalogKeys);
+    const savedOrder = localStorage.getItem("jobSeekerArchivedColumnOrder");
+    if (savedOrder) {
+      try {
+        const parsed = JSON.parse(savedOrder);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const validOrder = parsed.filter((k: string) => catalogSet.has(k));
+          if (validOrder.length > 0) {
+            setColumnFields(validOrder);
+            return;
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
+  }, [jsColumnsCatalog]);
 
   // Save column order to localStorage whenever it changes
   useEffect(() => {
     if (columnFields.length > 0) {
-      localStorage.setItem("jobSeekerColumnOrder", JSON.stringify(columnFields));
+      localStorage.setItem("jobSeekerArchivedColumnOrder", JSON.stringify(columnFields));
     }
   }, [columnFields]);
 
-  // Per-column sorting state
-  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
+  const fetchJobSeekers = async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/job-seekers?archived=true", {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
 
-  // Per-column filtering state
-  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+      if (!response.ok) {
+        throw new Error("Failed to fetch archived job seekers");
+      }
+
+      const data = await response.json();
+      setJobSeekers(data.jobSeekers || []);
+    } catch (err) {
+      console.error("Error fetching archived job seekers:", err);
+      setError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while fetching archived job seekers"
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   // Handle column sort toggle
   const handleColumnSort = (columnKey: string) => {
@@ -321,160 +683,6 @@ export default function JobSeekerList() {
     }
   };
 
-  // =====================
-  // AVAILABLE FIELDS (from Modify Page)
-  // =====================
-  const [availableFields, setAvailableFields] = useState<any[]>([]);
-  const [isLoadingFields, setIsLoadingFields] = useState(false);
-
-  useEffect(() => {
-    const fetchAvailableFields = async () => {
-      setIsLoadingFields(true);
-
-      try {
-        const token = document.cookie.replace(
-          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-          "$1"
-        );
-
-        const res = await fetch("/api/admin/field-management/job-seekers", {
-          method: "GET",
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-          credentials: "include",
-        });
-        const raw = await res.text();
-        let data: any = {};
-        try {
-          data = JSON.parse(raw);
-        } catch {
-          data = {};
-        }
-
-        const fields =
-          data.customFields ||
-          data.fields ||
-          data.data?.fields ||
-          data.jobSeekerFields ||
-          data.data ||
-          [];
-
-        setAvailableFields(Array.isArray(fields) ? fields : []);
-      } catch (e) {
-        console.error("Error fetching available fields:", e);
-        setAvailableFields([]);
-      } finally {
-        setIsLoadingFields(false);
-      }
-    };
-
-    fetchAvailableFields();
-  }, []);
-
-  const [searchTerm, setSearchTerm] = useState("");
-  const [selectedJobSeekers, setSelectedJobSeekers] = useState<string[]>([]);
-  const [selectAll, setSelectAll] = useState(false);
-  const [jobSeekers, setJobSeekers] = useState<JobSeeker[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-
-  const humanize = (s: string) =>
-    s
-      .replace(/[_\-]+/g, " ")
-      .replace(/([a-z])([A-Z])/g, "$1 $2")
-      .replace(/\b\w/g, (c) => c.toUpperCase())
-      .trim();
-
-  const columnsCatalog = useMemo(() => {
-    const fromApi = (availableFields || [])
-      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
-      .map((f: any) => {
-        const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
-        const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanize(name) : "");
-        const isBackendCol = name && JS_BACKEND_COLUMN_KEYS.includes(name);
-        let filterType: "text" | "select" | "number" = "text";
-        if (name === "status") filterType = "select";
-        return {
-          key: isBackendCol ? name : `custom:${label || name}`,
-          label: String(label || name),
-          sortable: isBackendCol,
-          filterType,
-          fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
-          lookupType: (f as any)?.lookup_type ?? (f as any)?.lookupType ?? "",
-        };
-      });
-
-    // const customKeySet = new Set<string>();
-    // (jobSeekers || []).forEach((js: any) => {
-    //   const cf = js?.customFields || js?.custom_fields || {};
-    //   Object.keys(cf).forEach((k) => customKeySet.add(k));
-    // });
-    // const alreadyHaveCustom = new Set(
-    //   fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
-    // );
-    // const fromData = Array.from(customKeySet)
-    //   .filter((k) => !alreadyHaveCustom.has(k))
-    //   .map((k) => ({
-    //     key: `custom:${k}`,
-    //     label: humanize(k),
-    //     sortable: false,
-    //     filterType: "text" as const,
-    //   }));
-
-    console.log("availableFields", availableFields);
-    // console.log("fromApi", fromApi);
-
-    const merged = [...fromApi];
-    const seen = new Set<string>();
-    return merged.filter((x) => {
-      if (seen.has(x.key)) return false;
-      seen.add(x.key);
-      return true;
-    });
-  }, [jobSeekers, availableFields]);
-
-  useEffect(() => {
-    const catalogKeys = columnsCatalog.map((c) => c.key);
-    if (catalogKeys.length === 0) return;
-    const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("jobSeekerColumnOrder");
-    if (savedOrder) {
-      try {
-        const parsed = JSON.parse(savedOrder);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const validOrder = parsed.filter((k: string) => catalogSet.has(k));
-          if (validOrder.length > 0) {
-            setColumnFields(validOrder);
-            return;
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
-    setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
-  }, [columnsCatalog]);
-
-  const getColumnLabel = (key: string) =>
-    columnsCatalog.find((c) => c.key === key)?.label || key;
-
-  const getColumnInfo = (key: string) =>
-    columnsCatalog.find((c) => c.key === key);
-
-  const getColumnValue = (js: any, key: string) => {
-    // ✅ custom columns
-    if (key.startsWith("custom:")) {
-      const rawKey = key.replace("custom:", "");
-      const cf = js?.customFields || js?.custom_fields || {};
-      const val = cf?.[rawKey];
-      return val === undefined || val === null || val === ""
-        ? "N/A"
-        : String(val);
-    }
-
-    return "N/A";
-  };
-
   // Get unique status values for filter dropdown
   const statusOptions = useMemo(() => {
     const statuses = new Set<string>();
@@ -484,168 +692,17 @@ export default function JobSeekerList() {
     return Array.from(statuses).map((s) => ({ label: s, value: s }));
   }, [jobSeekers]);
 
-  // =====================
-  // FAVORITES LOGIC
-  // =====================
+  const archiveReasonOptions = useMemo(
+    () => [
+      { label: "Deletion", value: "Deletion" },
+      { label: "Transfer", value: "Transfer" },
+    ],
+    []
+  );
 
-  // Load favorites from local storage
-  useEffect(() => {
-    const stored = localStorage.getItem(FAVORITES_STORAGE_KEY);
-    if (stored) {
-      try {
-        setFavorites(JSON.parse(stored));
-      } catch (e) {
-        console.error("Failed to parse favorites", e);
-      }
-    }
-  }, []);
-
-  // Close favorites menu on outside click
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (!favoritesMenuOpen) return;
-      const target = event.target as Node;
-      const inDesktop = favoritesMenuRef.current?.contains(target);
-      const inMobile = favoritesMenuMobileRef.current?.contains(target);
-      if (!inDesktop && !inMobile) setFavoritesMenuOpen(false);
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [favoritesMenuOpen]);
-
-  const persistFavorites = (updatedFavorites: JobSeekersFavorite[]) => {
-    setFavorites(updatedFavorites);
-    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(updatedFavorites));
-  };
-
-  const applyFavorite = (fav: JobSeekersFavorite) => {
-    // 1. Validate columns
-    const catalogKeys = new Set(columnsCatalog.map((c) => c.key));
-    const validColumnFields = (fav.columnFields || []).filter((k) =>
-      catalogKeys.has(k)
-    );
-
-    // 2. Validate filters
-    const nextFilters: Record<string, ColumnFilterState> = {};
-    for (const [k, v] of Object.entries(fav.columnFilters || {})) {
-      if (!catalogKeys.has(k)) continue;
-      if (v === null || v === undefined) continue;
-      if (typeof v === "string" && v.trim() === "") continue;
-      nextFilters[k] = v;
-    }
-
-    // 3. Validate sorts
-    const nextSorts: Record<string, ColumnSortState> = {};
-    for (const [k, v] of Object.entries(fav.columnSorts || {})) {
-      if (!catalogKeys.has(k)) continue;
-      if (v !== "asc" && v !== "desc" && v !== null) continue;
-      if (v === null) continue;
-      nextSorts[k] = v;
-    }
-
-    // 4. Apply
-    setSearchTerm(fav.searchTerm || "");
-    setColumnFilters(nextFilters);
-    setColumnSorts(nextSorts);
-    if (validColumnFields.length > 0) {
-      setColumnFields(validColumnFields);
-    }
-    setSelectedFavoriteId(fav.id);
-    setFavoritesMenuOpen(false);
-  };
-
-  const handleOpenSaveFavoriteModal = () => {
-    setFavoriteName("");
-    setFavoriteNameError(null);
-    setShowSaveFavoriteModal(true);
-    setFavoritesMenuOpen(false);
-  };
-
-  const handleConfirmSaveFavorite = () => {
-    if (!favoriteName.trim()) {
-      setFavoriteNameError("Please enter a name for the favorite.");
-      return;
-    }
-    const newFav: JobSeekersFavorite = {
-      id: crypto.randomUUID(),
-      name: favoriteName.trim(),
-      searchTerm,
-      columnFilters,
-      columnSorts,
-      columnFields,
-      createdAt: Date.now(),
-    };
-    const updated = [...favorites, newFav];
-    persistFavorites(updated);
-    setSelectedFavoriteId(newFav.id);
-    setShowSaveFavoriteModal(false);
-  };
-
-  const handleDeleteFavorite = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    const updated = favorites.filter((f) => f.id !== id);
-    persistFavorites(updated);
-    if (selectedFavoriteId === id) {
-      setSelectedFavoriteId("");
-    }
-  };
-
-  const handleClearAllFilters = () => {
-    setSearchTerm("");
-    setColumnFilters({});
-    setColumnSorts({});
-    setSelectedFavoriteId("");
-  };
-
-  // Fetch job seekers data when component mounts
-  useEffect(() => {
-    fetchJobSeekers();
-  }, []);
-
-  const fetchJobSeekers = async () => {
-    setIsLoading(true);
-    try {
-      const response = await fetch("/api/job-seekers", {
-        headers: {
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error("Failed to fetch job seekers");
-      }
-
-      const data = await response.json();
-      console.log("Job seekers data:", data);
-      setJobSeekers(data.jobSeekers || []);
-    } catch (err) {
-      console.error("Error fetching job seekers:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while fetching job seekers"
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
+  // Apply per-column filtering and sorting (API returns only archived)
   const filteredAndSortedJobSeekers = useMemo(() => {
     let result = [...jobSeekers];
-
-    // Apply global search
-    if (searchTerm.trim() !== "") {
-      const term = searchTerm.toLowerCase();
-      result = result.filter(
-        (js) =>
-          (js.full_name || "").toLowerCase().includes(term) ||
-          (js.email || "").toLowerCase().includes(term) ||
-          String(js.id || "").toLowerCase().includes(term)
-      );
-    }
 
     // Apply filters
     Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
@@ -656,29 +713,37 @@ export default function JobSeekerList() {
         const valueStr = String(value).toLowerCase();
         const filterStr = String(filterValue).toLowerCase();
 
-        // For number columns, do exact match
         const columnInfo = getColumnInfo(columnKey);
-        if ((columnInfo?.filterType as string) === "number") {
+        if (columnInfo && (columnInfo as any).filterType === "number") {
           return String(value) === String(filterValue);
         }
-
-        // For text columns, do contains match
         return valueStr.includes(filterStr);
       });
     });
 
-    // Apply sorting
+    // Apply global search
+    if (searchTerm.trim() !== "") {
+      const term = searchTerm.toLowerCase();
+      result = result.filter((js) =>
+        (js.full_name || `${js.last_name || ""} ${js.first_name || ""}` || "")
+          .toLowerCase()
+          .includes(term) ||
+        String(js.id || "").toLowerCase().includes(term) ||
+        (js.email || "").toLowerCase().includes(term) ||
+        (js.status || "").toLowerCase().includes(term) ||
+        (js.owner || "").toLowerCase().includes(term) ||
+        (js.archive_reason || "").toLowerCase().includes(term)
+      );
+    }
+
     const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
     if (activeSorts.length > 0) {
       const [sortKey, sortDir] = activeSorts[0];
       result.sort((a, b) => {
         const aValue = getColumnValue(a, sortKey);
         const bValue = getColumnValue(b, sortKey);
-
-        // Handle numeric values
         const aNum = typeof aValue === "number" ? aValue : Number(aValue);
         const bNum = typeof bValue === "number" ? bValue : Number(bValue);
-
         let cmp = 0;
         if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
           cmp = aNum - bNum;
@@ -688,7 +753,6 @@ export default function JobSeekerList() {
             sensitivity: "base",
           });
         }
-
         return sortDir === "asc" ? cmp : -cmp;
       });
     }
@@ -700,36 +764,29 @@ export default function JobSeekerList() {
     router.push(`/dashboard/job-seekers/view?id=${id}`);
   };
 
-  const handleAddJobSeeker = () => {
-    router.push("/dashboard/job-seekers/add");
-  };
-
-  const handleViewArchived = () => {
-    router.push("/dashboard/job-seekers/archived");
+  const handleBackToJobSeekers = () => {
+    router.push("/dashboard/job-seekers");
   };
 
   const handleSelectAll = () => {
     if (selectAll) {
       setSelectedJobSeekers([]);
     } else {
-      setSelectedJobSeekers(
-        filteredAndSortedJobSeekers.map((jobSeeker) => jobSeeker.id)
-      );
+      setSelectedJobSeekers(filteredAndSortedJobSeekers.map((js) => js.id));
     }
     setSelectAll(!selectAll);
   };
 
   const handleSelectJobSeeker = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent row click event
+    e.stopPropagation();
 
     if (selectedJobSeekers.includes(id)) {
       setSelectedJobSeekers(
-        selectedJobSeekers.filter((jobSeekerId) => jobSeekerId !== id)
+        selectedJobSeekers.filter((jsId) => jsId !== id)
       );
       if (selectAll) setSelectAll(false);
     } else {
       setSelectedJobSeekers([...selectedJobSeekers, id]);
-      // If all job seekers are now selected, update selectAll state
       if (
         [...selectedJobSeekers, id].length === filteredAndSortedJobSeekers.length
       ) {
@@ -739,22 +796,18 @@ export default function JobSeekerList() {
   };
 
   const deleteSelectedJobSeekers = async () => {
-    // Don't do anything if no job seekers are selected
     if (selectedJobSeekers.length === 0) return;
 
-    // Confirm deletion
     const confirmMessage =
       selectedJobSeekers.length === 1
-        ? "Are you sure you want to delete this job seeker?"
-        : `Are you sure you want to delete these ${selectedJobSeekers.length} job seekers?`;
+        ? "Are you sure you want to permanently delete this job seeker?"
+        : `Are you sure you want to permanently delete these ${selectedJobSeekers.length} job seekers?`;
 
     if (!window.confirm(confirmMessage)) return;
 
-    setIsDeleting(true);
-    setError(null);
+    setIsLoading(true);
 
     try {
-      // Create promises for all delete operations
       const deletePromises = selectedJobSeekers.map((id) =>
         fetch(`/api/job-seekers/${id}`, {
           method: "DELETE",
@@ -767,20 +820,14 @@ export default function JobSeekerList() {
         })
       );
 
-      // Execute all delete operations
       const results = await Promise.allSettled(deletePromises);
-
-      // Check for failures
       const failures = results.filter((result) => result.status === "rejected");
 
       if (failures.length > 0) {
         throw new Error(`Failed to delete ${failures.length} job seekers`);
       }
 
-      // Refresh job seekers after successful deletion
       await fetchJobSeekers();
-
-      // Clear selection after deletion
       setSelectedJobSeekers([]);
       setSelectAll(false);
     } catch (err) {
@@ -791,7 +838,7 @@ export default function JobSeekerList() {
           : "An error occurred while deleting job seekers"
       );
     } finally {
-      setIsDeleting(false);
+      setIsLoading(false);
     }
   };
 
@@ -806,28 +853,20 @@ export default function JobSeekerList() {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case "new lead":
-        return "bg-blue-100 text-blue-800";
+    switch (status.toLowerCase()) {
       case "active":
         return "bg-green-100 text-green-800";
-      case "qualified":
-        return "bg-purple-100 text-purple-800";
-      case "placed":
-        return "bg-yellow-100 text-yellow-800";
       case "inactive":
-        return "bg-gray-100 text-gray-800";
+        return "bg-red-100 text-red-800";
+      case "on leave":
+        return "bg-yellow-100 text-yellow-800";
       default:
         return "bg-gray-100 text-gray-800";
     }
   };
 
   if (isLoading) {
-    return <LoadingScreen message="Loading job seekers..." />;
-  }
-
-  if (isDeleting) {
-    return <LoadingScreen message="Deleting job seekers..." />;
+    return <LoadingScreen message="Loading archived job seekers..." />;
   }
 
   return (
@@ -835,21 +874,20 @@ export default function JobSeekerList() {
       {/* Header - responsive: mobile = title+add row, then full-width Favorites, Columns */}
       <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center">
         <div className="flex justify-between items-center gap-4">
-          <h1 className="text-xl font-bold">Job Seekers</h1>
-          <button onClick={handleAddJobSeeker} className="md:hidden px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" /></svg>
-            Add Job Seeker
+          <h1 className="text-xl font-bold">Archived Job Seekers</h1>
+          <button onClick={handleBackToJobSeekers} className="md:hidden px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center shrink-0 bg-white">
+            Back to Job Seekers
           </button>
         </div>
 
-        <div className="hidden md:flex items-center space-x-4">
+        <div className="hidden md:flex space-x-4">
           {selectedJobSeekers.length > 0 && (
             <button onClick={deleteSelectedJobSeekers} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
               Delete Selected ({selectedJobSeekers.length})
             </button>
           )}
-          <div ref={favoritesMenuRef} className="relative">
+          <div className="relative">
             <button onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2 bg-white">
               <FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} />
               <span className="max-w-[100px] truncate">{selectedFavoriteId ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites" : "Favorites"}</span>
@@ -864,7 +902,7 @@ export default function JobSeekerList() {
                   {favorites.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">No saved favorites yet</p> : favorites.map((fav) => (
                     <div key={fav.id} className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""}`} onClick={() => applyFavorite(fav)}>
                       <span className="text-sm text-gray-700 truncate flex-1">{fav.name}</span>
-                      <button onClick={(e) => handleDeleteFavorite(e, fav.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1" title="Delete favorite"><FiX size={14} /></button>
+                      <button onClick={(e) => handleDeleteFavorite(fav.id, e)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1" title="Delete favorite"><FiX size={14} /></button>
                     </div>
                   ))}
                 </div>
@@ -872,12 +910,8 @@ export default function JobSeekerList() {
             )}
           </div>
           <button onClick={() => setShowColumnModal(true)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">Columns</button>
-          <button onClick={handleViewArchived} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">
-            Archived
-          </button>
-          <button onClick={handleAddJobSeeker} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" /></svg>
-            Add Job Seeker
+          <button onClick={handleBackToJobSeekers} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">
+            Back to Job Seekers
           </button>
         </div>
 
@@ -886,7 +920,7 @@ export default function JobSeekerList() {
             <button onClick={deleteSelectedJobSeekers} className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center justify-center gap-2">Delete Selected ({selectedJobSeekers.length})</button>
           </div>
         )}
-        <div className="w-full md:hidden" ref={favoritesMenuMobileRef}>
+        <div className="w-full md:hidden">
           <div className="relative">
             <button onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-between gap-2 bg-white">
               <span className="flex items-center gap-2"><FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} /><span className="truncate">{selectedFavoriteId ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites" : "Favorites"}</span></span>
@@ -901,7 +935,7 @@ export default function JobSeekerList() {
                   {favorites.length === 0 ? <p className="text-xs text-gray-400 text-center py-4">No saved favorites yet</p> : favorites.map((fav) => (
                     <div key={fav.id} className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""}`} onClick={() => applyFavorite(fav)}>
                       <span className="text-sm text-gray-700 truncate flex-1">{fav.name}</span>
-                      <button onClick={(e) => handleDeleteFavorite(e, fav.id)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1" title="Delete favorite"><FiX size={14} /></button>
+                      <button onClick={(e) => handleDeleteFavorite(fav.id, e)} className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1" title="Delete favorite"><FiX size={14} /></button>
                     </div>
                   ))}
                 </div>
@@ -913,7 +947,7 @@ export default function JobSeekerList() {
           <button onClick={() => setShowColumnModal(true)} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center">Columns</button>
         </div>
         <div className="w-full md:hidden">
-          <button onClick={handleViewArchived} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center">Archived</button>
+          <button onClick={handleBackToJobSeekers} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center">Back to Job Seekers</button>
         </div>
       </div>
 
@@ -924,13 +958,13 @@ export default function JobSeekerList() {
         </div>
       )}
 
-      {/* Search and Filter */}
+      {/* Search */}
       <div className="p-4 border-b border-gray-200">
-        <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
+        <div className="flex flex-col md:flex-row gap-4">
           <div className="relative flex-1">
             <input
               type="text"
-              placeholder="Search job seekers..."
+              placeholder="Search archived job seekers..."
               className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -978,13 +1012,12 @@ export default function JobSeekerList() {
                   />
                 </th>
 
-
-
-                {/* Fixed Actions header (LOCKED) */}
+                {/* Fixed Actions header */}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Actions
                 </th>
 
+                {/* Fixed ID header */}
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   ID
                 </th>
@@ -1008,9 +1041,13 @@ export default function JobSeekerList() {
                         filterValue={columnFilters[key] || null}
                         onSort={() => handleColumnSort(key)}
                         onFilterChange={(value) => handleColumnFilter(key, value)}
-                        filterType={columnInfo.filterType}
+                        filterType={(columnInfo as any).filterType || "text"}
                         filterOptions={
-                          key === "status" ? statusOptions : undefined
+                          key === "status"
+                            ? statusOptions
+                            : key === "archive_reason"
+                              ? archiveReasonOptions
+                              : undefined
                         }
                       />
                     );
@@ -1018,15 +1055,15 @@ export default function JobSeekerList() {
                 </SortableContext>
               </tr>
             </thead>
+
             <tbody className="bg-white divide-y divide-gray-200">
               {filteredAndSortedJobSeekers.length > 0 ? (
-                filteredAndSortedJobSeekers.map((jobSeeker) => (
+                filteredAndSortedJobSeekers.map((js) => (
                   <tr
-                    key={jobSeeker.id}
+                    key={js.id}
                     className="hover:bg-gray-50 cursor-pointer"
-                    onClick={() => handleViewJobSeeker(jobSeeker.id)}
+                    onClick={() => handleViewJobSeeker(js.id)}
                   >
-                    {/* Fixed checkbox */}
                     <td
                       className="px-6 py-4 whitespace-nowrap"
                       onClick={(e) => e.stopPropagation()}
@@ -1034,13 +1071,11 @@ export default function JobSeekerList() {
                       <input
                         type="checkbox"
                         className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                        checked={selectedJobSeekers.includes(jobSeeker.id)}
+                        checked={selectedJobSeekers.includes(js.id)}
                         onChange={() => { }}
-                        onClick={(e) => handleSelectJobSeeker(jobSeeker.id, e)}
+                        onClick={(e) => handleSelectJobSeeker(js.id, e)}
                       />
                     </td>
-
-                    {/* Fixed Actions */}
                     <td
                       className="px-6 py-4 whitespace-nowrap text-sm"
                       onClick={(e) => e.stopPropagation()}
@@ -1048,38 +1083,32 @@ export default function JobSeekerList() {
                       <ActionDropdown
                         label="Actions"
                         options={[
-                          { label: "View", action: () => handleViewJobSeeker(jobSeeker.id) },
-                          {
-                            label: "Edit",
-                            action: () =>
-                              router.push(
-                                `/dashboard/job-seekers/add?id=${jobSeeker.id}`
-                              ),
-                          },
+                          { label: "View", action: () => handleViewJobSeeker(js.id) },
                           {
                             label: "Delete",
                             action: async () => {
                               if (
                                 !window.confirm(
-                                  "Are you sure you want to delete this job seeker?"
+                                  "Are you sure you want to permanently delete this job seeker?"
                                 )
                               )
                                 return;
-                              setIsDeleting(true);
+                              setIsLoading(true);
                               try {
-                                const response = await fetch(
-                                  `/api/job-seekers/${jobSeeker.id}`,
+                                const token = document.cookie
+                                  .split("; ")
+                                  .find((row) => row.startsWith("token="))
+                                  ?.split("=")[1];
+                                const res = await fetch(
+                                  `/api/job-seekers/${js.id}`,
                                   {
                                     method: "DELETE",
-                                    headers: {
-                                      Authorization: `Bearer ${document.cookie.replace(
-                                        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-                                        "$1"
-                                      )}`,
-                                    },
+                                    headers: token
+                                      ? { Authorization: `Bearer ${token}` }
+                                      : undefined,
                                   }
                                 );
-                                if (!response.ok)
+                                if (!res.ok)
                                   throw new Error(
                                     "Failed to delete job seeker"
                                   );
@@ -1088,23 +1117,21 @@ export default function JobSeekerList() {
                                 setError(
                                   err instanceof Error
                                     ? err.message
-                                    : "An error occurred"
+                                    : "Delete failed"
                                 );
                               } finally {
-                                setIsDeleting(false);
+                                setIsLoading(false);
                               }
                             },
                           },
                         ]}
                       />
                     </td>
-
-                    {/* Fixed ID */}
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      JS {jobSeeker.id}
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">
+                        JS {js.id}
+                      </div>
                     </td>
-
-                    {/* Dynamic columns */}
                     {columnFields.map((key) => (
                       <td
                         key={key}
@@ -1112,39 +1139,45 @@ export default function JobSeekerList() {
                       >
                         {getColumnLabel(key).toLowerCase() === "status" ? (
                           <span
-                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
+                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800`}
                           >
-                            {getColumnValue(jobSeeker, key)}
+                            {getColumnValue(js, key)}
                           </span>
-                        ) : (getColumnValue(jobSeeker, key) || "").toLowerCase().includes("@") ? (
+                        ) : getColumnLabel(key).toLowerCase() === "archive reason" ? (
+                          <span
+                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${(getColumnValue(js, key) || "").toString().toLowerCase() === "deletion" ? "bg-red-100 text-red-800" : "bg-blue-100 text-blue-800"}`}
+                          >
+                            {getColumnValue(js, key)}
+                          </span>
+                        ) : (getColumnValue(js, key) || "").toLowerCase().includes("@") ? (
                           <a
-                            href={`mailto:${getColumnValue(jobSeeker, key)}`}
+                            href={`mailto:${getColumnValue(js, key)}`}
                             className="text-blue-600 hover:underline"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {getColumnValue(jobSeeker, key)}
+                            {getColumnValue(js, key)}
                           </a>
-                        ) : (getColumnValue(jobSeeker, key) || "").toLowerCase().startsWith("http") || (getColumnValue(jobSeeker, key) || "").toLowerCase().startsWith("https") ? (
+                        ) : getColumnLabel(key).toLowerCase().includes("phone") ? (
                           <a
-                            href={(getColumnValue(jobSeeker, key) || "")}
+                            href={`tel:${(getColumnValue(js, key) || "").replace(/\D/g, "")}`}
                             className="text-blue-600 hover:underline"
                             onClick={(e) => e.stopPropagation()}
-                          >{(getColumnValue(jobSeeker, key) || "")}</a>
+                          >{getColumnValue(js, key)}</a>
                         ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
                           <RecordNameResolver
-                            id={String(getColumnValue(jobSeeker, key) || "") || null}
-                            type={(getColumnInfo(key) as any)?.lookupType || "jobSeekers"}
+                            id={String(getColumnValue(js, key) || "") || null}
+                            type={(getColumnInfo(key) as any)?.lookupType || "organizations"}
                             clickable
-                            fallback={String(getColumnValue(jobSeeker, key) || "") || ""}
+                            fallback={String(getColumnValue(js, key) || "") || ""}
                           />
-                        ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(jobSeeker, key) || "") ? (
+                        ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(js, key) || "") ? (
                           <a
-                            href={`tel:${(getColumnValue(jobSeeker, key) || "").replace(/\D/g, "")}`}
+                            href={`tel:${(getColumnValue(js, key) || "").replace(/\D/g, "")}`}
                             className="text-blue-600 hover:underline"
                             onClick={(e) => e.stopPropagation()}
-                          >{getColumnValue(jobSeeker, key)}</a>
+                          >{getColumnValue(js, key)}</a>
                         ) : (
-                          getColumnValue(jobSeeker, key)
+                          getColumnValue(js, key)
                         )}
                       </td>
                     ))}
@@ -1156,9 +1189,11 @@ export default function JobSeekerList() {
                     colSpan={3 + columnFields.length}
                     className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                   >
-                    {searchTerm
-                      ? "No job seekers found matching your search."
-                      : 'No job seekers found. Click "Add Job Seeker" to create one.'}
+                    {Object.keys(columnFilters).length > 0
+                      ? "No archived job seekers match your filters."
+                      : searchTerm
+                        ? "No archived job seekers match your search."
+                        : "No archived job seekers found."}
                   </td>
                 </tr>
               )}
@@ -1181,7 +1216,8 @@ export default function JobSeekerList() {
           <div>
             <p className="text-sm text-gray-700">
               Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">{filteredAndSortedJobSeekers.length}</span> of{" "}
+              <span className="font-medium">{filteredAndSortedJobSeekers.length}</span>{" "}
+              of{" "}
               <span className="font-medium">{filteredAndSortedJobSeekers.length}</span>{" "}
               results
             </p>
@@ -1232,8 +1268,6 @@ export default function JobSeekerList() {
           )}
         </div>
       </div>
-
-      {/* Column Modal */}
       {showColumnModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
@@ -1251,9 +1285,8 @@ export default function JobSeekerList() {
               {/* Available */}
               <div>
                 <h3 className="font-medium mb-3">Available Columns</h3>
-
                 <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
-                  {columnsCatalog.map((c) => {
+                  {jsColumnsCatalog.map((c) => {
                     const checked = columnFields.includes(c.key);
                     return (
                       <label
@@ -1302,14 +1335,15 @@ export default function JobSeekerList() {
                             className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
                             disabled={idx === 0}
                             onClick={() => {
-                              const newFields = [...columnFields];
-                              [newFields[idx], newFields[idx - 1]] = [
-                                newFields[idx - 1],
-                                newFields[idx],
-                              ];
-                              setColumnFields(newFields);
+                              setColumnFields((prev) => {
+                                const copy = [...prev];
+                                [copy[idx - 1], copy[idx]] = [
+                                  copy[idx],
+                                  copy[idx - 1],
+                                ];
+                                return copy;
+                              });
                             }}
-                            title="Move up"
                           >
                             ↑
                           </button>
@@ -1318,26 +1352,26 @@ export default function JobSeekerList() {
                             className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
                             disabled={idx === columnFields.length - 1}
                             onClick={() => {
-                              const newFields = [...columnFields];
-                              [newFields[idx], newFields[idx + 1]] = [
-                                newFields[idx + 1],
-                                newFields[idx],
-                              ];
-                              setColumnFields(newFields);
+                              setColumnFields((prev) => {
+                                const copy = [...prev];
+                                [copy[idx], copy[idx + 1]] = [
+                                  copy[idx + 1],
+                                  copy[idx],
+                                ];
+                                return copy;
+                              });
                             }}
-                            title="Move down"
                           >
                             ↓
                           </button>
 
                           <button
-                            className="px-2 py-1 border rounded text-xs hover:bg-red-50 text-red-600"
-                            onClick={() => {
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50"
+                            onClick={() =>
                               setColumnFields((prev) =>
                                 prev.filter((x) => x !== key)
-                              );
-                            }}
-                            title="Remove"
+                              )
+                            }
                           >
                             Remove
                           </button>
@@ -1347,26 +1381,23 @@ export default function JobSeekerList() {
                   )}
                 </div>
 
-                {/* Footer buttons */}
                 <div className="flex justify-end gap-2 mt-4">
                   <button
                     className="px-4 py-2 border rounded hover:bg-gray-50"
-                    onClick={() => setColumnFields(columnsCatalog.map((c) => c.key))}
+                    onClick={() => setColumnFields(jsColumnsCatalog.map((c) => c.key))}
                   >
                     Reset
                   </button>
 
                   <button
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                    disabled={!!isSavingColumns}
                     onClick={async () => {
-                      const success = await saveColumnConfig();
-                      if (success) {
-                        setShowColumnModal(false);
-                      }
+                      const ok = await saveColumnConfig();
+                      if (ok) setShowColumnModal(false);
                     }}
-                    disabled={isSavingColumns}
                   >
-                    {isSavingColumns ? "Saving..." : "Done"}
+                    Done
                   </button>
                 </div>
               </div>
@@ -1374,7 +1405,6 @@ export default function JobSeekerList() {
           </div>
         </div>
       )}
-
       {/* Save Favorite Modal */}
       {showSaveFavoriteModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
@@ -1401,7 +1431,7 @@ export default function JobSeekerList() {
                     setFavoriteName(e.target.value);
                     if (e.target.value.trim()) setFavoriteNameError(null);
                   }}
-                  placeholder="e.g. Active Job Seekers"
+                  placeholder="e.g. Active Hiring Managers"
                   className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
                     }`}
                   autoFocus

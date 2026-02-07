@@ -1345,10 +1345,11 @@ export default function AddExecutiveSearchJob() {
         )}
 
         {/* Form: from org HM may be prefilled; from job overview HM is inline search select (no modal) */}
+        {/* Hide HM selection when already selected from org flow (organizationId + hiringManagerId in URL); show in simple add and edit mode */}
         {(isEditMode || jobStep === 3) && (
           <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
-            {!isEditMode && hiringManagerCustomField && (
+            {!isEditMode && hiringManagerCustomField && !(organizationIdFromUrl && hiringManagerIdFromUrl) && (
               <div className="flex items-center mb-3">
                 <label className="w-48 font-medium flex items-center">
                   Hiring Manager:

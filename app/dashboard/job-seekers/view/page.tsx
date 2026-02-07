@@ -871,6 +871,23 @@ export default function JobSeekerView() {
   const [appointmentUsers, setAppointmentUsers] = useState<any[]>([]);
   const [isLoadingAppointmentUsers, setIsLoadingAppointmentUsers] = useState(false);
 
+  // Delete request modal state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteForm, setDeleteForm] = useState({ reason: "" });
+  const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
+  const [pendingDeleteRequest, setPendingDeleteRequest] = useState<any>(null);
+  const [isLoadingDeleteRequest, setIsLoadingDeleteRequest] = useState(false);
+
+  // Transfer modal state (target = another Job Seeker; notes, docs, tasks, placements, applications move to target; source archived)
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferForm, setTransferForm] = useState({ targetJobSeekerId: "" });
+  const [transferSearchQuery, setTransferSearchQuery] = useState("");
+  const [showTransferDropdown, setShowTransferDropdown] = useState(false);
+  const transferSearchRef = useRef<HTMLDivElement>(null);
+  const [availableJobSeekersForTransfer, setAvailableJobSeekersForTransfer] = useState<any[]>([]);
+  const [isLoadingTransferTargets, setIsLoadingTransferTargets] = useState(false);
+  const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false);
+
   // Onboarding send modal state
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [selectedDocs, setSelectedDocs] = useState<Record<string, boolean>>({});
@@ -2961,7 +2978,9 @@ Best regards`;
     if (action === "edit") {
       handleEdit();
     } else if (action === "delete" && jobSeekerId) {
-      handleDelete(jobSeekerId);
+      setShowDeleteModal(true);
+    } else if (action === "transfer" && jobSeekerId) {
+      setShowTransferModal(true);
     } else if (action === "add-note") {
       setShowAddNote(true);
       setActiveTab("notes");
@@ -2992,6 +3011,214 @@ Best regards`;
           attendees: [jobSeeker.email],
         }));
       }
+    }
+  };
+
+  // Check for pending delete request
+  const checkPendingDeleteRequest = async () => {
+    if (!jobSeekerId) return;
+    setIsLoadingDeleteRequest(true);
+    try {
+      const response = await fetch(
+        `/api/job-seekers/${jobSeekerId}/delete-request`,
+        {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        }
+      );
+      if (response.ok) {
+        const data = await response.json();
+        if (data.deleteRequest && data.deleteRequest.status === "pending") {
+          setPendingDeleteRequest(data.deleteRequest);
+        } else {
+          setPendingDeleteRequest(null);
+        }
+      }
+    } catch (err) {
+      console.error("Error checking delete request:", err);
+    } finally {
+      setIsLoadingDeleteRequest(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showDeleteModal && jobSeekerId) checkPendingDeleteRequest();
+  }, [showDeleteModal, jobSeekerId]);
+
+  const handleDeleteRequestSubmit = async () => {
+    if (!deleteForm.reason.trim()) {
+      toast.error("Please enter a reason for deletion");
+      return;
+    }
+    if (!jobSeekerId) return;
+    setIsSubmittingDelete(true);
+    try {
+      const userCookie = document.cookie.replace(
+        /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      let currentUser: any = null;
+      if (userCookie) {
+        try {
+          currentUser = JSON.parse(decodeURIComponent(userCookie));
+        } catch { }
+      }
+      const res = await fetch(`/api/job-seekers/${jobSeekerId}/delete-request`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+        body: JSON.stringify({
+          reason: deleteForm.reason.trim(),
+          record_type: "job_seeker",
+          record_number: formatRecordId(jobSeeker?.id, "jobSeeker"),
+          requested_by: currentUser?.name || currentUser?.id || "Unknown",
+          requested_by_email: currentUser?.email || "",
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "Failed to create delete request");
+      }
+      toast.success("Delete request submitted. Payroll will be notified for approval.");
+      setShowDeleteModal(false);
+      setDeleteForm({ reason: "" });
+      checkPendingDeleteRequest();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to submit delete request");
+    } finally {
+      setIsSubmittingDelete(false);
+    }
+  };
+
+  // Fetch available job seekers for transfer (exclude current and archived)
+  const fetchAvailableJobSeekersForTransfer = async () => {
+    setIsLoadingTransferTargets(true);
+    try {
+      const response = await fetch("/api/job-seekers", {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        const list = data.jobSeekers || data.data || data || [];
+        const arr = Array.isArray(list) ? list : [];
+        const filtered = arr.filter(
+          (js: any) =>
+            String(js?.id) !== String(jobSeekerId) &&
+            js?.status !== "Archived" &&
+            !js?.archived_at
+        );
+        setAvailableJobSeekersForTransfer(filtered);
+      } else {
+        setAvailableJobSeekersForTransfer([]);
+      }
+    } catch (err) {
+      console.error("Error fetching job seekers for transfer:", err);
+      setAvailableJobSeekersForTransfer([]);
+    } finally {
+      setIsLoadingTransferTargets(false);
+    }
+  };
+
+  useEffect(() => {
+    if (showTransferModal) {
+      fetchAvailableJobSeekersForTransfer();
+      setTransferSearchQuery("");
+      setShowTransferDropdown(false);
+    }
+  }, [showTransferModal]);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (transferSearchRef.current && !transferSearchRef.current.contains(e.target as Node)) {
+        setShowTransferDropdown(false);
+      }
+    };
+    if (showTransferDropdown) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showTransferDropdown]);
+
+  const filteredTransferJobSeekers =
+    transferSearchQuery.trim() === ""
+      ? availableJobSeekersForTransfer
+      : availableJobSeekersForTransfer.filter((js: any) => {
+          const q = transferSearchQuery.trim().toLowerCase();
+          const fullName = String(js?.full_name || `${js?.last_name || ""}, ${js?.first_name || ""}`).toLowerCase();
+          const idStr = js?.id != null ? String(js.id) : "";
+          const recordId = js?.id != null ? String(formatRecordId(js.id, "jobSeeker")).toLowerCase() : "";
+          return fullName.includes(q) || idStr.includes(q) || recordId.includes(q);
+        });
+
+  const handleTransferSubmit = async () => {
+    if (!transferForm.targetJobSeekerId) {
+      toast.error("Please select a target job seeker");
+      return;
+    }
+    if (!jobSeekerId) return;
+    const targetId = Number(transferForm.targetJobSeekerId);
+    if (!Number.isFinite(targetId) || targetId <= 0) {
+      toast.error("Invalid target job seeker");
+      return;
+    }
+    if (Number(jobSeekerId) === targetId) {
+      toast.error("Cannot transfer to the same job seeker");
+      return;
+    }
+    setIsSubmittingTransfer(true);
+    try {
+      const userCookie = document.cookie.replace(
+        /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      let currentUser: any = null;
+      if (userCookie) {
+        try {
+          currentUser = JSON.parse(decodeURIComponent(userCookie));
+        } catch { }
+      }
+      const res = await fetch("/api/job-seekers/transfer", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+        body: JSON.stringify({
+          source_job_seeker_id: Number(jobSeekerId),
+          target_job_seeker_id: targetId,
+          requested_by: currentUser?.name || currentUser?.id || "Unknown",
+          requested_by_email: currentUser?.email || "",
+          source_record_number: formatRecordId(Number(jobSeekerId), "jobSeeker"),
+          target_record_number: formatRecordId(targetId, "jobSeeker"),
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.message || "Failed to create transfer request");
+      }
+      toast.success("Transfer request submitted. Payroll will be notified for approval.");
+      setShowTransferModal(false);
+      setTransferForm({ targetJobSeekerId: "" });
+      setTransferSearchQuery("");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to submit transfer request");
+    } finally {
+      setIsSubmittingTransfer(false);
     }
   };
 
@@ -6092,6 +6319,180 @@ Best regards`;
                 }
               >
                 {isSavingAppointment ? "Creating..." : "Create Appointment"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Request Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+            <div className="flex justify-between items-center p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold">Request Delete (Job Seeker)</h2>
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteForm({ reason: "" });
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              {pendingDeleteRequest && pendingDeleteRequest.status === "pending" ? (
+                <div className="bg-amber-50 border border-amber-200 rounded p-4 text-sm text-amber-800">
+                  A delete request is already pending for this job seeker. Payroll will approve or deny it.
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-gray-600">
+                    Request archival and permanent deletion of this job seeker. Payroll will be notified and must approve or deny.
+                  </p>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Reason for deletion <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      value={deleteForm.reason}
+                      onChange={(e) => setDeleteForm((prev) => ({ ...prev, reason: e.target.value }))}
+                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      rows={3}
+                      placeholder="Enter reason..."
+                      required
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteForm({ reason: "" });
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                disabled={isSubmittingDelete}
+              >
+                Cancel
+              </button>
+              {!(pendingDeleteRequest && pendingDeleteRequest.status === "pending") && (
+                <button
+                  onClick={handleDeleteRequestSubmit}
+                  className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:opacity-50"
+                  disabled={isSubmittingDelete || !deleteForm.reason.trim()}
+                >
+                  {isSubmittingDelete ? "Submitting..." : "Submit Delete Request"}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transfer Modal */}
+      {showTransferModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+            <div className="flex justify-between items-center p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold">Transfer Job Seeker</h2>
+              <button
+                onClick={() => {
+                  setShowTransferModal(false);
+                  setTransferForm({ targetJobSeekerId: "" });
+                  setTransferSearchQuery("");
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              <div className="bg-gray-50 p-4 rounded">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Source Job Seeker</label>
+                <p className="text-sm text-gray-900 font-medium">
+                  {jobSeeker ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.full_name || `${jobSeeker.last_name || ""}, ${jobSeeker.first_name || ""}`.trim() || "N/A"}` : "N/A"}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <span className="text-red-500 mr-1">•</span>
+                  Select Target Job Seeker
+                </label>
+                {isLoadingTransferTargets ? (
+                  <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
+                    Loading job seekers...
+                  </div>
+                ) : availableJobSeekersForTransfer.length === 0 ? (
+                  <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
+                    No available job seekers found
+                  </div>
+                ) : (
+                  <div className="relative" ref={transferSearchRef}>
+                    <input
+                      type="text"
+                      value={transferSearchQuery}
+                      onChange={(e) => {
+                        setTransferSearchQuery(e.target.value);
+                        setShowTransferDropdown(true);
+                      }}
+                      onFocus={() => setShowTransferDropdown(true)}
+                      placeholder="Search by name or Record ID..."
+                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      required
+                    />
+                    {showTransferDropdown && filteredTransferJobSeekers.length > 0 && (
+                      <div className="absolute z-[60] w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
+                        {filteredTransferJobSeekers.map((js: any) => {
+                          const displayName = js?.full_name || `${js?.last_name || ""}, ${js?.first_name || ""}`.trim() || "Unnamed";
+                          return (
+                            <button
+                              key={js.id}
+                              type="button"
+                              onClick={() => {
+                                setTransferForm((prev) => ({ ...prev, targetJobSeekerId: String(js.id) }));
+                                setTransferSearchQuery(`${formatRecordId(js.id, "jobSeeker")} ${displayName}`.trim());
+                                setShowTransferDropdown(false);
+                              }}
+                              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
+                            >
+                              <span className="text-sm font-medium text-gray-900">
+                                {formatRecordId(js.id, "jobSeeker")} {displayName}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+              <div className="bg-blue-50 border border-blue-200 rounded p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> This will create a transfer request. This job seeker&apos;s notes, documents, tasks, placements, and applications will move to the target job seeker, and this record will be archived. Payroll will be notified and must approve or deny.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowTransferModal(false);
+                  setTransferForm({ targetJobSeekerId: "" });
+                  setTransferSearchQuery("");
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                disabled={isSubmittingTransfer}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleTransferSubmit}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSubmittingTransfer || !transferForm.targetJobSeekerId}
+              >
+                {isSubmittingTransfer ? "Submitting..." : "Submit Transfer"}
               </button>
             </div>
           </div>

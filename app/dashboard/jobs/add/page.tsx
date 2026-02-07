@@ -352,6 +352,7 @@ export default function AddJob() {
   const leadId = searchParams.get("leadId") || searchParams.get("lead_id");
   const organizationIdFromUrl =
     searchParams.get("organizationId") || searchParams.get("organization_id");
+  const hiringManagerIdFromUrl = searchParams.get("hiringManagerId");
   const hasPrefilledFromLeadRef = useRef(false);
   const hasPrefilledOrgRef = useRef(false);
   const hasInitializedOrgSyncRef = useRef(false);
@@ -443,6 +444,16 @@ export default function AddJob() {
     const found = hiringManagerOptions.find((opt) => String(opt.id) === raw);
     return found?.name || raw;
   }, [hiringManagerOptions, hiringManagerValue]);
+
+  // Pre-populate hiring manager from URL when redirected from org flow (org → HM step → type selection)
+  useEffect(() => {
+    if (!jobId && hiringManagerIdFromUrl && hiringManagerCustomField) {
+      setCustomFieldValues((prev) => {
+        if (prev[hiringManagerCustomField.field_name] === hiringManagerIdFromUrl) return prev;
+        return { ...prev, [hiringManagerCustomField.field_name]: hiringManagerIdFromUrl };
+      });
+    }
+  }, [jobId, hiringManagerIdFromUrl, hiringManagerCustomField, setCustomFieldValues]);
 
   // From organization view (Add Job in dropdown): require HM first, then type selection. No modal.
   const fromOrganizationAddJob = Boolean(organizationIdFromUrl && !jobId);
@@ -1840,10 +1851,11 @@ export default function AddJob() {
         )}
 
         {/* Form: from org we already have HM; from job overview HM is inline (no modal) */}
+        {/* Hide HM selection when already selected from org flow (organizationId + hiringManagerId in URL); show in simple add and edit mode */}
         {(isEditMode || jobStep === 3) && (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 gap-4">
-              {!isEditMode && hiringManagerCustomField && (
+              {!isEditMode && hiringManagerCustomField && !(organizationIdFromUrl && hiringManagerIdFromUrl) && (
                 <div className="flex items-center mb-3">
                   <label className="w-48 font-medium flex items-center">
                     Hiring Manager:
