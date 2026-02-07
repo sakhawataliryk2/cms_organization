@@ -1579,26 +1579,35 @@ export default function AddJob() {
     return (
       <div className="mx-auto py-4 px-4 sm:py-8 sm:px-6">
         <div className="bg-white rounded-lg shadow p-4 sm:p-6">
-          <div className="flex items-center border-b border-red-600 pb-4 mb-6">
-            <div className="bg-red-100 border border-red-300 p-2 mr-3">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-6 w-6 text-red-600"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                />
-              </svg>
+          <div className="flex justify-between items-center border-b border-red-600 pb-4 mb-6">
+            <div className="flex items-center">
+              <div className="bg-red-100 border border-red-300 p-2 mr-3">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-6 w-6 text-red-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                  />
+                </svg>
+              </div>
+              <h1 className="text-xl font-bold">Add Job</h1>
             </div>
-            <h1 className="text-xl font-bold">Add Job</h1>
+            <button
+              onClick={handleGoBack}
+              className="text-gray-500 hover:text-gray-700 text-2xl font-bold leading-none"
+              aria-label="Close"
+            >
+              X
+            </button>
           </div>
-          <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4">
             <div className="flex items-center gap-4">
               <label className="w-48 font-medium shrink-0">Hiring Manager:</label>
               <div className="flex-1">
@@ -1654,24 +1663,33 @@ export default function AddJob() {
       <div className="mx-auto py-4 px-4 sm:py-8 sm:px-6">
         <div className="bg-white rounded-lg shadow p-4 sm:p-6">
           {/* Header */}
-          <div className="flex items-center border-b border-red-600 pb-4 mb-6">
-            <div className="bg-red-100 border border-red-300 p-2 mr-3">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-6 w-6 text-red-600"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-                />
-              </svg>
+          <div className="flex justify-between items-center border-b border-red-600 pb-4 mb-6">
+            <div className="flex items-center">
+              <div className="bg-red-100 border border-red-300 p-2 mr-3">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="h-6 w-6 text-red-600"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+                  />
+                </svg>
+              </div>
+              <h1 className="text-xl font-bold">Add Job</h1>
             </div>
-            <h1 className="text-xl font-bold">Add Job</h1>
+            <button
+              onClick={handleGoBack}
+              className="text-gray-500 hover:text-gray-700 text-2xl font-bold leading-none"
+              aria-label="Close"
+            >
+              X
+            </button>
           </div>
 
           {/* Job Type Options */}

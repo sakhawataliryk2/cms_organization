@@ -393,34 +393,34 @@ export default function TaskView() {
         }
 
         // standard fields
-        switch (key) {
-            case "dueDate":
-                return task.dueDateTimeFormatted || "Not set";
-            case "assignedTo":
-                return task.assignedTo || "Not assigned";
-            case "priority":
-                return task.priority || "-";
-            case "status":
-                return task.status || "-";
-            case "owner":
-                return task.owner || "-";
-            case "jobSeeker":
-                return task.jobSeeker || "-";
-            case "hiringManager":
-                return task.hiringManager || "-";
-            case "job":
-                return task.job || "-";
-            case "organization":
-                return task.organization || "-";
-            case "lead":
-                return task.lead || "-";
-            case "dateCreated":
-                return task.dateCreated || "-";
-            case "createdBy":
-                return task.createdBy || "-";
-            default:
-                return "-";
-        }
+        // switch (key) {
+        //     case "dueDate":
+        //         return task.dueDateTimeFormatted || "Not set";
+        //     case "assignedTo":
+        //         return task.assignedTo || "Not assigned";
+        //     case "priority":
+        //         return task.priority || "-";
+        //     case "status":
+        //         return task.status || "-";
+        //     case "owner":
+        //         return task.owner || "-";
+        //     case "jobSeeker":
+        //         return task.jobSeeker || "-";
+        //     case "hiringManager":
+        //         return task.hiringManager || "-";
+        //     case "job":
+        //         return task.job || "-";
+        //     case "organization":
+        //         return task.organization || "-";
+        //     case "lead":
+        //         return task.lead || "-";
+        //     case "dateCreated":
+        //         return task.dateCreated || "-";
+        //     case "createdBy":
+        //         return task.createdBy || "-";
+        //     default:
+        //         return "-";
+        // }
     };
 
     const getHeaderFieldLabel = (key: string) => {
@@ -631,14 +631,16 @@ export default function TaskView() {
             });
 
             const data = await response.json().catch(() => ({}));
+            console.log("data", data);
             const fields =
-                (data as any).customFields ||
-                (data as any).fields ||
-                (data as any).data?.customFields ||
-                (data as any).data?.fields ||
-                [];
+                data?.customFields
+                // (data as any).fields ||
+                // (data as any).data?.customFields ||
+                // (data as any).data?.fields ||
+                // [];
 
             setAvailableFields(Array.isArray(fields) ? fields : []);
+            console.log("availableFields", availableFields);
         } catch (err) {
             console.error("Error fetching task available fields:", err);
         } finally {
@@ -1957,46 +1959,48 @@ export default function TaskView() {
                                 <div className="mb-6">
                                     <h3 className="font-bold text-lg mb-2">Additional Information</h3>
                                     <div className="space-y-0 border border-gray-200 rounded">
-                                        {Array.from(new Set(visibleFields.taskOverview || [])).map((k, index) => (
-                                            <div key={`taskOverview-${k}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-                                                <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">
-                                                    {getTaskFieldLabel(k)}:
-                                                </div>
-                                                <div className="flex-1 p-2">
-                                                    {getTaskFieldLabel(k) === "Job Seekers" ?
-                                                        <RecordNameResolver
-                                                            id={Number(getTaskFieldValue(k))}
-                                                            type="jobSeeker"
-                                                            clickable
-                                                            fallback={getTaskFieldValue(k) || "-"}
-                                                        />
-                                                        : getTaskFieldLabel(k) === "Hiring Managers" ?
+                                        {Array.from(new Set(visibleFields.taskOverview || [])).map((k, index) => {
+                                            const customFieldDefs = (availableFields || []).filter((f: any) => {
+                                                const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
+                                                return !isHidden;
+                                            });
+                                            const lookupType = (customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === k)?.lookup_type || customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === k)?.lookupType || "") as any;
+                                            return (
+                                                <div key={`taskOverview-${k}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+                                                    <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">
+                                                        {getTaskFieldLabel(k)}:
+                                                    </div>
+                                                    <div className="flex-1 p-2">
+                                                        {getTaskFieldValue(k).toLowerCase().includes("@") ? (
+                                                            <a href={`mailto:${getTaskFieldValue(k)}`} className="text-sm font-medium text-blue-600 hover:underline">
+                                                                {getTaskFieldValue(k)}
+                                                            </a>
+                                                        ) : getTaskFieldValue(k).toLowerCase().startsWith("http") || getTaskFieldValue(k).toLowerCase().startsWith("https") ? (
+                                                            <a href={getTaskFieldValue(k)} className="text-sm font-medium text-blue-600 hover:underline">
+                                                                {getTaskFieldValue(k)}
+                                                            </a>
+                                                        ) : lookupType && getTaskFieldValue(k) ? (
                                                             <RecordNameResolver
-                                                                id={Number(getTaskFieldValue(k))}
-                                                                type="hiringManager"
+                                                                id={String(getTaskFieldValue(k) || "") || null}
+                                                                type={lookupType as any}
                                                                 clickable
-                                                                fallback={getTaskFieldValue(k) || "-"}
+                                                                fallback={String(getTaskFieldValue(k) || "") || ""}
                                                             />
-                                                            : getTaskFieldLabel(k) === "Jobs" ?
-                                                                <RecordNameResolver
-                                                                    id={Number(getTaskFieldValue(k))}
-                                                                    type="job"
-                                                                    clickable
-                                                                    fallback={getTaskFieldValue(k) || "-"}
-                                                                />
-                                                                : getTaskFieldLabel(k) === "Organization" ?
-                                                                    <RecordNameResolver
-                                                                        id={Number(getTaskFieldValue(k))}
-                                                                        type="organization"
-                                                                        clickable
-                                                                        fallback={getTaskFieldValue(k) || "-"}
-                                                                    />
-                                                                    :
-                                                                    getTaskFieldValue(k) || "-"
-                                                    }
+                                                        )
+                                                            : /\(\d{3}\)\s\d{3}-\d{4}/.test(getTaskFieldValue(k) || "") ? (
+                                                                <a href={`tel:${getTaskFieldValue(k).replace(/\D/g, "")}`} className="text-sm font-medium text-blue-600 hover:underline">
+                                                                    {getTaskFieldValue(k)}
+                                                                </a>
+                                                            )
+                                                                : getTaskFieldValue(k) ? (
+                                                                    <div className="text-sm font-medium text-gray-900">{getTaskFieldValue(k)}</div>
+                                                                ) : (
+                                                                    <div className="text-sm font-medium text-gray-900">-</div>
+                                                                )}
+                                                    </div>
                                                 </div>
-                                            </div>
-                                        ))}
+                                            )
+                                        })}
                                     </div>
                                 </div>
                             )}
@@ -2026,46 +2030,48 @@ export default function TaskView() {
                     <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
                         <PanelWithHeader title="Details" onEdit={() => handleEditPanel("details")}>
                             <div className="space-y-0 border border-gray-200 rounded">
-                                {Array.from(new Set(visibleFields.details || [])).map((key, index) => (
-                                    <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-                                        <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 text-gray-600 font-medium">
-                                            {getTaskFieldLabel(key)}:
-                                        </div>
-                                        <div className="flex-1 p-2">
-                                            {getTaskFieldLabel(key) === "Job Seekers" ?
-                                                <RecordNameResolver
-                                                    id={Number(getTaskFieldValue(key))}
-                                                    type="jobSeeker"
-                                                    clickable
-                                                    fallback={getTaskFieldValue(key) || "-"}
-                                                />
-                                                : getTaskFieldLabel(key) === "Hiring Managers" ?
+                                {Array.from(new Set(visibleFields.details || [])).map((k, index) => {
+                                    const customFieldDefs = (availableFields || []).filter((f: any) => {
+                                        const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
+                                        return !isHidden;
+                                    });
+                                    const lookupType = (customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === k)?.lookup_type || customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === k)?.lookupType || "") as any;
+                                    return (
+                                        <div key={`details-${k}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+                                            <div className="w-40 p-2 border-r border-gray-200 bg-gray-50 font-medium">
+                                                {getTaskFieldLabel(k)}:
+                                            </div>
+                                            <div className="flex-1 p-2">
+                                                {getTaskFieldValue(k).toLowerCase().includes("@") ? (
+                                                    <a href={`mailto:${getTaskFieldValue(k)}`} className="text-sm font-medium text-blue-600 hover:underline">
+                                                        {getTaskFieldValue(k)}
+                                                    </a>
+                                                ) : getTaskFieldValue(k).toLowerCase().startsWith("http") || getTaskFieldValue(k).toLowerCase().startsWith("https") ? (
+                                                    <a href={getTaskFieldValue(k)} className="text-sm font-medium text-blue-600 hover:underline">
+                                                        {getTaskFieldValue(k)}
+                                                    </a>
+                                                ) : lookupType && getTaskFieldValue(k) ? (
                                                     <RecordNameResolver
-                                                        id={Number(getTaskFieldValue(key))}
-                                                        type="hiringManager"
+                                                        id={String(getTaskFieldValue(k) || "") || null}
+                                                        type={lookupType as any}
                                                         clickable
-                                                        fallback={getTaskFieldValue(key) || "-"}
+                                                        fallback={String(getTaskFieldValue(k) || "") || ""}
                                                     />
-                                                    : getTaskFieldLabel(key) === "Jobs" ?
-                                                        <RecordNameResolver
-                                                            id={Number(getTaskFieldValue(key))}
-                                                            type="job"
-                                                            clickable
-                                                            fallback={getTaskFieldValue(key) || "-"}
-                                                        />
-                                                        : getTaskFieldLabel(key) === "Organization" ?
-                                                            <RecordNameResolver
-                                                                id={Number(getTaskFieldValue(key))}
-                                                                type="organization"
-                                                                clickable
-                                                                fallback={getTaskFieldValue(key) || "-"}
-                                                            />
-                                                            :
-                                                            getTaskFieldValue(key) || "-"
-                                            }
+                                                )
+                                                    : /\(\d{3}\)\s\d{3}-\d{4}/.test(getTaskFieldValue(k) || "") ? (
+                                                        <a href={`tel:${getTaskFieldValue(k).replace(/\D/g, "")}`} className="text-sm font-medium text-blue-600 hover:underline">
+                                                            {getTaskFieldValue(k)}
+                                                        </a>
+                                                    )
+                                                        : getTaskFieldValue(k) ? (
+                                                            <div className="text-sm font-medium text-gray-900">{getTaskFieldValue(k)}</div>
+                                                        ) : (
+                                                            <div className="text-sm font-medium text-gray-900">-</div>
+                                                        )}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    )
+                                })}
                             </div>
                         </PanelWithHeader>
                     </SortablePanel>
@@ -2188,27 +2194,48 @@ export default function TaskView() {
                             </span>
                         ) : (
                             headerFields.map((fk) => {
+                                const customFieldDefs = (availableFields || []).filter((f: any) => {
+                                    const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
+                                    return !isHidden;
+                                });
                                 const value = getHeaderFieldValue(fk);
-                                const isUrl = value !== "-" && (value.startsWith("http://") || value.startsWith("https://"));
+                                console.log("value", value);
+                                const lookupType = (customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === fk)?.lookup_type || customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === fk)?.lookupType || "") as any;
+                                console.log("lookupType", lookupType);
+
                                 return (
                                     <div key={fk} className="min-w-[140px]">
                                         <div className="text-xs text-gray-500">
                                             {getHeaderFieldLabel(fk)}
                                         </div>
-                                        {fk === "website" || isUrl ? (
-                                            <a
-                                                href={value.startsWith("http") ? value : `https://${value}`}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="text-sm font-medium text-blue-600 hover:underline"
-                                            >
-                                                {value}
-                                            </a>
-                                        ) : (
-                                            <div className="text-sm font-medium text-gray-900">
-                                                {value}
-                                            </div>
-                                        )}
+                                        {
+                                            value && value.toLowerCase().includes("@") ? (
+                                                <a href={`mailto:${value}`} className="text-sm font-medium text-blue-600 hover:underline">
+                                                    {value}
+                                                </a>
+                                            ) : value && value.toLowerCase().startsWith("http") || value &&value.toLowerCase().startsWith("https") ? (
+                                                <a href={value} className="text-sm font-medium text-blue-600 hover:underline">
+                                                    {value}
+                                                </a>
+                                            ) : lookupType && value ? (
+                                                <RecordNameResolver
+                                                    id={String(value ?? "") || null}
+                                                    type={lookupType as any}
+                                                    clickable
+                                                    fallback={String(value || "") || ""}
+                                                />
+                                            ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(value || "") ? (
+                                                <a href={`tel:${(value ?? "").replace(/\D/g, "")}`} className="text-sm font-medium text-blue-600 hover:underline">
+                                                    {value}
+                                                </a>
+                                            ) : value && value.toLowerCase() === "status" ? (
+                                                <div className="text-uppercase font-medium text-gray-900">{value}</div>
+                                            ) : value ? (
+                                                <div className="text-sm font-medium text-gray-900">{value}</div>
+                                            ) : (
+                                                <div className="text-sm font-medium text-gray-900">-</div>
+                                            )
+                                        }
                                     </div>
                                 );
                             })

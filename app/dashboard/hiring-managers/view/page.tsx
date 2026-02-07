@@ -1222,16 +1222,16 @@ export default function HiringManagerView() {
     };
   }, [showTearsheetDropdown]);
 
-  // Transfer modal state
+  // Transfer modal state (target = another Hiring Manager; notes, docs, tasks, jobs move to target; source HM archived)
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [transferForm, setTransferForm] = useState({
-    targetOrganizationId: "", // Organization to transfer to
+    targetHiringManagerId: "", // Hiring Manager to transfer data to
   });
   const [transferSearchQuery, setTransferSearchQuery] = useState("");
   const [showTransferDropdown, setShowTransferDropdown] = useState(false);
   const transferSearchRef = useRef<HTMLDivElement>(null);
-  const [availableOrganizations, setAvailableOrganizations] = useState<any[]>([]);
-  const [isLoadingOrganizations, setIsLoadingOrganizations] = useState(false);
+  const [availableHiringManagersForTransfer, setAvailableHiringManagersForTransfer] = useState<any[]>([]);
+  const [isLoadingTransferTargets, setIsLoadingTransferTargets] = useState(false);
   const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false);
 
   // Click outside to close transfer search dropdown
@@ -1255,7 +1255,7 @@ export default function HiringManagerView() {
 
   useEffect(() => {
     if (showTransferModal) {
-      fetchAvailableOrganizations();
+      fetchAvailableHiringManagersForTransfer();
       setTransferSearchQuery("");
       setShowTransferDropdown(false);
     }
@@ -2926,16 +2926,16 @@ export default function HiringManagerView() {
       ts.name.toLowerCase().includes(tearsheetSearchQuery.toLowerCase())
     );
 
-  const filteredTransferOrganizations = transferSearchQuery.trim() === ""
-    ? availableOrganizations
-    : availableOrganizations.filter((org: any) => {
+  const filteredTransferHiringManagers = transferSearchQuery.trim() === ""
+    ? availableHiringManagersForTransfer
+    : availableHiringManagersForTransfer.filter((hm: any) => {
       const q = transferSearchQuery.trim().toLowerCase();
-      const name = String(org?.name || "").toLowerCase();
-      const idStr = org?.id !== undefined && org?.id !== null ? String(org.id) : "";
-      const recordId = org?.id !== undefined && org?.id !== null
-        ? String(formatRecordId(org.id, "organization")).toLowerCase()
+      const fullName = String(hm?.full_name || `${hm?.last_name || ""}, ${hm?.first_name || ""}`).toLowerCase();
+      const idStr = hm?.id !== undefined && hm?.id !== null ? String(hm.id) : "";
+      const recordId = hm?.id !== undefined && hm?.id !== null
+        ? String(formatRecordId(hm.id, "hiringManager")).toLowerCase()
         : "";
-      return name.includes(q) || idStr.includes(q) || recordId.includes(q);
+      return fullName.includes(q) || idStr.includes(q) || recordId.includes(q);
     });
 
   const handleTearsheetSelect = (tearsheet: any) => {
@@ -3057,11 +3057,11 @@ export default function HiringManagerView() {
     }
   };
 
-  // Fetch available organizations for transfer (exclude current organization)
-  const fetchAvailableOrganizations = async () => {
-    setIsLoadingOrganizations(true);
+  // Fetch available hiring managers for transfer (exclude current and archived)
+  const fetchAvailableHiringManagersForTransfer = async () => {
+    setIsLoadingTransferTargets(true);
     try {
-      const response = await fetch("/api/organizations", {
+      const response = await fetch("/api/hiring-managers", {
         headers: {
           Authorization: `Bearer ${document.cookie.replace(
             /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
@@ -3072,29 +3072,30 @@ export default function HiringManagerView() {
 
       if (response.ok) {
         const data = await response.json();
-        // Filter out archived organizations
-        const filtered = (data.organizations || []).filter(
-          (org: any) => org.status !== "Archived"
+        const list = data.hiringManagers || data.data || data || [];
+        const arr = Array.isArray(list) ? list : [];
+        const filtered = arr.filter(
+          (hm: any) =>
+            String(hm?.id) !== String(hiringManagerId) &&
+            hm?.status !== "Archived" &&
+            !hm?.archived_at
         );
-        setAvailableOrganizations(filtered);
+        setAvailableHiringManagersForTransfer(filtered);
       } else {
-        console.error("Failed to fetch organizations:", response.statusText);
-        setAvailableOrganizations([]);
+        setAvailableHiringManagersForTransfer([]);
       }
     } catch (err) {
-      console.error("Error fetching organizations:", err);
-      setAvailableOrganizations([]);
+      console.error("Error fetching hiring managers for transfer:", err);
+      setAvailableHiringManagersForTransfer([]);
     } finally {
-      setIsLoadingOrganizations(false);
+      setIsLoadingTransferTargets(false);
     }
   };
 
-  console.log("Hiring", hiringManager)
-
-  // Handle transfer submission
+  // Handle transfer submission (Hiring Manager to Hiring Manager: notes, docs, tasks, jobs → target; source HM archived)
   const handleTransferSubmit = async () => {
-    if (!transferForm.targetOrganizationId) {
-      toast.error("Please select a target organization");
+    if (!transferForm.targetHiringManagerId) {
+      toast.error("Please select a target hiring manager");
       return;
     }
 
@@ -3103,26 +3104,19 @@ export default function HiringManagerView() {
       return;
     }
 
-    const sourceOrganizationId = hiringManager?.organization?.id;
-    if (!sourceOrganizationId) {
-      toast.error("Source organization is missing");
+    const targetId = Number(transferForm.targetHiringManagerId);
+    if (!Number.isFinite(targetId) || targetId <= 0) {
+      toast.error("Invalid target hiring manager");
       return;
     }
 
-    const targetOrganizationId = Number(transferForm.targetOrganizationId);
-    if (!Number.isFinite(targetOrganizationId) || targetOrganizationId <= 0) {
-      toast.error("Invalid target organization");
-      return;
-    }
-
-    if (Number(sourceOrganizationId) === targetOrganizationId) {
-      toast.error("Cannot transfer to the same organization");
+    if (Number(hiringManagerId) === targetId) {
+      toast.error("Cannot transfer to the same hiring manager");
       return;
     }
 
     setIsSubmittingTransfer(true);
     try {
-      // Get current user info
       const userCookie = document.cookie.replace(
         /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
         "$1"
@@ -3133,8 +3127,6 @@ export default function HiringManagerView() {
           currentUser = JSON.parse(decodeURIComponent(userCookie));
         } catch { }
       }
-
-      console.log("Current User", currentUser);
 
       // Add note to source hiring manager
       await fetch(`/api/hiring-managers/${hiringManagerId}/notes`, {
@@ -3147,7 +3139,7 @@ export default function HiringManagerView() {
           )}`,
         },
         body: JSON.stringify({
-          text: "Transfer requested",
+          text: "Transfer requested (data will move to target hiring manager)",
           action: "Transfer",
           about_references: [{
             id: hiringManagerId,
@@ -3157,8 +3149,7 @@ export default function HiringManagerView() {
         }),
       });
 
-      // Create transfer request
-      const transferResponse = await fetch("/api/organizations/transfer", {
+      const transferResponse = await fetch("/api/hiring-managers/transfer", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -3168,13 +3159,12 @@ export default function HiringManagerView() {
           )}`,
         },
         body: JSON.stringify({
-          source_organization_id: sourceOrganizationId,
-          target_organization_id: targetOrganizationId,
+          source_hiring_manager_id: Number(hiringManagerId),
+          target_hiring_manager_id: targetId,
           requested_by: currentUser?.name || currentUser?.id || "Unknown",
           requested_by_email: currentUser?.email || "",
-          source_record_number: formatRecordId(Number(sourceOrganizationId), "organization"),
-          target_record_number: formatRecordId(targetOrganizationId, "organization"),
-          context: "hiring_manager",
+          source_record_number: formatRecordId(Number(hiringManagerId), "hiringManager"),
+          target_record_number: formatRecordId(targetId, "hiringManager"),
         }),
       });
 
@@ -3187,7 +3177,8 @@ export default function HiringManagerView() {
 
       toast.success("Transfer request submitted successfully. Payroll will be notified for approval.");
       setShowTransferModal(false);
-      setTransferForm({ targetOrganizationId: "" });
+      setTransferForm({ targetHiringManagerId: "" });
+      setTransferSearchQuery("");
     } catch (err) {
       console.warn("Transfer request failed:", err);
       toast.error(
@@ -5596,7 +5587,8 @@ export default function HiringManagerView() {
                 <button
                   onClick={() => {
                     setShowTransferModal(false);
-                    setTransferForm({ targetOrganizationId: "" });
+                    setTransferForm({ targetHiringManagerId: "" });
+                    setTransferSearchQuery("");
                   }}
                   className="text-gray-500 hover:text-gray-700"
                 >
@@ -5618,19 +5610,19 @@ export default function HiringManagerView() {
                   </p>
                 </div>
 
-                {/* Target Organization Selection */}
+                {/* Target Hiring Manager Selection */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     <span className="text-red-500 mr-1">•</span>
-                    Select Target Organization
+                    Select Target Hiring Manager
                   </label>
-                  {isLoadingOrganizations ? (
+                  {isLoadingTransferTargets ? (
                     <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
-                      Loading organizations...
+                      Loading hiring managers...
                     </div>
-                  ) : availableOrganizations.length === 0 ? (
+                  ) : availableHiringManagersForTransfer.length === 0 ? (
                     <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
-                      No available organizations found
+                      No available hiring managers found
                     </div>
                   ) : (
                     <div className="relative" ref={transferSearchRef}>
@@ -5643,35 +5635,38 @@ export default function HiringManagerView() {
                         }}
                         onFocus={() => setShowTransferDropdown(true)}
                         onClick={() => setShowTransferDropdown(true)}
-                        placeholder="Search by organization name or Record ID..."
+                        placeholder="Search by name or Record ID..."
                         className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                         required
                       />
-                      {showTransferDropdown && (transferSearchQuery || availableOrganizations.length > 0) && (
+                      {showTransferDropdown && (transferSearchQuery || availableHiringManagersForTransfer.length > 0) && (
                         <div className="absolute z-[60] w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
-                          {filteredTransferOrganizations.length > 0 ? (
-                            filteredTransferOrganizations.map((org: any) => (
-                              <button
-                                key={org.id}
-                                type="button"
-                                onClick={() => {
-                                  setTransferForm((prev) => ({
-                                    ...prev,
-                                    targetOrganizationId: String(org.id),
-                                  }));
-                                  setTransferSearchQuery(`${formatRecordId(org.id, "organization")} ${org.name || ""}`.trim());
-                                  setShowTransferDropdown(false);
-                                }}
-                                className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex flex-col"
-                              >
-                                <span className="text-sm font-medium text-gray-900">
-                                  {formatRecordId(org.id, "organization")} {org.name}
-                                </span>
-                              </button>
-                            ))
+                          {filteredTransferHiringManagers.length > 0 ? (
+                            filteredTransferHiringManagers.map((hm: any) => {
+                              const displayName = hm?.full_name || `${hm?.last_name || ""}, ${hm?.first_name || ""}`.trim() || "Unnamed";
+                              return (
+                                <button
+                                  key={hm.id}
+                                  type="button"
+                                  onClick={() => {
+                                    setTransferForm((prev) => ({
+                                      ...prev,
+                                      targetHiringManagerId: String(hm.id),
+                                    }));
+                                    setTransferSearchQuery(`${formatRecordId(hm.id, "hiringManager")} ${displayName}`.trim());
+                                    setShowTransferDropdown(false);
+                                  }}
+                                  className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex flex-col"
+                                >
+                                  <span className="text-sm font-medium text-gray-900">
+                                    {formatRecordId(hm.id, "hiringManager")} {displayName}
+                                  </span>
+                                </button>
+                              );
+                            })
                           ) : (
                             <div className="p-3 text-center text-gray-500 text-sm">
-                              No matching organizations found
+                              No matching hiring managers found
                             </div>
                           )}
                         </div>
@@ -5683,7 +5678,7 @@ export default function HiringManagerView() {
                 {/* Info Box */}
                 <div className="bg-blue-50 border border-blue-200 rounded p-4">
                   <p className="text-sm text-blue-800">
-                    <strong>Note:</strong> This will create a transfer request. Payroll will be notified via email and must approve or deny the transfer. A note will be added to the hiring manager record.
+                    <strong>Note:</strong> This will create a transfer request. This hiring manager&apos;s notes, documents, tasks, and jobs will move to the target hiring manager, and this record will be archived. Payroll will be notified via email and must approve or deny the transfer.
                   </p>
                 </div>
               </div>
@@ -5693,7 +5688,8 @@ export default function HiringManagerView() {
                 <button
                   onClick={() => {
                     setShowTransferModal(false);
-                    setTransferForm({ targetOrganizationId: "" });
+                    setTransferForm({ targetHiringManagerId: "" });
+                    setTransferSearchQuery("");
                   }}
                   className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                   disabled={isSubmittingTransfer}
@@ -5703,7 +5699,7 @@ export default function HiringManagerView() {
                 <button
                   onClick={handleTransferSubmit}
                   className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
-                  disabled={isSubmittingTransfer || !transferForm.targetOrganizationId}
+                  disabled={isSubmittingTransfer || !transferForm.targetHiringManagerId}
                 >
                   {isSubmittingTransfer ? "SUBMITTING..." : "SUBMIT TRANSFER"}
                   {!isSubmittingTransfer && (

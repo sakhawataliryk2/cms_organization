@@ -254,17 +254,18 @@ function SortableColumnHeader({
   );
 }
 
-export default function OrganizationList() {
+export default function ArchivedOrganizationsList() {
   const router = useRouter();
 
-  const FAVORITES_STORAGE_KEY = "organizationFavorites";
+  const FAVORITES_STORAGE_KEY = "organizationArchivedFavorites";
 
   // =====================
-  // TABLE COLUMNS (Overview List) – driven by admin field-management only
+  // TABLE COLUMNS (Overview List) – driven by admin field-management + archive_reason
   // =====================
   const ORG_BACKEND_COLUMN_KEYS = [
     "name",
     "status",
+    "archive_reason",
     "contact_phone",
     "address",
     "job_orders_count",
@@ -287,7 +288,7 @@ export default function OrganizationList() {
   // Save column order to localStorage whenever it changes
   useEffect(() => {
     if (columnFields.length > 0) {
-      localStorage.setItem("organizationColumnOrder", JSON.stringify(columnFields));
+      localStorage.setItem("organizationArchivedColumnOrder", JSON.stringify(columnFields));
     }
   }, [columnFields]);
 
@@ -451,7 +452,7 @@ export default function OrganizationList() {
         const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanize(name) : "");
         const isBackendCol = name && ORG_BACKEND_COLUMN_KEYS.includes(name);
         let filterType: "text" | "select" | "number" = "text";
-        if (name === "status") filterType = "select";
+        if (name === "status" || name === "archive_reason") filterType = "select";
         else if (name === "job_orders_count" || name === "placements_count") filterType = "number";
         return {
           key: isBackendCol ? name : `custom:${label || name}`,
@@ -481,6 +482,16 @@ export default function OrganizationList() {
     //   }));
 
     const merged = [...fromApi];
+    if (!merged.some((x) => x.key === "archive_reason")) {
+      merged.push({
+        key: "archive_reason",
+        label: "Archive Reason",
+        sortable: true,
+        filterType: "select",
+        fieldType: "",
+        lookupType: "",
+      });
+    }
     const seen = new Set<string>();
     return merged.filter((x) => {
       if (seen.has(x.key)) return false;
@@ -494,7 +505,7 @@ export default function OrganizationList() {
     const catalogKeys = columnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("organizationColumnOrder");
+    const savedOrder = localStorage.getItem("organizationArchivedColumnOrder");
     if (savedOrder) {
       try {
         const parsed = JSON.parse(savedOrder);
@@ -541,6 +552,8 @@ export default function OrganizationList() {
         return org.job_orders_count || 0;
       case "placements_count":
         return org.placements_count || 0;
+      case "archive_reason":
+        return org.archive_reason || "N/A";
       default:
         return "N/A";
     }
@@ -586,6 +599,15 @@ export default function OrganizationList() {
     });
     return Array.from(statuses).map((s) => ({ label: s, value: s }));
   }, [organizations]);
+
+  // Archive reason options for filter (Deletion | Transfer)
+  const archiveReasonOptions = useMemo(
+    () => [
+      { label: "Deletion", value: "Deletion" },
+      { label: "Transfer", value: "Transfer" },
+    ],
+    []
+  );
 
   const applyFavorite = (fav: OrganizationFavorite) => {
     const catalogKeys = new Set(columnsCatalog.map((c) => c.key));
@@ -655,10 +677,10 @@ export default function OrganizationList() {
     setSelectedFavoriteId("");
   };
 
-  // Apply per-column filtering and sorting (exclude archived in main overview)
+  // Apply per-column filtering and sorting (only archived records)
   const filteredAndSortedOrganizations = useMemo(() => {
     let result = organizations.filter(
-      (org) => org.status !== "Archived" && !org.archived_at
+      (org) => org.status === "Archived" || !!org.archived_at
     );
 
     // Apply global search
@@ -669,7 +691,8 @@ export default function OrganizationList() {
         String(org.id || "").toLowerCase().includes(term) ||
         (org.status || "").toLowerCase().includes(term) ||
         (org.contact_phone || "").toLowerCase().includes(term) ||
-        (org.address || "").toLowerCase().includes(term)
+        (org.address || "").toLowerCase().includes(term) ||
+        (org.archive_reason || "").toLowerCase().includes(term)
       );
     }
 
@@ -723,16 +746,12 @@ export default function OrganizationList() {
     return result;
   }, [organizations, columnFilters, columnSorts, searchTerm]);
 
-  const handleViewArchived = () => {
-    router.push("/dashboard/organizations/archived");
+  const handleBackToOrganizations = () => {
+    router.push("/dashboard/organizations");
   };
 
   const handleViewOrganization = (id: string) => {
     router.push(`/dashboard/organizations/view?id=${id}`);
-  };
-
-  const handleAddOrganization = () => {
-    router.push("/dashboard/organizations/add");
   };
 
   const handleSelectAll = () => {
@@ -803,7 +822,7 @@ export default function OrganizationList() {
   };
 
   if (isLoading) {
-    return <LoadingScreen message="Loading organizations..." />;
+    return <LoadingScreen message="Loading archived organizations..." />;
   }
 
   if (isDeleting) {
@@ -818,25 +837,13 @@ export default function OrganizationList() {
       <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center">
         {/* Row 1: Title + Add (mobile) / Title only (desktop) */}
         <div className="flex justify-between items-center gap-4">
-          <h1 className="text-xl font-bold">Organizations</h1>
-          {/* Add Organization - visible on mobile only; desktop version below */}
+          <h1 className="text-xl font-bold">Archived Organizations</h1>
+          {/* Back to Organizations - visible on mobile only; desktop version below */}
           <button
-            onClick={handleAddOrganization}
-            className="md:hidden px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center shrink-0"
+            onClick={handleBackToOrganizations}
+            className="md:hidden px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center shrink-0 bg-white"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 mr-1"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
-                clipRule="evenodd"
-              />
-            </svg>
-            Add Organization
+            Back to Organizations
           </button>
         </div>
 
@@ -939,28 +946,10 @@ export default function OrganizationList() {
             Columns
           </button>
           <button
-            onClick={handleViewArchived}
+            onClick={handleBackToOrganizations}
             className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
           >
-            Archived
-          </button>
-          <button
-            onClick={handleAddOrganization}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 mr-1"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
-                clipRule="evenodd"
-              />
-            </svg>
-            Add Organization
+            Back to Organizations
           </button>
         </div>
 
@@ -1052,13 +1041,13 @@ export default function OrganizationList() {
             Columns
           </button>
         </div>
-        {/* Mobile: Archived - full width */}
+        {/* Mobile: Back to Organizations - full width */}
         <div className="w-full md:hidden">
           <button
-            onClick={handleViewArchived}
+            onClick={handleBackToOrganizations}
             className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center"
           >
-            Archived
+            Back to Organizations
           </button>
         </div>
       </div>
@@ -1083,7 +1072,7 @@ export default function OrganizationList() {
           <div className="relative flex-1">
             <input
               type="text"
-              placeholder="Search organizations..."
+              placeholder="Search archived organizations..."
               className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -1162,7 +1151,11 @@ export default function OrganizationList() {
                           onFilterChange={(value) => handleColumnFilter(key, value)}
                           filterType={columnInfo.filterType}
                           filterOptions={
-                            key === "status" ? statusOptions : undefined
+                            key === "status"
+                              ? statusOptions
+                              : key === "archive_reason"
+                                ? archiveReasonOptions
+                                : undefined
                           }
                         />
                       );
@@ -1243,7 +1236,13 @@ export default function OrganizationList() {
                         >
                           {getColumnLabel(key).toLowerCase() === "status" ? (
                             <span
-                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
+                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800`}
+                            >
+                              {getColumnValue(org, key)}
+                            </span>
+                          ) : getColumnLabel(key).toLowerCase() === "archive reason" ? (
+                            <span
+                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${(getColumnValue(org, key) || "").toLowerCase() === "deletion" ? "bg-red-100 text-red-800" : "bg-blue-100 text-blue-800"}`}
                             >
                               {getColumnValue(org, key)}
                             </span>
@@ -1288,8 +1287,8 @@ export default function OrganizationList() {
                       className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                     >
                       {searchTerm
-                        ? "No organizations found matching your search."
-                        : 'No organizations found. Click "Add Organization" to create one.'}
+                        ? "No archived organizations match your search."
+                        : "No archived organizations found."}
                     </td>
                   </tr>
                 )}

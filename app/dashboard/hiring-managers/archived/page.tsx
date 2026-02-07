@@ -52,7 +52,7 @@ type HiringManagerFavorite = {
   createdAt: number;
 };
 
-const FAVORITES_STORAGE_KEY = "hiringManagersFavorites";
+const FAVORITES_STORAGE_KEY = "hiringManagersArchivedFavorites";
 
 // Sortable Column Header Component
 function SortableColumnHeader({
@@ -234,7 +234,7 @@ function SortableColumnHeader({
   );
 }
 
-export default function HiringManagerList() {
+export default function ArchivedHiringManagersList() {
   const router = useRouter();
   const [selectedHiringManagers, setSelectedHiringManagers] = useState<
     string[]
@@ -364,6 +364,7 @@ export default function HiringManagerList() {
   const HM_BACKEND_COLUMN_KEYS = [
     "full_name",
     "status",
+    "archive_reason",
     "title",
     "organization_name",
     "email",
@@ -462,7 +463,7 @@ export default function HiringManagerList() {
         const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanize(name) : "");
         const isBackendCol = name && HM_BACKEND_COLUMN_KEYS.includes(name);
         let filterType: "text" | "select" | "number" = "text";
-        if (name === "status") filterType = "select";
+        if (name === "status" || name === "archive_reason") filterType = "select";
         return {
           fieldType,
           lookupType,
@@ -495,7 +496,16 @@ export default function HiringManagerList() {
     //   }));
 
     const merged = [...fromApi];
-    console.log("merged", merged);
+    if (!merged.some((x) => x.key === "archive_reason")) {
+      merged.push({
+        fieldType: undefined,
+        lookupType: "",
+        key: "archive_reason",
+        label: "Archive Reason",
+        sortable: true,
+        filterType: "select",
+      });
+    }
     const seen = new Set<string>();
     return merged.filter((x) => {
       if (seen.has(x.key)) return false;
@@ -514,13 +524,20 @@ export default function HiringManagerList() {
     if (key.startsWith("custom:")) {
       const rawKey = key.replace("custom:", "");
       const cf = hm?.customFields || hm?.custom_fields || {};
-      // console.log("customFields", cf);
-      // console.log("getColumnInfo", getColumnInfo(key));
       const val = cf?.[rawKey];
       return val === undefined || val === null || val === "" ? "—" : String(val);
     }
 
-    // ✅ standard
+    if (key === "archive_reason") {
+      return hm.archive_reason || "N/A";
+    }
+    // Standard backend keys (fallback from API shape)
+    const val = hm[key];
+    if (val === undefined || val === null || val === "") return "—";
+    if (key === "created_at" && typeof val === "string") return formatDate(val);
+    return String(val);
+
+    // ✅ standard (commented original)
     // switch (key) {
     //   case "full_name":
     //     return hm.full_name || `${hm.last_name}, ${hm.first_name}`;
@@ -571,7 +588,7 @@ export default function HiringManagerList() {
     const catalogKeys = hmColumnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("hiringManagerColumnOrder");
+    const savedOrder = localStorage.getItem("hiringManagerArchivedColumnOrder");
     if (savedOrder) {
       try {
         const parsed = JSON.parse(savedOrder);
@@ -592,7 +609,7 @@ export default function HiringManagerList() {
   // Save column order to localStorage whenever it changes
   useEffect(() => {
     if (columnFields.length > 0) {
-      localStorage.setItem("hiringManagerColumnOrder", JSON.stringify(columnFields));
+      localStorage.setItem("hiringManagerArchivedColumnOrder", JSON.stringify(columnFields));
     }
   }, [columnFields]);
 
@@ -678,10 +695,18 @@ export default function HiringManagerList() {
     return Array.from(statuses).map((s) => ({ label: s, value: s }));
   }, [hiringManagers]);
 
-  // Apply per-column filtering and sorting (exclude archived in main overview)
+  const archiveReasonOptions = useMemo(
+    () => [
+      { label: "Deletion", value: "Deletion" },
+      { label: "Transfer", value: "Transfer" },
+    ],
+    []
+  );
+
+  // Apply per-column filtering and sorting (only archived records)
   const filteredAndSortedHiringManagers = useMemo(() => {
     let result = hiringManagers.filter(
-      (hm) => hm.status !== "Archived" && !hm.archived_at
+      (hm) => hm.status === "Archived" || !!hm.archived_at
     );
 
     // Apply filters
@@ -716,7 +741,8 @@ export default function HiringManagerList() {
         (hm.title || "").toLowerCase().includes(term) ||
         (hm.organization_name || "").toLowerCase().includes(term) ||
         (hm.organization_name_from_org || "").toLowerCase().includes(term) ||
-        String(hm.organization_id ?? "").toLowerCase().includes(term)
+        String(hm.organization_id ?? "").toLowerCase().includes(term) ||
+        (hm.archive_reason || "").toLowerCase().includes(term)
       );
     }
 
@@ -754,12 +780,8 @@ export default function HiringManagerList() {
     router.push(`/dashboard/hiring-managers/view?id=${id}`);
   };
 
-  const handleViewArchived = () => {
-    router.push("/dashboard/hiring-managers/archived");
-  };
-
-  const handleAddHiringManager = () => {
-    router.push("/dashboard/hiring-managers/add");
+  const handleBackToHiringManagers = () => {
+    router.push("/dashboard/hiring-managers");
   };
 
   const handleSelectAll = () => {
@@ -868,7 +890,7 @@ export default function HiringManagerList() {
   };
 
   if (isLoading) {
-    return <LoadingScreen message="Loading hiring managers..." />;
+    return <LoadingScreen message="Loading archived hiring managers..." />;
   }
 
   return (
@@ -876,10 +898,9 @@ export default function HiringManagerList() {
       {/* Header - responsive: mobile = title+add row, then full-width Favorites, Columns */}
       <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center">
         <div className="flex justify-between items-center gap-4">
-          <h1 className="text-xl font-bold">Hiring Managers</h1>
-          <button onClick={handleAddHiringManager} className="md:hidden px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center shrink-0">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" /></svg>
-            Add Hiring Manager
+          <h1 className="text-xl font-bold">Archived Hiring Managers</h1>
+          <button onClick={handleBackToHiringManagers} className="md:hidden px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center shrink-0 bg-white">
+            Back to Hiring Managers
           </button>
         </div>
 
@@ -913,12 +934,8 @@ export default function HiringManagerList() {
             )}
           </div>
           <button onClick={() => setShowColumnModal(true)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">Columns</button>
-          <button onClick={handleViewArchived} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">
-            Archived
-          </button>
-          <button onClick={handleAddHiringManager} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" /></svg>
-            Add Hiring Manager
+          <button onClick={handleBackToHiringManagers} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">
+            Back to Hiring Managers
           </button>
         </div>
 
@@ -954,7 +971,7 @@ export default function HiringManagerList() {
           <button onClick={() => setShowColumnModal(true)} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center">Columns</button>
         </div>
         <div className="w-full md:hidden">
-          <button onClick={handleViewArchived} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center">Archived</button>
+          <button onClick={handleBackToHiringManagers} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center">Back to Hiring Managers</button>
         </div>
       </div>
 
@@ -971,7 +988,7 @@ export default function HiringManagerList() {
           <div className="relative flex-1">
             <input
               type="text"
-              placeholder="Search hiring managers..."
+              placeholder="Search archived hiring managers..."
               className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -1050,7 +1067,11 @@ export default function HiringManagerList() {
                         onFilterChange={(value) => handleColumnFilter(key, value)}
                         filterType={(columnInfo as any).filterType || "text"}
                         filterOptions={
-                          key === "status" ? statusOptions : undefined
+                          key === "status"
+                            ? statusOptions
+                            : key === "archive_reason"
+                              ? archiveReasonOptions
+                              : undefined
                         }
                       />
                     );
@@ -1149,9 +1170,13 @@ export default function HiringManagerList() {
                       >
                         {getColumnLabel(key).toLowerCase() === "status" ? (
                           <span
-                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
-                              hm.status
-                            )}`}
+                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800`}
+                          >
+                            {getColumnValue(hm, key)}
+                          </span>
+                        ) : getColumnLabel(key).toLowerCase() === "archive reason" ? (
+                          <span
+                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${(getColumnValue(hm, key) || "").toString().toLowerCase() === "deletion" ? "bg-red-100 text-red-800" : "bg-blue-100 text-blue-800"}`}
                           >
                             {getColumnValue(hm, key)}
                           </span>
@@ -1202,8 +1227,10 @@ export default function HiringManagerList() {
                     className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                   >
                     {Object.keys(columnFilters).length > 0
-                      ? "No hiring managers found matching your filters."
-                      : 'No hiring managers found. Click "Add Hiring Manager" to create one.'}
+                      ? "No archived hiring managers match your filters."
+                      : searchTerm
+                        ? "No archived hiring managers match your search."
+                        : "No archived hiring managers found."}
                   </td>
                 </tr>
               )}
