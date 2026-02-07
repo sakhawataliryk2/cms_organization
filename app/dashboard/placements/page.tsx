@@ -1057,10 +1057,10 @@ export default function PlacementList() {
                               className="text-blue-600 hover:underline"
                               onClick={(e) => e.stopPropagation()}
                             >{(getColumnValue(placement, key) || "")}</a>
-                          ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
+                          ) : (getColumnInfo(key) as any)?.fieldType === "lookup" || (getColumnInfo(key) as any)?.fieldType === "multiselect_lookup" ? (
                             <RecordNameResolver
                               id={String(getColumnValue(placement, key) || "") || null}
-                              type={(getColumnInfo(key) as any)?.lookupType || "placements"}
+                              type={(getColumnInfo(key) as any)?.lookupType || (getColumnInfo(key) as any)?.multiSelectLookupType || "placements"}
                               clickable
                               fallback={String(getColumnValue(placement, key) || "") || ""}
                             />

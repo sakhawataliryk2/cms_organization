@@ -23,6 +23,7 @@ import {
   FiX,
 } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
+import RecordNameResolver from "@/components/RecordNameResolver";
 import {
   buildPinnedKey,
   isPinnedRecord,
@@ -1159,7 +1160,44 @@ export default function TearsheetList() {
                         key={key}
                         className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
                       >
-                        <span>{getColumnValue(ts, key)}</span>
+                        {getColumnLabel(key).toLowerCase() === "status" ? (
+                          <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100">
+                            {getColumnValue(ts, key)}
+                          </span>
+                        ) : (getColumnValue(ts, key) || "").toLowerCase().includes("@") ? (
+                          <a
+                            href={`mailto:${getColumnValue(ts, key)}`}
+                            className="text-blue-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {getColumnValue(ts, key)}
+                          </a>
+                        ) : (getColumnValue(ts, key) || "").toLowerCase().startsWith("http") || (getColumnValue(ts, key) || "").toLowerCase().startsWith("https") ? (
+                          <a
+                            href={(getColumnValue(ts, key) || "")}
+                            className="text-blue-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {getColumnValue(ts, key) || ""}
+                          </a>
+                        ) : (getColumnInfo(key) as any)?.fieldType === "lookup" || (getColumnInfo(key) as any)?.fieldType === "multiselect_lookup" ? (
+                          <RecordNameResolver
+                            id={String(getColumnValue(ts, key) || "") || null}
+                            type={(getColumnInfo(key) as any)?.lookupType || (getColumnInfo(key) as any)?.multiSelectLookupType || "tearsheets"}
+                            clickable
+                            fallback={String(getColumnValue(ts, key) || "") || ""}
+                          />
+                        ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(ts, key) || "") ? (
+                          <a
+                            href={`tel:${(getColumnValue(ts, key) || "").replace(/\D/g, "")}`}
+                            className="text-blue-600 hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {getColumnValue(ts, key)}
+                          </a>
+                        ) : (
+                          getColumnValue(ts, key)
+                        )}
                       </td>
                     ))}
                   </tr>

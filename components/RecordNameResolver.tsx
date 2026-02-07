@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 /* ---------------------------------------------
@@ -33,7 +34,7 @@ type CacheEntry = {
 };
 
 /* ---------------------------------------------
-   Global Cache (shared across app)
+   Global Cache
 --------------------------------------------- */
 
 const recordNameCache = new Map<string, CacheEntry>();
@@ -43,10 +44,6 @@ const inflightRequests = new Map<string, Promise<CacheEntry>>();
    Hook: useRecordName
 --------------------------------------------- */
 
-/**
- * Resolves a record ID to its display name.
- * Uses in-memory cache + request deduplication.
- */
 export function useRecordName(
   id: string | number | null | undefined,
   type: RecordType | string
@@ -66,7 +63,6 @@ export function useRecordName(
       return;
     }
 
-    // ✅ Serve from cache instantly
     const cached = recordNameCache.get(cacheKey);
     if (cached) {
       setName(cached.name);
@@ -77,7 +73,6 @@ export function useRecordName(
     let cancelled = false;
     setIsLoading(true);
 
-    // ✅ Deduplicate concurrent requests
     const request =
       inflightRequests.get(cacheKey) ??
       (async () => {
@@ -147,8 +142,49 @@ const VIEW_ROUTE_BY_TYPE: Record<string, string> = {
   jobseekers: "/dashboard/job-seekers/view",
   hiringmanager: "/dashboard/hiring-managers/view",
   hiringmanagers: "/dashboard/hiring-managers/view",
-  // hiringManagers: "/dashboard/hiring-managers/view",
 };
+
+/* ---------------------------------------------
+   Portal Modal
+--------------------------------------------- */
+
+function RecordListModal({
+  ids,
+  type,
+  onClose,
+  clickable,
+}: {
+  ids: string[];
+  type: RecordType | string;
+  clickable: boolean;
+  onClose: () => void;
+}) {
+  if (typeof window === "undefined") return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-4">
+        <div className="flex justify-between items-center mb-3">
+          <h3 className="font-semibold text-lg">Records</h3>
+          <button onClick={onClose} className="text-gray-500">✕</button>
+        </div>
+
+        <div className="space-y-2 max-h-80 overflow-auto">
+          {ids.map((id) => (
+            <div key={id} className="p-2 border rounded">
+              <RecordNameResolver
+                id={id}
+                type={type}
+                clickable={clickable}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
 
 /* ---------------------------------------------
    Component: RecordNameResolver
@@ -163,10 +199,6 @@ interface RecordNameResolverProps {
   loadingText?: string;
 }
 
-/**
- * Displays a resolved record name.
- * Optionally renders as a clickable link.
- */
 export default function RecordNameResolver({
   id,
   type,
@@ -176,27 +208,60 @@ export default function RecordNameResolver({
   loadingText = "…",
 }: RecordNameResolverProps) {
   const router = useRouter();
-  const { name, isLoading, error } = useRecordName(id, type);
+  const [open, setOpen] = useState(false);
 
-  const idStr = id != null && id !== "" ? String(id).trim() : null;
+  const ids = id
+    ? id
+      .toString()
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean)
+    : [];
+
+  /* ---------- MULTIPLE IDS ---------- */
+  if (ids.length > 1) {
+    return (
+      <>
+        <span
+          className={`text-blue-600 cursor-pointer hover:underline ${className}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpen(true);
+          }}
+        >
+          {ids.length} records
+        </span>
+
+        {open && (
+          <RecordListModal
+            ids={ids}
+            type={type}
+            clickable={clickable}
+            onClose={() => setOpen(false)}
+          />
+        )}
+      </>
+    );
+  }
+
+  /* ---------- SINGLE ID ---------- */
+  const singleId = ids[0];
+  const { name, isLoading, error } = useRecordName(singleId, type);
+
   const normalizedType = type.toString().toLowerCase().replace(/\s+/g, "-");
   const viewPath = VIEW_ROUTE_BY_TYPE[normalizedType];
-
   const displayName =
     name ?? (isLoading ? loadingText : error ? fallback : fallback);
 
-  const canNavigate = clickable && viewPath && idStr;
-
-  if (canNavigate) {
-    const href = `${viewPath}?id=${idStr}`;
-
+  if (clickable && viewPath && singleId) {
+    const href = `${viewPath}?id=${singleId}`;
     return (
       <a
         href={href}
         className={`text-blue-600 hover:underline ${className}`.trim()}
         onClick={(e) => {
-          e.stopPropagation();
           e.preventDefault();
+          e.stopPropagation();
           router.push(href);
         }}
       >

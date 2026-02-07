@@ -1261,10 +1261,10 @@ export default function OrganizationList() {
                               className="text-blue-600 hover:underline"
                               onClick={(e) => e.stopPropagation()}
                             >{(getColumnValue(org, key) || "")}</a>
-                          ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
+                          ) : (getColumnInfo(key) as any)?.fieldType === "lookup" || (getColumnInfo(key) as any)?.fieldType === "multiselect_lookup" ? (
                             <RecordNameResolver
                               id={String(getColumnValue(org, key) || "") || null}
-                              type={(getColumnInfo(key) as any)?.lookupType || "organizations"}
+                              type={(getColumnInfo(key) as any)?.lookupType || (getColumnInfo(key) as any)?.multiSelectLookupType || "organizations"}
                               clickable
                               fallback={String(getColumnValue(org, key) || "") || ""}
                             />

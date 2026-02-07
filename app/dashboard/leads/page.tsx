@@ -1242,10 +1242,10 @@ export default function LeadList() {
                           className="text-blue-600 hover:underline"
                           onClick={(e) => e.stopPropagation()}
                         >{(getColumnValue(lead, key) || "")}</a>
-                      ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
+                      ) : (getColumnInfo(key) as any)?.fieldType === "lookup" || (getColumnInfo(key) as any)?.fieldType === "multiselect_lookup" ? (
                         <RecordNameResolver
                           id={String(getColumnValue(lead, key) || "") || null}
-                          type={(getColumnInfo(key) as any)?.lookupType || "leads"}
+                          type={(getColumnInfo(key) as any)?.lookupType || (getColumnInfo(key) as any)?.multiSelectLookupType || "leads"}
                           clickable
                           fallback={String(getColumnValue(lead, key) || "") || ""}
                         />

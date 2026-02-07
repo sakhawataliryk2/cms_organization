@@ -1163,22 +1163,16 @@ export default function HiringManagerList() {
                           >
                             {getColumnValue(hm, key)}
                           </a>
-                        ) : getColumnLabel(key).toLowerCase().includes("phone") ? (
-                          <a
-                            href={`tel:${(getColumnValue(hm, key) || "").replace(/\D/g, "")}`}
-                            className="text-blue-600 hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                          >{getColumnValue(hm, key)}</a>
                         ) : (getColumnValue(hm, key) || "").toLowerCase().startsWith("http") || (getColumnValue(hm, key) || "").toLowerCase().startsWith("https") ? (
                           <a
                             href={(getColumnValue(hm, key) || "")}
                             className="text-blue-600 hover:underline"
                             onClick={(e) => e.stopPropagation()}
                           >{(getColumnValue(hm, key) || "")}</a>
-                        ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
+                        ) : (getColumnInfo(key) as any)?.fieldType === "lookup" || (getColumnInfo(key) as any)?.fieldType === "multiselect_lookup" ? (
                           <RecordNameResolver
                             id={String(getColumnValue(hm, key) || "") || null}
-                            type={(getColumnInfo(key) as any)?.lookupType || "organizations"}
+                            type={(getColumnInfo(key) as any)?.lookupType || (getColumnInfo(key) as any)?.multiSelectLookupType || "organizations"}
                             clickable
                             fallback={String(getColumnValue(hm, key) || "") || ""}
                           />

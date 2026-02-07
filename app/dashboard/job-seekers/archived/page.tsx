@@ -1157,16 +1157,16 @@ export default function ArchivedJobSeekersList() {
                           >
                             {getColumnValue(js, key)}
                           </a>
-                        ) : getColumnLabel(key).toLowerCase().includes("phone") ? (
+                        ) : (getColumnValue(js, key) || "").toLowerCase().startsWith("http") || (getColumnValue(js, key) || "").toLowerCase().startsWith("https") ? (
                           <a
-                            href={`tel:${(getColumnValue(js, key) || "").replace(/\D/g, "")}`}
+                            href={(getColumnValue(js, key) || "")}
                             className="text-blue-600 hover:underline"
                             onClick={(e) => e.stopPropagation()}
-                          >{getColumnValue(js, key)}</a>
-                        ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
+                          >{(getColumnValue(js, key) || "")}</a>
+                        ) : (getColumnInfo(key) as any)?.fieldType === "lookup" || (getColumnInfo(key) as any)?.fieldType === "multiselect_lookup" ? (
                           <RecordNameResolver
                             id={String(getColumnValue(js, key) || "") || null}
-                            type={(getColumnInfo(key) as any)?.lookupType || "organizations"}
+                            type={(getColumnInfo(key) as any)?.lookupType || (getColumnInfo(key) as any)?.multiSelectLookupType || "organizations"}
                             clickable
                             fallback={String(getColumnValue(js, key) || "") || ""}
                           />

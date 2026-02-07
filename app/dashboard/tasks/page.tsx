@@ -1325,10 +1325,10 @@ export default function TaskList() {
                               className="text-blue-600 hover:underline"
                               onClick={(e) => e.stopPropagation()}
                             >{(getColumnValue(task, key) || "")}</a>
-                          ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
+                          ) : (getColumnInfo(key) as any)?.fieldType === "lookup" || (getColumnInfo(key) as any)?.fieldType === "multiselect_lookup" ? (
                             <RecordNameResolver
                               id={String(getColumnValue(task, key) || "") || null}
-                              type={(getColumnInfo(key) as any)?.lookupType || "tasks"}
+                              type={(getColumnInfo(key) as any)?.lookupType || (getColumnInfo(key) as any)?.multiSelectLookupType || "tasks"}
                               clickable
                               fallback={String(getColumnValue(task, key) || "") || ""}
                             />

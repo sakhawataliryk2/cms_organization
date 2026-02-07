@@ -492,6 +492,7 @@ export default function JobList() {
           filterType,
           fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
           lookupType: (f as any)?.lookup_type ?? (f as any)?.lookupType ?? "",
+          multiSelectLookupType: (f as any)?.multiselect_lookup ?? (f as any)?.multiSelectLookupType ?? "",
         };
       });
 
@@ -597,7 +598,7 @@ export default function JobList() {
   const filteredAndSortedJobs = useMemo(() => {
     let result = [...jobs];
 
-      // Apply global search
+    // Apply global search
     if (searchTerm.trim() !== "") {
       const term = searchTerm.toLowerCase();
       result = result.filter(
@@ -1044,244 +1045,244 @@ export default function JobList() {
         <div className="overflow-x-auto">
           <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  <input
-                    type="checkbox"
-                    className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                    checked={selectAll}
-                    onChange={handleSelectAll}
-                  />
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
-
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ID
-                </th>
-                {/* Draggable Dynamic headers */}
-                <SortableContext
-                  items={columnFields}
-                  strategy={horizontalListSortingStrategy}
-                >
-                  {columnFields.map((key) => {
-                    const columnInfo = getColumnInfo(key);
-                    if (!columnInfo) return null;
-
-                    return (
-                      <SortableColumnHeader
-                        key={key}
-                        id={key}
-                        columnKey={key}
-                        label={getColumnLabel(key)}
-                        sortState={columnSorts[key] || null}
-                        filterValue={columnFilters[key] || null}
-                        onSort={() => handleColumnSort(key)}
-                        onFilterChange={(value) => handleColumnFilter(key, value)}
-                        filterType={columnInfo.filterType}
-                        filterOptions={
-                          key === "status" ? statusOptions : undefined
-                        }
-                      />
-                    );
-                  })}
-                </SortableContext>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {filteredAndSortedJobs.length > 0 ? (
-                filteredAndSortedJobs.map((job) => (
-                  <tr
-                    key={job.id}
-                    className="hover:bg-gray-50 cursor-pointer"
-                    onClick={() => handleViewJob(job.id)}
-                  >
-                    <td
-                      className="px-6 py-4 whitespace-nowrap"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <input
-                        type="checkbox"
-                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                        checked={selectedJobs.includes(job.id)}
-                        onChange={() => { }}
-                        onClick={(e) => handleSelectJob(job.id, e)}
-                      />
-                    </td>
-
-                    <td
-                      className="px-6 py-4 whitespace-nowrap text-sm"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <ActionDropdown
-                        label="Actions"
-                        options={[
-                          { label: "View", action: () => handleViewJob(job.id) },
-                          {
-                            label: "Export to XML",
-                            action: () => exportSingleJobToXML(job.id),
-                          },
-                          {
-                            label: "Delete",
-                            action: async () => {
-                              if (
-                                !window.confirm(
-                                  "Are you sure you want to delete this job?"
-                                )
-                              )
-                                return;
-                              setIsLoading(true);
-                              try {
-                                await fetch(`/api/jobs/${job.id}`, {
-                                  method: "DELETE",
-                                  headers: {
-                                    Authorization: `Bearer ${document.cookie.replace(
-                                      /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-                                      "$1"
-                                    )}`,
-                                  },
-                                });
-                                await fetchJobs();
-                              } finally {
-                                setIsLoading(false);
-                              }
-                            },
-                          },
-                        ]}
-                      />
-                    </td>
-
-                    <td className="px-6 py-4 text-black whitespace-nowrap">J {job?.id}</td>
-                    {columnFields.map((key) => (
-                      <td
-                        key={key}
-                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                      >
-                        {getColumnLabel(key).toLowerCase() === "status" ? (
-                          <span
-                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
-                          >
-                            {getColumnValue(job, key)}
-                          </span>
-                        ) : (getColumnValue(job, key) || "").toLowerCase().includes("@") ? (
-                          <a
-                            href={`mailto:${getColumnValue(job, key)}`}
-                            className="text-blue-600 hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {getColumnValue(job, key)}
-                          </a>
-                        ) : (getColumnValue(job, key) || "").toLowerCase().startsWith("http") || (getColumnValue(job, key) || "").toLowerCase().startsWith("https") ? (
-                          <a
-                            href={(getColumnValue(job, key) || "")}
-                            className="text-blue-600 hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                          >{(getColumnValue(job, key) || "")}</a>
-                        ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
-                          <RecordNameResolver
-                            id={String(getColumnValue(job, key) || "") || null}
-                            type={(getColumnInfo(key) as any)?.lookupType || "jobs"}
-                            clickable
-                            fallback={String(getColumnValue(job, key) || "") || ""}
-                          />
-                        ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(job, key) || "") ? (
-                          <a
-                            href={`tel:${(getColumnValue(job, key) || "").replace(/\D/g, "")}`}
-                            className="text-blue-600 hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                          >{getColumnValue(job, key)}</a>
-                        ) : (
-                          getColumnValue(job, key)
-                        )}
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : (
+              <thead className="bg-gray-50">
                 <tr>
-                  <td
-                    colSpan={3 + columnFields.length}
-                    className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                      checked={selectAll}
+                      onChange={handleSelectAll}
+                    />
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Actions
+                  </th>
+
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    ID
+                  </th>
+                  {/* Draggable Dynamic headers */}
+                  <SortableContext
+                    items={columnFields}
+                    strategy={horizontalListSortingStrategy}
                   >
-                    {searchTerm
-                      ? "No jobs found matching your search."
-                      : 'No jobs found. Click "Add Job" to create one.'}
-                  </td>
+                    {columnFields.map((key) => {
+                      const columnInfo = getColumnInfo(key);
+                      if (!columnInfo) return null;
+
+                      return (
+                        <SortableColumnHeader
+                          key={key}
+                          id={key}
+                          columnKey={key}
+                          label={getColumnLabel(key)}
+                          sortState={columnSorts[key] || null}
+                          filterValue={columnFilters[key] || null}
+                          onSort={() => handleColumnSort(key)}
+                          onFilterChange={(value) => handleColumnFilter(key, value)}
+                          filterType={columnInfo.filterType}
+                          filterOptions={
+                            key === "status" ? statusOptions : undefined
+                          }
+                        />
+                      );
+                    })}
+                  </SortableContext>
                 </tr>
-              )}
-            </tbody>
-          </table>
-        </DndContext>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {filteredAndSortedJobs.length > 0 ? (
+                  filteredAndSortedJobs.map((job) => (
+                    <tr
+                      key={job.id}
+                      className="hover:bg-gray-50 cursor-pointer"
+                      onClick={() => handleViewJob(job.id)}
+                    >
+                      <td
+                        className="px-6 py-4 whitespace-nowrap"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                          checked={selectedJobs.includes(job.id)}
+                          onChange={() => { }}
+                          onClick={(e) => handleSelectJob(job.id, e)}
+                        />
+                      </td>
+
+                      <td
+                        className="px-6 py-4 whitespace-nowrap text-sm"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ActionDropdown
+                          label="Actions"
+                          options={[
+                            { label: "View", action: () => handleViewJob(job.id) },
+                            {
+                              label: "Export to XML",
+                              action: () => exportSingleJobToXML(job.id),
+                            },
+                            {
+                              label: "Delete",
+                              action: async () => {
+                                if (
+                                  !window.confirm(
+                                    "Are you sure you want to delete this job?"
+                                  )
+                                )
+                                  return;
+                                setIsLoading(true);
+                                try {
+                                  await fetch(`/api/jobs/${job.id}`, {
+                                    method: "DELETE",
+                                    headers: {
+                                      Authorization: `Bearer ${document.cookie.replace(
+                                        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                                        "$1"
+                                      )}`,
+                                    },
+                                  });
+                                  await fetchJobs();
+                                } finally {
+                                  setIsLoading(false);
+                                }
+                              },
+                            },
+                          ]}
+                        />
+                      </td>
+
+                      <td className="px-6 py-4 text-black whitespace-nowrap">J {job?.id}</td>
+                      {columnFields.map((key) => (
+                        <td
+                          key={key}
+                          className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                        >
+                          {getColumnLabel(key).toLowerCase() === "status" ? (
+                            <span
+                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
+                            >
+                              {getColumnValue(job, key)}
+                            </span>
+                          ) : (getColumnValue(job, key) || "").toLowerCase().includes("@") ? (
+                            <a
+                              href={`mailto:${getColumnValue(job, key)}`}
+                              className="text-blue-600 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {getColumnValue(job, key)}
+                            </a>
+                          ) : (getColumnValue(job, key) || "").toLowerCase().startsWith("http") || (getColumnValue(job, key) || "").toLowerCase().startsWith("https") ? (
+                            <a
+                              href={(getColumnValue(job, key) || "")}
+                              className="text-blue-600 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >{(getColumnValue(job, key) || "")}</a>
+                          ) : (getColumnInfo(key) as any)?.fieldType === "lookup" || (getColumnInfo(key) as any)?.fieldType === "multiselect_lookup" ? (
+                            <RecordNameResolver
+                              id={String(getColumnValue(job, key) || "") || null}
+                              type={(getColumnInfo(key) as any)?.lookupType || (getColumnInfo(key) as any)?.multiSelectLookupType || "jobs"}
+                              clickable
+                              fallback={String(getColumnValue(job, key) || "") || ""}
+                            />
+                          ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(job, key) || "") ? (
+                            <a
+                              href={`tel:${(getColumnValue(job, key) || "").replace(/\D/g, "")}`}
+                              className="text-blue-600 hover:underline"
+                              onClick={(e) => e.stopPropagation()}
+                            >{getColumnValue(job, key)}</a>
+                          ) : (
+                            getColumnValue(job, key)
+                          )}
+                        </td>
+                      ))}
+                    </tr>
+                  ))
+                ) : (
+                  <tr>
+                    <td
+                      colSpan={3 + columnFields.length}
+                      className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
+                    >
+                      {searchTerm
+                        ? "No jobs found matching your search."
+                        : 'No jobs found. Click "Add Job" to create one.'}
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </DndContext>
         </div>
 
         {/* Pagination */}
         <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
-        <div className="flex-1 flex justify-between sm:hidden">
-          <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Previous
-          </button>
-          <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
-            Next
-          </button>
-        </div>
-        <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm text-gray-700">
-              Showing <span className="font-medium">1</span> to{" "}
-              <span className="font-medium">{filteredAndSortedJobs.length}</span>{" "}
-              of{" "}
-              <span className="font-medium">{filteredAndSortedJobs.length}</span>{" "}
-              results
-            </p>
+          <div className="flex-1 flex justify-between sm:hidden">
+            <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+              Previous
+            </button>
+            <button className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50">
+              Next
+            </button>
           </div>
-          {filteredAndSortedJobs.length > 0 && (
+          <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
             <div>
-              <nav
-                className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
-                aria-label="Pagination"
-              >
-                <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Previous</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-                <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
-                  1
-                </button>
-                <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
-                  <span className="sr-only">Next</span>
-                  <svg
-                    className="h-5 w-5"
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                </button>
-              </nav>
+              <p className="text-sm text-gray-700">
+                Showing <span className="font-medium">1</span> to{" "}
+                <span className="font-medium">{filteredAndSortedJobs.length}</span>{" "}
+                of{" "}
+                <span className="font-medium">{filteredAndSortedJobs.length}</span>{" "}
+                results
+              </p>
             </div>
-          )}
+            {filteredAndSortedJobs.length > 0 && (
+              <div>
+                <nav
+                  className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
+                  aria-label="Pagination"
+                >
+                  <button className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                    <span className="sr-only">Previous</span>
+                    <svg
+                      className="h-5 w-5"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                  <button className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700 hover:bg-gray-50">
+                    1
+                  </button>
+                  <button className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50">
+                    <span className="sr-only">Next</span>
+                    <svg
+                      className="h-5 w-5"
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </button>
+                </nav>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
       </div>
 
       {showColumnModal && (

@@ -1130,10 +1130,10 @@ export default function JobSeekerList() {
                             className="text-blue-600 hover:underline"
                             onClick={(e) => e.stopPropagation()}
                           >{(getColumnValue(jobSeeker, key) || "")}</a>
-                        ) : (getColumnInfo(key) as any)?.fieldType === "lookup" ? (
+                        ) : (getColumnInfo(key) as any)?.fieldType === "lookup" || (getColumnInfo(key) as any)?.fieldType === "multiselect_lookup" ? (
                           <RecordNameResolver
                             id={String(getColumnValue(jobSeeker, key) || "") || null}
-                            type={(getColumnInfo(key) as any)?.lookupType || "jobSeekers"}
+                            type={(getColumnInfo(key) as any)?.lookupType || (getColumnInfo(key) as any)?.multiSelectLookupType || "jobSeekers"}
                             clickable
                             fallback={String(getColumnValue(jobSeeker, key) || "") || ""}
                           />
