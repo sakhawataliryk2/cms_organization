@@ -371,7 +371,6 @@ export default function AddJob() {
   // Handle job type selection and redirect
   const handleJobTypeSelect = (type: string) => {
     setSelectedJobType(type);
-
     // Build query string preserving existing params
     const params = new URLSearchParams();
     if (leadId) params.append("leadId", leadId);
