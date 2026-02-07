@@ -37,6 +37,7 @@ interface CustomField {
   default_value?: string;
   lookup_type?: string;
   sub_field_ids?: number[] | string[];
+  dependent_on_field_id?: string | null;
   created_by_name?: string;
   updated_by_name?: string;
   created_at: string;
@@ -192,6 +193,8 @@ const FieldMapping = () => {
       | "job-seekers"
       | "jobs",
     subFieldIds: [] as string[],
+    isDependent: false,
+    dependentOnFieldId: "",
   });
   const [editingSortOrder, setEditingSortOrder] = useState<string | null>(null);
   const [tempSortOrder, setTempSortOrder] = useState<number>(0);
@@ -233,6 +236,7 @@ const FieldMapping = () => {
     "link",
     "file",
     "lookup",
+    "multiselect_lookup",
     "composite",
   ];
 
@@ -290,6 +294,7 @@ const FieldMapping = () => {
   const handleFieldClick = (field: CustomField) => {
     setSelectedField(field);
     const subIds = field.sub_field_ids;
+    const depId = (field as any).dependent_on_field_id;
     setEditFormData({
       fieldName: field.field_name,
       fieldLabel: field.field_label,
@@ -303,6 +308,8 @@ const FieldMapping = () => {
       defaultValue: field.default_value || "",
       lookupType: (field as any).lookup_type || "organizations",
       subFieldIds: Array.isArray(subIds) ? subIds.map(String) : [],
+      isDependent: Boolean(depId),
+      dependentOnFieldId: depId != null ? String(depId) : "",
     });
     setShowEditForm(true);
   };
@@ -331,6 +338,8 @@ const FieldMapping = () => {
       defaultValue: "",
       lookupType: "organizations",
       subFieldIds: [],
+      isDependent: false,
+      dependentOnFieldId: "",
     });
     setSelectedField(null);
     setShowAddForm(true);
@@ -415,13 +424,17 @@ const FieldMapping = () => {
           placeholder: editFormData.placeholder || null,
           defaultValue: editFormData.defaultValue || null,
           lookupType:
-            editFormData.fieldType === "lookup"
+            editFormData.fieldType === "lookup" || editFormData.fieldType === "multiselect_lookup"
               ? editFormData.lookupType
               : null,
           subFieldIds:
             editFormData.fieldType === "composite" && editFormData.subFieldIds.length > 0
               ? editFormData.subFieldIds.map((id) => (typeof id === "string" && /^\d+$/.test(id) ? parseInt(id, 10) : id))
               : undefined,
+          dependentOnFieldId:
+            editFormData.isDependent && editFormData.dependentOnFieldId
+              ? editFormData.dependentOnFieldId
+              : null,
         };
 
         console.log("Updating field with data:", apiData);
@@ -451,13 +464,17 @@ const FieldMapping = () => {
           placeholder: editFormData.placeholder || null,
           defaultValue: editFormData.defaultValue || null,
           lookupType:
-            editFormData.fieldType === "lookup"
+            editFormData.fieldType === "lookup" || editFormData.fieldType === "multiselect_lookup"
               ? editFormData.lookupType
               : null,
           subFieldIds:
             editFormData.fieldType === "composite" && editFormData.subFieldIds.length > 0
               ? editFormData.subFieldIds.map((id) => (typeof id === "string" && /^\d+$/.test(id) ? parseInt(id, 10) : id))
               : undefined,
+          dependentOnFieldId:
+            editFormData.isDependent && editFormData.dependentOnFieldId
+              ? editFormData.dependentOnFieldId
+              : null,
         };
 
         console.log("Creating field with data:", apiData);
@@ -1478,7 +1495,9 @@ const FieldMapping = () => {
                                 ? "Composite (sub-fields)"
                                 : option === "link"
                                   ? "Link / URL"
-                                  : option.charAt(0).toUpperCase() + option.slice(1)}
+                                  : option === "multiselect_lookup"
+                                    ? "Multi-select lookup (searchable)"
+                                    : option.charAt(0).toUpperCase() + option.slice(1)}
                       </option>
                     ))}
                   </select>
@@ -1579,7 +1598,7 @@ const FieldMapping = () => {
                   </div>
                 )}
 
-                {editFormData.fieldType === "lookup" && (
+                {(editFormData.fieldType === "lookup" || editFormData.fieldType === "multiselect_lookup") && (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Lookup Type: <span className="text-red-500">*</span>
@@ -1597,8 +1616,66 @@ const FieldMapping = () => {
                       <option value="jobs">Jobs</option>
                     </select>
                     <p className="text-xs text-gray-500 mt-1">
-                      Select which type of records this field should look up
+                      {editFormData.fieldType === "multiselect_lookup"
+                        ? "Multi-select lookup: searchable type-to-match; user can select multiple values."
+                        : "Select which type of records this field should look up"}
                     </p>
+                  </div>
+                )}
+
+                {/* Dependent on another field — available for all field types except composite */}
+                {editFormData.fieldType !== "composite" && (
+                  <div className="space-y-2">
+                    <label className="flex items-center">
+                      <input
+                        type="checkbox"
+                        name="isDependent"
+                        checked={editFormData.isDependent}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setEditFormData((prev) => ({
+                            ...prev,
+                            isDependent: checked,
+                            dependentOnFieldId: checked ? prev.dependentOnFieldId : "",
+                          }));
+                        }}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <span className="ml-2 text-sm">Dependent on another field</span>
+                    </label>
+                    {editFormData.isDependent && (
+                      <div>
+                        <label className="block text-xs font-medium text-gray-600 mb-1">
+                          Depends on (field):
+                        </label>
+                        <select
+                          value={editFormData.dependentOnFieldId}
+                          onChange={(e) =>
+                            setEditFormData((prev) => ({
+                              ...prev,
+                              dependentOnFieldId: e.target.value,
+                            }))
+                          }
+                          className="w-full px-3 py-2 border rounded text-sm"
+                        >
+                          <option value="">Select a field...</option>
+                          {customFields
+                            .filter(
+                              (f) =>
+                                !f.is_hidden &&
+                                (selectedField ? String(f.id) !== String(selectedField.id) : true)
+                            )
+                            .map((f) => (
+                              <option key={f.id} value={String(f.id)}>
+                                {f.field_label || f.field_name} ({f.field_type})
+                              </option>
+                            ))}
+                        </select>
+                        <p className="text-xs text-gray-500 mt-1">
+                          This field will be disabled until the selected field has a value. Only non-hidden fields from this section are listed.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 )}
 

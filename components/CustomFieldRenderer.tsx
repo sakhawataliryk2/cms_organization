@@ -2,6 +2,7 @@
 
 import React from "react";
 import LookupField from "./LookupField";
+import MultiSelectLookupField, { type MultiSelectLookupType } from "./MultiSelectLookupField";
 import { FiCalendar, FiLock } from "react-icons/fi";
 
 interface CustomFieldDefinition {
@@ -18,6 +19,8 @@ interface CustomFieldDefinition {
   sort_order: number;
   lookup_type?: "organizations" | "hiring-managers" | "job-seekers" | "jobs";
   sub_field_ids?: number[] | string[];
+  /** When set, this field is disabled until the referenced field has a value */
+  dependent_on_field_id?: string | null;
 }
 
 interface CustomFieldRendererProps {
@@ -42,6 +45,32 @@ export default function CustomFieldRenderer({
   values: valuesRecord,
 }: CustomFieldRendererProps) {
   const readOnly = Boolean((field as any).is_read_only);
+
+  // Dependent on another field: disabled until that field has a value
+  const dependentOnFieldId = (field as any).dependent_on_field_id;
+  const dependentOnFieldName = React.useMemo(() => {
+    if (!dependentOnFieldId || !allFields?.length) return null;
+    const dep = allFields.find(
+      (f: any) => String(f.id) === String(dependentOnFieldId)
+    );
+    return dep?.field_name ?? null;
+  }, [dependentOnFieldId, allFields]);
+  const parentValue = valuesRecord && dependentOnFieldName != null ? valuesRecord[dependentOnFieldName] : undefined;
+  const isParentEmpty =
+    parentValue === undefined ||
+    parentValue === null ||
+    (typeof parentValue === "string" && parentValue.trim() === "") ||
+    (Array.isArray(parentValue) && parentValue.length === 0);
+  const isDisabledByDependency = Boolean(dependentOnFieldId && isParentEmpty);
+
+  // Clear this field's value when dependency becomes empty (parent cleared or changed)
+  React.useEffect(() => {
+    if (!dependentOnFieldId || !isDisabledByDependency) return;
+    if (value === undefined || value === null || value === "") return;
+    if (Array.isArray(value) && value.length === 0) return;
+    onChange(field.field_name, Array.isArray(value) ? [] : "");
+  }, [isDisabledByDependency, dependentOnFieldId, field.field_name, onChange]);
+
   // Track if we've auto-populated the date to prevent infinite loops
   const hasAutoFilledRef = React.useRef(false);
 
@@ -1198,9 +1227,13 @@ export default function CustomFieldRenderer({
         </div>
       );
     case "lookup":
-      return readOnly ? (
+      return readOnly || isDisabledByDependency ? (
         <div className="py-2 px-2 border border-gray-200 rounded bg-gray-50 text-gray-700">
-          {value && String(value).trim() !== "" ? String(value) : "—"}
+          {isDisabledByDependency
+            ? "— (select dependent field first)"
+            : value && String(value).trim() !== ""
+              ? String(value)
+              : "—"}
         </div>
       ) : (
         <LookupField
@@ -1210,6 +1243,29 @@ export default function CustomFieldRenderer({
           placeholder={field.placeholder || "Select an option"}
           required={field.is_required}
           className={className}
+          disabled={readOnly || isDisabledByDependency}
+        />
+      );
+    case "multiselect_lookup":
+      return readOnly || isDisabledByDependency ? (
+        <div className="py-2 px-2 border border-gray-200 rounded bg-gray-50 text-gray-700">
+          {isDisabledByDependency
+            ? "— (select dependent field first)"
+            : Array.isArray(value)
+              ? value.join(", ")
+              : value && String(value).trim() !== ""
+                ? String(value)
+                : "—"}
+        </div>
+      ) : (
+        <MultiSelectLookupField
+          value={value ?? []}
+          onChange={(val) => onChange(field.field_name, Array.isArray(val) ? val : val)}
+          lookupType={(field.lookup_type as MultiSelectLookupType) || "organizations"}
+          placeholder={field.placeholder || "Type to search..."}
+          required={field.is_required}
+          className={className}
+          disabled={readOnly || isDisabledByDependency}
         />
       );
     default:
@@ -1343,8 +1399,12 @@ export function useCustomFields(entityType: string) {
       ) {
         return value.map((v) => String(v).trim()).filter(Boolean).length > 0;
       }
-      // Multiselect / multicheckbox: value can be array or comma-separated string
-      if (field.field_type === "multiselect" || field.field_type === "multicheckbox") {
+      // Multiselect / multicheckbox / multiselect_lookup: value can be array or comma-separated string
+      if (
+        field.field_type === "multiselect" ||
+        field.field_type === "multicheckbox" ||
+        field.field_type === "multiselect_lookup"
+      ) {
         if (Array.isArray(value)) {
           return value.map((v) => String(v).trim()).filter(Boolean).length > 0;
         }
