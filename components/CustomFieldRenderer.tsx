@@ -23,6 +23,11 @@ interface CustomFieldDefinition {
   dependent_on_field_id?: string | null;
 }
 
+/** Optional context for lookups (e.g. organizationId to filter hiring-managers by org) */
+export interface CustomFieldRendererContext {
+  organizationId?: string;
+}
+
 interface CustomFieldRendererProps {
   field: CustomFieldDefinition;
   value: any;
@@ -33,6 +38,8 @@ interface CustomFieldRendererProps {
   allFields?: CustomFieldDefinition[];
   /** Full values record (needed for composite so sub-fields get values by field_name) */
   values?: Record<string, any>;
+  /** Optional context (e.g. organizationId) for lookup filtering */
+  context?: CustomFieldRendererContext;
 }
 
 export default function CustomFieldRenderer({
@@ -43,6 +50,7 @@ export default function CustomFieldRenderer({
   textareaRows = 3,
   allFields = [],
   values: valuesRecord,
+  context,
 }: CustomFieldRendererProps) {
   const readOnly = Boolean((field as any).is_read_only);
 
@@ -1266,6 +1274,11 @@ export default function CustomFieldRenderer({
           required={field.is_required}
           className={className}
           disabled={readOnly || isDisabledByDependency}
+          filterByParam={
+            field.lookup_type === "hiring-managers" && context?.organizationId
+              ? { key: "organization_id", value: context.organizationId }
+              : undefined
+          }
         />
       );
     default:
