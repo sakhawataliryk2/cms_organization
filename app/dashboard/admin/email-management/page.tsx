@@ -14,7 +14,7 @@ const SECTIONS: Section[] = [
   {
     id: "job-seeker",
     name: "Job Seeker",
-    description: "Onboarding and job seeker email templates (internal notification, first time, repeat)",
+    description: "Onboarding, delete request, and transfer request email templates for job seekers and payroll",
   },
   {
     id: "organization",

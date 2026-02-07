@@ -29,16 +29,40 @@ const SECTION_CONFIG: Record<
       { value: "ONBOARDING_INTERNAL_SENT", label: "Onboarding - Internal Notification" },
       { value: "ONBOARDING_JOBSEEKER_FIRST_TIME", label: "Onboarding - Job Seeker (First Time Credentials Sent)" },
       { value: "ONBOARDING_JOBSEEKER_REPEAT", label: "Onboarding - Job Seeker (Repeat)" },
+      { value: "JOB_SEEKER_DELETE_REQUEST", label: "Job Seeker - Delete Request (Payroll)" },
+      { value: "JOB_SEEKER_TRANSFER_REQUEST", label: "Job Seeker - Transfer Request (Payroll)" },
     ],
     placeholders: {
       ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}"],
       ONBOARDING_JOBSEEKER_FIRST_TIME: ["{{portalUrl}}", "{{username}}", "{{tempPassword}}"],
       ONBOARDING_JOBSEEKER_REPEAT: ["{{portalUrl}}"],
+      JOB_SEEKER_DELETE_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{recordType}}",
+        "{{recordNumber}}",
+        "{{requestId}}",
+        "{{reason}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
+      JOB_SEEKER_TRANSFER_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{sourceRecordNumber}}",
+        "{{targetRecordNumber}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
     },
     required: {
       ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}"],
       ONBOARDING_JOBSEEKER_FIRST_TIME: ["{{portalUrl}}", "{{username}}", "{{tempPassword}}"],
       ONBOARDING_JOBSEEKER_REPEAT: ["{{portalUrl}}"],
+      JOB_SEEKER_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+      JOB_SEEKER_TRANSFER_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
     },
     defaults: {
       ONBOARDING_INTERNAL_SENT: {
@@ -76,6 +100,43 @@ const SECTION_CONFIG: Record<
           `<p>You have onboarding documents that are awaiting your submission.</p>` +
           `<p>Please log into <a href="{{portalUrl}}">WEBSITE</a> to complete your documents. Your username is the email address you received this email to.</p>` +
           `<p>Best Regards,<br/>Complete Staffing Solutions, Inc.</p>` +
+          `</div>`,
+      },
+      JOB_SEEKER_DELETE_REQUEST: {
+        template_name: "Job Seeker Delete Request",
+        subject: "Delete Request: {{recordType}} {{recordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Delete Request (Job Seeker)</h2>` +
+          `<p>A new job seeker delete request has been submitted and requires your review.</p>` +
+          `<p><strong>Request Details:</strong></p>` +
+          `<ul>` +
+          `<li><strong>Request ID:</strong> {{requestId}} (the approval link uses this ID)</li>` +
+          `<li><strong>Record (Job Seeker):</strong> {{recordNumber}}</li>` +
+          `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
+          `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
+          `<li><strong>Reason:</strong> {{reason}}</li>` +
+          `</ul>` +
+          `<p>Please review the request and take the appropriate action using the links below:</p>` +
+          `<p>{{approvalUrl}} {{denyUrl}}</p>` +
+          `</div>`,
+      },
+      JOB_SEEKER_TRANSFER_REQUEST: {
+        template_name: "Job Seeker Transfer Request",
+        subject: "Transfer Request: {{sourceRecordNumber}} → {{targetRecordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Job Seeker Transfer Request</h2>` +
+          `<p>A transfer request has been submitted (job seeker to job seeker):</p>` +
+          `<ul>` +
+          `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
+          `<li><strong>Source Job Seeker:</strong> {{sourceRecordNumber}}</li>` +
+          `<li><strong>Target Job Seeker:</strong> {{targetRecordNumber}}</li>` +
+          `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
+          `</ul>` +
+          `<p>If approved, notes, documents, tasks, placements, and applications will move to the target job seeker. The source will be archived.</p>` +
+          `<p>Please review and approve or deny using the buttons below:</p>` +
+          `<p>{{approvalUrl}} {{denyUrl}}</p>` +
           `</div>`,
       },
     },
