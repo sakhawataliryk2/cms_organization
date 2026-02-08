@@ -996,7 +996,9 @@ export default function PlacementList() {
                   <tr
                     key={placement.id}
                     className="hover:bg-gray-50 cursor-pointer"
-                    onClick={() => handleViewPlacement(placement.id)}
+                    onClick={() => {
+                      router.push(`/dashboard/placements/view?id=${placement.id}`);
+                    }}
                   >
                     {/* Fixed checkbox */}
                     <td
@@ -1042,7 +1044,7 @@ export default function PlacementList() {
                           <td
                             key={key}
                             className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                            onClick={(e) => e.stopPropagation()}
+                            // onClick={(e) => e.stopPropagation()}
                           >
                             <FieldValueRenderer
                               value={getColumnValue(placement, key)}
