@@ -17,7 +17,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
-import RecordNameResolver from "@/components/RecordNameResolver";
+import FieldValueRenderer from "@/components/FieldValueRenderer";
 
 type PlacementFavorite = {
   id: string;
@@ -417,6 +417,7 @@ export default function PlacementList() {
           filterType,
           fieldType: (f as any)?.field_type,
           lookupType: (f as any)?.lookup_type || "",
+          multiSelectLookupType: (f as any)?.multi_select_lookup_type ?? (f as any)?.multiSelectLookupType ?? "",
         };
       });
     return fromApi;
@@ -1032,49 +1033,27 @@ export default function PlacementList() {
                     </td>
 
                     {/* Dynamic cells */}
-                    {columnFields.map((key) => (
-                        <td
-                          key={key}
-                          className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                        >
-                          {getColumnLabel(key).toLowerCase() === "status" ? (
-                            <span
-                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
-                            >
-                              {getColumnValue(placement, key)}
-                            </span>
-                          ) : (getColumnValue(placement, key) || "").toLowerCase().includes("@") ? (
-                            <a
-                              href={`mailto:${getColumnValue(placement, key)}`}
-                              className="text-blue-600 hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {getColumnValue(placement, key)}
-                            </a>
-                          ) : (getColumnValue(placement, key) || "").toLowerCase().startsWith("http") || (getColumnValue(placement, key) || "").toLowerCase().startsWith("https") ? (
-                            <a
-                              href={(getColumnValue(placement, key) || "")}
-                              className="text-blue-600 hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >{(getColumnValue(placement, key) || "")}</a>
-                          ) : (getColumnInfo(key) as any)?.fieldType === "lookup" || (getColumnInfo(key) as any)?.fieldType === "multiselect_lookup" ? (
-                            <RecordNameResolver
-                              id={String(getColumnValue(placement, key) || "") || null}
-                              type={(getColumnInfo(key) as any)?.lookupType || (getColumnInfo(key) as any)?.multiSelectLookupType || "placements"}
+                    {columnFields.map((key) => {
+                        const colInfo = getColumnInfo(key) as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
+                        const fieldInfo = colInfo
+                          ? { key: colInfo.key, label: colInfo.label, fieldType: colInfo.fieldType, lookupType: colInfo.lookupType, multiSelectLookupType: colInfo.multiSelectLookupType }
+                          : { key, label: getColumnLabel(key) };
+                        return (
+                          <td
+                            key={key}
+                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <FieldValueRenderer
+                              value={getColumnValue(placement, key)}
+                              fieldInfo={fieldInfo}
+                              emptyPlaceholder="—"
                               clickable
-                              fallback={String(getColumnValue(placement, key) || "") || ""}
+                              stopPropagation
                             />
-                          ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(placement, key) || "") ? (
-                            <a
-                              href={`tel:${(getColumnValue(placement, key) || "").replace(/\D/g, "")}`}
-                              className="text-blue-600 hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >{getColumnValue(placement, key)}</a>
-                          ) : (
-                            getColumnValue(placement, key)
-                          )}
-                        </td>
-                      ))}
+                          </td>
+                        );
+                      })}
                   </tr>
                 ))
               ) : (

@@ -61,6 +61,11 @@ export default function AddOrganization() {
   const [isLoading, setIsLoading] = useState(!!organizationId);
   const [error, setError] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(!!organizationId);
+  const [duplicateWarning, setDuplicateWarning] = useState<{
+    phone: Array<{ id: string | number; name: string }>;
+    website: Array<{ id: string | number; name: string }>;
+    email: Array<{ id: string | number; name: string }>;
+  } | null>(null);
   const hasFetchedRef = useRef(false); // Track if we've already fetched organization data
   const [activeUsers, setActiveUsers] = useState<
     Array<{ id: string; name: string; email: string }>
@@ -398,6 +403,31 @@ export default function AddOrganization() {
     setCustomFieldValues,
   ]);
 
+  // Clear duplicate warning when user changes phone, website, or email so they can fix and save
+  const phoneWebsiteEmailValuesKey = useMemo(() => {
+    const labels = [
+      "Contact Phone",
+      "Main Phone",
+      "Website",
+      "Organization Website",
+      "URL",
+      "Email",
+      "Organization Email",
+    ];
+    const parts: string[] = [];
+    customFields.forEach((f) => {
+      if (labels.some((l) => l === f.field_label || f.field_label?.toLowerCase() === l.toLowerCase())) {
+        parts.push(String(customFieldValues[f.field_name] ?? ""));
+      }
+    });
+    return parts.join("|");
+  }, [customFields, customFieldValues]);
+
+  useEffect(() => {
+    if (!duplicateWarning) return;
+    setDuplicateWarning(null);
+  }, [phoneWebsiteEmailValuesKey]);
+
   // Removed console.logs from component level to prevent excessive logging on every render
   //console.log("Custom Fields:", customFields);
 
@@ -519,6 +549,7 @@ export default function AddOrganization() {
 
     setIsSubmitting(true);
     setError(null);
+    setDuplicateWarning(null);
 
     try {
       // ✅ CRITICAL: Get custom fields from the hook
@@ -559,6 +590,65 @@ export default function AddOrganization() {
       apiData.custom_fields = customFieldsForDB;
       if (!apiData.name || String(apiData.name).trim() === "") {
         apiData.name = "Unnamed Organization";
+      }
+
+      // Check for duplicate phone, website, or email before saving
+      const phoneForCheck = String(apiData.contact_phone ?? "").trim();
+      const websiteForCheck = String(apiData.website ?? "").trim();
+      const emailForCheck = String(
+        customFieldsForDB["Email"] ??
+          customFieldsForDB["Organization Email"] ??
+          customFieldsForDB["email"] ??
+          ""
+      ).trim();
+
+      if (phoneForCheck || websiteForCheck || emailForCheck) {
+        const params = new URLSearchParams();
+        if (phoneForCheck) params.set("phone", phoneForCheck);
+        if (websiteForCheck) params.set("website", websiteForCheck);
+        if (emailForCheck) params.set("email", emailForCheck);
+        if (isEditMode && organizationId) params.set("excludeId", organizationId);
+
+        const dupRes = await fetch(
+          `/api/organizations/check-duplicates?${params.toString()}`
+        );
+        const dupData = await dupRes.json();
+
+        if (dupData.success && dupData.duplicates) {
+          const { phone: dupPhone, website: dupWebsite, email: dupEmail } =
+            dupData.duplicates;
+          const hasDuplicates =
+            (dupPhone?.length ?? 0) > 0 ||
+            (dupWebsite?.length ?? 0) > 0 ||
+            (dupEmail?.length ?? 0) > 0;
+
+          if (hasDuplicates) {
+            const messages: string[] = [];
+            if ((dupPhone?.length ?? 0) > 0) {
+              const names = (dupPhone as Array<{ name: string }>).map((o) => o.name).join(", ");
+              messages.push(`Phone number is already used by: ${names}`);
+            }
+            if ((dupWebsite?.length ?? 0) > 0) {
+              const names = (dupWebsite as Array<{ name: string }>).map((o) => o.name).join(", ");
+              messages.push(`Website is already used by: ${names}`);
+            }
+            if ((dupEmail?.length ?? 0) > 0) {
+              const names = (dupEmail as Array<{ name: string }>).map((o) => o.name).join(", ");
+              messages.push(`Email is already used by: ${names}`);
+            }
+            setError(
+              "Cannot save: the following are already in use by another organization. Please use different values or update the existing organization.\n\n" +
+                messages.join("\n")
+            );
+            setDuplicateWarning({
+              phone: dupPhone ?? [],
+              website: dupWebsite ?? [],
+              email: dupEmail ?? [],
+            });
+            setIsSubmitting(false);
+            return;
+          }
+        }
       }
 
       // Coerce numeric columns
@@ -1207,10 +1297,10 @@ export default function AddOrganization() {
           </div>
         </div>
 
-        {/* Error message */}
+        {/* Error message (includes duplicate phone/website/email warning) */}
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 mb-4 rounded">
-            <p>{error}</p>
+            <p className="whitespace-pre-line">{error}</p>
           </div>
         )}
 
@@ -1818,13 +1908,7 @@ const hasValidValue = () => {
   const isNonNegativeField =
     field.field_label?.toLowerCase().includes("employees") ||
     field.field_label?.toLowerCase().includes("offices") ||
-    field.field_label?.toLowerCase().includes("oasis key") ||
-    field.field_name === "Field_32" ||
-    field.field_name === "field_32" ||
-    field.field_name === "Field_25" ||
-    field.field_name === "field_25" ||
-    field.field_name === "Field_31" ||
-    field.field_name === "field_31";
+    field.field_label?.toLowerCase().includes("oasis key");
 
   if (isNonNegativeField && field.field_type === "number") {
     const num = Number(trimmed);
@@ -1834,9 +1918,8 @@ const hasValidValue = () => {
   // Phone field
   const isPhoneField =
     field.field_type === "phone" ||
-    field.field_label?.toLowerCase().includes("phone") ||
-    field.field_name === "Field_5" ||
-    field.field_name === "field_5";
+    field.field_label?.toLowerCase().includes("phone");
+    // field.field_name?.toLowerCase().includes("phone");
 
   if (isPhoneField) {
     const digits = trimmed.replace(/\D/g, "");
@@ -1847,9 +1930,7 @@ const hasValidValue = () => {
   const isUrlField =
     field.field_type === "url" ||
     field.field_label?.toLowerCase().includes("website") ||
-    field.field_label?.toLowerCase().includes("url") ||
-    field.field_name === "Field_4" ||
-    field.field_name === "field_4";
+    field.field_label?.toLowerCase().includes("url");
 
   if (isUrlField) {
     try {
@@ -1980,9 +2061,21 @@ const hasValidValue = () => {
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || !isFormValid}
+              disabled={
+                isSubmitting ||
+                !isFormValid ||
+                (duplicateWarning !== null &&
+                  ((duplicateWarning.phone?.length ?? 0) > 0 ||
+                    (duplicateWarning.website?.length ?? 0) > 0 ||
+                    (duplicateWarning.email?.length ?? 0) > 0))
+              }
               className={`px-4 py-2 rounded ${
-                isSubmitting || !isFormValid
+                isSubmitting ||
+                !isFormValid ||
+                (duplicateWarning !== null &&
+                  ((duplicateWarning.phone?.length ?? 0) > 0 ||
+                    (duplicateWarning.website?.length ?? 0) > 0 ||
+                    (duplicateWarning.email?.length ?? 0) > 0))
                   ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                   : "bg-blue-500 text-white hover:bg-blue-600"
               }`}

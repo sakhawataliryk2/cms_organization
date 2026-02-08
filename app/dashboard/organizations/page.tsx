@@ -23,7 +23,7 @@ import {
   FiX,
 } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
-import RecordNameResolver from "@/components/RecordNameResolver";
+import FieldValueRenderer from "@/components/FieldValueRenderer";
 
 interface Organization {
   id: string;
@@ -1236,49 +1236,33 @@ export default function OrganizationList() {
                       </td>
 
                       <td className="px-6 py-4 text-black whitespace-nowrap">O {org?.id}</td>
-                      {columnFields.map((key) => (
-                        <td
-                          key={key}
-                          className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                        >
-                          {getColumnLabel(key).toLowerCase() === "status" ? (
-                            <span
-                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
-                            >
-                              {getColumnValue(org, key)}
-                            </span>
-                          ) : (getColumnValue(org, key) || "").toLowerCase().includes("@") ? (
-                            <a
-                              href={`mailto:${getColumnValue(org, key)}`}
-                              className="text-blue-600 hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {getColumnValue(org, key)}
-                            </a>
-                          ) : (getColumnValue(org, key) || "").toLowerCase().startsWith("http") || (getColumnValue(org, key) || "").toLowerCase().startsWith("https") ? (
-                            <a
-                              href={(getColumnValue(org, key) || "")}
-                              className="text-blue-600 hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >{(getColumnValue(org, key) || "")}</a>
-                          ) : (getColumnInfo(key) as any)?.fieldType === "lookup" || (getColumnInfo(key) as any)?.fieldType === "multiselect_lookup" ? (
-                            <RecordNameResolver
-                              id={String(getColumnValue(org, key) || "") || null}
-                              type={(getColumnInfo(key) as any)?.lookupType || (getColumnInfo(key) as any)?.multiSelectLookupType || "organizations"}
+                      {columnFields.map((key) => {
+                        const colInfo = getColumnInfo(key);
+                        const fieldInfo = colInfo
+                          ? {
+                              key: colInfo.key,
+                              label: colInfo.label,
+                              fieldType: (colInfo as any).fieldType,
+                              lookupType: (colInfo as any).lookupType,
+                              multiSelectLookupType: (colInfo as any).multiSelectLookupType,
+                            }
+                          : { key, label: getColumnLabel(key) };
+                        return (
+                          <td
+                            key={key}
+                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                          >
+                            <FieldValueRenderer
+                              value={getColumnValue(org, key)}
+                              fieldInfo={fieldInfo}
+                              emptyPlaceholder="N/A"
                               clickable
-                              fallback={String(getColumnValue(org, key) || "") || ""}
+                              stopPropagation
+                              className=""
                             />
-                          ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(org, key) || "") ? (
-                            <a
-                              href={`tel:${(getColumnValue(org, key) || "").replace(/\D/g, "")}`}
-                              className="text-blue-600 hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >{getColumnValue(org, key)}</a>
-                          ) : (
-                            getColumnValue(org, key)
-                          )}
-                        </td>
-                      ))}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))
                 ) : (

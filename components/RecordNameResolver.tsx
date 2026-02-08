@@ -17,6 +17,8 @@ export type RecordType =
   | "jobs"
   | "job-seeker"
   | "job-seekers"
+  | "jobseeker"
+  | "jobseekers"
   | "lead"
   | "leads"
   | "placement"

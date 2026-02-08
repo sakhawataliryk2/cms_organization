@@ -52,7 +52,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
-import RecordNameResolver from "@/components/RecordNameResolver";
+import FieldValueRenderer from "@/components/FieldValueRenderer";
 
 // Default header fields for Placements module - defined outside component to ensure stable reference
 const PLACEMENT_DEFAULT_HEADER_FIELDS = ["status", "owner"];
@@ -794,6 +794,9 @@ export default function PlacementView() {
         return {
           key: `custom:${String(k)}`,
           label: f.field_label || f.field_name || String(k),
+          fieldType: (f.field_type ?? f.fieldType ?? "") as string,
+          lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
+          multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
         };
       })
       .filter((x) => {
@@ -805,6 +808,11 @@ export default function PlacementView() {
   };
 
   const headerFieldCatalog = buildHeaderFieldCatalog();
+
+  const getHeaderFieldInfo = (key: string) => {
+    const found = headerFieldCatalog.find((f) => f.key === key);
+    return found as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
+  };
 
   const getHeaderFieldLabel = (key: string) => {
     const found = headerFieldCatalog.find((f) => f.key === key);
@@ -3307,38 +3315,18 @@ export default function PlacementView() {
           );
           const fieldLabel = field?.field_label || field?.field_name || key;
           const fieldValue = placement.customFields?.[fieldLabel] || "-";
+          const lookupType = (field as any)?.lookup_type ?? (field as any)?.lookupType ?? (fieldLabel.toLowerCase() === "candidate" || fieldLabel.toLowerCase() === "job seeker" ? "jobSeeker" : fieldLabel.toLowerCase() === "job" ? "job" : fieldLabel.toLowerCase() === "organization" ? "organization" : "");
+          const fieldInfo = { key, label: fieldLabel, fieldType: (field as any)?.field_type ?? (field as any)?.fieldType, lookupType, multiSelectLookupType: (field as any)?.multi_select_lookup_type ?? (field as any)?.multiSelectLookupType };
           return (
             <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
               <div className="flex-1 p-2">
-                {fieldLabel.toLowerCase().includes("phone") ? (
-                  <a href={`tel:${fieldValue}`} className="text-blue-600 hover:underline">
-                    {fieldValue}
-                  </a>
-                ) : fieldLabel.toLowerCase() === "candidate" || fieldLabel.toLowerCase() === "job seeker" ? (
-                  <RecordNameResolver
-                    id={String(fieldValue) || null}
-                    type="jobSeeker"
-                    clickable
-                    fallback={String(fieldValue) || ""}
-                  />
-                ) : fieldLabel.toLowerCase() === "job" ? (
-                  <RecordNameResolver
-                    id={String(fieldValue) || null}
-                    type="job"
-                    clickable
-                    fallback={String(fieldValue) || ""}
-                  />
-                ) : fieldLabel.toLowerCase() === "organization" ? (
-                  <RecordNameResolver
-                    id={String(fieldValue) || null}
-                    type="organization"
-                    clickable
-                    fallback={String(fieldValue) || ""}
-                  />
-                ) : (
-                  fieldValue
-                )}
+                <FieldValueRenderer
+                  value={fieldValue}
+                  fieldInfo={fieldInfo}
+                  emptyPlaceholder="-"
+                  clickable
+                />
               </div>
             </div>
           );
@@ -3387,38 +3375,19 @@ export default function PlacementView() {
           const field = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
           const fieldLabel = field?.field_label || field?.field_name || key;
           const fieldValue = placement.customFields?.[fieldLabel] ?? "-";
+          const lookupType = (field as any)?.lookup_type ?? (field as any)?.lookupType ?? (fieldLabel.toLowerCase() === "candidate" || fieldLabel.toLowerCase() === "job seeker" ? "jobSeeker" : fieldLabel.toLowerCase() === "job" ? "job" : fieldLabel.toLowerCase() === "organization" ? "organization" : "");
+          const fieldInfo = { key, label: fieldLabel, fieldType: (field as any)?.field_type ?? (field as any)?.fieldType, lookupType, multiSelectLookupType: (field as any)?.multi_select_lookup_type ?? (field as any)?.multiSelectLookupType };
+          console.log("fieldInfo", fieldInfo);
           return (
             <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
               <div className="flex-1 p-2">
-                {fieldLabel.toLowerCase().includes("phone") ? (
-                  <a href={`tel:${fieldValue}`} className="text-blue-600 hover:underline">
-                    {fieldValue}
-                  </a>
-                ) : fieldLabel.toLowerCase() === "candidate" || fieldLabel.toLowerCase() === "job seeker" ? (
-                  <RecordNameResolver
-                    id={fieldValue || null}
-                    type="jobSeeker"
-                    clickable
-                    fallback={String(fieldValue) || ""}
-                  />
-                ) : fieldLabel.toLowerCase() === "job" ? (
-                  <RecordNameResolver
-                    id={fieldValue || null}
-                    type="job"
-                    clickable
-                    fallback={String(fieldValue) || ""}
-                  />
-                ) : fieldLabel.toLowerCase() === "organization" ? (
-                  <RecordNameResolver
-                    id={String(fieldValue) || null}
-                    type="organization"
-                    clickable
-                    fallback={String(fieldValue) || ""}
-                  />
-                ) : (
-                  fieldValue
-                )}
+                <FieldValueRenderer
+                  value={fieldValue}
+                  fieldInfo={fieldInfo}
+                  emptyPlaceholder="-"
+                  clickable
+                />
               </div>
             </div>
           );
@@ -3751,45 +3720,26 @@ export default function PlacementView() {
                 No header fields selected
               </span>
             ) : (
-              headerFields.map((fk) => (
-                <div key={fk} className="min-w-[140px]">
-                  <div className="text-xs text-gray-500">
-                    {getHeaderFieldLabel(fk)}
-                  </div>
-                  <div className="text-sm font-medium text-gray-900">
-                    <div className="flex-1 p-2">
-                      {getHeaderFieldLabel(fk).toLowerCase().includes("phone") ? (
-                        <a href={`tel:${getHeaderFieldValue(fk)}`} className="text-blue-600 hover:underline">
-                          {getHeaderFieldValue(fk)}
-                        </a>
-                      ) : getHeaderFieldLabel(fk).toLowerCase() === "candidate" || getHeaderFieldLabel(fk).toLowerCase() === "job seeker" ? (
-                        <RecordNameResolver
-                          id={String(getHeaderFieldValue(fk)) || null}
-                          type="jobSeeker"
-                          clickable
-                          fallback={String(getHeaderFieldValue(fk)) || ""}
-                        />
-                      ) : getHeaderFieldLabel(fk).toLowerCase() === "job" ? (
-                        <RecordNameResolver
-                          id={String(getHeaderFieldValue(fk)) || null}
-                          type="job"
-                          clickable
-                          fallback={String(getHeaderFieldValue(fk)) || ""}
-                        />
-                      ) : getHeaderFieldLabel(fk).toLowerCase() === "organization" ? (
-                        <RecordNameResolver
-                          id={String(getHeaderFieldValue(fk)) || null}
-                          type="organization"
-                          clickable
-                          fallback={String(getHeaderFieldValue(fk)) || ""}
-                        />
-                      ) : (
-                        getHeaderFieldValue(fk)
-                      )}
+              headerFields.map((fk) => {
+                const info = getHeaderFieldInfo(fk);
+                const fieldInfo = info ? { key: info.key, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key: fk, label: getHeaderFieldLabel(fk) };
+                return (
+                  <div key={fk} className="min-w-[140px]">
+                    <div className="text-xs text-gray-500">
+                      {getHeaderFieldLabel(fk)}
+                    </div>
+                    <div className="text-sm font-medium text-gray-900">
+                      <FieldValueRenderer
+                        value={getHeaderFieldValue(fk)}
+                        fieldInfo={fieldInfo}
+                        emptyPlaceholder="-"
+                        clickable
+                        className="text-gray-900"
+                      />
                     </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
 
@@ -4550,7 +4500,15 @@ export default function PlacementView() {
                             {getHeaderFieldLabel(key)}
                           </div>
                           <div className="text-xs text-gray-500">
-                            Value: {getHeaderFieldValue(key)}
+                            Value:{" "}
+                            <FieldValueRenderer
+                              value={getHeaderFieldValue(key)}
+                              fieldInfo={(() => {
+                                const info = getHeaderFieldInfo(key);
+                                return info ? { key: info.key, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key: key, label: getHeaderFieldLabel(key) };
+                              })()}
+                              emptyPlaceholder="-"
+                            />
                           </div>
                         </div>
 

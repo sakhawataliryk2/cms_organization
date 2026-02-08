@@ -47,8 +47,10 @@ import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import RecordNameResolver from "@/components/RecordNameResolver";
+import FieldValueRenderer from "@/components/FieldValueRenderer";
 import { FiSearch } from "react-icons/fi";
 import { toast } from "sonner";
+import AddTearsheetModal from "@/components/AddTearsheetModal";
 
 // Default header fields for Organizations module - defined outside component to ensure stable reference
 const ORG_DEFAULT_HEADER_FIELDS = ["phone", "website"];
@@ -544,20 +546,7 @@ export default function OrganizationView() {
     ? jobs.filter((j: any) => norm(j.hiring_manager) === norm(hmFilter))
     : jobs;
 
-  // Tearsheet modal state (same as Hiring Manager: New vs Existing)
   const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
-  const [tearsheetForm, setTearsheetForm] = useState({
-    name: "",
-    visibility: "Existing" as "New" | "Existing",
-    selectedTearsheetId: "",
-  });
-  const [existingTearsheets, setExistingTearsheets] = useState<any[]>([]);
-  const [linkedTearsheets, setLinkedTearsheets] = useState<number[]>([]);
-  const [isLoadingTearsheets, setIsLoadingTearsheets] = useState(false);
-  const [isSavingTearsheet, setIsSavingTearsheet] = useState(false);
-  const [tearsheetSearchQuery, setTearsheetSearchQuery] = useState("");
-  const [showTearsheetDropdown, setShowTearsheetDropdown] = useState(false);
-  const tearsheetSearchRef = useRef<HTMLDivElement>(null);
 
   // Transfer modal state
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -683,6 +672,9 @@ export default function OrganizationView() {
         return {
           key: `custom:${String(k)}`,
           label: f.field_label || f.field_name || String(k),
+          fieldType: (f.field_type ?? f.fieldType ?? "") as string,
+          lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
+          multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
         };
       })
       .filter((x) => {
@@ -709,6 +701,11 @@ export default function OrganizationView() {
     const field = headerFieldCatalog.find((f) => f.key === key);
     if (field) v = o.customFields?.[field.label];
     return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
+  };
+
+  const getHeaderFieldInfo = (key: string) => {
+    const found = headerFieldCatalog.find((f) => f.key === key);
+    return found as any;
   };
 
   const handleUpdateDocument = async () => {
@@ -1378,6 +1375,8 @@ export default function OrganizationView() {
         key: String(f.field_key ?? f.field_name ?? f.api_name ?? f.id),
         label: f.field_label || f.field_name || String(f.field_key ?? f.field_name ?? f.api_name ?? f.id),
         fieldType: (f.field_type || f.type) as string | undefined,
+        lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
+        multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
       }))
       .filter((f) => {
         if (seenKeys.has(f.key)) return false;
@@ -2873,7 +2872,25 @@ export default function OrganizationView() {
               {effectiveRows.map((row) => {
                 const value = row.isAddress || row.key === FULL_ADDRESS_KEY ? getCombinedAddress() : getContactInfoValue(row.key);
                 const parentOrgId = (organization as any)?.parentOrganizationId;
-                const displayValue = value !== "-" && value !== "(Not provided)" ? value : "";
+                const catalogEntry = contactInfoFieldCatalog.find((f) => f.key === row.key);
+                const fieldInfo = {
+                  key: row.key,
+                  label: row.label,
+                  fieldType: catalogEntry?.fieldType,
+                  lookupType: catalogEntry?.lookupType,
+                  multiSelectLookupType: catalogEntry?.multiSelectLookupType,
+                };
+                const o = organization as any;
+                const addressParts =
+                  (row.isAddress || row.key === FULL_ADDRESS_KEY) && o
+                    ? {
+                        address: o.customFields?.["Address"] ?? o.address,
+                        address2: o.customFields?.["Address 2"] ?? o.address2,
+                        city: o.customFields?.["City"] ?? o.city,
+                        state: o.customFields?.["State"] ?? o.state,
+                        zip: o.customFields?.["ZIP Code"] ?? o.zip_code ?? o.zip,
+                      }
+                    : undefined;
                 return (
                   <div
                     key={row.key}
@@ -2900,36 +2917,24 @@ export default function OrganizationView() {
                             ))
                           )}
                         </select>
-                      ) : row.isUrl ? (
-                        <a
-                          href={value.startsWith("http") ? value : `https://${value}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-600 hover:underline"
-                        >
-                          {value}
-                        </a>
-                      ) : row.isPhone && displayValue && value.replace(/\D/g, "").length >= 7 ? (
-                        <a href={`tel:${value.replace(/\D/g, "")}`} className="text-blue-600 hover:underline">
-                          {value}
-                        </a>
-                      ) : row.isPhone && displayValue ? (
-                        <span>{value}</span>
-                      ) : row.isParentOrg && (parentOrgId || displayValue) ? (
-                        parentOrgId ? (
-                          <RecordNameResolver
-                            id={parentOrgId}
-                            type="organization"
-                            clickable
-                            fallback={(organization as any)?.parentOrganization || value}
-                          />
-                        ) : (
-                          value
-                        )
-                      ) : row.isName ? (
-                        <span className="text-blue-600">{value}</span>
+                      ) : row.isParentOrg && parentOrgId ? (
+                        <FieldValueRenderer
+                          value={String(parentOrgId)}
+                          fieldInfo={{ ...fieldInfo, fieldType: "lookup", lookupType: "organization" }}
+                          emptyPlaceholder="-"
+                          clickable
+                          lookupFallback={(organization as any)?.parentOrganization || value}
+                          className={row.isName ? "text-blue-600" : ""}
+                        />
                       ) : (
-                        value
+                        <FieldValueRenderer
+                          value={value}
+                          fieldInfo={row.isParentOrg && !parentOrgId ? { ...fieldInfo, fieldType: "text" } : fieldInfo}
+                          addressParts={addressParts}
+                          emptyPlaceholder="-"
+                          clickable
+                          className={row.isName ? "text-blue-600" : ""}
+                        />
                       )}
                     </div>
                   </div>
@@ -4099,63 +4104,6 @@ export default function OrganizationView() {
     setValidationErrors({});
   };
 
-  // Fetch existing tearsheets (same as Hiring Manager - show all)
-  const fetchExistingTearsheets = async () => {
-    setIsLoadingTearsheets(true);
-    try {
-      const token = document.cookie.replace(
-        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-        "$1"
-      );
-      const authHeaders = {
-        Authorization: `Bearer ${token}`,
-      };
-
-      // Fetch all tearsheets
-      const response = await fetch("/api/tearsheets", {
-        headers: authHeaders,
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setExistingTearsheets(data.tearsheets || []);
-      } else {
-        console.error("Failed to fetch tearsheets:", response.statusText);
-        setExistingTearsheets([]);
-      }
-
-      // Fetch linked tearsheets for this organization
-      if (organizationId) {
-        try {
-          const linkedResponse = await fetch(`/api/tearsheets/organization/${organizationId}`, {
-            headers: authHeaders,
-          });
-          if (linkedResponse.ok) {
-            const linkedData = await linkedResponse.json();
-            const linkedIds = (linkedData.tearsheets || []).map((ts: any) => ts.id);
-            setLinkedTearsheets(linkedIds);
-          }
-        } catch (err) {
-          console.error("Error fetching linked tearsheets:", err);
-          setLinkedTearsheets([]);
-        }
-      }
-    } catch (err) {
-      console.error("Error fetching tearsheets:", err);
-      setExistingTearsheets([]);
-    } finally {
-      setIsLoadingTearsheets(false);
-    }
-  };
-
-  // Filtered tearsheets for search dropdown (same as Hiring Manager)
-  const filteredTearsheets =
-    tearsheetSearchQuery.trim() === ""
-      ? existingTearsheets
-      : existingTearsheets.filter((ts: any) =>
-          ts.name.toLowerCase().includes(tearsheetSearchQuery.toLowerCase())
-        );
-
   const filteredTransferOrganizations =
     transferSearchQuery.trim() === ""
       ? availableOrganizations
@@ -4169,37 +4117,6 @@ export default function OrganizationView() {
               : "";
           return name.includes(q) || idStr.includes(q) || recordId.includes(q);
         });
-
-  const handleTearsheetSelect = (tearsheet: any) => {
-    setTearsheetForm((prev) => ({
-      ...prev,
-      selectedTearsheetId: tearsheet.id.toString(),
-    }));
-    setTearsheetSearchQuery(tearsheet.name);
-    setShowTearsheetDropdown(false);
-  };
-
-  // Fetch tearsheets when modal opens
-  useEffect(() => {
-    if (showAddTearsheetModal) {
-      fetchExistingTearsheets();
-    }
-  }, [showAddTearsheetModal]);
-
-  // Click outside to close tearsheet search dropdown
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (tearsheetSearchRef.current && !tearsheetSearchRef.current.contains(event.target as Node)) {
-        setShowTearsheetDropdown(false);
-      }
-    };
-    if (showTearsheetDropdown) {
-      document.addEventListener("mousedown", handleClickOutside);
-    } else {
-      document.removeEventListener("mousedown", handleClickOutside);
-    }
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showTearsheetDropdown]);
 
   // Click outside to close transfer search dropdown
   useEffect(() => {
@@ -4394,157 +4311,6 @@ export default function OrganizationView() {
       );
     } finally {
       setIsSubmittingTransfer(false);
-    }
-  };
-
-  // Handle tearsheet submission - Create new or add to existing
-  // For organization: associate only the organization itself (not hiring managers or jobs)
-  const handleTearsheetSubmit = async () => {
-    if (!organizationId) {
-      toast.error("Organization ID is missing");
-      return;
-    }
-
-    const token = document.cookie.replace(
-      /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-      "$1"
-    );
-    const authHeaders = {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    };
-
-    if (tearsheetForm.visibility === "New") {
-      // Create new tearsheet
-      if (!tearsheetForm.name.trim()) {
-        toast.error("Please enter a tearsheet name");
-        return;
-      }
-
-      setIsSavingTearsheet(true);
-      try {
-        const createRes = await fetch("/api/tearsheets", {
-          method: "POST",
-          headers: authHeaders,
-          body: JSON.stringify({
-            name: tearsheetForm.name.trim(),
-            visibility: "Existing",
-          }),
-        });
-
-        if (!createRes.ok) {
-          const errorData = await createRes.json().catch(() => ({ message: "Failed to create tearsheet" }));
-          throw new Error(errorData.message || "Failed to create tearsheet");
-        }
-
-        const createData = await createRes.json();
-        const tearsheetId = createData.tearsheet?.id;
-        if (!tearsheetId) {
-          throw new Error("Tearsheet created but ID missing");
-        }
-
-        // Associate only the organization with the new tearsheet (not hiring managers or jobs)
-        const assocRes = await fetch(`/api/tearsheets/${tearsheetId}/associate`, {
-          method: "POST",
-          headers: authHeaders,
-          body: JSON.stringify({ organization_id: organizationId }),
-        });
-        if (!assocRes.ok) {
-          const errData = await assocRes.json().catch(() => ({}));
-          throw new Error(errData.message || errData.error || "Failed to add organization to tearsheet");
-        }
-
-        toast.success("Tearsheet created and organization added.");
-        setShowAddTearsheetModal(false);
-        setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
-        setTearsheetSearchQuery("");
-        // Refresh linked tearsheets
-        if (organizationId) {
-          const token = document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          );
-          try {
-            const linkedResponse = await fetch(`/api/tearsheets/organization/${organizationId}`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            if (linkedResponse.ok) {
-              const linkedData = await linkedResponse.json();
-              const linkedIds = (linkedData.tearsheets || []).map((ts: any) => ts.id);
-              setLinkedTearsheets(linkedIds);
-            }
-          } catch (err) {
-            console.error("Error refreshing linked tearsheets:", err);
-          }
-        }
-      } catch (err) {
-        console.error("Error creating tearsheet:", err);
-        toast.error(
-          err instanceof Error ? err.message : "Failed to create tearsheet. Please try again."
-        );
-      } finally {
-        setIsSavingTearsheet(false);
-      }
-    } else {
-      // Add to existing tearsheet
-      if (!tearsheetForm.selectedTearsheetId) {
-        toast.error("Please select a tearsheet");
-        return;
-      }
-
-      const selectedTearsheet = existingTearsheets.find(
-        (ts: any) => ts.id.toString() === tearsheetForm.selectedTearsheetId
-      );
-      if (!selectedTearsheet) {
-        toast.error("Selected tearsheet not found");
-        return;
-      }
-
-      setIsSavingTearsheet(true);
-      try {
-        const tearsheetId = tearsheetForm.selectedTearsheetId;
-
-        const res = await fetch(`/api/tearsheets/${tearsheetId}/associate`, {
-          method: "POST",
-          headers: authHeaders,
-          body: JSON.stringify({ organization_id: organizationId }),
-        });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.message || errData.error || "Failed to add organization to tearsheet");
-        }
-
-        toast.success(`Organization has been added to tearsheet "${selectedTearsheet.name}".`);
-        setShowAddTearsheetModal(false);
-        setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
-        setTearsheetSearchQuery("");
-        // Refresh linked tearsheets
-        if (organizationId) {
-          const token = document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          );
-          try {
-            const linkedResponse = await fetch(`/api/tearsheets/organization/${organizationId}`, {
-              headers: { Authorization: `Bearer ${token}` },
-            });
-            if (linkedResponse.ok) {
-              const linkedData = await linkedResponse.json();
-              const linkedIds = (linkedData.tearsheets || []).map((ts: any) => ts.id);
-              setLinkedTearsheets(linkedIds);
-            }
-          } catch (err) {
-            console.error("Error refreshing linked tearsheets:", err);
-          }
-        }
-      } catch (err) {
-        console.error("Error associating tearsheet:", err);
-        toast.error(
-          err instanceof Error ? err.message : "Failed to associate tearsheet. Please try again."
-        );
-      } finally {
-        setIsSavingTearsheet(false);
-      }
     }
   };
 
@@ -5177,27 +4943,23 @@ export default function OrganizationView() {
                 No header fields selected
               </span>
             ) : (
-              headerFields.map((fk) => (
-                <div key={fk} className="min-w-[140px]">
-                  <div className="text-xs text-gray-500">
-                    {getHeaderFieldLabel(fk)}
-                  </div>
-                  {fk === "website" ? (
-                    <a
-                      href={getHeaderFieldValue(fk)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-sm font-medium text-blue-600 hover:underline"
-                    >
-                      {getHeaderFieldValue(fk)}
-                    </a>
-                  ) : (
-                    <div className="text-sm font-medium text-gray-900">
-                      {getHeaderFieldValue(fk)}
+              headerFields.map((fk) => {
+                const info = getHeaderFieldInfo(fk) as { key?: string; label?: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
+                return (
+                  <div key={fk} className="min-w-[140px]">
+                    <div className="text-xs text-gray-500">
+                      {getHeaderFieldLabel(fk)}
                     </div>
-                  )}
-                </div>
-              ))
+                    <FieldValueRenderer
+                      value={getHeaderFieldValue(fk)}
+                      fieldInfo={info ? { key: info.key ?? fk, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key: fk, label: getHeaderFieldLabel(fk) }}
+                      emptyPlaceholder="-"
+                      clickable
+                      className="text-sm font-medium text-gray-900"
+                    />
+                  </div>
+                );
+              })
             )}
           </div>
 
@@ -7118,204 +6880,12 @@ export default function OrganizationView() {
         </div>
       )}
 
-      {/* Add Tearsheet Modal - same design as Hiring Manager (New vs Existing) */}
-      {showAddTearsheetModal && (
-        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
-            {/* Header */}
-            <div className="flex justify-between items-center p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold">Add to Tearsheet</h2>
-              <button
-                onClick={() => {
-                  setShowAddTearsheetModal(false);
-                  setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
-                  setTearsheetSearchQuery("");
-                }}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
-
-            {/* Form Content */}
-            <div className="p-6 space-y-6">
-              {/* Visibility Toggle */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Select Option
-                </label>
-                <div
-                  className="inline-flex rounded-md border border-gray-300 overflow-hidden"
-                  role="group"
-                >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setTearsheetForm((prev) => ({
-                        ...prev,
-                        visibility: "New",
-                        selectedTearsheetId: "",
-                      }))
-                    }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === "New"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
-                    }`}
-                  >
-                    New Tearsheet
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setTearsheetForm((prev) => ({
-                        ...prev,
-                        visibility: "Existing",
-                        name: "",
-                      }))
-                    }
-                    className={`px-4 py-2 text-sm font-medium transition-colors ${
-                      tearsheetForm.visibility === "Existing"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 hover:bg-gray-50"
-                    }`}
-                  >
-                    Existing Tearsheet
-                  </button>
-                </div>
-              </div>
-
-              {/* New Tearsheet Name */}
-              {tearsheetForm.visibility === "New" && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    <span className="text-red-500 mr-1">•</span>
-                    Tearsheet Name
-                  </label>
-                  <input
-                    type="text"
-                    value={tearsheetForm.name}
-                    onChange={(e) =>
-                      setTearsheetForm((prev) => ({
-                        ...prev,
-                        name: e.target.value,
-                      }))
-                    }
-                    placeholder="Enter tearsheet name"
-                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
-                </div>
-              )}
-
-              {/* Existing Tearsheet Selection */}
-              {tearsheetForm.visibility === "Existing" && (
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    <span className="text-red-500 mr-1">•</span>
-                    Select Tearsheet
-                  </label>
-                  {isLoadingTearsheets ? (
-                    <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
-                      Loading tearsheets...
-                    </div>
-                  ) : (
-                    <div className="relative" ref={tearsheetSearchRef}>
-                      <input
-                        type="text"
-                        value={tearsheetSearchQuery}
-                        onChange={(e) => {
-                          setTearsheetSearchQuery(e.target.value);
-                          setShowTearsheetDropdown(true);
-                        }}
-                        onFocus={() => setShowTearsheetDropdown(true)}
-                        onClick={() => setShowTearsheetDropdown(true)}
-                        placeholder="Search for a tearsheet..."
-                        className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                      {showTearsheetDropdown && (tearsheetSearchQuery || existingTearsheets.length > 0) && (
-                        <div className="absolute z-[60] w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
-                          {filteredTearsheets.length > 0 ? (
-                            filteredTearsheets.map((ts: any) => {
-                              const isLinked = linkedTearsheets.includes(ts.id);
-                              return (
-                                <button
-                                  key={ts.id}
-                                  onClick={() => handleTearsheetSelect(ts)}
-                                  className={`w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex flex-col ${
-                                    isLinked ? "bg-green-50" : ""
-                                  }`}
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-sm font-medium text-gray-900">{ts.name}</span>
-                                    {isLinked && (
-                                      <span className="text-xs px-2 py-0.5 bg-green-100 text-green-800 rounded font-medium">
-                                        Linked
-                                      </span>
-                                    )}
-                                  </div>
-                                  {ts.owner_name && (
-                                    <span className="text-xs text-gray-500">Owner: {ts.owner_name}</span>
-                                  )}
-                                </button>
-                              );
-                            })
-                          ) : (
-                            <div className="p-3 text-center text-gray-500 text-sm">
-                              No matching tearsheets found
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <p className="mt-2 text-xs text-gray-500">
-                    Search and select an existing tearsheet to add this organization to it.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
-              <button
-                onClick={() => {
-                  setShowAddTearsheetModal(false);
-                  setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
-                  setTearsheetSearchQuery("");
-                }}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={isSavingTearsheet}
-              >
-                CANCEL
-              </button>
-              <button
-                onClick={handleTearsheetSubmit}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
-                disabled={
-                  isSavingTearsheet ||
-                  (tearsheetForm.visibility === "New" && !tearsheetForm.name.trim()) ||
-                  (tearsheetForm.visibility === "Existing" && !tearsheetForm.selectedTearsheetId)
-                }
-              >
-                {tearsheetForm.visibility === "New" ? "CREATE" : "ASSOCIATE"}
-                <svg
-                  className="w-4 h-4 ml-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M5 13l4 4L19 7"
-                  />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AddTearsheetModal
+        open={showAddTearsheetModal}
+        onClose={() => setShowAddTearsheetModal(false)}
+        entityType="organization"
+        entityId={organizationId || ""}
+      />
       {/* Header Fields Modal */}
       {showHeaderFieldModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">

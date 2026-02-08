@@ -7,7 +7,7 @@ import Image from 'next/image';
 import LoadingScreen from '@/components/LoadingScreen';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
-import RecordNameResolver from "@/components/RecordNameResolver";
+import FieldValueRenderer from "@/components/FieldValueRenderer";
 import {
   SortableContext,
   useSortable,
@@ -465,6 +465,7 @@ export default function ArchivedJobSeekersList() {
         return {
           fieldType,
           lookupType,
+          multiSelectLookupType: (f as any)?.multi_select_lookup_type ?? (f as any)?.multiSelectLookupType ?? "",
           key: isBackendCol ? name : `custom:${label || name}`,
           label: String(label || name),
           sortable: isBackendCol,
@@ -1132,55 +1133,30 @@ export default function ArchivedJobSeekersList() {
                         JS {js.id}
                       </div>
                     </td>
-                    {columnFields.map((key) => (
-                      <td
-                        key={key}
-                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                      >
-                        {getColumnLabel(key).toLowerCase() === "status" ? (
-                          <span
-                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800`}
-                          >
-                            {getColumnValue(js, key)}
-                          </span>
-                        ) : getColumnLabel(key).toLowerCase() === "archive reason" ? (
-                          <span
-                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${(getColumnValue(js, key) || "").toString().toLowerCase() === "deletion" ? "bg-red-100 text-red-800" : "bg-blue-100 text-blue-800"}`}
-                          >
-                            {getColumnValue(js, key)}
-                          </span>
-                        ) : (getColumnValue(js, key) || "").toLowerCase().includes("@") ? (
-                          <a
-                            href={`mailto:${getColumnValue(js, key)}`}
-                            className="text-blue-600 hover:underline"
+                    {columnFields.map((key) => {
+                        const colInfo = getColumnInfo(key) as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
+                        const fieldInfo = colInfo
+                          ? { key: colInfo.key, label: colInfo.label, fieldType: colInfo.fieldType, lookupType: colInfo.lookupType, multiSelectLookupType: colInfo.multiSelectLookupType }
+                          : { key, label: getColumnLabel(key) };
+                        const isArchiveReason = getColumnLabel(key).toLowerCase() === "archive reason";
+                        return (
+                          <td
+                            key={key}
+                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {getColumnValue(js, key)}
-                          </a>
-                        ) : (getColumnValue(js, key) || "").toLowerCase().startsWith("http") || (getColumnValue(js, key) || "").toLowerCase().startsWith("https") ? (
-                          <a
-                            href={(getColumnValue(js, key) || "")}
-                            className="text-blue-600 hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                          >{(getColumnValue(js, key) || "")}</a>
-                        ) : (getColumnInfo(key) as any)?.fieldType === "lookup" || (getColumnInfo(key) as any)?.fieldType === "multiselect_lookup" ? (
-                          <RecordNameResolver
-                            id={String(getColumnValue(js, key) || "") || null}
-                            type={(getColumnInfo(key) as any)?.lookupType || (getColumnInfo(key) as any)?.multiSelectLookupType || "organizations"}
-                            clickable
-                            fallback={String(getColumnValue(js, key) || "") || ""}
-                          />
-                        ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(js, key) || "") ? (
-                          <a
-                            href={`tel:${(getColumnValue(js, key) || "").replace(/\D/g, "")}`}
-                            className="text-blue-600 hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                          >{getColumnValue(js, key)}</a>
-                        ) : (
-                          getColumnValue(js, key)
-                        )}
-                      </td>
-                    ))}
+                            <FieldValueRenderer
+                              value={getColumnValue(js, key)}
+                              fieldInfo={fieldInfo}
+                              emptyPlaceholder="—"
+                              clickable
+                              stopPropagation
+                              forceRenderAsStatus={isArchiveReason}
+                              statusVariant={isArchiveReason && String(getColumnValue(js, key) || "").toLowerCase() === "deletion" ? "deletion" : "blue"}
+                            />
+                          </td>
+                        );
+                      })}
                   </tr>
                 ))
               ) : (

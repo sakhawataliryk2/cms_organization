@@ -17,6 +17,7 @@ import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import RecordNameResolver from "@/components/RecordNameResolver";
+import FieldValueRenderer from "@/components/FieldValueRenderer";
 
 interface Task {
   id: string;
@@ -1305,7 +1306,7 @@ export default function TaskList() {
                           key={key}
                           className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
                         >
-                          {getColumnLabel(key).toLowerCase() === "status" ? (
+                          {/* {getColumnLabel(key).toLowerCase() === "status" ? (
                             <span
                               className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
                             >
@@ -1340,7 +1341,18 @@ export default function TaskList() {
                             >{getColumnValue(task, key)}</a>
                           ) : (
                             getColumnValue(task, key)
-                          )}
+                          )} */}
+                          <FieldValueRenderer
+                            value={getColumnValue(task, key)}
+                            fieldInfo={(() => {
+                              const info = getColumnInfo(key);
+                              return info ? { key: info.key, label: info.label, fieldType: (info as any).fieldType, lookupType: (info as any).lookupType, multiSelectLookupType: (info as any).multiSelectLookupType } : { key, label: getColumnLabel(key) };
+                            })() as any}
+                            emptyPlaceholder="N/A"
+                            clickable
+                            stopPropagation
+                            className="text-sm text-gray-500"
+                          />
                         </td>
                       ))}
                     </tr>

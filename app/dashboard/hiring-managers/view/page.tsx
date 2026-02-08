@@ -12,6 +12,7 @@ import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { sendCalendarInvite, type CalendarEvent } from "@/lib/office365";
 import RecordNameResolver from '@/components/RecordNameResolver';
+import FieldValueRenderer from '@/components/FieldValueRenderer';
 // Drag and drop imports
 import {
   DndContext,
@@ -49,6 +50,7 @@ import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import { toast } from "sonner";
+import AddTearsheetModal from "@/components/AddTearsheetModal";
 
 // Default header fields for Hiring Managers module - defined outside component to ensure stable reference
 const HIRING_MANAGER_DEFAULT_HEADER_FIELDS = ["phone", "email"];
@@ -800,34 +802,26 @@ export default function HiringManagerView() {
 
     const renderDetailsRow = (row: { key: string; label: string; isAddress?: boolean }) => {
       const value = row.isAddress || row.key === FULL_ADDRESS_KEY ? getCombinedAddress() : getDetailsValue(row.key);
-      const lookupType = (customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key)?.lookup_type || customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key)?.lookupType || "") as any;
+      const def = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key);
+      const fieldInfo = {
+        key: row.key,
+        label: row.label,
+        fieldType: def?.field_type ?? def?.fieldType,
+        lookupType: def?.lookup_type ?? def?.lookupType,
+        multiSelectLookupType: def?.multi_select_lookup_type ?? def?.multiSelectLookupType,
+      };
       return (
         <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
-          <div className="flex-1 p-2 text-sm">{lookupType && value ? (
-            <RecordNameResolver
-              id={String(value || "") || null}
-              type={lookupType as any}
+          <div className="flex-1 p-2 text-sm">
+            <FieldValueRenderer
+              value={value}
+              fieldInfo={fieldInfo}
+              emptyPlaceholder="-"
               clickable
-              fallback={String(value || "") || ""}
+              className="text-sm font-medium text-gray-900"
             />
-          ) : value.toLowerCase().includes("@") ? (
-            <a href={`mailto:${value}`} className="text-sm font-medium text-blue-600 hover:underline">
-              {value}
-            </a>
-          ) : value.toLowerCase().startsWith("http") || value.toLowerCase().startsWith("https") ? (
-            <a href={value} className="text-sm font-medium text-blue-600 hover:underline">
-              {value}
-            </a>
-          ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(value || "") ? (
-            <a href={`tel:${value.replace(/\D/g, "")}`} className="text-sm font-medium text-blue-600 hover:underline">
-              {value}
-            </a>
-          ) : value ? (
-            <div className="text-sm font-medium text-gray-900">{value}</div>
-          ) : (
-            <div className="text-sm font-medium text-gray-900">-</div>
-          )}</div>
+          </div>
         </div>
       );
     };
@@ -945,35 +939,38 @@ export default function HiringManagerView() {
         return !isHidden;
       });
       const value = row.isAddress || row.key === FULL_ADDRESS_KEY ? getCombinedAddress() : getOrganizationDetailValue(row.key);
-      const lookupType = (customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key)?.lookup_type || customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key)?.lookupType || "") as any;
-
+      const def = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key);
+      const fieldInfo = {
+        key: row.key,
+        label: row.label,
+        fieldType: def?.field_type ?? def?.fieldType,
+        lookupType: def?.lookup_type ?? def?.lookupType,
+        multiSelectLookupType: def?.multi_select_lookup_type ?? def?.multiSelectLookupType,
+      };
+      const o = fetchedOrganization as any;
+      const addressParts =
+        (row.isAddress || row.key === FULL_ADDRESS_KEY) && o
+          ? {
+              address: o.customFields?.["Address"] ?? o.address,
+              address2: o.customFields?.["Address 2"] ?? o.address2,
+              city: o.customFields?.["City"] ?? o.city,
+              state: o.customFields?.["State"] ?? o.state,
+              zip: o.customFields?.["ZIP Code"] ?? o.zip_code ?? o.zip,
+            }
+          : undefined;
       return (
         <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
-          <div className="flex-1 p-2 text-sm">{lookupType && value ? (
-            <RecordNameResolver
-              id={String(value || "") || null}
-              type={lookupType as any}
+          <div className="flex-1 p-2 text-sm">
+            <FieldValueRenderer
+              value={value}
+              fieldInfo={fieldInfo}
+              addressParts={addressParts}
+              emptyPlaceholder="-"
               clickable
-              fallback={String(value || "") || ""}
+              className="text-sm font-medium text-gray-900"
             />
-          ) : value.toLowerCase().includes("@") ? (
-            <a href={`mailto:${value}`} className="text-sm font-medium text-blue-600 hover:underline">
-              {value}
-            </a>
-          ) : value.toLowerCase().startsWith("http") || value.toLowerCase().startsWith("https") ? (
-            <a href={value} className="text-sm font-medium text-blue-600 hover:underline">
-              {value}
-            </a>
-          ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(value || "") ? (
-            <a href={`tel:${value.replace(/\D/g, "")}`} className="text-sm font-medium text-blue-600 hover:underline">
-              {value}
-            </a>
-          ) : value ? (
-            <div className="text-sm font-medium text-gray-900">{value}</div>
-          )  : (
-            <div className="text-sm font-medium text-gray-900">-</div>
-          )}</div>
+          </div>
         </div>
       );
     };
@@ -1077,6 +1074,9 @@ export default function HiringManagerView() {
         return {
           key: `custom:${String(k)}`,
           label: f.field_label || f.field_name || String(k),
+          fieldType: (f.field_type ?? f.fieldType ?? "") as string,
+          lookupType: (f.lookup_type ?? f.lookupType ?? "") as string,
+          multiSelectLookupType: (f.multi_select_lookup_type ?? f.multiSelectLookupType ?? "") as string,
         };
       })
       .filter((x) => {
@@ -1092,6 +1092,11 @@ export default function HiringManagerView() {
   const getHeaderFieldLabel = (key: string) => {
     const found = headerFieldCatalog.find((f) => f.key === key);
     return found?.label || key;
+  };
+
+  const getHeaderFieldInfo = (key: string) => {
+    const found = headerFieldCatalog.find((f) => f.key === key);
+    return found as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
   };
 
   const getHeaderFieldValue = (key: string) => {
@@ -1189,38 +1194,7 @@ export default function HiringManagerView() {
   const [modalOrganizationDetailsVisible, setModalOrganizationDetailsVisible] = useState<Record<string, boolean>>({});
   const [organizationDetailsDragActiveId, setOrganizationDetailsDragActiveId] = useState<string | null>(null);
 
-  // Tearsheet modal state
   const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
-  const [tearsheetForm, setTearsheetForm] = useState({
-    name: "",
-    visibility: "Existing", // 'New' or 'Existing'
-    selectedTearsheetId: "", // For existing tearsheets
-  });
-  const [existingTearsheets, setExistingTearsheets] = useState<any[]>([]);
-  const [isLoadingTearsheets, setIsLoadingTearsheets] = useState(false);
-  const [isSavingTearsheet, setIsSavingTearsheet] = useState(false);
-  const [tearsheetSearchQuery, setTearsheetSearchQuery] = useState("");
-  const [showTearsheetDropdown, setShowTearsheetDropdown] = useState(false);
-  const tearsheetSearchRef = useRef<HTMLDivElement>(null);
-
-  // Click outside to close tearsheet search dropdown
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (tearsheetSearchRef.current && !tearsheetSearchRef.current.contains(event.target as Node)) {
-        setShowTearsheetDropdown(false);
-      }
-    };
-
-    if (showTearsheetDropdown) {
-      document.addEventListener('mousedown', handleClickOutside);
-    } else {
-      document.removeEventListener('mousedown', handleClickOutside);
-    }
-
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [showTearsheetDropdown]);
 
   // Transfer modal state (target = another Hiring Manager; notes, docs, tasks, jobs move to target; source HM archived)
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -1346,13 +1320,6 @@ export default function HiringManagerView() {
       fetchAppointmentUsers();
     }
   }, [showAppointmentModal]);
-
-  // Fetch tearsheets when modal is shown
-  useEffect(() => {
-    if (showAddTearsheetModal) {
-      fetchExistingTearsheets();
-    }
-  }, [showAddTearsheetModal]);
 
   const fetchAvailableFields = async () => {
     setIsLoadingFields(true);
@@ -2890,42 +2857,6 @@ export default function HiringManagerView() {
     router.back();
   };
 
-  // Fetch existing tearsheets
-  const fetchExistingTearsheets = async () => {
-    setIsLoadingTearsheets(true);
-    try {
-      const response = await fetch("/api/tearsheets", {
-        headers: {
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        // Show all tearsheets from the backend
-        setExistingTearsheets(data.tearsheets || []);
-      } else {
-        console.error("Failed to fetch tearsheets:", response.statusText);
-        setExistingTearsheets([]);
-      }
-    } catch (err) {
-      console.error("Error fetching tearsheets:", err);
-      setExistingTearsheets([]);
-    } finally {
-      setIsLoadingTearsheets(false);
-    }
-  };
-
-  // Filtered tearsheets for search - show all if no query but dropdown is open
-  const filteredTearsheets = tearsheetSearchQuery.trim() === ""
-    ? existingTearsheets
-    : existingTearsheets.filter((ts) =>
-      ts.name.toLowerCase().includes(tearsheetSearchQuery.toLowerCase())
-    );
-
   const filteredTransferHiringManagers = transferSearchQuery.trim() === ""
     ? availableHiringManagersForTransfer
     : availableHiringManagersForTransfer.filter((hm: any) => {
@@ -2937,125 +2868,6 @@ export default function HiringManagerView() {
         : "";
       return fullName.includes(q) || idStr.includes(q) || recordId.includes(q);
     });
-
-  const handleTearsheetSelect = (tearsheet: any) => {
-    setTearsheetForm((prev) => ({
-      ...prev,
-      selectedTearsheetId: tearsheet.id.toString(),
-    }));
-    setTearsheetSearchQuery(tearsheet.name);
-    setShowTearsheetDropdown(false);
-  };
-
-  // Handle tearsheet submission
-  const handleTearsheetSubmit = async () => {
-    if (!hiringManagerId) {
-      toast.error("Hiring Manager ID is missing");
-      return;
-    }
-
-    if (tearsheetForm.visibility === "New") {
-      // Create new tearsheet
-      if (!tearsheetForm.name.trim()) {
-        toast.error("Please enter a tearsheet name");
-        return;
-      }
-
-      setIsSavingTearsheet(true);
-      try {
-        const response = await fetch("/api/tearsheets", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${document.cookie.replace(
-              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-              "$1"
-            )}`,
-          },
-          body: JSON.stringify({
-            name: tearsheetForm.name,
-            visibility: tearsheetForm.visibility,
-            hiring_manager_id: hiringManagerId,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response
-            .json()
-            .catch(() => ({ message: "Failed to create tearsheet" }));
-          throw new Error(errorData.message || "Failed to create tearsheet");
-        }
-
-        toast.success("Tearsheet created successfully!");
-        setShowAddTearsheetModal(false);
-        setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
-        setTearsheetSearchQuery("");
-      } catch (err) {
-        console.error("Error creating tearsheet:", err);
-        toast.error(
-          err instanceof Error
-            ? err.message
-            : "Failed to create tearsheet. Please try again."
-        );
-      } finally {
-        setIsSavingTearsheet(false);
-      }
-    } else {
-      // Associate with existing tearsheet
-      if (!tearsheetForm.selectedTearsheetId) {
-        toast.error("Please select a tearsheet");
-        return;
-      }
-
-      setIsSavingTearsheet(true);
-      try {
-        // Get the selected tearsheet details
-        const selectedTearsheet = existingTearsheets.find(
-          (ts) => ts.id.toString() === tearsheetForm.selectedTearsheetId
-        );
-
-        if (!selectedTearsheet) {
-          throw new Error("Selected tearsheet not found");
-        }
-
-        // Associate hiring manager with tearsheet
-        const response = await fetch(`/api/tearsheets/${tearsheetForm.selectedTearsheetId}/associate`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${document.cookie.replace(
-              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-              "$1"
-            )}`,
-          },
-          body: JSON.stringify({
-            hiring_manager_id: hiringManagerId,
-          }),
-        });
-
-        if (!response.ok) {
-          const errorData = await response
-            .json()
-            .catch(() => ({ message: "Failed to associate tearsheet" }));
-          throw new Error(errorData.error || errorData.message || "Failed to associate tearsheet");
-        }
-
-        toast.success(`Hiring Manager has been associated with tearsheet "${selectedTearsheet.name}".`);
-        setShowAddTearsheetModal(false);
-        setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
-        setTearsheetSearchQuery("");
-      } catch (err) {
-        console.error("Error associating tearsheet:", err);
-        toast.error(
-          err instanceof Error
-            ? err.message
-            : "Failed to associate tearsheet. Please try again."
-        );
-      } finally {
-        setIsSavingTearsheet(false);
-      }
-    }
-  };
 
   // Fetch available hiring managers for transfer (exclude current and archived)
   const fetchAvailableHiringManagersForTransfer = async () => {
@@ -4490,69 +4302,17 @@ export default function HiringManagerView() {
               </span>
             ) : (
               headerFields.map((fk) => {
-                const customFieldDefs = (availableFields || []).filter((f: any) => {
-                  const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
-                  return !isHidden;
-                });
-                const value = getHeaderFieldValue(fk);
-                const label = getHeaderFieldLabel(fk);
-
-                const renderValue = () => {
-                  // if (fk === "website") {
-                  //   return (
-                  //     <a
-                  //       href={value}
-                  //       target="_blank"
-                  //       rel="noreferrer"
-                  //       className="text-sm font-medium text-blue-600 hover:underline"
-                  //     >
-                  //       {value}
-                  //     </a>
-                  //   );
-                  // } else if (fk === "mobilePhone" || fk === "phone") {
-                  //   return (
-                  //     <a
-                  //       href={`tel:+${value}`}
-                  //       className="text-sm font-medium text-blue-600 hover:underline"
-                  //     >
-                  //       {value}
-                  //     </a>
-                  //   );
-                  // } else {
-                  //   return <div className="text-sm font-medium text-gray-900">{value}</div>;
-                  // }
-                  const lookupType = (customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === fk)?.lookup_type || customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === fk)?.lookupType || "") as any;
-                  return lookupType && value ? (
-                    <RecordNameResolver
-                      id={String(value || "") || null}
-                      type={lookupType as any}
-                      clickable
-                      fallback={String(value || "") || ""}
-                    />
-                  ) :
-                  value.toLowerCase().includes("@") ? (
-                    <a href={`mailto:${value}`} className="text-sm font-medium text-blue-600 hover:underline">
-                      {value}
-                    </a>
-                  ) : value.toLowerCase().startsWith("http") || value.toLowerCase().startsWith("https") ? (
-                    <a href={value} className="text-sm font-medium text-blue-600 hover:underline">
-                      {value}
-                    </a>
-                  ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(value || "") ? (
-                    <a href={`tel:${value.replace(/\D/g, "")}`} className="text-sm font-medium text-blue-600 hover:underline">
-                      {value}
-                    </a>
-                  ) : value ? (
-                    <div className="text-sm font-medium text-gray-900">{value}</div>
-                  ) : (
-                    <div className="text-sm font-medium text-gray-900">-</div>
-                  );
-                };
-
+                const fieldInfo = getHeaderFieldInfo(fk);
                 return (
                   <div key={fk} className="min-w-[140px]">
-                    <div className="text-xs text-gray-500">{label}</div>
-                    {renderValue()}
+                    <div className="text-xs text-gray-500">{getHeaderFieldLabel(fk)}</div>
+                    <FieldValueRenderer
+                      value={getHeaderFieldValue(fk)}
+                      fieldInfo={fieldInfo ? { key: fieldInfo.key, label: fieldInfo.label, fieldType: fieldInfo.fieldType, lookupType: fieldInfo.lookupType, multiSelectLookupType: fieldInfo.multiSelectLookupType } : { key: fk, label: getHeaderFieldLabel(fk) }}
+                      emptyPlaceholder="-"
+                      clickable
+                      className="text-sm font-medium text-gray-900"
+                    />
                   </div>
                 );
               })
@@ -5389,192 +5149,12 @@ export default function HiringManagerView() {
         )
       }
 
-      {/* Add Tearsheet Modal */}
-      {
-        showAddTearsheetModal && (
-          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
-              {/* Header */}
-              <div className="flex justify-between items-center p-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold">Add to Tearsheet</h2>
-                <button
-                  onClick={() => {
-                    setShowAddTearsheetModal(false);
-                    setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
-                    setTearsheetSearchQuery("");
-                  }}
-                  className="text-gray-500 hover:text-gray-700"
-                >
-                  <span className="text-2xl font-bold">×</span>
-                </button>
-              </div>
-
-              {/* Form Content */}
-              <div className="p-6 space-y-6">
-                {/* Visibility Toggle */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Select Option
-                  </label>
-                  <div
-                    className="inline-flex rounded-md border border-gray-300 overflow-hidden"
-                    role="group"
-                  >
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setTearsheetForm((prev) => ({
-                          ...prev,
-                          visibility: "New",
-                          selectedTearsheetId: "",
-                        }))
-                      }
-                      className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "New"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 border-r border-gray-300 hover:bg-gray-50"
-                        }`}
-                    >
-                      New Tearsheet
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setTearsheetForm((prev) => ({
-                          ...prev,
-                          visibility: "Existing",
-                          name: "",
-                        }))
-                      }
-                      className={`px-4 py-2 text-sm font-medium transition-colors ${tearsheetForm.visibility === "Existing"
-                        ? "bg-blue-500 text-white"
-                        : "bg-white text-gray-700 hover:bg-gray-50"
-                        }`}
-                    >
-                      Existing Tearsheet
-                    </button>
-                  </div>
-                </div>
-
-                {/* New Tearsheet Name */}
-                {tearsheetForm.visibility === "New" && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      <span className="text-red-500 mr-1">•</span>
-                      Tearsheet Name
-                    </label>
-                    <input
-                      type="text"
-                      value={tearsheetForm.name}
-                      onChange={(e) =>
-                        setTearsheetForm((prev) => ({
-                          ...prev,
-                          name: e.target.value,
-                        }))
-                      }
-                      placeholder="Enter tearsheet name"
-                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      required
-                    />
-                  </div>
-                )}
-
-                {/* Existing Tearsheet Selection */}
-                {tearsheetForm.visibility === "Existing" && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      <span className="text-red-500 mr-1">•</span>
-                      Select Tearsheet
-                    </label>
-                    {isLoadingTearsheets ? (
-                      <div className="w-full p-3 border border-gray-300 rounded bg-gray-50 text-center text-gray-500">
-                        Loading tearsheets...
-                      </div>
-                    ) : (
-                      <div className="relative" ref={tearsheetSearchRef}>
-                        <input
-                          type="text"
-                          value={tearsheetSearchQuery}
-                          onChange={(e) => {
-                            setTearsheetSearchQuery(e.target.value);
-                            setShowTearsheetDropdown(true);
-                          }}
-                          onFocus={() => setShowTearsheetDropdown(true)}
-                          onClick={() => setShowTearsheetDropdown(true)}
-                          placeholder="Search for a tearsheet..."
-                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                        {showTearsheetDropdown && (tearsheetSearchQuery || existingTearsheets.length > 0) && (
-                          <div className="absolute z-[60] w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
-                            {filteredTearsheets.length > 0 ? (
-                              filteredTearsheets.map((ts) => (
-                                <button
-                                  key={ts.id}
-                                  onClick={() => handleTearsheetSelect(ts)}
-                                  className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex flex-col"
-                                >
-                                  <span className="text-sm font-medium text-gray-900">{ts.name}</span>
-                                  {ts.owner_name && (
-                                    <span className="text-xs text-gray-500">Owner: {ts.owner_name}</span>
-                                  )}
-                                </button>
-                              ))
-                            ) : (
-                              <div className="p-3 text-center text-gray-500 text-sm">
-                                No matching tearsheets found
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <p className="mt-2 text-xs text-gray-500">
-                      Search and select an existing tearsheet to add this hiring manager to it.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
-                <button
-                  onClick={() => {
-                    setShowAddTearsheetModal(false);
-                    setTearsheetForm({ name: "", visibility: "Existing", selectedTearsheetId: "" });
-                    setTearsheetSearchQuery("");
-                  }}
-                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-                  disabled={isSavingTearsheet}
-                >
-                  CANCEL
-                </button>
-                <button
-                  onClick={handleTearsheetSubmit}
-                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  disabled={
-                    isSavingTearsheet ||
-                    (tearsheetForm.visibility === "New" && !tearsheetForm.name.trim()) ||
-                    (tearsheetForm.visibility === "Existing" && !tearsheetForm.selectedTearsheetId)
-                  }
-                >
-                  {tearsheetForm.visibility === "New" ? "CREATE" : "ASSOCIATE"}
-                  <svg
-                    className="w-4 h-4 ml-2"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        )
-      }
+      <AddTearsheetModal
+        open={showAddTearsheetModal}
+        onClose={() => setShowAddTearsheetModal(false)}
+        entityType="hiring_manager"
+        entityId={hiringManagerId || ""}
+      />
 
       {/* Transfer Modal */}
       {
@@ -6323,7 +5903,15 @@ export default function HiringManagerView() {
                               {getHeaderFieldLabel(key)}
                             </div>
                             <div className="text-xs text-gray-500">
-                              Value: {getHeaderFieldValue(key)}
+                              Value:{" "}
+                              <FieldValueRenderer
+                                value={getHeaderFieldValue(key)}
+                                fieldInfo={(() => {
+                                  const info = getHeaderFieldInfo(key);
+                                  return info ? { key: info.key, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key, label: getHeaderFieldLabel(key) };
+                                })()}
+                                emptyPlaceholder="-"
+                              />
                             </div>
                           </div>
 

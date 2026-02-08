@@ -17,7 +17,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
-import RecordNameResolver from "@/components/RecordNameResolver";
+import FieldValueRenderer from "@/components/FieldValueRenderer";
 
 interface Job {
   id: string;
@@ -1155,49 +1155,33 @@ export default function JobList() {
                       </td>
 
                       <td className="px-6 py-4 text-black whitespace-nowrap">J {job?.id}</td>
-                      {columnFields.map((key) => (
-                        <td
-                          key={key}
-                          className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                        >
-                          {getColumnLabel(key).toLowerCase() === "status" ? (
-                            <span
-                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
-                            >
-                              {getColumnValue(job, key)}
-                            </span>
-                          ) : (getColumnValue(job, key) || "").toLowerCase().includes("@") ? (
-                            <a
-                              href={`mailto:${getColumnValue(job, key)}`}
-                              className="text-blue-600 hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {getColumnValue(job, key)}
-                            </a>
-                          ) : (getColumnValue(job, key) || "").toLowerCase().startsWith("http") || (getColumnValue(job, key) || "").toLowerCase().startsWith("https") ? (
-                            <a
-                              href={(getColumnValue(job, key) || "")}
-                              className="text-blue-600 hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >{(getColumnValue(job, key) || "")}</a>
-                          ) : (getColumnInfo(key) as any)?.fieldType === "lookup" || (getColumnInfo(key) as any)?.fieldType === "multiselect_lookup" ? (
-                            <RecordNameResolver
-                              id={String(getColumnValue(job, key) || "") || null}
-                              type={(getColumnInfo(key) as any)?.lookupType || (getColumnInfo(key) as any)?.multiSelectLookupType || "jobs"}
+                      {columnFields.map((key) => {
+                        const colInfo = getColumnInfo(key);
+                        const fieldInfo = colInfo
+                          ? {
+                              key: colInfo.key,
+                              label: colInfo.label,
+                              fieldType: (colInfo as any).fieldType,
+                              lookupType: (colInfo as any).lookupType,
+                              multiSelectLookupType: (colInfo as any).multiSelectLookupType,
+                            }
+                          : { key, label: getColumnLabel(key) };
+                        return (
+                          <td
+                            key={key}
+                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                          >
+                            <FieldValueRenderer
+                              value={getColumnValue(job, key)}
+                              fieldInfo={fieldInfo}
+                              emptyPlaceholder="N/A"
                               clickable
-                              fallback={String(getColumnValue(job, key) || "") || ""}
+                              stopPropagation
+                              className=""
                             />
-                          ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(job, key) || "") ? (
-                            <a
-                              href={`tel:${(getColumnValue(job, key) || "").replace(/\D/g, "")}`}
-                              className="text-blue-600 hover:underline"
-                              onClick={(e) => e.stopPropagation()}
-                            >{getColumnValue(job, key)}</a>
-                          ) : (
-                            getColumnValue(job, key)
-                          )}
-                        </td>
-                      ))}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))
                 ) : (

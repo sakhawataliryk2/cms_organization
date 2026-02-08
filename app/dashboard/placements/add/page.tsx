@@ -169,7 +169,7 @@ export default function AddPlacement() {
             if (col === "organization_id") {
               // First try to get the ID directly from placement
               v = placement.organization_id ?? placement.organizationId ?? placement.organization?.id ?? v;
-              
+
               // If v is still a name (string that's not a number), try to find the ID from the job
               if (v && isNaN(Number(v)) && placement.job_id) {
                 const job = jobs.find((j: any) => String(j.id) === String(placement.job_id));
@@ -177,7 +177,7 @@ export default function AddPlacement() {
                   v = job.organization_id ?? job.organizationId ?? job.organization?.id ?? v;
                 }
               }
-              
+
               // If still not a valid ID, try to get from job if available
               if ((!v || isNaN(Number(v))) && placement.job_id && jobs.length > 0) {
                 const job = jobs.find((j: any) => String(j.id) === String(placement.job_id));
@@ -197,7 +197,7 @@ export default function AddPlacement() {
               typeof placement.custom_fields === "string"
                 ? JSON.parse(placement.custom_fields)
                 : placement.custom_fields;
-          } catch (_) {}
+          } catch (_) { }
         }
         sortedCustomFields.forEach((field: any) => {
           const label = field.field_label || field.field_name;
@@ -335,7 +335,7 @@ export default function AddPlacement() {
       let data: { message?: string; error?: string; errors?: string[]; placement?: { id: string } } = {};
       try {
         data = responseText ? JSON.parse(responseText) : {};
-      } catch (_) {}
+      } catch (_) { }
 
       if (!response.ok) {
         const msg =
@@ -409,109 +409,223 @@ export default function AddPlacement() {
               <div className="text-center py-4 text-gray-500">Loading custom fields...</div>
             ) : (
               sortedCustomFields.map((field: any) => {
-                const column = BACKEND_COLUMN_BY_LABEL[field.field_label];
+                // const column = BACKEND_COLUMN_BY_LABEL[field.field_label];
                 const fieldValue = customFieldValues[field.field_name] ?? field.default_value ?? "";
+                const hasValidValue = () => {
+                  if (fieldValue === null || fieldValue === undefined) return false;
 
-                if (column === "job_id") {
-                  return (
-                    <div key={field.id} className="flex items-center">
-                      <label className="w-48 font-medium shrink-0">
-                        {field.field_label}
-                        {field.is_required && <span className="text-red-500 ml-1">*</span>}
-                      </label>
-                      <div className="flex-1 relative">
-                        {isLoadingJobs ? (
-                          <div className="p-2 text-gray-500">Loading jobs...</div>
-                        ) : (
-                          <select
-                            value={String(fieldValue)}
-                            onChange={(e) => handlePlacementFieldChange(field.field_name, e.target.value)}
-                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            required={field.is_required}
-                          >
-                            <option value="">Select a job</option>
-                            {jobs.map((job: any) => (
-                              <option key={job.id} value={job.id}>
-                                {job.title ?? job.job_title ?? `Job #${job.id}`}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                    </div>
-                  );
-                }
+                  const trimmed = String(fieldValue).trim();
+                  if (trimmed === "") return false;
 
-                if (column === "job_seeker_id") {
-                  return (
-                    <div key={field.id} className="flex items-center">
-                      <label className="w-48 font-medium shrink-0">
-                        {field.field_label}
-                        {field.is_required && <span className="text-red-500 ml-1">*</span>}
-                      </label>
-                      <div className="flex-1 relative">
-                        {isLoadingJobSeekers ? (
-                          <div className="p-2 text-gray-500">Loading job seekers...</div>
-                        ) : (
-                          <select
-                            value={String(fieldValue)}
-                            onChange={(e) => handlePlacementFieldChange(field.field_name, e.target.value)}
-                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            required={field.is_required}
-                          >
-                            <option value="">Select a job seeker</option>
-                            {jobSeekers.map((js: any) => (
-                              <option key={js.id} value={js.id}>
-                                {(() => {
-                                const name = js.full_name ?? `${js.first_name ?? ""} ${js.last_name ?? ""}`.trim();
-                                return name || `Job Seeker #${js.id}`;
-                              })()}
-                              </option>
-                            ))}
-                          </select>
-                        )}
-                      </div>
-                    </div>
-                  );
-                }
+                  /* ================= DATE FIELD (TIMEZONE SAFE) ================= */
+                  if (field.field_type === "date") {
+                    let normalizedDate = trimmed;
 
-                if (column === "organization_id") {
-                  return (
-                    <div key={field.id} className="flex items-center">
-                      <label className="w-48 font-medium shrink-0">
-                        {field.field_label}
-                        {field.is_required && <span className="text-red-500 ml-1">*</span>}
-                      </label>
-                      <div className="flex-1">
-                        <LookupField
-                          value={String(organizationIdValue)}
-                          onChange={(value) => {
-                            // Store the organization ID
-                            handleCustomFieldChange(field.field_name, value);
-                          }}
-                          lookupType="organizations"
-                          placeholder="Select an organization"
-                          required={field.is_required}
-                          disabled={true}
-                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                        />
-                      </div>
-                    </div>
-                  );
-                }
+                    // Convert MM/DD/YYYY → YYYY-MM-DD
+                    if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+                      const [mm, dd, yyyy] = trimmed.split("/");
+                      normalizedDate = `${yyyy}-${mm}-${dd}`;
+                    }
+
+                    // Strict YYYY-MM-DD format
+                    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+                      return false;
+                    }
+
+                    const [year, month, day] = normalizedDate.split("-").map(Number);
+
+                    // Manual date validation (NO timezone usage)
+                    if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
+                      return false;
+                    }
+
+                    const daysInMonth = new Date(year, month, 0).getDate();
+                    if (day > daysInMonth) {
+                      return false;
+                    }
+
+                    return true;
+                  }
+                  /* =============================================================== */
+
+                  // ZIP code
+                  const isZipCodeField =
+                    field.field_label?.toLowerCase().includes("zip") ||
+                    field.field_label?.toLowerCase().includes("postal code") ||
+                    field.field_name?.toLowerCase().includes("zip");
+
+                  if (isZipCodeField) {
+                    return /^\d{5}$/.test(trimmed);
+                  }
+
+                  // Non-negative number fields
+                  const isNonNegativeField =
+                    field.field_label?.toLowerCase().includes("employees") ||
+                    field.field_label?.toLowerCase().includes("offices") ||
+                    field.field_label?.toLowerCase().includes("oasis key");
+
+                  if (isNonNegativeField && field.field_type === "number") {
+                    const num = Number(trimmed);
+                    return !isNaN(num) && num >= 0;
+                  }
+
+                  // Phone field
+                  const isPhoneField =
+                    field.field_type === "phone" ||
+                    field.field_label?.toLowerCase().includes("phone");
+                  // field.field_name?.toLowerCase().includes("phone");
+
+                  if (isPhoneField) {
+                    const digits = trimmed.replace(/\D/g, "");
+                    return digits.length === 10;
+                  }
+
+                  // URL field
+                  const isUrlField =
+                    field.field_type === "url" ||
+                    field.field_label?.toLowerCase().includes("website") ||
+                    field.field_label?.toLowerCase().includes("url");
+
+                  if (isUrlField) {
+                    try {
+                      const url = trimmed.startsWith("http")
+                        ? new URL(trimmed)
+                        : new URL(`https://${trimmed}`);
+                      return url.hostname.includes(".");
+                    } catch {
+                      return false;
+                    }
+                  }
+
+                  return true;
+                };
+
+                // if (column === "job_id") {
+                //   return (
+                //     <div key={field.id} className="flex items-center">
+                //       <label className="w-48 font-medium shrink-0">
+                //         {field.field_label}
+                //         {field.is_required && <span className="text-red-500 ml-1">*</span>}
+                //       </label>
+                //       <div className="flex-1 relative">
+                //         {isLoadingJobs ? (
+                //           <div className="p-2 text-gray-500">Loading jobs...</div>
+                //         ) : (
+                //           <select
+                //             value={String(fieldValue)}
+                //             onChange={(e) => handlePlacementFieldChange(field.field_name, e.target.value)}
+                //             className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                //             required={field.is_required}
+                //           >
+                //             <option value="">Select a job</option>
+                //             {jobs.map((job: any) => (
+                //               <option key={job.id} value={job.id}>
+                //                 {job.title ?? job.job_title ?? `Job #${job.id}`}
+                //               </option>
+                //             ))}
+                //           </select>
+                //         )}
+                //       </div>
+                //     </div>
+                //   );
+                // }
+
+                // if (column === "job_seeker_id") {
+                //   return (
+                //     <div key={field.id} className="flex items-center">
+                //       <label className="w-48 font-medium shrink-0">
+                //         {field.field_label}
+                //         {field.is_required && <span className="text-red-500 ml-1">*</span>}
+                //       </label>
+                //       <div className="flex-1 relative">
+                //         {isLoadingJobSeekers ? (
+                //           <div className="p-2 text-gray-500">Loading job seekers...</div>
+                //         ) : (
+                //           <select
+                //             value={String(fieldValue)}
+                //             onChange={(e) => handlePlacementFieldChange(field.field_name, e.target.value)}
+                //             className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                //             required={field.is_required}
+                //           >
+                //             <option value="">Select a job seeker</option>
+                //             {jobSeekers.map((js: any) => (
+                //               <option key={js.id} value={js.id}>
+                //                 {(() => {
+                //                   const name = js.full_name ?? `${js.first_name ?? ""} ${js.last_name ?? ""}`.trim();
+                //                   return name || `Job Seeker #${js.id}`;
+                //                 })()}
+                //               </option>
+                //             ))}
+                //           </select>
+                //         )}
+                //       </div>
+                //     </div>
+                //   );
+                // }
+
+                // if (column === "organization_id") {
+                //   return (
+                //     <div key={field.id} className="flex items-center">
+                //       <label className="w-48 font-medium shrink-0">
+                //         {field.field_label}
+                //         {(field.is_required) &&
+                //           (hasValidValue() ? (
+                //             <span className="text-green-500 ml-1">✔</span>
+                //           ) : (
+                //             <span className="text-red-500 ml-1">*</span>
+                //           ))}
+                //       </label>
+                //       <div className="flex-1">
+                //         <LookupField
+                //           value={String(organizationIdValue)}
+                //           onChange={(value) => {
+                //             // Store the organization ID
+                //             handleCustomFieldChange(field.field_name, value);
+                //           }}
+                //           lookupType="organizations"
+                //           placeholder="Select an organization"
+                //           required={field.is_required}
+                //           disabled={true}
+                //           className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                //         />
+                //       </div>
+                //     </div>
+                //   );
+                // }
 
                 return (
                   <div key={field.id} className="flex items-center">
                     <label className="w-48 font-medium shrink-0">
                       {field.field_label}
-                      {field.is_required && <span className="text-red-500 ml-1">*</span>}
+                      {(field.is_required) &&
+                        (hasValidValue() ? (
+                          <span className="text-green-500 ml-1">✔</span>
+                        ) : (
+                          <span className="text-red-500 ml-1">*</span>
+                        ))}
                     </label>
                     <div className="flex-1">
-                      <CustomFieldRenderer
-                        field={field}
-                        value={fieldValue}
-                        onChange={handlePlacementFieldChange}
-                      />
+                        {
+                          field?.field_label === "Organization" ? (
+                            <LookupField
+                              value={String(organizationIdValue)}
+                              onChange={(value) => {
+                                handleCustomFieldChange(field.field_name, value);
+                              }}
+                              lookupType="organizations"
+                              placeholder="Select an organization"
+                              required={field.is_required}
+                              disabled={true}
+                              className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                            />
+                          ) : (
+                            <CustomFieldRenderer
+                              field={field}
+                              value={fieldValue}
+                              onChange={handlePlacementFieldChange}
+                            />
+                          )
+                        }
                     </div>
                   </div>
                 );
@@ -531,19 +645,18 @@ export default function AddPlacement() {
             <button
               type="submit"
               disabled={isSubmitting || !canSubmit}
-              className={`px-6 py-2 rounded ${
-                isSubmitting || !canSubmit
-                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                  : "bg-blue-500 text-white hover:bg-blue-600"
-              }`}
+              className={`px-6 py-2 rounded ${isSubmitting || !canSubmit
+                ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                : "bg-blue-500 text-white hover:bg-blue-600"
+                }`}
             >
               {isSubmitting
                 ? isEditMode
                   ? "Updating..."
                   : "Creating..."
                 : isEditMode
-                ? "Update Placement"
-                : "Create Placement"}
+                  ? "Update Placement"
+                  : "Create Placement"}
             </button>
           </div>
         </form>

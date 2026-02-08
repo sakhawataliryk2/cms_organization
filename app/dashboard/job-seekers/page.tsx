@@ -17,7 +17,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
-import RecordNameResolver from "@/components/RecordNameResolver";
+import FieldValueRenderer from "@/components/FieldValueRenderer";
 
 interface JobSeeker {
   id: string;
@@ -1105,49 +1105,33 @@ export default function JobSeekerList() {
                     </td>
 
                     {/* Dynamic columns */}
-                    {columnFields.map((key) => (
-                      <td
-                        key={key}
-                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                      >
-                        {getColumnLabel(key).toLowerCase() === "status" ? (
-                          <span
-                            className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100`}
-                          >
-                            {getColumnValue(jobSeeker, key)}
-                          </span>
-                        ) : (getColumnValue(jobSeeker, key) || "").toLowerCase().includes("@") ? (
-                          <a
-                            href={`mailto:${getColumnValue(jobSeeker, key)}`}
-                            className="text-blue-600 hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {getColumnValue(jobSeeker, key)}
-                          </a>
-                        ) : (getColumnValue(jobSeeker, key) || "").toLowerCase().startsWith("http") || (getColumnValue(jobSeeker, key) || "").toLowerCase().startsWith("https") ? (
-                          <a
-                            href={(getColumnValue(jobSeeker, key) || "")}
-                            className="text-blue-600 hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                          >{(getColumnValue(jobSeeker, key) || "")}</a>
-                        ) : (getColumnInfo(key) as any)?.fieldType === "lookup" || (getColumnInfo(key) as any)?.fieldType === "multiselect_lookup" ? (
-                          <RecordNameResolver
-                            id={String(getColumnValue(jobSeeker, key) || "") || null}
-                            type={(getColumnInfo(key) as any)?.lookupType || (getColumnInfo(key) as any)?.multiSelectLookupType || "jobSeekers"}
+                    {columnFields.map((key) => {
+                      const colInfo = getColumnInfo(key);
+                      const fieldInfo = colInfo
+                        ? {
+                            key: colInfo.key,
+                            label: colInfo.label,
+                            fieldType: (colInfo as any).fieldType,
+                            lookupType: (colInfo as any).lookupType,
+                            multiSelectLookupType: (colInfo as any).multiSelectLookupType,
+                          }
+                        : { key, label: getColumnLabel(key) };
+                      return (
+                        <td
+                          key={key}
+                          className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                        >
+                          <FieldValueRenderer
+                            value={getColumnValue(jobSeeker, key)}
+                            fieldInfo={fieldInfo}
+                            emptyPlaceholder="N/A"
                             clickable
-                            fallback={String(getColumnValue(jobSeeker, key) || "") || ""}
+                            stopPropagation
+                            className=""
                           />
-                        ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(jobSeeker, key) || "") ? (
-                          <a
-                            href={`tel:${(getColumnValue(jobSeeker, key) || "").replace(/\D/g, "")}`}
-                            className="text-blue-600 hover:underline"
-                            onClick={(e) => e.stopPropagation()}
-                          >{getColumnValue(jobSeeker, key)}</a>
-                        ) : (
-                          getColumnValue(jobSeeker, key)
-                        )}
-                      </td>
-                    ))}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))
               ) : (
