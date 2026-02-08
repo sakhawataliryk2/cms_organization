@@ -23,7 +23,6 @@ import {
   FiX,
 } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
-import FieldValueRenderer from "@/components/FieldValueRenderer";
 import {
   buildPinnedKey,
   isPinnedRecord,
@@ -381,12 +380,12 @@ export default function TearsheetList() {
   const columnsCatalog = useMemo(() => {
     return [
       { key: "name", label: "Name", sortable: true, filterType: "text" as const },
-      { key: "job_seeker_count", label: "Job Seeker", sortable: true, filterType: "number" as const },
-      { key: "hiring_manager_count", label: "Hiring Manager", sortable: true, filterType: "number" as const },
-      { key: "job_order_count", label: "Job Order", sortable: true, filterType: "number" as const },
-      { key: "lead_count", label: "Lead", sortable: true, filterType: "number" as const },
-      { key: "organization_count", label: "Organization", sortable: true, filterType: "number" as const },
-      { key: "placement_count", label: "Placement", sortable: true, filterType: "number" as const },
+      { key: "job_seeker_count", label: "Job Seeker Count", sortable: true, filterType: "number" as const },
+      { key: "hiring_manager_count", label: "Hiring Manager Count", sortable: true, filterType: "number" as const },
+      { key: "job_order_count", label: "Jobs Count", sortable: true, filterType: "number" as const },
+      { key: "lead_count", label: "Lead Count", sortable: true, filterType: "number" as const },
+      { key: "organization_count", label: "Organization Count", sortable: true, filterType: "number" as const },
+      { key: "placement_count", label: "Placement Count", sortable: true, filterType: "number" as const },
       { key: "owner_name", label: "Owner", sortable: true, filterType: "text" as const },
       { key: "created_at", label: "Date Added", sortable: true, filterType: "text" as const },
       { key: "last_opened_at", label: "Last Date Opened", sortable: true, filterType: "text" as const },
@@ -1155,27 +1154,14 @@ export default function TearsheetList() {
                     <td className="px-6 py-4 text-black whitespace-nowrap">TE {ts?.id}</td>
 
                     {/* Dynamic cells */}
-                    {columnFields.map((key) => {
-                        const colInfo = getColumnInfo(key) as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
-                        const fieldInfo = colInfo
-                          ? { key: colInfo.key, label: colInfo.label, fieldType: colInfo.fieldType, lookupType: colInfo.lookupType, multiSelectLookupType: colInfo.multiSelectLookupType }
-                          : { key, label: getColumnLabel(key) };
-                        return (
-                          <td
-                            key={key}
-                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <FieldValueRenderer
-                              value={getColumnValue(ts, key)}
-                              fieldInfo={fieldInfo}
-                              emptyPlaceholder="N/A"
-                              clickable
-                              stopPropagation
-                            />
-                          </td>
-                        );
-                      })}
+                    {columnFields.map((key) => (
+                      <td
+                        key={key}
+                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                      >
+                        <span>{getColumnValue(ts, key)}</span>
+                      </td>
+                    ))}
                   </tr>
                 ))
               ) : (

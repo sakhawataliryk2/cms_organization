@@ -463,6 +463,7 @@ export default function HiringManagerView() {
     placements: 0,
   });
   const [isLoadingSummaryCounts, setIsLoadingSummaryCounts] = useState(false);
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
 
   // Field management – panels driven from admin field definitions only
   const [availableFields, setAvailableFields] = useState<any[]>([]);
@@ -714,6 +715,41 @@ export default function HiringManagerView() {
     return [...fromApi];
   }, [availableFields]);
 
+  // Status field options from admin field definitions (same as organization summary)
+  const statusFieldOptions = useMemo((): string[] => {
+    const statusField = (availableFields || []).find(
+      (f: any) =>
+        (f.field_label || "").toLowerCase() === "status" ||
+        (f.field_name || "").toLowerCase() === "status"
+    );
+    if (!statusField || !statusField.options) {
+      return ["Active", "Inactive", "Archived", "On Hold"];
+    }
+    let options = statusField.options;
+    if (typeof options === "string") {
+      try {
+        options = JSON.parse(options);
+      } catch {
+        return options
+          .split(/\r?\n/)
+          .map((opt: string) => opt.trim())
+          .filter((opt: string) => opt.length > 0);
+      }
+    }
+    if (Array.isArray(options)) {
+      return options
+        .filter((opt: any): opt is string => typeof opt === "string" && opt.trim().length > 0)
+        .map((opt: string) => opt.trim());
+    }
+    if (typeof options === "object" && options !== null) {
+      const values = Object.values(options) as unknown[];
+      return values
+        .filter((opt): opt is string => typeof opt === "string" && opt.trim().length > 0)
+        .map((opt: string) => opt.trim());
+    }
+    return ["Active", "Inactive", "Archived", "On Hold"];
+  }, [availableFields]);
+
   // Organization Details field catalog: from admin field definitions for organizations + fetched org custom_fields (same as organizations view)
   const organizationDetailsFieldCatalog = useMemo(() => {
     const fromApi = (organizationAvailableFields || [])
@@ -739,6 +775,11 @@ export default function HiringManagerView() {
       detailsFieldCatalog.find((f) => f.key === key)?.label ||
       customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === key)?.field_label ||
       key;
+    const isStatusField = (key: string) => {
+      const k = (key || "").toLowerCase();
+      const label = (getDetailsLabel(key) || "").toLowerCase();
+      return k === "status" || label === "status";
+    };
     const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
     // Check if key is Address 2 (case-insensitive, with various label formats)
     const isAddress2Key = (key: string) => {
@@ -767,6 +808,11 @@ export default function HiringManagerView() {
     };
 
     const getDetailsValue = (key: string): string => {
+      if (isStatusField(key)) {
+        const statusVal = (hiringManager as any).status ?? customObj["Status"] ?? customObj["status"];
+        const str = statusVal !== undefined && statusVal !== null && String(statusVal).trim() !== "" ? String(statusVal).trim() : "Active";
+        return statusFieldOptions.includes(str) ? str : (statusFieldOptions[0] || "Active");
+      }
       const fieldDef = customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === key);
       const fieldLabel = fieldDef?.field_label || fieldDef?.field_name || key;
       const v = customObj[fieldLabel] ?? customObj[key];
@@ -776,10 +822,10 @@ export default function HiringManagerView() {
     const detailsKeys = Array.from(new Set(visibleFields.details || []));
     const hasAnyAddressPart = detailsKeys.some((k) => isAddressPartKey(k));
     const hasFullAddressKey = detailsKeys.includes(FULL_ADDRESS_KEY);
-    const effectiveRows: { key: string; label: string; isAddress?: boolean }[] = [];
+    const effectiveRows: { key: string; label: string; isAddress?: boolean; isStatus?: boolean }[] = [];
     let addressRowAdded = false;
+    let statusRowAdded = false;
     for (const key of detailsKeys) {
-      // Handle Full Address synthetic field
       if (key === FULL_ADDRESS_KEY) {
         if (!addressRowAdded && (hasAnyAddressPart || hasFullAddressKey)) {
           effectiveRows.push({ key: FULL_ADDRESS_KEY, label: "Full Address", isAddress: true });
@@ -787,7 +833,6 @@ export default function HiringManagerView() {
         }
         continue;
       }
-      // Skip address parts (Address, City, State, ZIP) - they'll be combined into Full Address
       if (isAddressPartKey(key)) {
         if (!addressRowAdded && (hasAnyAddressPart || hasFullAddressKey)) {
           effectiveRows.push({ key: FULL_ADDRESS_KEY, label: "Full Address", isAddress: true });
@@ -795,12 +840,22 @@ export default function HiringManagerView() {
         }
         continue;
       }
-      // Address 2 should show as a separate field (not combined into Full Address)
-      // So we don't skip it here - it will be added as a regular row below
-      effectiveRows.push({ key, label: getDetailsLabel(key) });
+      if (isStatusField(key)) statusRowAdded = true;
+      effectiveRows.push({
+        key,
+        label: getDetailsLabel(key),
+        isStatus: isStatusField(key),
+      });
+    }
+    if (!statusRowAdded) {
+      const statusFieldFromCatalog = detailsFieldCatalog.find(
+        (f) => f.label?.toLowerCase() === "status" || f.key?.toLowerCase() === "status"
+      );
+      const statusKey = statusFieldFromCatalog?.key || "status";
+      effectiveRows.push({ key: statusKey, label: "Status", isStatus: true });
     }
 
-    const renderDetailsRow = (row: { key: string; label: string; isAddress?: boolean }) => {
+    const renderDetailsRow = (row: { key: string; label: string; isAddress?: boolean; isStatus?: boolean }) => {
       const value = row.isAddress || row.key === FULL_ADDRESS_KEY ? getCombinedAddress() : getDetailsValue(row.key);
       const def = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key);
       const fieldInfo = {
@@ -814,13 +869,32 @@ export default function HiringManagerView() {
         <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
           <div className="flex-1 p-2 text-sm">
-            <FieldValueRenderer
-              value={value}
-              fieldInfo={fieldInfo}
-              emptyPlaceholder="-"
-              clickable
-              className="text-sm font-medium text-gray-900"
-            />
+            {row.isStatus ? (
+              <select
+                value={value && statusFieldOptions.includes(value) ? value : (statusFieldOptions[0] || "")}
+                onChange={(e) => handleStatusChange(e.target.value)}
+                disabled={isSavingStatus}
+                className="border border-gray-300 rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50"
+              >
+                {statusFieldOptions.length === 0 ? (
+                  <option value="">Loading...</option>
+                ) : (
+                  statusFieldOptions.map((option: string) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))
+                )}
+              </select>
+            ) : (
+              <FieldValueRenderer
+                value={value}
+                fieldInfo={fieldInfo}
+                emptyPlaceholder="-"
+                clickable
+                className="text-sm font-medium text-gray-900"
+              />
+            )}
           </div>
         </div>
       );
@@ -1824,6 +1898,61 @@ export default function HiringManagerView() {
       console.error("Error fetching summary counts:", err);
     } finally {
       setIsLoadingSummaryCounts(false);
+    }
+  };
+
+  // Handle status change from summary page dropdown (same as organization summary)
+  const handleStatusChange = async (newStatus: string) => {
+    const id = hiringManagerId || hiringManager?.id;
+    if (!id || isSavingStatus) return;
+    setIsSavingStatus(true);
+    try {
+      const statusField = (availableFields || []).find(
+        (f: any) =>
+          (f.field_label || "").toLowerCase() === "status" ||
+          (f.field_name || "").toLowerCase() === "status"
+      );
+      const statusLabel = statusField?.field_label || "Status";
+      const currentCustomFields = hiringManager?.customFields || {};
+      const updatedCustomFields = {
+        ...currentCustomFields,
+        [statusLabel]: newStatus,
+      };
+      const response = await fetch(`/api/hiring-managers/${id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+        body: JSON.stringify({
+          status: newStatus,
+          customFields: updatedCustomFields,
+        }),
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to update status");
+      }
+      setHiringManager((prev: any) =>
+        prev
+          ? {
+              ...prev,
+              status: newStatus,
+              customFields: updatedCustomFields,
+            }
+          : prev
+      );
+      toast.success("Status updated successfully");
+      if (id) await fetchHiringManager(id);
+    } catch (err) {
+      console.error("Error updating status:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to update status");
+      if (hiringManagerId) fetchHiringManager(hiringManagerId);
+    } finally {
+      setIsSavingStatus(false);
     }
   };
 
