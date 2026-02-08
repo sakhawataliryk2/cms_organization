@@ -501,6 +501,7 @@ export default function ArchivedHiringManagersList() {
       merged.push({
         fieldType: undefined,
         lookupType: "",
+        multiSelectLookupType: "",
         key: "archive_reason",
         label: "Archive Reason",
         sortable: true,

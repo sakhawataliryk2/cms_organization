@@ -499,6 +499,7 @@ export default function ArchivedJobSeekersList() {
       merged.push({
         fieldType: undefined,
         lookupType: "",
+        multiSelectLookupType: "",
         key: "archive_reason",
         label: "Archive Reason",
         sortable: true,
