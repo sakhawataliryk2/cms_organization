@@ -465,6 +465,11 @@ export default function HiringManagerView() {
   const [isLoadingSummaryCounts, setIsLoadingSummaryCounts] = useState(false);
   const [isSavingStatus, setIsSavingStatus] = useState(false);
 
+  // Tasks state
+  const [tasks, setTasks] = useState<Array<any>>([]);
+  const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+  const [tasksError, setTasksError] = useState<string | null>(null);
+
   // Field management – panels driven from admin field definitions only
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   // Organization details: field definitions from admin (organizations entity) and fetched org record
@@ -502,7 +507,7 @@ export default function HiringManagerView() {
     right: string[];
   }>({
     left: ["details"],
-    right: ["organizationDetails", "recentNotes"],
+    right: ["organizationDetails", "recentNotes", "openTasks"],
   });
 
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -692,6 +697,50 @@ export default function HiringManagerView() {
     }
   };
 
+  const fetchTasks = async () => {
+    setIsLoadingTasks(true);
+    setTasksError(null);
+    try {
+      const response = await fetch(`/api/tasks`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to fetch tasks");
+      }
+      const tasksData = await response.json();
+      const hiringManagerTasks = (tasksData.tasks || []).filter((task: any) => {
+        // Exclude completed tasks
+        if (task.is_completed === true || task.status === "Completed") {
+          return false;
+        }
+
+        const taskHiringManagerId = task.hiring_manager_id ? parseInt(task.hiring_manager_id) : null;
+
+        return (
+          (taskHiringManagerId && taskHiringManagerId === hiringManager?.id)
+        );
+      });
+      setTasks(hiringManagerTasks);
+    } catch (err) {
+      console.error("Error fetching tasks:", err);
+      setTasksError(err instanceof Error ? err.message : "An error occurred while fetching tasks");
+    } finally {
+      setIsLoadingTasks(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!hiringManager?.id) return;
+    fetchTasks();
+  }, [hiringManager?.id]);
+
+
   useEffect(() => {
     const syncPinned = () => {
       if (!hiringManager) return;
@@ -792,7 +841,7 @@ export default function HiringManagerView() {
       // Don't treat Address 2 as an address part - it should show separately
       if (isAddress2Key(key)) return false;
       return addressPartKeys.has((key || "").toLowerCase()) ||
-             (getDetailsLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
+        (getDetailsLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
     };
 
     const getCombinedAddress = () => {
@@ -818,6 +867,8 @@ export default function HiringManagerView() {
       const v = customObj[fieldLabel] ?? customObj[key];
       return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
     };
+
+
 
     const detailsKeys = Array.from(new Set(visibleFields.details || []));
     const hasAnyAddressPart = detailsKeys.some((k) => isAddressPartKey(k));
@@ -965,7 +1016,7 @@ export default function HiringManagerView() {
       // Don't treat Address 2 as an address part - it should show separately
       if (isAddress2Key(key)) return false;
       return addressPartKeys.has((key || "").toLowerCase()) ||
-             (getOrganizationDetailLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
+        (getOrganizationDetailLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
     };
 
     const getCombinedAddress = () => {
@@ -1025,12 +1076,12 @@ export default function HiringManagerView() {
       const addressParts =
         (row.isAddress || row.key === FULL_ADDRESS_KEY) && o
           ? {
-              address: o.customFields?.["Address"] ?? o.address,
-              address2: o.customFields?.["Address 2"] ?? o.address2,
-              city: o.customFields?.["City"] ?? o.city,
-              state: o.customFields?.["State"] ?? o.state,
-              zip: o.customFields?.["ZIP Code"] ?? o.zip_code ?? o.zip,
-            }
+            address: o.customFields?.["Address"] ?? o.address,
+            address2: o.customFields?.["Address 2"] ?? o.address2,
+            city: o.customFields?.["City"] ?? o.city,
+            state: o.customFields?.["State"] ?? o.state,
+            zip: o.customFields?.["ZIP Code"] ?? o.zip_code ?? o.zip,
+          }
           : undefined;
       return (
         <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
@@ -1116,6 +1167,80 @@ export default function HiringManagerView() {
       return (
         <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
           {renderRecentNotesPanel()}
+        </SortablePanel>
+      );
+    }
+    if (panelId === "openTasks") {
+      return (
+        <SortablePanel key={panelId} id={panelId}>
+          <PanelWithHeader title="Open Tasks:">
+            <div className="border border-gray-200 rounded">
+              {isLoadingTasks ? (
+                <div className="flex justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+                </div>
+              ) : tasksError ? (
+                <div className="p-2 text-red-500 text-sm">{tasksError}</div>
+              ) : tasks.length > 0 ? (
+                <div className="divide-y divide-gray-200">
+                  {tasks.map((task) => (
+                    <div
+                      key={task.id}
+                      className="p-3 hover:bg-gray-50 cursor-pointer"
+                      onClick={() =>
+                        router.push(`/dashboard/tasks/view?id=${task.id}`)
+                      }
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <h4 className="font-medium text-blue-600 hover:underline">
+                          {task.title}
+                        </h4>
+                        {task.priority && (
+                          <span
+                            className={`px-2 py-0.5 rounded text-xs ${task.priority === "High"
+                              ? "bg-red-100 text-red-800"
+                              : task.priority === "Medium"
+                                ? "bg-yellow-100 text-yellow-800"
+                                : "bg-gray-100 text-gray-800"
+                              }`}
+                          >
+                            {task.priority}
+                          </span>
+                        )}
+                      </div>
+                      {task.description && (
+                        <p className="text-sm text-gray-600 mb-2 line-clamp-2">
+                          {task.description}
+                        </p>
+                      )}
+                      <div className="flex justify-between items-center text-xs text-gray-500">
+                        <div className="flex space-x-3">
+                          {task.due_date && (
+                            <span>
+                              Due:{" "}
+                              {new Date(task.due_date).toLocaleDateString()}
+                            </span>
+                          )}
+                          {task.assigned_to_name && (
+                            <span>
+                              Assigned to: {task.assigned_to_name}
+                            </span>
+                          )}
+                        </div>
+                        {task.status && (
+                          <span className="text-gray-600">{task.status}</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 text-center text-gray-500 italic">
+                  No open tasks
+                </div>
+              )}
+            </div>
+          </PanelWithHeader>
         </SortablePanel>
       );
     }
@@ -1543,7 +1668,7 @@ export default function HiringManagerView() {
     const current = visibleFields.details || [];
     const catalogKeys = detailsFieldCatalog.map((f) => f.key);
     const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
-    
+
     // Check if Full Address should be visible (if any address parts are visible)
     const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
     const hasAddressParts = current.some((k) => {
@@ -1552,10 +1677,10 @@ export default function HiringManagerView() {
       return addressPartKeys.has(k.toLowerCase()) || label === "address";
     });
     const fullAddressVisible = current.includes(FULL_ADDRESS_KEY) || hasAddressParts;
-    
+
     const currentInCatalog = current.filter((k) => uniqueCatalogKeys.includes(k) && k !== FULL_ADDRESS_KEY);
     const rest = uniqueCatalogKeys.filter((k) => !current.includes(k));
-    
+
     // Build order: always include Full Address in modal order for sorting, preserve its position if it exists
     let order: string[];
     const fullAddressIndex = current.indexOf(FULL_ADDRESS_KEY);
@@ -1568,7 +1693,7 @@ export default function HiringManagerView() {
       // Full Address not in current order, add it at the beginning so it's always available for sorting
       order = [FULL_ADDRESS_KEY, ...currentInCatalog, ...rest];
     }
-    
+
     const uniqueOrder = Array.from(new Set(order));
     setModalDetailsOrder(uniqueOrder);
     setModalDetailsVisible(
@@ -1589,7 +1714,7 @@ export default function HiringManagerView() {
     const current = visibleFields.organizationDetails || [];
     const catalogKeys = organizationDetailsFieldCatalog.map((f) => f.key);
     const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
-    
+
     // Check if Full Address should be visible (if any address parts are visible)
     const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
     const hasAddressParts = current.some((k) => {
@@ -1598,10 +1723,10 @@ export default function HiringManagerView() {
       return addressPartKeys.has(k.toLowerCase()) || label === "address";
     });
     const fullAddressVisible = current.includes(FULL_ADDRESS_KEY) || hasAddressParts;
-    
+
     const currentInCatalog = current.filter((k) => uniqueCatalogKeys.includes(k) && k !== FULL_ADDRESS_KEY);
     const rest = uniqueCatalogKeys.filter((k) => !current.includes(k));
-    
+
     // Build order: always include Full Address in modal order for sorting, preserve its position if it exists
     let order: string[];
     const fullAddressIndex = current.indexOf(FULL_ADDRESS_KEY);
@@ -1614,7 +1739,7 @@ export default function HiringManagerView() {
       // Full Address not in current order, add it at the beginning so it's always available for sorting
       order = [FULL_ADDRESS_KEY, ...currentInCatalog, ...rest];
     }
-    
+
     const uniqueOrder = Array.from(new Set(order));
     setModalOrganizationDetailsOrder(uniqueOrder);
     setModalOrganizationDetailsVisible(
@@ -1939,10 +2064,10 @@ export default function HiringManagerView() {
       setHiringManager((prev: any) =>
         prev
           ? {
-              ...prev,
-              status: newStatus,
-              customFields: updatedCustomFields,
-            }
+            ...prev,
+            status: newStatus,
+            customFields: updatedCustomFields,
+          }
           : prev
       );
       toast.success("Status updated successfully");
@@ -2825,7 +2950,7 @@ export default function HiringManagerView() {
   //       try {
   //         const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
   //         const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
-          
+
   //         const url = isAbsoluteUrl
   //           ? doc.file_path
   //           : `${apiUrl}/${doc.file_path.startsWith("/") ? doc.file_path.slice(1) : doc.file_path}`;
@@ -2879,9 +3004,9 @@ export default function HiringManagerView() {
   // };
   const handleDownloadDocument = async (doc: any) => {
     // Check if it's a text file (by mime_type or file extension)
-    const isTextFile = doc.mime_type === "text/plain" || 
-                       doc.file_path?.toLowerCase().endsWith(".txt") ||
-                       doc.document_name?.toLowerCase().endsWith(".txt");
+    const isTextFile = doc.mime_type === "text/plain" ||
+      doc.file_path?.toLowerCase().endsWith(".txt") ||
+      doc.document_name?.toLowerCase().endsWith(".txt");
 
     // If the document has a stored file path
     if (doc.file_path) {
@@ -2890,7 +3015,7 @@ export default function HiringManagerView() {
         try {
           // Check if it's an absolute URL (e.g. from Vercel Blob)
           const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
-          
+
           // Prepend leading slash if missing and not absolute URL
           const url = isAbsoluteUrl
             ? doc.file_path
@@ -4756,8 +4881,8 @@ export default function HiringManagerView() {
                       <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
                         {modalDetailsOrder.map((key, index) => {
                           // Handle synthetic Full Address field
-                          const label = key === FULL_ADDRESS_KEY 
-                            ? "Full Address" 
+                          const label = key === FULL_ADDRESS_KEY
+                            ? "Full Address"
                             : (detailsFieldCatalog.find((f) => f.key === key)?.label ?? key);
                           const field = detailsFieldCatalog.find((f) => f.key === key);
                           if (!field && key !== FULL_ADDRESS_KEY) return null;
@@ -4832,8 +4957,8 @@ export default function HiringManagerView() {
                       <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
                         {modalOrganizationDetailsOrder.map((key, index) => {
                           // Handle synthetic Full Address field
-                          const label = key === FULL_ADDRESS_KEY 
-                            ? "Full Address" 
+                          const label = key === FULL_ADDRESS_KEY
+                            ? "Full Address"
                             : (organizationDetailsFieldCatalog.find((f) => f.key === key)?.label ?? key);
                           const field = organizationDetailsFieldCatalog.find((f) => f.key === key);
                           if (!field && key !== FULL_ADDRESS_KEY) return null;

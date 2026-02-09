@@ -4336,17 +4336,57 @@ Best regards`;
 
   const renderOpenTasksPanel = () => (
     <PanelWithHeader title="Open Tasks:">
-      <div className="p-2 border border-gray-200 rounded">
-        {tasks.length > 0 ? (
-          <div className="space-y-2">
+      <div className="border border-gray-200 rounded">
+        {isLoadingTasks ? (
+          <div className="flex justify-center py-4">
+            <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+          </div>
+        ) : tasksError ? (
+          <div className="p-2 text-red-500 text-sm">{tasksError}</div>
+        ) : tasks.length > 0 ? (
+          <div className="divide-y divide-gray-200">
             {tasks.map((task) => (
-              <div key={task.id} className="text-sm pb-2 border-b last:border-b-0">
-                <div className="font-medium text-blue-600">{task.title}</div>
-                <div className="text-xs text-gray-500">Due: {new Date(task.due_date).toLocaleDateString()}</div>
+              <div
+                key={task.id}
+                className="p-3 hover:bg-gray-50 cursor-pointer"
+                onClick={() => router.push(`/dashboard/tasks/view?id=${task.id}`)}
+              >
+                <div className="flex justify-between items-start mb-1">
+                  <h4 className="font-medium text-blue-600 hover:underline">{task.title}</h4>
+                  {task.priority && (
+                    <span
+                      className={`px-2 py-0.5 rounded text-xs ${
+                        task.priority === "High"
+                          ? "bg-red-100 text-red-800"
+                          : task.priority === "Medium"
+                            ? "bg-yellow-100 text-yellow-800"
+                            : "bg-gray-100 text-gray-800"
+                      }`}
+                    >
+                      {task.priority}
+                    </span>
+                  )}
+                </div>
+                {task.description && (
+                  <p className="text-sm text-gray-600 mb-2 line-clamp-2">{task.description}</p>
+                )}
+                <div className="flex justify-between items-center text-xs text-gray-500">
+                  <div className="flex space-x-3">
+                    {task.due_date && (
+                      <span>Due: {new Date(task.due_date).toLocaleDateString()}</span>
+                    )}
+                    {task.assigned_to_name && (
+                      <span>Assigned to: {task.assigned_to_name}</span>
+                    )}
+                  </div>
+                  {task.status && <span className="text-gray-600">{task.status}</span>}
+                </div>
               </div>
             ))}
           </div>
-        ) : <p className="text-gray-500 italic text-sm">No open tasks</p>}
+        ) : (
+          <div className="p-4 text-center text-gray-500 italic">No open tasks</div>
+        )}
       </div>
     </PanelWithHeader>
   );
