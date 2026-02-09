@@ -199,7 +199,7 @@ export default function AddOrganization() {
             "Address": org.address || "",
             // Status: Use customFields["Status"] if available, otherwise fallback to org.status
             // This matches Summary view behavior - both prioritize customFields["Status"]
-            "Status": statusFromCustomFields || (org.status || "Active"),
+            "Status": statusFromCustomFields || (org.status || ""),
             // Contract fields
             "Contract Signed on File": org.contract_on_file || "No",
             "Contract Signed By": org.contract_signed_by || "",
