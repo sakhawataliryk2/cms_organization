@@ -1040,6 +1040,7 @@ export default function PlacementList() {
                         const fieldInfo = colInfo
                           ? { key: colInfo.key, label: colInfo.label, fieldType: colInfo.fieldType, lookupType: colInfo.lookupType, multiSelectLookupType: colInfo.multiSelectLookupType }
                           : { key, label: getColumnLabel(key) };
+                          
                         return (
                           <td
                             key={key}

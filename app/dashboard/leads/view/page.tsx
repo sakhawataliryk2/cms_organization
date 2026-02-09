@@ -2498,7 +2498,7 @@ export default function LeadView() {
 
   if (error) {
     return (
-      <div className="bg-white p-6 rounded-lg shadow-md">
+      <div className="bg-white p-6 rounded-lg mt-10 shadow-md">
         <div className="text-red-500 mb-4">{error}</div>
         <button
           onClick={handleGoBack}
@@ -2512,7 +2512,7 @@ export default function LeadView() {
 
   if (!lead) {
     return (
-      <div className="bg-white p-6 rounded-lg shadow-md">
+      <div className="bg-white p-6 rounded-lg mt-10 shadow-md">
         <div className="text-gray-700 mb-4">Lead not found</div>
         <button
           onClick={handleGoBack}

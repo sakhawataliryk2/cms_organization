@@ -108,8 +108,8 @@ export default function FieldValueRenderer({
   lookupFallback,
 }: FieldValueRendererProps) {
   const fieldType = (fieldInfo?.fieldType ?? "").toLowerCase();
-  const label = (fieldInfo?.label ?? fieldInfo?.key ?? "").toLowerCase();
-  const key = (fieldInfo?.key ?? "").toLowerCase();
+  const label = (fieldInfo?.label || "").toLowerCase();
+  // const key = (fieldInfo?.key || "").toLowerCase();
 
   // Address: use addressParts when provided and field is address-type
   const isAddress = isAddressField(fieldInfo?.label, fieldInfo?.key);
