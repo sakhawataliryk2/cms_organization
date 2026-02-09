@@ -1117,12 +1117,16 @@ export default function JobView() {
   });
 
   // ===== Summary layout state =====
+  const [tasks, setTasks] = useState<Array<any>>([]);
+  const [isLoadingTasks, setIsLoadingTasks] = useState(false);
+  const [tasksError, setTasksError] = useState<string | null>(null);
+
   const [columns, setColumns] = useState<{
     left: string[];
     right: string[];
   }>({
     left: ["jobDetails"],
-    right: ["details", "hiringManager", "recentNotes"],
+    right: ["details", "hiringManager", "recentNotes", "openTasks"],
   });
 
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -1881,8 +1885,68 @@ export default function JobView() {
         </SortablePanel>
       );
     }
+    if (panelId === "openTasks") {
+      return (
+        <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
+          <PanelWithHeader title="Open Tasks:">
+            <div className="border border-gray-200 rounded">
+              {isLoadingTasks ? (
+                <div className="flex justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500"></div>
+                </div>
+              ) : tasksError ? (
+                <div className="p-2 text-red-500 text-sm">{tasksError}</div>
+              ) : tasks.length > 0 ? (
+                <div className="divide-y divide-gray-200">
+                  {tasks.map((task) => (
+                    <div
+                      key={task.id}
+                      className="p-3 hover:bg-gray-50 cursor-pointer"
+                      onClick={() => router.push(`/dashboard/tasks/view?id=${task.id}`)}
+                    >
+                      <div className="flex justify-between items-start mb-1">
+                        <h4 className="font-medium text-blue-600 hover:underline">{task.title}</h4>
+                        {task.priority && (
+                          <span
+                            className={`px-2 py-0.5 rounded text-xs ${
+                              task.priority === "High"
+                                ? "bg-red-100 text-red-800"
+                                : task.priority === "Medium"
+                                  ? "bg-yellow-100 text-yellow-800"
+                                  : "bg-gray-100 text-gray-800"
+                            }`}
+                          >
+                            {task.priority}
+                          </span>
+                        )}
+                      </div>
+                      {task.description && (
+                        <p className="text-sm text-gray-600 mb-2 line-clamp-2">{task.description}</p>
+                      )}
+                      <div className="flex justify-between items-center text-xs text-gray-500">
+                        <div className="flex space-x-3">
+                          {task.due_date && (
+                            <span>Due: {new Date(task.due_date).toLocaleDateString()}</span>
+                          )}
+                          {task.assigned_to_name && (
+                            <span>Assigned to: {task.assigned_to_name}</span>
+                          )}
+                        </div>
+                        {task.status && <span className="text-gray-600">{task.status}</span>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="p-4 text-center text-gray-500 italic">No open tasks</div>
+              )}
+            </div>
+          </PanelWithHeader>
+        </SortablePanel>
+      );
+    }
     return null;
-  }, [job, jobHiringManager, visibleFields, notes, availableFields, hiringManagerFieldCatalog, hiringManagerAvailableFields]); // Dependencies for inner renderers
+  }, [job, jobHiringManager, visibleFields, notes, tasks, isLoadingTasks, tasksError, availableFields, hiringManagerFieldCatalog, hiringManagerAvailableFields]); // Dependencies for inner renderers
 
   // ... (useHeaderConfig hook already exists below)
 
@@ -2797,6 +2861,37 @@ export default function JobView() {
     setEditingPanel(null);
   }, [modalHiringManagerOrder, modalHiringManagerVisible]);
 
+  const fetchTasks = async (jobId: string) => {
+    setIsLoadingTasks(true);
+    setTasksError(null);
+    try {
+      const response = await fetch(`/api/tasks`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to fetch tasks");
+      }
+      const tasksData = await response.json();
+      const jobTasks = (tasksData.tasks || []).filter((task: any) => {
+        if (task.is_completed === true || task.status === "Completed") return false;
+        const taskJobId = task.job_id?.toString();
+        return taskJobId && taskJobId === jobId.toString();
+      });
+      setTasks(jobTasks);
+    } catch (err) {
+      console.error("Error fetching tasks:", err);
+      setTasksError(err instanceof Error ? err.message : "An error occurred while fetching tasks");
+    } finally {
+      setIsLoadingTasks(false);
+    }
+  };
+
   // Function to fetch job data with better error handling
   const fetchJob = async (id: string) => {
     setIsLoading(true);
@@ -2911,10 +3006,11 @@ export default function JobView() {
       console.log("Formatted job data:", formattedJob);
       setJob(formattedJob);
 
-      // Now fetch notes and history
+      // Now fetch notes, history, documents, and tasks
       fetchNotes(id);
       fetchHistory(id);
       fetchDocuments(id);
+      fetchTasks(id);
     } catch (err) {
       console.error("Error fetching job:", err);
       setError(

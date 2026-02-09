@@ -632,14 +632,6 @@ export default function OrganizationView() {
 
   // Field management state
   const [availableFields, setAvailableFields] = useState<any[]>([]);
-  useEffect(() => {
-    console.log("availableFields:", availableFields.filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden));
-    console.log("availableFields count:", availableFields.filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)?.length);
-  }, [availableFields]);
-
-  useEffect(() => {
-    console.log("organization.customFields:", organization?.customFields);
-  }, [organization]);
 
   // =====================
   // HEADER FIELDS (Top Row)
