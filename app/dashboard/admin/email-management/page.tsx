@@ -26,6 +26,11 @@ const SECTIONS: Section[] = [
     name: "Hiring Manager",
     description: "Hiring manager delete and transfer request emails for payroll",
   },
+  {
+    id: "tasks",
+    name: "Tasks",
+    description: "Task reminder email templates",
+  },
 ];
 
 export default function EmailManagementPage() {
