@@ -281,12 +281,55 @@ const SECTION_CONFIG: Record<
       },
     },
   },
+  tasks: {
+    types: [
+      { value: "TASK_REMINDER", label: "Task Reminder" },
+    ],
+    placeholders: {
+      TASK_REMINDER: [
+        "{{taskTitle}}",
+        "{{taskDescription}}",
+        "{{dueDate}}",
+        "{{dueTime}}",
+        "{{dueDateAndTime}}",
+        "{{assignedTo}}",
+        "{{createdBy}}",
+        "{{organizationName}}",
+        "{{hiringManagerName}}",
+        "{{taskLink}}",
+      ],
+    },
+    required: {
+      TASK_REMINDER: ["{{taskTitle}}", "{{dueDateAndTime}}", "{{taskLink}}"],
+    },
+    defaults: {
+      TASK_REMINDER: {
+        template_name: "Task Reminder",
+        subject: "Task Reminder: {{taskTitle}}",
+        body:
+          `<div>` +
+          `<h2>Task Reminder</h2>` +
+          `<p>This is a reminder for the following task:</p>` +
+          `<p><strong>{{taskTitle}}</strong></p>` +
+          `<p>{{taskDescription}}</p>` +
+          `<p><strong>Due:</strong> {{dueDateAndTime}}</p>` +
+          `<p><strong>Assigned To:</strong> {{assignedTo}}</p>` +
+          `<p><strong>Created By:</strong> {{createdBy}}</p>` +
+          `<p><strong>Organization:</strong> {{organizationName}}</p>` +
+          `<p><strong>Hiring Manager:</strong> {{hiringManagerName}}</p>` +
+          `<p>You are receiving this as the task owner or assignee.</p>` +
+          `<p>{{taskLink}}</p>` +
+          `</div>`,
+      },
+    },
+  },
 };
 
 const SECTION_LABELS: Record<string, string> = {
   "job-seeker": "Job Seeker",
   organization: "Organization",
   "hiring-manager": "Hiring Manager",
+  tasks: "Tasks",
 };
 
 export default function EmailManagementSectionPage() {

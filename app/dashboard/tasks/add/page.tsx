@@ -60,7 +60,38 @@ export default function AddTask() {
   const hasPrefilledRelatedFromUrlRef = useRef<Set<string>>(new Set()); // Prefill Job / Job Seeker / Hiring Manager once per entity type
   const [assignedToDropdownOpen, setAssignedToDropdownOpen] = useState(false);
   const assignedToDropdownRef = useRef<HTMLDivElement>(null);
-  const [reminderMinutesBeforeDue, setReminderMinutesBeforeDue] = useState<number | "">("");
+  // Helper function to convert reminder string (e.g., "5 minutes", "1 hour") to minutes
+  const parseReminderToMinutes = (reminderValue: string | number | null | undefined): number | null => {
+    if (!reminderValue) return null;
+    if (typeof reminderValue === 'number') return reminderValue;
+  
+    const str = String(reminderValue).toLowerCase().trim();
+    if (str === '' || str === 'none' || str === 'null') return null;
+  
+    // Improved regex to handle plurals and common abbreviations
+    const match = str.match(/(\d+)\s*(minutes?|mins?|hours?|hrs?|days?|d)?/i);
+    if (!match) return null;
+  
+    const num = parseInt(match[1], 10);
+    const unit = match[2]?.toLowerCase() || 'minute';
+  
+    if (unit.startsWith('d')) return num * 1440; // days to minutes
+    if (unit.startsWith('h')) return num * 60;   // hours to minutes
+    return num; // minutes
+  };
+  
+  
+  // Helper function to convert minutes to reminder string format
+  const minutesToReminderString = (minutes: number | null | undefined): string => {
+    if (!minutes || minutes <= 0) return '';
+    if (minutes < 60) return `${minutes} minutes`;
+    if (minutes < 1440) {
+      const hours = Math.floor(minutes / 60);
+      return hours === 1 ? '1 hour' : `${hours} hours`;
+    }
+    const days = Math.floor(minutes / 1440);
+    return days === 1 ? '1 day' : `${days} days`;
+  };
 
   // Close Assigned To dropdown when clicking outside
   useEffect(() => {
@@ -406,6 +437,8 @@ export default function AddTask() {
           // Date Added variations
           "Date Added": task.created_at ? task.created_at.split("T")[0] : new Date().toISOString().split("T")[0],
           "Created Date": task.created_at ? task.created_at.split("T")[0] : "",
+          // Reminder variations - convert minutes to string format
+          "Reminder": task.reminder_minutes_before_due != null ? minutesToReminderString(task.reminder_minutes_before_due) : "",
         };
 
         // For each custom field, try to populate from mapped values or standard fields
@@ -423,7 +456,6 @@ export default function AddTask() {
 
       // Set the mapped custom field values
       setCustomFieldValues(mappedCustomFieldValues);
-      setReminderMinutesBeforeDue(task.reminder_minutes_before_due != null ? task.reminder_minutes_before_due : "");
     } catch (err) {
       console.error("Error fetching task:", err);
       setLoadError(
@@ -576,10 +608,20 @@ export default function AddTask() {
       if (apiData.hiring_manager_id !== undefined) cleanPayload.hiring_manager_id = apiData.hiring_manager_id;
       if (apiData.job_seeker_id !== undefined) cleanPayload.job_seeker_id = apiData.job_seeker_id;
       if (apiData.placement_id !== undefined) cleanPayload.placement_id = apiData.placement_id;
-      if (reminderMinutesBeforeDue !== "" && reminderMinutesBeforeDue !== null) {
-        const mins = Number(reminderMinutesBeforeDue);
-        cleanPayload.reminder_minutes_before_due = mins;
-        cleanPayload.reminderMinutesBeforeDue = mins;
+      // Map Reminder custom field to reminder_minutes_before_due
+      // Check if there's a custom field with label "Reminder"
+      const reminderField = customFields.find(f => f.field_label === "Reminder");
+      if (reminderField && customFieldValues[reminderField.field_name]) {
+        const reminderValue = customFieldValues[reminderField.field_name];
+        const minutes = parseReminderToMinutes(reminderValue);
+        if (minutes !== null && minutes > 0) {
+          cleanPayload.reminder_minutes_before_due = minutes;
+        } else {
+          cleanPayload.reminder_minutes_before_due = null;
+        }
+      } else {
+        // If no Reminder custom field, set to null
+        cleanPayload.reminder_minutes_before_due = null;
       }
 
       cleanPayload.custom_fields =
@@ -935,23 +977,6 @@ export default function AddTask() {
                 })}
               </>
             )}
-            {/* Reminder: email to owner and assigned-to at selected time before due */}
-            <div className="flex items-center gap-2 pt-4 border-t border-gray-200 mt-4">
-              <label className="w-48 font-medium">Reminder:</label>
-              <div className="flex-1">
-                <select
-                  value={reminderMinutesBeforeDue === "" ? "" : reminderMinutesBeforeDue}
-                  onChange={(e) => setReminderMinutesBeforeDue(e.target.value === "" ? "" : Number(e.target.value))}
-                  className="w-full max-w-xs p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                >
-                  <option value="">None</option>
-                  <option value={15}>15 minutes before due</option>
-                  <option value={60}>1 hour before due</option>
-                  <option value={1440}>24 hours before due</option>
-                </select>
-                <p className="text-xs text-gray-500 mt-1">Email will be sent to the task owner and assignee (if any) at the selected time before the due date.</p>
-              </div>
-            </div>
           </div>
 
           <div className="h-20" aria-hidden="true" />
