@@ -8,6 +8,7 @@ import CustomFieldRenderer, {
   useCustomFields,
 } from "@/components/CustomFieldRenderer";
 import LookupField from "@/components/LookupField";
+import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 
 // Map admin field labels to placement backend columns (all fields driven by admin; no hardcoded standard fields)
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
@@ -471,13 +472,23 @@ export default function AddPlacement() {
 
                   // Phone field
                   const isPhoneField =
-                    field.field_type === "phone" ||
-                    field.field_label?.toLowerCase().includes("phone");
+                    (field.field_type === "phone" ||
+                      field.field_label?.toLowerCase().includes("phone"));
                   // field.field_name?.toLowerCase().includes("phone");
 
-                  if (isPhoneField) {
-                    const digits = trimmed.replace(/\D/g, "");
-                    return digits.length === 10;
+                  if (isPhoneField && trimmed !== "") {
+                    // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
+                    // Remove all non-numeric characters to check digit count
+                    const digitsOnly = trimmed.replace(/\D/g, "");
+                    // Must have exactly 10 digits
+                    if (digitsOnly.length !== 10) {
+                      return false;
+                    }
+                    // Check if formatted correctly as (000) 000-0000
+                    const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+                    if (!phoneRegex.test(trimmed)) return false;
+                    // NANP: valid area code (2-9), exchange (2-9), and area code in US list
+                    return isValidUSPhoneNumber(trimmed);
                   }
 
                   // URL field

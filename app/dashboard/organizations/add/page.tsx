@@ -9,6 +9,7 @@ import CustomFieldRenderer, {
   useCustomFields,
 } from "@/components/CustomFieldRenderer";
 import AddressGroupRenderer, { getAddressFields } from "@/components/AddressGroupRenderer";
+import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 
 
 interface CustomFieldDefinition {
@@ -176,7 +177,7 @@ export default function AddOrganization() {
             (f) => f.field_label?.toLowerCase() === "status" || f.field_name?.toLowerCase() === "status"
           );
           const statusFromCustomFields = statusField && mappedCustomFieldValues[statusField.field_name];
-          
+
           const standardFieldMapping: Record<string, string> = {
             // Organization name variations
             "Organization Name": org.name || "",
@@ -244,7 +245,7 @@ export default function AddOrganization() {
             label: f.field_label,
           }))
         );
-        
+
         // Debug Status field specifically
         const statusFieldDebug = customFields.find(
           (f) => f.field_label?.toLowerCase() === "status" || f.field_name?.toLowerCase() === "status"
@@ -485,7 +486,7 @@ export default function AddOrganization() {
           setError(`${field.field_label} is required`);
           return;
         }
-        
+
         // Special validation for ZIP code
         // Check by both label and field_name (Field_24)
         const isZipCodeField =
@@ -597,9 +598,9 @@ export default function AddOrganization() {
       const websiteForCheck = String(apiData.website ?? "").trim();
       const emailForCheck = String(
         customFieldsForDB["Email"] ??
-          customFieldsForDB["Organization Email"] ??
-          customFieldsForDB["email"] ??
-          ""
+        customFieldsForDB["Organization Email"] ??
+        customFieldsForDB["email"] ??
+        ""
       ).trim();
 
       if (phoneForCheck || websiteForCheck || emailForCheck) {
@@ -638,7 +639,7 @@ export default function AddOrganization() {
             }
             setError(
               "Cannot save: the following are already in use by another organization. Please use different values or update the existing organization.\n\n" +
-                messages.join("\n")
+              messages.join("\n")
             );
             setDuplicateWarning({
               phone: dupPhone ?? [],
@@ -740,7 +741,7 @@ export default function AddOrganization() {
       console.log(
         "Is apiData.custom_fields an object?",
         typeof apiData.custom_fields === "object" &&
-          !Array.isArray(apiData.custom_fields)
+        !Array.isArray(apiData.custom_fields)
       );
       console.log("=== END PAYLOAD ===");
 
@@ -790,7 +791,7 @@ export default function AddOrganization() {
       console.log(
         "custom_fields is object:",
         typeof apiData.custom_fields === "object" &&
-          !Array.isArray(apiData.custom_fields)
+        !Array.isArray(apiData.custom_fields)
       );
       console.log("All keys in apiData:", Object.keys(apiData));
       console.log("=== END VALIDATION ===");
@@ -857,8 +858,8 @@ export default function AddOrganization() {
       // Ensure custom_fields is always a plain object (not array, not null, not other types)
       const customFieldsValue =
         typeof apiData.custom_fields === "object" &&
-        !Array.isArray(apiData.custom_fields) &&
-        apiData.custom_fields !== null
+          !Array.isArray(apiData.custom_fields) &&
+          apiData.custom_fields !== null
           ? apiData.custom_fields
           : {};
 
@@ -922,7 +923,7 @@ export default function AddOrganization() {
       if (!response.ok) {
         throw new Error(
           data.message ||
-            `Failed to ${isEditMode ? "update" : "create"} organization`
+          `Failed to ${isEditMode ? "update" : "create"} organization`
         );
       }
 
@@ -1571,10 +1572,10 @@ export default function AddOrganization() {
                     const allAddressFieldsValid = () => {
                       const requiredFields = addressFields.filter((f) => f.is_required);
                       if (requiredFields.length === 0) return true; // No required fields, consider valid
-                      
+
                       return requiredFields.every((f) => {
                         const val = customFieldValues[f.field_name];
-                        
+
                         // For select fields, check if a valid option is selected
                         if (f.field_type === "select") {
                           if (!val || String(val).trim() === "" || String(val).trim().toLowerCase() === "select an option") {
@@ -1582,9 +1583,9 @@ export default function AddOrganization() {
                           }
                           return true;
                         }
-                        
+
                         if (!val || String(val).trim() === "") return false;
-                        
+
                         // Special validation for ZIP code (must be exactly 5 digits)
                         const isZipCodeField =
                           f.field_label?.toLowerCase().includes("zip") ||
@@ -1595,39 +1596,39 @@ export default function AddOrganization() {
                         if (isZipCodeField) {
                           return /^\d{5}$/.test(String(val).trim());
                         }
-                        
+
                         return true;
                       });
                     };
-                    
+
                     const hasRequiredAddressFields = addressFields.some((f) => f.is_required);
                     const allValid = allAddressFieldsValid();
-                    
-                   return (
-                     <div
-                       key="address-group"
-                       className="address-underline flex items-start mb-3"
-                     >
-                       {/* left side same label width space */}
-                       <label className="w-48 font-medium flex items-center mt-4">
-                         Address:
-                         {/* Show green check only when all address sub-fields are satisfied */}
-                         {hasRequiredAddressFields && allValid && (
-                           <span className="text-green-500 ml-1">✔</span>
-                         )}
-                       </label>
 
-                       {/* right side same as other inputs */}
-                       <div className="flex-1">
-                         <AddressGroupRenderer
-                           fields={addressFields}
-                           values={customFieldValues}
-                           onChange={handleCustomFieldChange}
-                           isEditMode={isEditMode}
-                         />
-                       </div>
-                     </div>
-                   );
+                    return (
+                      <div
+                        key="address-group"
+                        className="address-underline flex items-start mb-3"
+                      >
+                        {/* left side same label width space */}
+                        <label className="w-48 font-medium flex items-center mt-4">
+                          Address:
+                          {/* Show green check only when all address sub-fields are satisfied */}
+                          {hasRequiredAddressFields && allValid && (
+                            <span className="text-green-500 ml-1">✔</span>
+                          )}
+                        </label>
+
+                        {/* right side same as other inputs */}
+                        <div className="flex-1">
+                          <AddressGroupRenderer
+                            fields={addressFields}
+                            values={customFieldValues}
+                            onChange={handleCustomFieldChange}
+                            isEditMode={isEditMode}
+                          />
+                        </div>
+                      </div>
+                    );
 
                   }
 
@@ -1706,25 +1707,25 @@ export default function AddOrganization() {
                   //   const trimmed = String(fieldValue).trim();
                   //   // Empty string means no value selected (especially for select fields)
                   //   if (trimmed === "") return false;
-                    
+
                   //   // Special validation for date fields
                   //   if (field.field_type === "date") {
                   //     // Accept both YYYY-MM-DD (storage format) and mm/dd/yyyy (display format)
                   //     let dateToValidate = trimmed;
-                      
+
                   //     // If it's in mm/dd/yyyy format, convert to YYYY-MM-DD
                   //     if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
                   //       const [month, day, year] = trimmed.split("/");
                   //       dateToValidate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
                   //     }
-                      
+
                   //     // Check if it's a valid date format (YYYY-MM-DD)
                   //     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
                   //     if (!dateRegex.test(dateToValidate)) return false;
-                      
+
                   //     const date = new Date(dateToValidate);
                   //     if (isNaN(date.getTime())) return false;
-                      
+
                   //     // Additional validation: check if the date components match
                   //     const [year, month, day] = dateToValidate.split("-");
                   //     if (date.getFullYear() !== parseInt(year) ||
@@ -1732,10 +1733,10 @@ export default function AddOrganization() {
                   //         date.getDate() !== parseInt(day)) {
                   //       return false; // Invalid date (e.g., 02/30/2024)
                   //     }
-                      
+
                   //     return true;
                   //   }
-                    
+
                   //   // Special validation for ZIP code (must be exactly 5 digits)
                   //   // Check by both label and field_name (Field_24)
                   //   const isZipCodeField =
@@ -1747,7 +1748,7 @@ export default function AddOrganization() {
                   //   if (isZipCodeField) {
                   //     return /^\d{5}$/.test(trimmed);
                   //   }
-                    
+
                   //   // Special validation for numeric fields that allow values >= 0
                   //   // Check by both label and field_name (Field_32, Field_25, Field_31)
                   //   const isNonNegativeField =
@@ -1768,7 +1769,7 @@ export default function AddOrganization() {
                   //     // Allow values >= 0 (0, 1, 2, etc.)
                   //     return !isNaN(numValue) && numValue >= 0;
                   //   }
-                    
+
                   //   // Special validation for phone fields (Main Phone, etc.)
                   //   // Check by both field_type and field_name (Field_5)
                   //   const isPhoneField =
@@ -1788,7 +1789,7 @@ export default function AddOrganization() {
                   //     const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
                   //     return phoneRegex.test(trimmed);
                   //   }
-                    
+
                   //   // Special validation for URL fields (Organization Website, etc.)
                   //   // Check by both field_type and field_name (Field_4)
                   //   const isUrlField =
@@ -1803,7 +1804,7 @@ export default function AddOrganization() {
                   //     if (!urlPattern.test(trimmed)) {
                   //       return false;
                   //     }
-                      
+
                   //     // Stricter validation: Check for complete domain structure
                   //     // For www. URLs: must have www.domain.tld format (at least www. + domain + . + tld)
                   //     // For http:// URLs: must have http://domain.tld format
@@ -1833,7 +1834,7 @@ export default function AddOrganization() {
                   //       }
                   //       urlToValidate = trimmed;
                   //     }
-                      
+
                   //     // Final validation: try to create a URL object to check if it's valid
                   //     try {
                   //       const urlObj = new URL(urlToValidate);
@@ -1851,100 +1852,108 @@ export default function AddOrganization() {
                   //       return false;
                   //     }
                   //   }
-                    
+
                   //   return true;
                   // };
                   // Helper function to check if field has a valid value
-const hasValidValue = () => {
-  if (fieldValue === null || fieldValue === undefined) return false;
+                  const hasValidValue = () => {
+                    if (fieldValue === null || fieldValue === undefined) return false;
 
-  const trimmed = String(fieldValue).trim();
-  if (trimmed === "") return false;
+                    const trimmed = String(fieldValue).trim();
+                    if (trimmed === "") return false;
 
-  /* ================= DATE FIELD (TIMEZONE SAFE) ================= */
-  if (field.field_type === "date") {
-    let normalizedDate = trimmed;
+                    /* ================= DATE FIELD (TIMEZONE SAFE) ================= */
+                    if (field.field_type === "date") {
+                      let normalizedDate = trimmed;
 
-    // Convert MM/DD/YYYY → YYYY-MM-DD
-    if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
-      const [mm, dd, yyyy] = trimmed.split("/");
-      normalizedDate = `${yyyy}-${mm}-${dd}`;
-    }
+                      // Convert MM/DD/YYYY → YYYY-MM-DD
+                      if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+                        const [mm, dd, yyyy] = trimmed.split("/");
+                        normalizedDate = `${yyyy}-${mm}-${dd}`;
+                      }
 
-    // Strict YYYY-MM-DD format
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
-      return false;
-    }
+                      // Strict YYYY-MM-DD format
+                      if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+                        return false;
+                      }
 
-    const [year, month, day] = normalizedDate.split("-").map(Number);
+                      const [year, month, day] = normalizedDate.split("-").map(Number);
 
-    // Manual date validation (NO timezone usage)
-    if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
-      return false;
-    }
+                      // Manual date validation (NO timezone usage)
+                      if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
+                        return false;
+                      }
 
-    const daysInMonth = new Date(year, month, 0).getDate();
-    if (day > daysInMonth) {
-      return false;
-    }
+                      const daysInMonth = new Date(year, month, 0).getDate();
+                      if (day > daysInMonth) {
+                        return false;
+                      }
 
-    return true;
-  }
-  /* =============================================================== */
+                      return true;
+                    }
+                    /* =============================================================== */
 
-  // ZIP code
-  const isZipCodeField =
-    field.field_label?.toLowerCase().includes("zip") ||
-    field.field_label?.toLowerCase().includes("postal code") ||
-    field.field_name?.toLowerCase().includes("zip") ||
-    field.field_name === "Field_24" ||
-    field.field_name === "field_24";
+                    // ZIP code
+                    const isZipCodeField =
+                      field.field_label?.toLowerCase().includes("zip") ||
+                      field.field_label?.toLowerCase().includes("postal code") ||
+                      field.field_name?.toLowerCase().includes("zip") ||
+                      field.field_name === "Field_24" ||
+                      field.field_name === "field_24";
 
-  if (isZipCodeField) {
-    return /^\d{5}$/.test(trimmed);
-  }
+                    if (isZipCodeField) {
+                      return /^\d{5}$/.test(trimmed);
+                    }
 
-  // Non-negative number fields
-  const isNonNegativeField =
-    field.field_label?.toLowerCase().includes("employees") ||
-    field.field_label?.toLowerCase().includes("offices") ||
-    field.field_label?.toLowerCase().includes("oasis key");
+                    // Non-negative number fields
+                    const isNonNegativeField =
+                      field.field_label?.toLowerCase().includes("employees") ||
+                      field.field_label?.toLowerCase().includes("offices") ||
+                      field.field_label?.toLowerCase().includes("oasis key");
 
-  if (isNonNegativeField && field.field_type === "number") {
-    const num = Number(trimmed);
-    return !isNaN(num) && num >= 0;
-  }
+                    if (isNonNegativeField && field.field_type === "number") {
+                      const num = Number(trimmed);
+                      return !isNaN(num) && num >= 0;
+                    }
 
-  // Phone field
-  const isPhoneField =
-    field.field_type === "phone" ||
-    field.field_label?.toLowerCase().includes("phone");
-    // field.field_name?.toLowerCase().includes("phone");
+                    // Phone field
+                    const isPhoneField =
+                      (field.field_type === "phone" ||
+                        field.field_label?.toLowerCase().includes("phone"));
+                    if (isPhoneField && trimmed !== "") {
+                      // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
+                      // Remove all non-numeric characters to check digit count
+                      // const digitsOnly = trimmed.replace(/\D/g, "");
+                      // // Must have exactly 10 digits
+                      // if (digitsOnly.length !== 10) {
+                      //   return false;
+                      // }
+                      // // Check if formatted correctly as (000) 000-0000
+                      // const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+                      // if (!phoneRegex.test(trimmed)) return false;
+                      // // NANP: valid area code (2-9), exchange (2-9), and area code in US list
+                      return isValidUSPhoneNumber(trimmed);
+                    }
 
-  if (isPhoneField) {
-    const digits = trimmed.replace(/\D/g, "");
-    return digits.length === 10;
-  }
+                    // URL field
+                    const isUrlField =
+                      field.field_type === "url" ||
+                      field.field_label?.toLowerCase().includes("website") ||
+                      field.field_label?.toLowerCase().includes("url");
 
-  // URL field
-  const isUrlField =
-    field.field_type === "url" ||
-    field.field_label?.toLowerCase().includes("website") ||
-    field.field_label?.toLowerCase().includes("url");
+                    if (isUrlField) {
+                      try {
+                        const url = trimmed.startsWith("http")
+                          ? new URL(trimmed)
+                          : new URL(`https://${trimmed}`);
+                        return url.hostname.includes(".");
+                      } catch {
+                        return false;
+                      }
+                    }
 
-  if (isUrlField) {
-    try {
-      const url = trimmed.startsWith("http")
-        ? new URL(trimmed)
-        : new URL(`https://${trimmed}`);
-      return url.hostname.includes(".");
-    } catch {
-      return false;
-    }
-  }
-
-  return true;
-};
+                    return true;
+                  };
 
 
                   return (
@@ -2069,16 +2078,15 @@ const hasValidValue = () => {
                     (duplicateWarning.website?.length ?? 0) > 0 ||
                     (duplicateWarning.email?.length ?? 0) > 0))
               }
-              className={`px-4 py-2 rounded ${
-                isSubmitting ||
+              className={`px-4 py-2 rounded ${isSubmitting ||
                 !isFormValid ||
                 (duplicateWarning !== null &&
                   ((duplicateWarning.phone?.length ?? 0) > 0 ||
                     (duplicateWarning.website?.length ?? 0) > 0 ||
                     (duplicateWarning.email?.length ?? 0) > 0))
-                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                  : "bg-blue-500 text-white hover:bg-blue-600"
-              }`}
+                ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                : "bg-blue-500 text-white hover:bg-blue-600"
+                }`}
             >
               {isEditMode ? "Update" : "Save"}
             </button>

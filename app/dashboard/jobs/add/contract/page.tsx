@@ -13,6 +13,7 @@ import CustomFieldRenderer, {
 import AddressGroupRenderer, {
   getAddressFields,
 } from "@/components/AddressGroupRenderer";
+import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 
 // Map admin field labels to backend columns; unmapped labels go to custom_fields JSONB
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
@@ -522,6 +523,8 @@ export default function AddJob() {
     currentOrganizationId,
     organizationIdFromUrl,
   ]);
+
+
 
   // Sort custom fields by sort_order
   const sortedCustomFields = useMemo(
@@ -1954,13 +1957,111 @@ export default function AddJob() {
                       const payRateValue = customFieldValues["Field_11"] || "";
                       const markupValue = customFieldValues["Field_12"] || customFieldValues["Field_512"] || "";
                       const calculatedValue = calculateClientBillRate(payRateValue, markupValue);
+                      const hasValidValue = () => {
+                        if (fieldValue === null || fieldValue === undefined) return false;
+
+                        const trimmed = String(fieldValue).trim();
+                        if (trimmed === "") return false;
+
+                        /* ================= DATE FIELD (TIMEZONE SAFE) ================= */
+                        if (field.field_type === "date") {
+                          let normalizedDate = trimmed;
+
+                          // Convert MM/DD/YYYY → YYYY-MM-DD
+                          if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+                            const [mm, dd, yyyy] = trimmed.split("/");
+                            normalizedDate = `${yyyy}-${mm}-${dd}`;
+                          }
+
+                          // Strict YYYY-MM-DD format
+                          if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+                            return false;
+                          }
+
+                          const [year, month, day] = normalizedDate.split("-").map(Number);
+
+                          // Manual date validation (NO timezone usage)
+                          if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
+                            return false;
+                          }
+
+                          const daysInMonth = new Date(year, month, 0).getDate();
+                          if (day > daysInMonth) {
+                            return false;
+                          }
+
+                          return true;
+                        }
+                        /* =============================================================== */
+
+                        // ZIP code
+                        const isZipCodeField =
+                          field.field_label?.toLowerCase().includes("zip") ||
+                          field.field_label?.toLowerCase().includes("postal code") ||
+                          field.field_name?.toLowerCase().includes("zip");
+
+                        if (isZipCodeField) {
+                          return /^\d{5}$/.test(trimmed);
+                        }
+
+                        // Non-negative number fields
+                        const isNonNegativeField =
+                          field.field_label?.toLowerCase().includes("employees") ||
+                          field.field_label?.toLowerCase().includes("offices") ||
+                          field.field_label?.toLowerCase().includes("oasis key");
+
+                        if (isNonNegativeField && field.field_type === "number") {
+                          const num = Number(trimmed);
+                          return !isNaN(num) && num >= 0;
+                        }
+
+                        // Phone field
+                        const isPhoneField =
+                          (field.field_type === "phone" ||
+                            field.field_label?.toLowerCase().includes("phone"));
+                        // field.field_name?.toLowerCase().includes("phone");
+
+                        if (isPhoneField && trimmed !== "") {
+                          // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
+                          // Remove all non-numeric characters to check digit count
+                          const digitsOnly = trimmed.replace(/\D/g, "");
+                          // Must have exactly 10 digits
+                          if (digitsOnly.length !== 10) {
+                            return false;
+                          }
+                          // Check if formatted correctly as (000) 000-0000
+                          const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+                          if (!phoneRegex.test(trimmed)) return false;
+                          // NANP: valid area code (2-9), exchange (2-9), and area code in US list
+                          return isValidUSPhoneNumber(trimmed);
+                        }
+
+                        // URL field
+                        const isUrlField =
+                          field.field_type === "url" ||
+                          field.field_label?.toLowerCase().includes("website") ||
+                          field.field_label?.toLowerCase().includes("url");
+
+                        if (isUrlField) {
+                          try {
+                            const url = trimmed.startsWith("http")
+                              ? new URL(trimmed)
+                              : new URL(`https://${trimmed}`);
+                            return url.hostname.includes(".");
+                          } catch {
+                            return false;
+                          }
+                        }
+
+                        return true;
+                      };
 
                       return (
                         <div key={field.id} className="flex items-center mb-3">
                           <label className="w-48 font-medium flex items-center">
                             {field.field_label}:
                             {field.is_required &&
-                              (fieldValue.trim() !== "" ? (
+                              (hasValidValue() ? (
                                 <span className="text-green-500 ml-1">✔</span>
                               ) : (
                                 <span className="text-red-500 ml-1">*</span>
@@ -1993,12 +2094,111 @@ export default function AddJob() {
                       );
                     }
 
+                    const hasValidValue = () => {
+                      if (fieldValue === null || fieldValue === undefined) return false;
+
+                      const trimmed = String(fieldValue).trim();
+                      if (trimmed === "") return false;
+
+                      /* ================= DATE FIELD (TIMEZONE SAFE) ================= */
+                      if (field.field_type === "date") {
+                        let normalizedDate = trimmed;
+
+                        // Convert MM/DD/YYYY → YYYY-MM-DD
+                        if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+                          const [mm, dd, yyyy] = trimmed.split("/");
+                          normalizedDate = `${yyyy}-${mm}-${dd}`;
+                        }
+
+                        // Strict YYYY-MM-DD format
+                        if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+                          return false;
+                        }
+
+                        const [year, month, day] = normalizedDate.split("-").map(Number);
+
+                        // Manual date validation (NO timezone usage)
+                        if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
+                          return false;
+                        }
+
+                        const daysInMonth = new Date(year, month, 0).getDate();
+                        if (day > daysInMonth) {
+                          return false;
+                        }
+
+                        return true;
+                      }
+                      /* =============================================================== */
+
+                      // ZIP code
+                      const isZipCodeField =
+                        field.field_label?.toLowerCase().includes("zip") ||
+                        field.field_label?.toLowerCase().includes("postal code") ||
+                        field.field_name?.toLowerCase().includes("zip");
+
+                      if (isZipCodeField) {
+                        return /^\d{5}$/.test(trimmed);
+                      }
+
+                      // Non-negative number fields
+                      const isNonNegativeField =
+                        field.field_label?.toLowerCase().includes("employees") ||
+                        field.field_label?.toLowerCase().includes("offices") ||
+                        field.field_label?.toLowerCase().includes("oasis key");
+
+                      if (isNonNegativeField && field.field_type === "number") {
+                        const num = Number(trimmed);
+                        return !isNaN(num) && num >= 0;
+                      }
+
+                      // Phone field
+                      const isPhoneField =
+                        (field.field_type === "phone" ||
+                          field.field_label?.toLowerCase().includes("phone"));
+                      // field.field_name?.toLowerCase().includes("phone");
+
+                      if (isPhoneField && trimmed !== "") {
+                        // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
+                        // Remove all non-numeric characters to check digit count
+                        const digitsOnly = trimmed.replace(/\D/g, "");
+                        // Must have exactly 10 digits
+                        if (digitsOnly.length !== 10) {
+                          return false;
+                        }
+                        // Check if formatted correctly as (000) 000-0000
+                        const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+                        if (!phoneRegex.test(trimmed)) return false;
+                        // NANP: valid area code (2-9), exchange (2-9), and area code in US list
+                        return isValidUSPhoneNumber(trimmed);
+                      }
+
+                      // URL field
+                      const isUrlField =
+                        field.field_type === "url" ||
+                        field.field_label?.toLowerCase().includes("website") ||
+                        field.field_label?.toLowerCase().includes("url");
+
+                      if (isUrlField) {
+                        try {
+                          const url = trimmed.startsWith("http")
+                            ? new URL(trimmed)
+                            : new URL(`https://${trimmed}`);
+                          return url.hostname.includes(".");
+                        } catch {
+                          return false;
+                        }
+                      }
+
+                      return true;
+                    };
+
                     return (
                       <div key={field.id} className="flex items-center mb-3">
                         <label className="w-48 font-medium flex items-center">
                           {field.field_label}:
                           {field.is_required &&
-                            (fieldValue.trim() !== "" ? (
+                            (hasValidValue() ? (
                               <span className="text-green-500 ml-1">✔</span> // ✅ Green check if filled
                             ) : (
                               <span className="text-red-500 ml-1">*</span> // ❌ Red star if empty

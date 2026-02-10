@@ -4,6 +4,7 @@ import React from "react";
 import LookupField from "./LookupField";
 import MultiSelectLookupField, { type MultiSelectLookupType } from "./MultiSelectLookupField";
 import { FiCalendar, FiLock } from "react-icons/fi";
+import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 
 interface CustomFieldDefinition {
   id: string;
@@ -123,15 +124,15 @@ export default function CustomFieldRenderer({
   // Auto-populate today's date for ALL date fields (Date Added, W9 Last Inserted Date, General Liabilities date updated, Worker Compensation Date, etc.)
   React.useEffect(() => {
     if (field.field_type === "date" && !value && !hasAutoFilledRef.current) {
-        // Get today's date in mm/dd/yyyy format
-        const today = new Date();
-        const month = String(today.getMonth() + 1).padStart(2, "0");
-        const day = String(today.getDate()).padStart(2, "0");
-        const year = today.getFullYear();
-        const formattedDate = `${month}/${day}/${year}`;
-        // Set the value via onChange (store as mm/dd/yyyy for display, will convert to YYYY-MM-DD on submit)
-        onChange(field.field_name, formattedDate);
-        hasAutoFilledRef.current = true;
+      // Get today's date in mm/dd/yyyy format
+      const today = new Date();
+      const month = String(today.getMonth() + 1).padStart(2, "0");
+      const day = String(today.getDate()).padStart(2, "0");
+      const year = today.getFullYear();
+      const formattedDate = `${month}/${day}/${year}`;
+      // Set the value via onChange (store as mm/dd/yyyy for display, will convert to YYYY-MM-DD on submit)
+      onChange(field.field_name, formattedDate);
+      hasAutoFilledRef.current = true;
     }
     // Reset the ref if value changes externally (e.g., when editing)
     if (value) {
@@ -460,8 +461,8 @@ export default function CustomFieldRenderer({
       const ids = Array.isArray(subIds) ? subIds.map(String) : [];
       const subFields = ids.length > 0 && allFields.length > 0
         ? ids
-            .map((id) => allFields.find((f) => String(f.id) === String(id)))
-            .filter(Boolean) as CustomFieldDefinition[]
+          .map((id) => allFields.find((f) => String(f.id) === String(id)))
+          .filter(Boolean) as CustomFieldDefinition[]
         : [];
       if (subFields.length === 0) {
         return (
@@ -594,7 +595,7 @@ export default function CustomFieldRenderer({
       const isYearField =
         field.field_label?.toLowerCase().includes("year") ||
         field.field_name?.toLowerCase().includes("year");
-      
+
       // Check if this is a numeric field that allows values >= 0 (Number of Employees, Offices, Oasis Key)
       // Use label/type only — no field_name (Field_32 etc.) so mapping per entity is respected.
       const isNonNegativeField =
@@ -689,7 +690,7 @@ export default function CustomFieldRenderer({
             value={value ?? ""}
             onChange={(e) => {
               const inputValue = e.target.value;
-              
+
               // Allow empty value
               if (inputValue === "") {
                 onChange(field.field_name, "");
@@ -840,7 +841,7 @@ export default function CustomFieldRenderer({
       const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         let inputValue = e.target.value;
         const digitsOnly = inputValue.replace(/\D/g, "");
-        
+
         let formatted = "";
         if (digitsOnly.length > 0) {
           formatted = digitsOnly.substring(0, 2);
@@ -851,13 +852,13 @@ export default function CustomFieldRenderer({
         if (digitsOnly.length >= 5) {
           formatted += "/" + digitsOnly.substring(4, 8);
         }
-        
+
         if (formatted.length > 10) {
           formatted = formatted.substring(0, 10);
         }
-        
+
         e.target.value = formatted;
-        
+
         if (formatted.length === 10 && /^\d{2}\/\d{2}\/\d{4}$/.test(formatted)) {
           const [month, day, year] = formatted.split("/");
           const dateStr = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
@@ -1048,8 +1049,8 @@ export default function CustomFieldRenderer({
                         ${isSelected
                           ? "bg-blue-600 text-white font-semibold"
                           : isToday
-                          ? "bg-blue-100 text-blue-700 font-semibold"
-                          : "hover:bg-gray-100 text-gray-700"
+                            ? "bg-blue-100 text-blue-700 font-semibold"
+                            : "hover:bg-gray-100 text-gray-700"
                         }
                       `}
                     >
@@ -1084,7 +1085,7 @@ export default function CustomFieldRenderer({
     case "datetime":
       const inputType =
         field.field_type === "datetime" ? "datetime-local" : field.field_type;
-      
+
       return (
         <input
           {...fieldProps}
@@ -1428,7 +1429,7 @@ export function useCustomFields(entityType: string) {
         return trimmed.length > 0;
       }
       const trimmed = String(value).trim();
-      
+
       // Special validation for select fields - check if "Select an option" is selected
       if (field.field_type === "select") {
         if (trimmed === "" || trimmed.toLowerCase() === "select an option") {
@@ -1441,10 +1442,10 @@ export function useCustomFields(entityType: string) {
         }
         return true;
       }
-      
+
       // Empty string means no value selected (especially for select fields)
       if (trimmed === "") return false;
-      
+
       // Special validation for date fields
       if (field.field_type === "date") {
         // Special check for "Date Added" - always valid as it's auto-populated/read-only (label only)
@@ -1454,33 +1455,33 @@ export function useCustomFields(entityType: string) {
 
         // Accept both YYYY-MM-DD (storage format) and mm/dd/yyyy (display format)
         let dateToValidate = trimmed;
-        
+
         // If it's in mm/dd/yyyy format, convert to YYYY-MM-DD
         if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
           const [month, day, year] = trimmed.split("/");
           dateToValidate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
         }
-        
+
         // Check if it's a valid date format (YYYY-MM-DD)
         const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
         if (!dateRegex.test(dateToValidate)) return false;
-        
+
         const date = new Date(dateToValidate);
         if (isNaN(date.getTime())) return false;
-        
+
         // Additional validation: check if the date components match
         // Note: new Date("YYYY-MM-DD") parses as UTC, so we must use UTC methods
         // to avoid timezone issues causing validation failures (e.g. 2024-01-29 becoming 28th in EST)
         const [year, month, day] = dateToValidate.split("-");
         if (date.getUTCFullYear() !== parseInt(year) ||
-            date.getUTCMonth() + 1 !== parseInt(month) ||
-            date.getUTCDate() !== parseInt(day)) {
+          date.getUTCMonth() + 1 !== parseInt(month) ||
+          date.getUTCDate() !== parseInt(day)) {
           return false; // Invalid date (e.g., 02/30/2024)
         }
-        
+
         return true;
       }
-      
+
       // Special validation for ZIP code (must be exactly 5 digits) — label/type only
       const isZipCodeField =
         field.field_label?.toLowerCase().includes("zip") ||
@@ -1489,7 +1490,7 @@ export function useCustomFields(entityType: string) {
       if (isZipCodeField) {
         return /^\d{5}$/.test(trimmed);
       }
-      
+
       // Special validation for numeric fields that allow values >= 0 — label/type only
       const isNonNegativeField =
         field.field_label?.toLowerCase().includes("employees") ||
@@ -1505,7 +1506,7 @@ export function useCustomFields(entityType: string) {
           return false;
         }
       }
-      
+
       // Special validation for phone fields (exclude date fields e.g. Start Date)
       // Only use field_type or label — do NOT use field_name (e.g. Field_5) as proxy for phone,
       // since the same field name can be mapped to different labels per entity (e.g. Title vs Main Phone).
@@ -1526,9 +1527,11 @@ export function useCustomFields(entityType: string) {
         }
         // Check if formatted correctly as (000) 000-0000
         const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
-        return phoneRegex.test(trimmed);
+        if (!phoneRegex.test(trimmed)) return false;
+        // NANP: valid area code (2-9), exchange (2-9), and area code in US list
+        return isValidUSPhoneNumber(trimmed);
       }
-      
+
       // Special validation for URL fields (Organization Website, etc.) — field_type/label only
       const isUrlField =
         field.field_type === "url" ||
@@ -1540,7 +1543,7 @@ export function useCustomFields(entityType: string) {
         if (!urlPattern.test(trimmed)) {
           return false;
         }
-        
+
         // Stricter validation: Check for complete domain structure
         // For www. URLs: must have www.domain.tld format (at least www. + domain + . + tld)
         // For http:// URLs: must have http://domain.tld format
@@ -1570,7 +1573,7 @@ export function useCustomFields(entityType: string) {
           }
           urlToValidate = trimmed;
         }
-        
+
         // Final validation: try to create a URL object to check if it's valid
         try {
           const urlObj = new URL(urlToValidate);
@@ -1588,7 +1591,7 @@ export function useCustomFields(entityType: string) {
           return false;
         }
       }
-      
+
       return true;
     };
 
@@ -1597,7 +1600,7 @@ export function useCustomFields(entityType: string) {
         const value = customFieldValues[field.field_name];
         if (!hasValidValue(field, value)) {
           let errorMessage = `${field.field_label} is required`;
-          
+
           // Add specific error messages for validation failures (label/type only)
           const isZipCodeField =
             field.field_label?.toLowerCase().includes("zip") ||
@@ -1606,7 +1609,7 @@ export function useCustomFields(entityType: string) {
           if (isZipCodeField && value && String(value).trim() !== "") {
             errorMessage = `${field.field_label} must be exactly 5 digits`;
           }
-          
+
           const isNonNegativeField =
             field.field_label?.toLowerCase().includes("employees") ||
             field.field_label?.toLowerCase().includes("offices") ||
@@ -1620,7 +1623,7 @@ export function useCustomFields(entityType: string) {
               errorMessage = `${field.field_label} must be 0 or greater`;
             }
           }
-          
+
           // Add specific error message for phone validation failures (exclude date fields e.g. Start Date)
           const isDateField =
             field.field_type === "date" ||
@@ -1635,13 +1638,12 @@ export function useCustomFields(entityType: string) {
             if (digitsOnly.length !== 10) {
               errorMessage = `${field.field_label} must be a complete 10-digit phone number`;
             } else {
-              const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
-              if (!phoneRegex.test(trimmed)) {
-                errorMessage = `${field.field_label} must be formatted as (000) 000-0000`;
+              if (!isValidUSPhoneNumber(trimmed)) {
+                errorMessage = `${field.field_label} contains an invalid area code or exchange code (must start with 2-9)`;
               }
             }
           }
-          
+
           // Add specific error message for URL validation failures (field_type/label only)
           const isUrlFieldError =
             field.field_type === "url" ||
@@ -1655,8 +1657,8 @@ export function useCustomFields(entityType: string) {
             } else {
               try {
                 // If URL starts with www., prepend https:// for validation
-                const urlToValidate = trimmed.toLowerCase().startsWith('www.') 
-                  ? `https://${trimmed}` 
+                const urlToValidate = trimmed.toLowerCase().startsWith('www.')
+                  ? `https://${trimmed}`
                   : trimmed;
                 new URL(urlToValidate);
               } catch {
@@ -1664,7 +1666,7 @@ export function useCustomFields(entityType: string) {
               }
             }
           }
-          
+
           return {
             isValid: false,
             message: errorMessage,
@@ -1680,7 +1682,7 @@ export function useCustomFields(entityType: string) {
     customFields.forEach((field) => {
       if (!field.is_hidden) {
         let valueToSend = customFieldValues[field.field_name];
-        
+
         // Convert date fields from mm/dd/yyyy to YYYY-MM-DD for backend
         if (field.field_type === "date" && valueToSend) {
           const dateStr = String(valueToSend).trim();
@@ -1691,7 +1693,7 @@ export function useCustomFields(entityType: string) {
           }
           // If it's already in YYYY-MM-DD format, use as-is
         }
-        
+
         customFieldsToSend[field.field_label] = valueToSend;
       }
     });
