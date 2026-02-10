@@ -8,6 +8,7 @@ import { getCookie } from "cookies-next";
 import CustomFieldRenderer, {
   useCustomFields,
 } from "@/components/CustomFieldRenderer";
+import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 
 interface CustomFieldDefinition {
   id: string;
@@ -514,29 +515,152 @@ export default function AddTask() {
         customFieldsForDB[label] = value;
       });
 
-      // Normalize time fields for backend (PostgreSQL TIME type)
+      // IMPORTANT: Check if datetime strings were incorrectly mapped to due_time
+      // This can happen if a datetime-local input is mapped to "Due Time" field
+      if (apiData.due_time && typeof apiData.due_time === 'string' && apiData.due_time.includes('T')) {
+        console.warn('[Task Submit] WARNING: DateTime string found in due_time, will normalize');
+        // Move the datetime string to due_date for proper handling
+        if (!apiData.due_date || apiData.due_date === '') {
+          apiData.due_date = apiData.due_time;
+        }
+        // due_time will be normalized below to extract just the time part
+      }
+
+      // Normalize date fields for backend (PostgreSQL DATE type)
+      // Handle datetime strings by splitting into date and time
+      const dateCol = "due_date";
       const timeCol = "due_time";
-      const rawTime = apiData[timeCol];
-      if (rawTime !== undefined && rawTime !== null) {
-        const s = String(rawTime).trim();
-        if (s === "") {
-          delete apiData[timeCol];
+      const rawDate = apiData[dateCol];
+      
+      console.log('[Task Submit] Raw due_date before normalization:', rawDate);
+      console.log('[Task Submit] Raw due_time before normalization:', apiData[timeCol]);
+      
+      if (rawDate !== undefined && rawDate !== null) {
+        const dateStr = String(rawDate).trim();
+        if (dateStr === "") {
+          delete apiData[dateCol];
         } else {
-          if (s.includes("T")) {
-            const timePart = s.split("T")[1] || "";
-            const [h, m, sec] = timePart.split(":");
-            if (h != null && m != null) {
-              apiData[timeCol] = `${h.padStart(2, "0")}:${m.padStart(2, "0")}:${(sec || "00").padStart(2, "0")}`;
+          // Check if it's a datetime string (contains 'T' or space with time)
+          if (dateStr.includes("T") || (dateStr.includes(" ") && dateStr.match(/\d{1,2}:\d{2}/))) {
+            // Split datetime into date and time parts
+            const separator = dateStr.includes("T") ? "T" : " ";
+            const [datePart, timePart] = dateStr.split(separator);
+            
+            // Extract just the date part (YYYY-MM-DD)
+            const dateMatch = datePart.match(/^(\d{4}-\d{2}-\d{2})/);
+            if (dateMatch) {
+              apiData[dateCol] = dateMatch[1];
+              
+              // If time part exists and due_time is not already set, extract time
+              if (timePart && (!apiData[timeCol] || apiData[timeCol] === "")) {
+                const timeMatch = timePart.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+                if (timeMatch) {
+                  const [, h, m, sec] = timeMatch;
+                  apiData[timeCol] = `${h.padStart(2, "0")}:${m.padStart(2, "0")}:${(sec || "00").padStart(2, "0")}`;
+                  console.log('[Task Submit] Extracted time from datetime string:', apiData[timeCol]);
+                }
+              }
+            } else {
+              // Invalid date format, try to extract date part
+              console.warn(`[Task Submit] Invalid date format: ${dateStr}, attempting to extract date`);
+              const extractedDate = dateStr.match(/(\d{4}-\d{2}-\d{2})/);
+              if (extractedDate) {
+                apiData[dateCol] = extractedDate[1];
+                console.log('[Task Submit] Extracted date:', extractedDate[1]);
+              }
             }
           } else {
-            const timeMatch = s.match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/);
-            if (timeMatch) {
-              const [, h, m, sec] = timeMatch;
-              apiData[timeCol] = `${h!.padStart(2, "0")}:${m!.padStart(2, "0")}:${(sec || "00").padStart(2, "0")}`;
+            // It's already a date-only string, ensure it's in YYYY-MM-DD format
+            const dateMatch = dateStr.match(/^(\d{4}-\d{2}-\d{2})/);
+            if (dateMatch) {
+              apiData[dateCol] = dateMatch[1];
+            } else {
+              // Try to convert MM/DD/YYYY to YYYY-MM-DD
+              const slashMatch = dateStr.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+              if (slashMatch) {
+                const [, mm, dd, yyyy] = slashMatch;
+                apiData[dateCol] = `${yyyy}-${mm}-${dd}`;
+              } else {
+                console.warn(`[Task Submit] Could not normalize date format: ${dateStr}`);
+              }
             }
           }
         }
       }
+      
+      console.log('[Task Submit] Final normalized due_date:', apiData[dateCol]);
+      console.log('[Task Submit] Final normalized due_time:', apiData[timeCol]);
+
+      // Normalize time fields for backend (PostgreSQL TIME type)
+      // IMPORTANT: Handle case where datetime string might be in due_time field
+      const rawTime = apiData[timeCol];
+      console.log('[Task Submit] Starting time normalization, rawTime:', rawTime);
+      if (rawTime !== undefined && rawTime !== null) {
+        const s = String(rawTime).trim();
+        console.log('[Task Submit] Time string to normalize:', s);
+        if (s === "") {
+          delete apiData[timeCol];
+        } else {
+          // Check if it's a datetime string (contains 'T' or full date)
+          if (s.includes("T")) {
+            console.log('[Task Submit] Detected datetime string in due_time, extracting time part');
+            // Extract time part from datetime string
+            const timePart = s.split("T")[1] || "";
+            console.log('[Task Submit] Extracted timePart:', timePart);
+            const timeMatch = timePart.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+            console.log('[Task Submit] Time regex match result:', timeMatch);
+            if (timeMatch) {
+              const [, h, m, sec] = timeMatch;
+              apiData[timeCol] = `${h.padStart(2, "0")}:${m.padStart(2, "0")}:${(sec || "00").padStart(2, "0")}`;
+              console.log('[Task Submit] Extracted time from due_time datetime string:', apiData[timeCol]);
+              
+              // If due_date is not set, extract date from this datetime string
+              if (!apiData[dateCol] || apiData[dateCol] === "") {
+                const datePart = s.split("T")[0];
+                const dateMatch = datePart.match(/^(\d{4}-\d{2}-\d{2})/);
+                if (dateMatch) {
+                  apiData[dateCol] = dateMatch[1];
+                  console.log('[Task Submit] Extracted date from due_time datetime string:', apiData[dateCol]);
+                }
+              }
+            } else {
+              console.warn(`[Task Submit] Could not extract time from datetime string: ${s}, timePart: ${timePart}`);
+              delete apiData[timeCol];
+            }
+          } else if (s.includes(" ") && s.match(/\d{4}-\d{2}-\d{2}/)) {
+            // Space-separated datetime string
+            const [datePart, timePart] = s.split(" ");
+            const timeMatch = timePart.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+            if (timeMatch) {
+              const [, h, m, sec] = timeMatch;
+              apiData[timeCol] = `${h.padStart(2, "0")}:${m.padStart(2, "0")}:${(sec || "00").padStart(2, "0")}`;
+              console.log('[Task Submit] Extracted time from space-separated datetime:', apiData[timeCol]);
+              
+              // Extract date if not set
+              if (!apiData[dateCol] || apiData[dateCol] === "") {
+                const dateMatch = datePart.match(/^(\d{4}-\d{2}-\d{2})/);
+                if (dateMatch) {
+                  apiData[dateCol] = dateMatch[1];
+                }
+              }
+            } else {
+              delete apiData[timeCol];
+            }
+          } else {
+            // It's a time-only string, normalize it
+            const timeMatch = s.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+            if (timeMatch) {
+              const [, h, m, sec] = timeMatch;
+              apiData[timeCol] = `${h.padStart(2, "0")}:${m.padStart(2, "0")}:${(sec || "00").padStart(2, "0")}`;
+            } else {
+              console.warn(`[Task Submit] Invalid time format: ${s}, removing`);
+              delete apiData[timeCol];
+            }
+          }
+        }
+      }
+      
+      console.log('[Task Submit] After time normalization, apiData[timeCol]:', apiData[timeCol]);
 
       // assigned_to: convert user name/option text to numeric user ID
       const rawAssignedTo = apiData.assigned_to;
@@ -600,8 +724,39 @@ export default function AddTask() {
       if (apiData.status !== undefined) cleanPayload.status = apiData.status ?? "Open";
       if (apiData.priority !== undefined) cleanPayload.priority = apiData.priority ?? "";
       if (apiData.assigned_to !== undefined) cleanPayload.assigned_to = apiData.assigned_to ?? null;
-      if (apiData.due_date !== undefined) cleanPayload.due_date = apiData.due_date && String(apiData.due_date).trim() !== "" ? apiData.due_date : null;
-      if (apiData.due_time !== undefined) cleanPayload.due_time = apiData.due_time;
+      // Normalize and set due_date and due_time
+      // Final validation: ensure due_time is never a datetime string
+      if (apiData.due_date !== undefined) {
+        const normalizedDate = apiData.due_date && String(apiData.due_date).trim() !== "" ? apiData.due_date : null;
+        cleanPayload.due_date = normalizedDate;
+        console.log('[Task Submit] Normalized due_date:', normalizedDate);
+      }
+      if (apiData.due_time !== undefined) {
+        let finalTime = apiData.due_time;
+        // Final safety check: if due_time still contains a datetime string, extract time part
+        if (finalTime && typeof finalTime === 'string') {
+          const timeStr = String(finalTime).trim();
+          if (timeStr.includes('T')) {
+            console.warn('[Task Submit] WARNING: due_time still contains datetime string, extracting time part');
+            const timePart = timeStr.split('T')[1] || '';
+            const timeMatch = timePart.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+            if (timeMatch) {
+              const [, h, m, sec] = timeMatch;
+              finalTime = `${h.padStart(2, "0")}:${m.padStart(2, "0")}:${(sec || "00").padStart(2, "0")}`;
+              console.log('[Task Submit] Final extracted time:', finalTime);
+            } else {
+              console.warn('[Task Submit] Could not extract time, setting to null');
+              finalTime = null;
+            }
+          } else if (timeStr && !timeStr.match(/^\d{1,2}:\d{2}(?::\d{2})?$/)) {
+            // Invalid time format
+            console.warn('[Task Submit] Invalid time format:', timeStr);
+            finalTime = null;
+          }
+        }
+        cleanPayload.due_time = finalTime;
+        console.log('[Task Submit] Final normalized due_time:', cleanPayload.due_time);
+      }
       if (apiData.organization_id !== undefined) cleanPayload.organization_id = apiData.organization_id;
       if (apiData.job_id !== undefined) cleanPayload.job_id = apiData.job_id;
       if (apiData.lead_id !== undefined) cleanPayload.lead_id = apiData.lead_id;
@@ -895,8 +1050,7 @@ export default function AddTask() {
                       ? { ...field, options: dynamicOwnerOptions }
                       : field;
 
-                  const rawVal = customFieldValues[field.field_name];
-                      const isValid = field.is_required && rawVal !== undefined && rawVal !== null && String(rawVal).trim() !== "";
+                  const fieldValue = customFieldValues[field.field_name] || "";
                       const assignedToValue = String(customFieldValues[field.field_name] ?? "").trim();
                       const assignedToMatches = isAssignedField && activeUsers.length > 0
                         ? activeUsers.filter(
@@ -905,16 +1059,116 @@ export default function AddTask() {
                               String(u.email || "").toLowerCase().includes(assignedToValue.toLowerCase())
                           )
                         : [];
+
+                      // Helper function to check if field has a valid value
+                      const hasValidValue = () => {
+                        if (fieldValue === null || fieldValue === undefined) return false;
+
+                        const trimmed = String(fieldValue).trim();
+                        if (trimmed === "") return false;
+
+                        /* ================= DATE FIELD (TIMEZONE SAFE) ================= */
+                        if (field.field_type === "date") {
+                          let normalizedDate = trimmed;
+
+                          // Convert MM/DD/YYYY → YYYY-MM-DD
+                          if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+                            const [mm, dd, yyyy] = trimmed.split("/");
+                            normalizedDate = `${yyyy}-${mm}-${dd}`;
+                          }
+
+                          // Strict YYYY-MM-DD format
+                          if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+                            return false;
+                          }
+
+                          const [year, month, day] = normalizedDate.split("-").map(Number);
+
+                          // Manual date validation (NO timezone usage)
+                          if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
+                            return false;
+                          }
+
+                          const daysInMonth = new Date(year, month, 0).getDate();
+                          if (day > daysInMonth) {
+                            return false;
+                          }
+
+                          return true;
+                        }
+                        /* =============================================================== */
+
+                        // ZIP code
+                        const isZipCodeField =
+                          field.field_label?.toLowerCase().includes("zip") ||
+                          field.field_label?.toLowerCase().includes("postal code") ||
+                          field.field_name?.toLowerCase().includes("zip");
+
+                        if (isZipCodeField) {
+                          return /^\d{5}$/.test(trimmed);
+                        }
+
+                        // Non-negative number fields
+                        const isNonNegativeField =
+                          field.field_label?.toLowerCase().includes("employees") ||
+                          field.field_label?.toLowerCase().includes("offices") ||
+                          field.field_label?.toLowerCase().includes("oasis key");
+
+                        if (isNonNegativeField && field.field_type === "number") {
+                          const num = Number(trimmed);
+                          return !isNaN(num) && num >= 0;
+                        }
+
+                        // Phone field
+                        const isPhoneField =
+                          (field.field_type === "phone" ||
+                            field.field_label?.toLowerCase().includes("phone"));
+
+                        if (isPhoneField && trimmed !== "") {
+                          // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
+                          // Remove all non-numeric characters to check digit count
+                          const digitsOnly = trimmed.replace(/\D/g, "");
+                          // Must have exactly 10 digits
+                          if (digitsOnly.length !== 10) {
+                            return false;
+                          }
+                          // Check if formatted correctly as (000) 000-0000
+                          const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+                          if (!phoneRegex.test(trimmed)) return false;
+                          // NANP: valid area code (2-9), exchange (2-9), and area code in US list
+                          return isValidUSPhoneNumber(trimmed);
+                        }
+
+                        // URL field
+                        const isUrlField =
+                          field.field_type === "url" ||
+                          field.field_label?.toLowerCase().includes("website") ||
+                          field.field_label?.toLowerCase().includes("url");
+
+                        if (isUrlField) {
+                          try {
+                            const url = trimmed.startsWith("http")
+                              ? new URL(trimmed)
+                              : new URL(`https://${trimmed}`);
+                            return url.hostname.includes(".");
+                          } catch {
+                            return false;
+                          }
+                        }
+
+                        return true;
+                      };
+
                       return (
                     <div key={field.id} className="flex items-center gap-2">
                       <label className="w-48 font-medium">
                         {field.field_label}:
-                        {field.is_required && !isValid && (
-                          <span className="text-red-500 ml-1">*</span>
-                        )}
-                        {isValid && (
-                          <span className="ml-1 text-green-600" title="Valid" aria-hidden="true">✓</span>
-                        )}
+                        {field.is_required &&
+                          (hasValidValue() ? (
+                            <span className="text-green-500 ml-1">✔</span>
+                          ) : (
+                            <span className="text-red-500 ml-1">*</span>
+                          ))}
                       </label>
                       <div className="flex-1 relative flex items-center gap-2" ref={isAssignedField ? assignedToDropdownRef : undefined}>
                         {isAssignedField ? (

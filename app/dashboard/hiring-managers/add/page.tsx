@@ -8,6 +8,7 @@ import CustomFieldRenderer, {
   useCustomFields,
 } from "@/components/CustomFieldRenderer";
 import AddressGroupRenderer, { getAddressFields } from "@/components/AddressGroupRenderer";
+import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 
 interface CustomFieldDefinition {
   id: string;
@@ -1430,11 +1431,11 @@ export default function AddHiringManager() {
 
                   // Special validation for phone fields
                   const isPhoneField =
-                    field.field_type === "phone" ||
-                    field.field_label?.toLowerCase().includes("phone") ||
-                    field.field_name?.toLowerCase().includes("phone");
+                    (field.field_type === "phone" ||
+                      field.field_label?.toLowerCase().includes("phone"));
                   if (isPhoneField && trimmed !== "") {
                     // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
+                    // Remove all non-numeric characters to check digit count
                     const digitsOnly = trimmed.replace(/\D/g, "");
                     // Must have exactly 10 digits
                     if (digitsOnly.length !== 10) {
@@ -1442,7 +1443,9 @@ export default function AddHiringManager() {
                     }
                     // Check if formatted correctly as (000) 000-0000
                     const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
-                    return phoneRegex.test(trimmed);
+                    if (!phoneRegex.test(trimmed)) return false;
+                    // NANP: valid area code (2-9), exchange (2-9), and area code in US list
+                    return isValidUSPhoneNumber(trimmed);
                   }
 
                   // Special validation for email fields
@@ -1578,11 +1581,10 @@ export default function AddHiringManager() {
             <button
               type="submit"
               disabled={isSubmitting || !isFormValid}
-              className={`px-4 py-2 rounded ${
-                isSubmitting || !isFormValid
+              className={`px-4 py-2 rounded ${isSubmitting || !isFormValid
                   ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                   : "bg-blue-500 text-white hover:bg-blue-600"
-              }`}
+                }`}
             >
               {isEditMode ? "Update" : "Save"}
             </button>
