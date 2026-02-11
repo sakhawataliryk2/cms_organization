@@ -569,6 +569,13 @@ export default function OrganizationView() {
   const [pendingDeleteRequest, setPendingDeleteRequest] = useState<any>(null);
   const [isLoadingDeleteRequest, setIsLoadingDeleteRequest] = useState(false);
 
+  // Dependency check state
+  const [isLoadingDependencies, setIsLoadingDependencies] = useState(false);
+  const [dependencyCounts, setDependencyCounts] = useState<any>(null);
+  const [showDependencyWarningModal, setShowDependencyWarningModal] = useState(false);
+  const [deleteActionType, setDeleteActionType] = useState<"standard" | "cascade">("standard");
+  const [cascadeUserConsent, setCascadeUserConsent] = useState(false);
+
   // Summary counts state
   const [summaryCounts, setSummaryCounts] = useState({
     clientVisits: 0,
@@ -781,7 +788,7 @@ export default function OrganizationView() {
             ourJobs: ["jobs"],
           };
         }
-      } catch (_) {}
+      } catch (_) { }
     }
     return {
       contactInfo: [],
@@ -1394,7 +1401,7 @@ export default function OrganizationView() {
     if (editingPanel !== "contactInfo") return;
     const current = visibleFields.contactInfo || [];
     const catalogKeys = contactInfoFieldCatalog.map((f) => f.key);
-    
+
     // Check if Full Address should be visible (if any address parts are visible)
     const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
     const hasAddressParts = current.some((k) => {
@@ -1403,10 +1410,10 @@ export default function OrganizationView() {
       return addressPartKeys.has(k.toLowerCase()) || label === "address";
     });
     const fullAddressVisible = current.includes(FULL_ADDRESS_KEY) || hasAddressParts;
-    
+
     const currentInCatalog = current.filter((k) => catalogKeys.includes(k) && k !== FULL_ADDRESS_KEY);
     const rest = catalogKeys.filter((k) => !current.includes(k));
-    
+
     // Build order: preserve Full Address position if it exists, otherwise add it at the beginning if address parts exist
     let order: string[];
     const fullAddressIndex = current.indexOf(FULL_ADDRESS_KEY);
@@ -1422,10 +1429,10 @@ export default function OrganizationView() {
       // No Full Address needed
       order = [...currentInCatalog, ...rest];
     }
-    
+
     const uniqueOrder = Array.from(new Set(order));
     setModalContactInfoOrder(uniqueOrder);
-    
+
     setModalContactInfoVisible(
       [...catalogKeys, FULL_ADDRESS_KEY].reduce<Record<string, boolean>>((acc, k) => {
         if (k === FULL_ADDRESS_KEY) {
@@ -1448,11 +1455,11 @@ export default function OrganizationView() {
       return modalContactInfoVisible[k] === true;
     });
     if (orderedVisible.length === 0) return;
-    
+
     setVisibleFields((prev) => ({ ...prev, contactInfo: orderedVisible }));
     try {
       localStorage.setItem(CONTACT_INFO_STORAGE_KEY, JSON.stringify(orderedVisible));
-    } catch (_) {}
+    } catch (_) { }
     setEditingPanel(null);
   };
 
@@ -2340,7 +2347,7 @@ export default function OrganizationView() {
     setShowFileDetailsModal(true);
   };
 
-  
+
   // Confirm details and upload the first file in the queue
   const handleConfirmFileDetails = async () => {
     if (pendingFiles.length === 0) return;
@@ -2533,9 +2540,9 @@ export default function OrganizationView() {
   // Handle downloading a document (file or text)
   const handleDownloadDocument = async (doc: any) => {
     // Check if it's a text file (by mime_type or file extension)
-    const isTextFile = doc.mime_type === "text/plain" || 
-                       doc.file_path?.toLowerCase().endsWith(".txt") ||
-                       doc.document_name?.toLowerCase().endsWith(".txt");
+    const isTextFile = doc.mime_type === "text/plain" ||
+      doc.file_path?.toLowerCase().endsWith(".txt") ||
+      doc.document_name?.toLowerCase().endsWith(".txt");
 
     // If the document has a stored file path
     if (doc.file_path) {
@@ -2544,7 +2551,7 @@ export default function OrganizationView() {
         try {
           // Check if it's an absolute URL (e.g. from Vercel Blob)
           const isAbsoluteUrl = doc.file_path.startsWith('http://') || doc.file_path.startsWith('https://');
-          
+
           // Prepend leading slash if missing and not absolute URL
           const url = isAbsoluteUrl
             ? doc.file_path
@@ -2726,8 +2733,8 @@ export default function OrganizationView() {
       const isAddressPartKey = (key: string) => {
         // Don't treat Address 2 as an address part - it should show separately
         if (isAddress2Key(key)) return false;
-        return addressPartKeys.has((key || "").toLowerCase()) || 
-               (getContactInfoLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
+        return addressPartKeys.has((key || "").toLowerCase()) ||
+          (getContactInfoLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
       };
 
       const getCombinedAddress = () => {
@@ -2747,7 +2754,7 @@ export default function OrganizationView() {
         if (!organization) return "-";
         const o = organization as any;
         const rawKey = key.startsWith("custom:") ? key.replace("custom:", "") : key;
-        
+
         // Special handling for status: prioritize customFields["Status"] (matching Edit mode)
         const isStatus = isStatusField(key);
         if (isStatus) {
@@ -2758,11 +2765,11 @@ export default function OrganizationView() {
               (f.field_name || "").toLowerCase() === "status"
           );
           const statusLabel = statusFieldFromApi?.field_label || "Status";
-          
+
           console.log("Status retrieval - Field label:", statusLabel);
           console.log("Status retrieval - customFields:", o.customFields);
           console.log("Status retrieval - Available options:", statusFieldOptions);
-          
+
           // PRIORITY 1: Check customFields with exact label from API (matching Edit mode storage)
           let statusValue = o.customFields?.[statusLabel];
           if (statusValue !== undefined && statusValue !== null && String(statusValue).trim() !== "") {
@@ -2777,7 +2784,7 @@ export default function OrganizationView() {
             console.warn("Status value doesn't match options:", valueStr, "Available:", statusFieldOptions);
             return valueStr;
           }
-          
+
           // PRIORITY 2: Check other variations in customFields
           statusValue = o.customFields?.["Status"] ?? o.customFields?.["status"];
           if (statusValue !== undefined && statusValue !== null && String(statusValue).trim() !== "") {
@@ -2789,13 +2796,13 @@ export default function OrganizationView() {
             }
             return valueStr;
           }
-          
+
           // PRIORITY 3: Fallback to top-level status (for backward compatibility)
           const fallbackStatus = String(o.status ?? statusFieldOptions[0] ?? "Active").trim();
           console.log("Status retrieval - Using fallback:", fallbackStatus);
           return fallbackStatus;
         }
-        
+
         let v = o[rawKey];
         if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
         if (o.contact?.[rawKey] !== undefined) return String(o.contact[rawKey] ?? "-");
@@ -2876,12 +2883,12 @@ export default function OrganizationView() {
                 const addressParts =
                   (row.isAddress || row.key === FULL_ADDRESS_KEY) && o
                     ? {
-                        address: o.customFields?.["Address"] ?? o.address,
-                        address2: o.customFields?.["Address 2"] ?? o.address2,
-                        city: o.customFields?.["City"] ?? o.city,
-                        state: o.customFields?.["State"] ?? o.state,
-                        zip: o.customFields?.["ZIP Code"] ?? o.zip_code ?? o.zip,
-                      }
+                      address: o.customFields?.["Address"] ?? o.address,
+                      address2: o.customFields?.["Address 2"] ?? o.address2,
+                      city: o.customFields?.["City"] ?? o.city,
+                      state: o.customFields?.["State"] ?? o.state,
+                      zip: o.customFields?.["ZIP Code"] ?? o.zip_code ?? o.zip,
+                    }
                     : undefined;
                 return (
                   <div
@@ -3422,7 +3429,8 @@ export default function OrganizationView() {
     } else if (action === "delete" && organizationId) {
       // Check for pending delete request first
       checkPendingDeleteRequest();
-      setShowDeleteModal(true);
+      // Check dependencies before showing modal
+      checkDependencies();
     } else if (action === "add-note") {
       setShowAddNote(true);
       setActiveTab("notes");
@@ -3504,6 +3512,54 @@ export default function OrganizationView() {
       checkPendingDeleteRequest();
     }
   }, [organizationId]);
+
+  // Check for dependencies
+  const checkDependencies = async () => {
+    if (!organizationId) return;
+    setIsLoadingDependencies(true);
+    try {
+      const response = await fetch(`/api/organizations/${organizationId}/dependencies`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setDependencyCounts(data.counts);
+
+        // Check if there are any dependencies
+        const hasDependencies = data.counts && (
+          (data.counts.hiring_managers > 0) ||
+          (data.counts.jobs > 0) ||
+          (data.counts.placements > 0) ||
+          (data.counts.child_organizations > 0)
+        );
+
+        if (hasDependencies) {
+          setShowDependencyWarningModal(true);
+          // Default to transfer logic or let user choose
+        } else {
+          // No dependencies, proceed to standard delete modal
+          setDeleteActionType("standard");
+          setShowDeleteModal(true);
+        }
+      } else {
+        // Fallback if check fails
+        console.error("Failed to check dependencies");
+        setShowDeleteModal(true);
+      }
+    } catch (err) {
+      console.error("Error checking dependencies:", err);
+      // Fallback
+      setShowDeleteModal(true);
+    } finally {
+      setIsLoadingDependencies(false);
+    }
+  };
 
   // Fetch summary counts
   const fetchSummaryCounts = async () => {
@@ -3611,6 +3667,9 @@ export default function OrganizationView() {
             record_number: formatRecordId(organization?.id, "organization"),
             requested_by: currentUser?.id || currentUser?.name || "Unknown",
             requested_by_email: currentUser?.email || "",
+            action_type: deleteActionType,
+            dependencies_summary: dependencyCounts || {},
+            user_consent: deleteActionType === 'cascade' ? cascadeUserConsent : false
           }),
         }
       );
@@ -3778,14 +3837,14 @@ export default function OrganizationView() {
         (f.field_label || "").toLowerCase() === "status" ||
         (f.field_name || "").toLowerCase() === "status"
     );
-    
+
     if (!statusField || !statusField.options) {
       // Fallback to default options if not found
       return ["Active", "Inactive", "Archived", "On Hold"];
     }
 
     let options = statusField.options;
-    
+
     // Parse options if it's a string
     if (typeof options === "string") {
       try {
@@ -3829,55 +3888,55 @@ export default function OrganizationView() {
           (f.field_name || "").toLowerCase() === "status"
       );
       const statusLabel = statusField?.field_label || "Status";
-      
+
       console.log("Status update - Field label:", statusLabel);
       console.log("Status update - New value:", newStatus);
       console.log("Status update - Current customFields:", organization?.customFields);
-      
+
       // Get current customFields and update Status in it (matching Edit mode storage)
       // CRITICAL: Ensure we preserve ALL existing custom_fields, not just Status
       const currentCustomFields = organization?.customFields || {};
-      
+
       // Ensure we're using the exact field_label that Edit mode will look for
       // Edit mode reads from existingCustomFields[field.field_label], so we must use field_label
       const updatedCustomFields = {
         ...currentCustomFields, // Preserve all existing custom fields
         [statusLabel]: newStatus, // Update Status with the exact field_label (matching Edit mode lookup)
       };
-      
+
       console.log("Status update - Status field label:", statusLabel);
       console.log("Status update - Status field name:", statusField?.field_name);
       console.log("Status update - Current customFields keys:", Object.keys(currentCustomFields));
       console.log("Status update - Updated customFields:", updatedCustomFields);
       console.log("Status update - Status value in updatedCustomFields:", updatedCustomFields[statusLabel]);
-      
+
       // Send update EXACTLY like Edit mode does:
       // 1. Top-level status field (for API compatibility)
       // 2. Full custom_fields object with ALL fields (matching Edit mode's getCustomFieldsForSubmission format)
       // This ensures Edit mode can read it back correctly
       const response = await fetch(`/api/organizations/${organizationId}`, {
         method: "PUT",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${document.cookie.replace(
             /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
             "$1"
           )}`,
         },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           status: newStatus, // Top-level for API compatibility (matches Edit mode)
           custom_fields: updatedCustomFields, // Full custom_fields object with Status updated (matches Edit mode)
         }),
       });
-      
+
       if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.message || "Failed to update status");
       }
-      
+
       const responseData = await response.json();
       console.log("Status update - API response:", responseData);
-      
+
       // Parse the returned custom_fields from API response to ensure we have the exact format
       let returnedCustomFields = updatedCustomFields; // Default to what we sent
       if (responseData.organization?.custom_fields) {
@@ -3894,12 +3953,12 @@ export default function OrganizationView() {
       } else {
         console.warn("Status update - No custom_fields in API response, using updatedCustomFields");
       }
-      
+
       // Update local state immediately: both top-level status and customFields[Status]
       // Use the returned custom_fields from API to ensure we have the exact format the backend stored
       setOrganization((prev: any) => {
-        const updated = prev ? { 
-          ...prev, 
+        const updated = prev ? {
+          ...prev,
           status: newStatus, // Update top-level for backward compatibility
           customFields: returnedCustomFields, // Use returned custom_fields from API (most accurate)
         } : prev;
@@ -3908,9 +3967,9 @@ export default function OrganizationView() {
         console.log("Status update - Status field label used:", statusLabel);
         return updated;
       });
-      
+
       toast.success("Status updated successfully");
-      
+
       // Refresh organization data to ensure consistency with backend
       // This ensures both Summary and Edit mode see the same value
       if (organizationId) {
@@ -4100,15 +4159,15 @@ export default function OrganizationView() {
     transferSearchQuery.trim() === ""
       ? availableOrganizations
       : availableOrganizations.filter((org: any) => {
-          const q = transferSearchQuery.trim().toLowerCase();
-          const name = String(org?.name || "").toLowerCase();
-          const idStr = org?.id !== undefined && org?.id !== null ? String(org.id) : "";
-          const recordId =
-            org?.id !== undefined && org?.id !== null
-              ? String(formatRecordId(org.id, "organization")).toLowerCase()
-              : "";
-          return name.includes(q) || idStr.includes(q) || recordId.includes(q);
-        });
+        const q = transferSearchQuery.trim().toLowerCase();
+        const name = String(org?.name || "").toLowerCase();
+        const idStr = org?.id !== undefined && org?.id !== null ? String(org.id) : "";
+        const recordId =
+          org?.id !== undefined && org?.id !== null
+            ? String(formatRecordId(org.id, "organization")).toLowerCase()
+            : "";
+        return name.includes(q) || idStr.includes(q) || recordId.includes(q);
+      });
 
   // Click outside to close transfer search dropdown
   useEffect(() => {
@@ -4715,145 +4774,145 @@ export default function OrganizationView() {
             disabled={isLoadingHistory}
           />
           <div className="space-y-4">
-          {historyFilters.filteredAndSorted.map((item) => {
-            // Format the history entry based on action type
-            let actionDisplay = "";
-            let detailsDisplay: React.ReactNode = "";
+            {historyFilters.filteredAndSorted.map((item) => {
+              // Format the history entry based on action type
+              let actionDisplay = "";
+              let detailsDisplay: React.ReactNode = "";
 
-            try {
-              const details =
-                typeof item.details === "string"
-                  ? JSON.parse(item.details)
-                  : item.details;
+              try {
+                const details =
+                  typeof item.details === "string"
+                    ? JSON.parse(item.details)
+                    : item.details;
 
-              switch (item.action) {
-                case "CREATE":
-                  actionDisplay = "Organization Created";
-                  detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
-                    }`;
-                  break;
-                case "UPDATE":
-                  actionDisplay = "Organization Updated";
-                  if (details && details.before && details.after) {
-                    // Create a list of changes
-                    const changes: React.ReactNode[] = [];
+                switch (item.action) {
+                  case "CREATE":
+                    actionDisplay = "Organization Created";
+                    detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
+                      }`;
+                    break;
+                  case "UPDATE":
+                    actionDisplay = "Organization Updated";
+                    if (details && details.before && details.after) {
+                      // Create a list of changes
+                      const changes: React.ReactNode[] = [];
 
-                    // Helper function to format values
-                    const formatValue = (val: any): string => {
-                      if (val === null || val === undefined) return "Empty";
-                      if (typeof val === "object") return JSON.stringify(val);
-                      return String(val);
-                    };
+                      // Helper function to format values
+                      const formatValue = (val: any): string => {
+                        if (val === null || val === undefined) return "Empty";
+                        if (typeof val === "object") return JSON.stringify(val);
+                        return String(val);
+                      };
 
-                    for (const key in details.after) {
-                      // Skip internal fields that might not be relevant to users
-                      if (key === "updated_at") continue;
+                      for (const key in details.after) {
+                        // Skip internal fields that might not be relevant to users
+                        if (key === "updated_at") continue;
 
-                      const beforeVal = details.before[key];
-                      const afterVal = details.after[key];
+                        const beforeVal = details.before[key];
+                        const afterVal = details.after[key];
 
-                      if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
-                        // Special handling for custom_fields
-                        if (key === "custom_fields") {
-                          let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
-                          let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
+                        if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                          // Special handling for custom_fields
+                          if (key === "custom_fields") {
+                            let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
+                            let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
 
-                          // Handle case where custom_fields might be null/undefined
-                          beforeObj = beforeObj || {};
-                          afterObj = afterObj || {};
+                            // Handle case where custom_fields might be null/undefined
+                            beforeObj = beforeObj || {};
+                            afterObj = afterObj || {};
 
-                          if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
-                            const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
+                            if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
+                              const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
 
-                            allKeys.forEach(cfKey => {
-                              const beforeCfVal = beforeObj[cfKey];
-                              const afterCfVal = afterObj[cfKey];
+                              allKeys.forEach(cfKey => {
+                                const beforeCfVal = beforeObj[cfKey];
+                                const afterCfVal = afterObj[cfKey];
 
-                              if (beforeCfVal !== afterCfVal) {
-                                changes.push(
-                                  <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                                    <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
-                                    <div className="flex flex-wrap gap-2 items-center">
-                                      <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                                        {formatValue(beforeCfVal)}
-                                      </span>
-                                      <span className="text-gray-400">→</span>
-                                      <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                                        {formatValue(afterCfVal)}
-                                      </span>
+                                if (beforeCfVal !== afterCfVal) {
+                                  changes.push(
+                                    <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                                      <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
+                                      <div className="flex flex-wrap gap-2 items-center">
+                                        <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                                          {formatValue(beforeCfVal)}
+                                        </span>
+                                        <span className="text-gray-400">→</span>
+                                        <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                                          {formatValue(afterCfVal)}
+                                        </span>
+                                      </div>
                                     </div>
-                                  </div>
-                                );
-                              }
-                            });
-                            continue; // Skip the standard field handling for custom_fields
+                                  );
+                                }
+                              });
+                              continue; // Skip the standard field handling for custom_fields
+                            }
                           }
-                        }
 
-                        // Standard fields
-                        // const fieldName = key.replace(/_/g, " ");
-                        // changes.push(
-                        //   <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                        //     <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
-                        //     <div className="flex flex-wrap gap-2 items-center">
-                        //       <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                        //         {formatValue(beforeVal)}
-                        //       </span>
-                        //       <span className="text-gray-400">→</span>
-                        //       <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                        //         {formatValue(afterVal)}
-                        //       </span>
-                        //     </div>
-                        //   </div>
-                        // );
+                          // Standard fields
+                          // const fieldName = key.replace(/_/g, " ");
+                          // changes.push(
+                          //   <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
+                          //     <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
+                          //     <div className="flex flex-wrap gap-2 items-center">
+                          //       <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
+                          //         {formatValue(beforeVal)}
+                          //       </span>
+                          //       <span className="text-gray-400">→</span>
+                          //       <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
+                          //         {formatValue(afterVal)}
+                          //       </span>
+                          //     </div>
+                          //   </div>
+                          // );
+                        }
+                      }
+
+                      if (changes.length > 0) {
+                        detailsDisplay = (
+                          <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
+                            {changes}
+                          </div>
+                        );
+                      } else {
+                        detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
                       }
                     }
-
-                    if (changes.length > 0) {
-                      detailsDisplay = (
-                        <div className="flex flex-col gap-2 mt-2 bg-gray-50 p-2 rounded border border-gray-100">
-                          {changes}
-                        </div>
-                      );
-                    } else {
-                      detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
-                    }
-                  }
-                  break;
-                case "ADD_NOTE":
-                  actionDisplay = "Note Added";
-                  detailsDisplay = details.text || "";
-                  break;
-                default:
-                  actionDisplay = item.action;
-                  detailsDisplay = JSON.stringify(details);
+                    break;
+                  case "ADD_NOTE":
+                    actionDisplay = "Note Added";
+                    detailsDisplay = details.text || "";
+                    break;
+                  default:
+                    actionDisplay = item.action;
+                    detailsDisplay = JSON.stringify(details);
+                }
+              } catch (e) {
+                console.error("Error parsing history details:", e);
+                detailsDisplay = "Error displaying details";
               }
-            } catch (e) {
-              console.error("Error parsing history details:", e);
-              detailsDisplay = "Error displaying details";
-            }
 
-            return (
-              <div
-                key={item.id}
-                className="p-3 border rounded hover:bg-gray-50"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="font-medium text-blue-600">
-                    {actionDisplay}
-                  </span>
-                  <span className="text-sm text-gray-500">
-                    {new Date(item.performed_at).toLocaleString()}
-                  </span>
+              return (
+                <div
+                  key={item.id}
+                  className="p-3 border rounded hover:bg-gray-50"
+                >
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="font-medium text-blue-600">
+                      {actionDisplay}
+                    </span>
+                    <span className="text-sm text-gray-500">
+                      {new Date(item.performed_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="mb-2">{detailsDisplay}</div>
+                  <div className="text-sm text-gray-600">
+                    By: {item.performed_by_name || "Unknown"}
+                  </div>
                 </div>
-                <div className="mb-2">{detailsDisplay}</div>
-                <div className="text-sm text-gray-600">
-                  By: {item.performed_by_name || "Unknown"}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
         </>
       ) : (
         <p className="text-gray-500 italic">No history records available</p>
@@ -5252,129 +5311,128 @@ export default function OrganizationView() {
                   />
                 </div>
                 {filteredAndSortedHiringManagers.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <DndContext collisionDetection={closestCenter} onDragEnd={handleContactColumnDragEnd}>
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="bg-gray-100 border-b">
-                          <th className="text-left px-6 py-3 font-medium">Actions</th>
-                          <SortableContext
-                            items={contactColumnFields}
-                            strategy={horizontalListSortingStrategy}
-                          >
-                            {contactColumnFields.map((key) => {
-                              const columnInfo = getContactColumnInfo(key);
-                              if (!columnInfo) return null;
-                              return (
-                                <SortableColumnHeader
-                                  key={key}
-                                  id={key}
-                                  columnKey={key}
-                                  label={getContactColumnLabel(key)}
-                                  sortState={contactColumnSorts[key] || null}
-                                  filterValue={contactColumnFilters[key] || null}
-                                  onSort={() => handleContactColumnSort(key)}
-                                  onFilterChange={(value) => handleContactColumnFilter(key, value)}
-                                  filterType={columnInfo.filterType}
-                                  filterOptions={
-                                    key === "status" ? contactStatusOptions : undefined
-                                  }
-                                />
-                              );
-                            })}
-                          </SortableContext>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredAndSortedHiringManagers.map((hm) => (
-                          <tr key={hm.id} className="border-b hover:bg-gray-50">
-                            <td className="px-6 py-3">
-                              <ActionDropdown
-                                label="Actions"
-                                options={[
-                                  {
-                                    label: "View",
-                                    action: () =>
-                                      router.push(
-                                        `/dashboard/hiring-managers/view?id=${hm.id}`
-                                      ),
-                                  },
-                                ]}
-                              />
-                            </td>
-                            {contactColumnFields.map((key) => (
-                              <td key={key} className="px-6 py-3">
-                                {key === "name" ? (
-                                  <button
-                                    onClick={() =>
-                                      router.push(
-                                        `/dashboard/hiring-managers/view?id=${hm.id}`
-                                      )
+                  <div className="overflow-x-auto">
+                    <DndContext collisionDetection={closestCenter} onDragEnd={handleContactColumnDragEnd}>
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-gray-100 border-b">
+                            <th className="text-left px-6 py-3 font-medium">Actions</th>
+                            <SortableContext
+                              items={contactColumnFields}
+                              strategy={horizontalListSortingStrategy}
+                            >
+                              {contactColumnFields.map((key) => {
+                                const columnInfo = getContactColumnInfo(key);
+                                if (!columnInfo) return null;
+                                return (
+                                  <SortableColumnHeader
+                                    key={key}
+                                    id={key}
+                                    columnKey={key}
+                                    label={getContactColumnLabel(key)}
+                                    sortState={contactColumnSorts[key] || null}
+                                    filterValue={contactColumnFilters[key] || null}
+                                    onSort={() => handleContactColumnSort(key)}
+                                    onFilterChange={(value) => handleContactColumnFilter(key, value)}
+                                    filterType={columnInfo.filterType}
+                                    filterOptions={
+                                      key === "status" ? contactStatusOptions : undefined
                                     }
-                                    className="text-blue-600 hover:underline font-medium"
-                                  >
-                                    {getContactColumnValue(hm, key)}
-                                  </button>
-                                ) : key === "email" ? (
-                                  getContactColumnValue(hm, key) !== "—" ? (
-                                    <a
-                                      href={`mailto:${hm.email}`}
-                                      className="text-blue-600 hover:underline"
+                                  />
+                                );
+                              })}
+                            </SortableContext>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredAndSortedHiringManagers.map((hm) => (
+                            <tr key={hm.id} className="border-b hover:bg-gray-50">
+                              <td className="px-6 py-3">
+                                <ActionDropdown
+                                  label="Actions"
+                                  options={[
+                                    {
+                                      label: "View",
+                                      action: () =>
+                                        router.push(
+                                          `/dashboard/hiring-managers/view?id=${hm.id}`
+                                        ),
+                                    },
+                                  ]}
+                                />
+                              </td>
+                              {contactColumnFields.map((key) => (
+                                <td key={key} className="px-6 py-3">
+                                  {key === "name" ? (
+                                    <button
+                                      onClick={() =>
+                                        router.push(
+                                          `/dashboard/hiring-managers/view?id=${hm.id}`
+                                        )
+                                      }
+                                      className="text-blue-600 hover:underline font-medium"
                                     >
                                       {getContactColumnValue(hm, key)}
-                                    </a>
-                                  ) : (
-                                    "—"
-                                  )
-                                ) : key === "phone" ? (
-                                  (() => {
-                                    const phone = hm.phone || "";
-                                    const digits = phone.replace(/\D/g, "");
-                                    return digits.length >= 7 ? (
+                                    </button>
+                                  ) : key === "email" ? (
+                                    getContactColumnValue(hm, key) !== "—" ? (
                                       <a
-                                        href={`tel:${digits}`}
+                                        href={`mailto:${hm.email}`}
                                         className="text-blue-600 hover:underline"
                                       >
                                         {getContactColumnValue(hm, key)}
                                       </a>
                                     ) : (
-                                      getContactColumnValue(hm, key)
-                                    );
-                                  })()
-                                ) : key === "jobs" ? (
-                                  <button
-                                    className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800 hover:bg-green-200"
-                                    onClick={() => {
-                                      const name = encodeURIComponent(hmName(hm));
-                                      router.push(
-                                        `/dashboard/organizations/view?id=${organizationId}&tab=jobs&hm=${name}`
+                                      "—"
+                                    )
+                                  ) : key === "phone" ? (
+                                    (() => {
+                                      const phone = hm.phone || "";
+                                      const digits = phone.replace(/\D/g, "");
+                                      return digits.length >= 7 ? (
+                                        <a
+                                          href={`tel:${digits}`}
+                                          className="text-blue-600 hover:underline"
+                                        >
+                                          {getContactColumnValue(hm, key)}
+                                        </a>
+                                      ) : (
+                                        getContactColumnValue(hm, key)
                                       );
-                                      setActiveTab("jobs");
-                                    }}
-                                  >
-                                    {getContactColumnValue(hm, key)} Jobs
-                                  </button>
-                                ) : key === "status" ? (
-                                  <span
-                                    className={`px-2 py-1 rounded text-xs ${
-                                      hm.status === "Active"
+                                    })()
+                                  ) : key === "jobs" ? (
+                                    <button
+                                      className="px-2 py-1 rounded text-xs bg-gray-100 text-gray-800 hover:bg-green-200"
+                                      onClick={() => {
+                                        const name = encodeURIComponent(hmName(hm));
+                                        router.push(
+                                          `/dashboard/organizations/view?id=${organizationId}&tab=jobs&hm=${name}`
+                                        );
+                                        setActiveTab("jobs");
+                                      }}
+                                    >
+                                      {getContactColumnValue(hm, key)} Jobs
+                                    </button>
+                                  ) : key === "status" ? (
+                                    <span
+                                      className={`px-2 py-1 rounded text-xs ${hm.status === "Active"
                                         ? "bg-green-100 text-green-800"
                                         : "bg-gray-100 text-gray-800"
-                                    }`}
-                                  >
-                                    {getContactColumnValue(hm, key)}
-                                  </span>
-                                ) : (
-                                  getContactColumnValue(hm, key)
-                                )}
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </DndContext>
-                </div>
+                                        }`}
+                                    >
+                                      {getContactColumnValue(hm, key)}
+                                    </span>
+                                  ) : (
+                                    getContactColumnValue(hm, key)
+                                  )}
+                                </td>
+                              ))}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </DndContext>
+                  </div>
                 ) : (
                   <p className="text-gray-500 italic py-4 text-center">
                     No contacts match the current filters.
@@ -6011,8 +6069,8 @@ export default function OrganizationView() {
                       ) : (
                         modalContactInfoOrder.map((key, index) => {
                           // Handle synthetic Full Address field
-                          const label = key === FULL_ADDRESS_KEY 
-                            ? "Full Address" 
+                          const label = key === FULL_ADDRESS_KEY
+                            ? "Full Address"
                             : (contactInfoFieldCatalog.find((f) => f.key === key)?.label ?? key);
                           const isVisible = modalContactInfoVisible[key] ?? false;
                           return (
@@ -6038,7 +6096,7 @@ export default function OrganizationView() {
                           id={contactInfoDragActiveId}
                           label={label}
                           checked={modalContactInfoVisible[contactInfoDragActiveId] ?? false}
-                          onToggle={() => {}}
+                          onToggle={() => { }}
                           isOverlay
                         />
                       );
@@ -6336,11 +6394,11 @@ export default function OrganizationView() {
                     )}
 
                     {/* Search Input for References */}
-                      {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
-                        <label className="block text-xs font-medium text-gray-500 mb-1">
-                          Add Additional References
-                        </label>
-                      )}
+                    {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
+                      <label className="block text-xs font-medium text-gray-500 mb-1">
+                        Add Additional References
+                      </label>
+                    )}
                     <div className="relative">
                       {/* <label className="block text-sm font-medium text-gray-700 mb-1">
                         Additional References
@@ -6752,11 +6810,14 @@ export default function OrganizationView() {
           <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
             {/* Header */}
             <div className="flex justify-between items-center p-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold">Request Deletion</h2>
+              <h2 className="text-lg font-semibold">
+                {deleteActionType === 'cascade' ? "Request Cascade Deletion" : "Request Deletion"}
+              </h2>
               <button
                 onClick={() => {
                   setShowDeleteModal(false);
                   setDeleteForm({ reason: "" });
+                  setCascadeUserConsent(false);
                 }}
                 className="text-gray-500 hover:text-gray-700"
               >
@@ -6776,6 +6837,11 @@ export default function OrganizationView() {
                     ? `${formatRecordId(organization.id, "organization")} ${organization.name}`
                     : "N/A"}
                 </p>
+                {deleteActionType === 'cascade' && (
+                  <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 mt-2">
+                    Cascade Delete Mode
+                  </span>
+                )}
               </div>
 
               {/* Pending Request Warning */}
@@ -6793,6 +6859,32 @@ export default function OrganizationView() {
                   <p className="text-sm text-red-800">
                     <strong>Previous Request Denied:</strong> {pendingDeleteRequest.denial_reason || "No reason provided"}
                   </p>
+                </div>
+              )}
+
+              {/* Cascade Consent Checkbox */}
+              {deleteActionType === 'cascade' && (
+                <div className="bg-red-50 border border-red-200 rounded p-4">
+                  <p className="text-sm text-red-800 mb-3">
+                    <strong>Warning:</strong> You are requesting to delete this organization AND all linked records:
+                  </p>
+                  <ul className="list-disc list-inside text-xs text-red-700 mb-3 space-y-1">
+                    {dependencyCounts?.hiring_managers > 0 && <li>{dependencyCounts.hiring_managers} Hiring Managers</li>}
+                    {dependencyCounts?.jobs > 0 && <li>{dependencyCounts.jobs} Jobs</li>}
+                    {dependencyCounts?.placements > 0 && <li>{dependencyCounts.placements} Placements</li>}
+                    {dependencyCounts?.child_organizations > 0 && <li>{dependencyCounts.child_organizations} Child Organizations</li>}
+                  </ul>
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={cascadeUserConsent}
+                      onChange={(e) => setCascadeUserConsent(e.target.checked)}
+                      className="mt-1 w-4 h-4 text-red-600 border-gray-300 rounded focus:ring-red-500"
+                    />
+                    <span className="text-sm text-red-900">
+                      I understand that this action will delete all linked records and cannot be undone once approved.
+                    </span>
+                  </label>
                 </div>
               )}
 
@@ -6839,6 +6931,7 @@ export default function OrganizationView() {
                 onClick={() => {
                   setShowDeleteModal(false);
                   setDeleteForm({ reason: "" });
+                  setCascadeUserConsent(false);
                 }}
                 className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 disabled={isSubmittingDelete}
@@ -6848,7 +6941,12 @@ export default function OrganizationView() {
               <button
                 onClick={handleDeleteRequestSubmit}
                 className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
-                disabled={isSubmittingDelete || !deleteForm.reason.trim() || (pendingDeleteRequest && pendingDeleteRequest.status === "pending")}
+                disabled={
+                  isSubmittingDelete ||
+                  !deleteForm.reason.trim() ||
+                  (pendingDeleteRequest && pendingDeleteRequest.status === "pending") ||
+                  (deleteActionType === 'cascade' && !cascadeUserConsent)
+                }
               >
                 {isSubmittingDelete ? "SUBMITTING..." : "SUBMIT DELETE REQUEST"}
                 {!isSubmittingDelete && (
@@ -6867,6 +6965,92 @@ export default function OrganizationView() {
                   </svg>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dependency Warning Modal */}
+      {showDependencyWarningModal && (
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-lg w-full mx-4">
+            <div className="p-6">
+              <div className="flex justify-center mb-4">
+                <div className="bg-orange-100 p-3 rounded-full">
+                  <svg className="w-8 h-8 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                </div>
+              </div>
+
+              <h3 className="text-xl font-bold text-center text-gray-900 mb-2">
+                Cannot Delete Organization
+              </h3>
+
+              <p className="text-sm text-gray-600 text-center mb-6">
+                This organization has linked records. You must either transfer these records to another organization or request a cascade deletion.
+              </p>
+
+              <div className="bg-gray-50 rounded p-4 mb-6">
+                <h4 className="text-sm font-semibold text-gray-900 mb-2">Linked Records Found:</h4>
+                <ul className="space-y-1 text-sm text-gray-600">
+                  {dependencyCounts?.hiring_managers > 0 && (
+                    <li className="flex justify-between">
+                      <span>Hiring Managers</span>
+                      <span className="font-medium">{dependencyCounts.hiring_managers}</span>
+                    </li>
+                  )}
+                  {dependencyCounts?.jobs > 0 && (
+                    <li className="flex justify-between">
+                      <span>Jobs</span>
+                      <span className="font-medium">{dependencyCounts.jobs}</span>
+                    </li>
+                  )}
+                  {dependencyCounts?.placements > 0 && (
+                    <li className="flex justify-between">
+                      <span>Placements</span>
+                      <span className="font-medium">{dependencyCounts.placements}</span>
+                    </li>
+                  )}
+                  {dependencyCounts?.child_organizations > 0 && (
+                    <li className="flex justify-between">
+                      <span>Child Organizations</span>
+                      <span className="font-medium">{dependencyCounts.child_organizations}</span>
+                    </li>
+                  )}
+                </ul>
+              </div>
+
+              <div className="space-y-3">
+                <button
+                  onClick={() => {
+                    setShowDependencyWarningModal(false);
+                    // Open Transfer Modal
+                    handleActionSelected("transfer");
+                  }}
+                  className="w-full flex justify-center items-center px-4 py-2 border border-transparent rounded shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Transfer Organization Records
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowDependencyWarningModal(false);
+                    setDeleteActionType("cascade");
+                    setShowDeleteModal(true);
+                  }}
+                  className="w-full flex justify-center items-center px-4 py-2 border border-red-300 rounded shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+                >
+                  Request Cascade Deletion (Delete All)
+                </button>
+
+                <button
+                  onClick={() => setShowDependencyWarningModal(false)}
+                  className="w-full flex justify-center items-center px-4 py-2 border border-gray-300 rounded shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           </div>
         </div>

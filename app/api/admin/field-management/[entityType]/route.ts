@@ -10,7 +10,7 @@ export async function GET(
         const { entityType } = await params;
 
         // Validate entity type
-        const validEntityTypes = ['job-seekers', 'hiring-managers', 'organizations', 'jobs', 'jobs-direct-hire', 'jobs-executive-search', 'placements', 'tasks', 'planner', 'leads', 'tearsheets', 'goals-quotas'];
+        const validEntityTypes = ['job-seekers', 'hiring-managers', 'organizations', 'jobs', 'jobs-direct-hire', 'jobs-executive-search', 'placements', 'placements-direct-hire', 'placements-executive-search', 'tasks', 'planner', 'leads', 'tearsheets', 'goals-quotas'];
         if (!validEntityTypes.includes(entityType)) {
             return NextResponse.json(
                 { success: false, message: 'Invalid entity type' },

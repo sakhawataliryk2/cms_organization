@@ -23,7 +23,9 @@ export default function FieldManagement() {
         { id: 'hiring-managers', name: 'Hiring Managers' },
         { id: 'planner', name: 'Planner' },
         { id: 'tasks', name: 'Tasks' },
-        { id: 'placements', name: 'Placements' },
+        { id: 'placements', name: 'Placements Contract' },
+        { id: 'placements-direct-hire', name: 'Placements Direct Hire' },
+        { id: 'placements-executive-search', name: 'Placements Executive Search' },
         { id: 'goals-quotas', name: 'Goals and Quotas' },
         // { id: 'tearsheets', name: 'Tearsheets' },
     ]);

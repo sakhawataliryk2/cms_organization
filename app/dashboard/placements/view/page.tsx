@@ -879,7 +879,14 @@ export default function PlacementView() {
   const fetchAvailableFields = async () => {
     setIsLoadingFields(true);
     try {
-      const response = await fetch('/api/admin/field-management/placements');
+      const getPlacementEntityType = (pl: any) => {
+        const t = String(pl?.placementType || pl?.placement_type || '').toLowerCase();
+        if (t.includes('direct')) return 'placements-direct-hire';
+        if (t.includes('executive')) return 'placements-executive-search';
+        return 'placements';
+      };
+      const entityType = getPlacementEntityType(placement);
+      const response = await fetch(`/api/admin/field-management/${entityType}`);
       if (response.ok) {
         const data = await response.json();
         const fields = data.customFields || [];
@@ -1152,6 +1159,8 @@ export default function PlacementView() {
         dateAdded: data.placement.createdAt ? new Date(data.placement.createdAt).toLocaleDateString() : (data.placement.created_at ? new Date(data.placement.created_at).toLocaleDateString() : ''),
         lastContactDate: data.placement.last_contact_date ? new Date(data.placement.last_contact_date).toLocaleDateString() : 'Never contacted',
         createdBy: data.placement.createdByName || data.placement.created_by_name || 'Unknown',
+        placement_type: data.placement.placement_type || 'Contract',
+        placementType: data.placement.placement_type || 'Contract',
         customFields: customFieldsObj,
       };
 
@@ -1258,7 +1267,14 @@ export default function PlacementView() {
           /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
           "$1"
         );
-        const response = await fetch("/api/admin/field-management/placements", {
+        const getPlacementEntityType = (pl: any) => {
+          const t = String(pl?.placementType || pl?.placement_type || '').toLowerCase();
+          if (t.includes('direct')) return 'placements-direct-hire';
+          if (t.includes('executive')) return 'placements-executive-search';
+          return 'placements';
+        };
+        const entityType = getPlacementEntityType(placement);
+        const response = await fetch(`/api/admin/field-management/${entityType}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (response.ok) {
@@ -1330,7 +1346,7 @@ export default function PlacementView() {
       }
     };
     fetchActionFieldsForNotes();
-  }, []);
+  }, [placement?.placementType, placement?.placement_type]);
 
   // Search for references for About field (same as organization)
   const searchAboutReferences = async (query: string) => {
@@ -4669,4 +4685,3 @@ export default function PlacementView() {
     </div>
   );
 }
-
