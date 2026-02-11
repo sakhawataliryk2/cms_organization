@@ -18,10 +18,12 @@ import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
+import RecordNameResolver from "@/components/RecordNameResolver";
 
 type PlacementFavorite = {
   id: string;
   name: string;
+  // placement_type: string;
   searchTerm: string;
   columnFilters: Record<string, ColumnFilterState>;
   columnSorts: Record<string, ColumnSortState>;
@@ -39,6 +41,7 @@ interface Placement {
   job_title?: string;
   job_name?: string;
   status: string;
+  placement_type: string;
   start_date?: string;
   end_date?: string;
   salary?: string;
@@ -385,6 +388,7 @@ export default function PlacementList() {
   const PLACEMENT_BACKEND_COLUMN_KEYS = [
     "candidate",
     "job",
+    "placement_type",
     "status",
     "start_date",
     "end_date",
@@ -409,12 +413,21 @@ export default function PlacementList() {
         const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanizePlacement(name) : "");
         const isBackendCol = name && PLACEMENT_BACKEND_COLUMN_KEYS.includes(name);
         let filterType: "text" | "select" | "number" = "text";
-        if (name === "status") filterType = "select";
+        let filterOptions: { label: string; value: string }[] | undefined = undefined;
+        if (name === "status") {
+          filterType = "select";
+          filterOptions = statusOptions;
+        }
+        if (name === "placement_type") {
+          filterType = "select";
+          filterOptions = placementTypeOptions;
+        }
         return {
           key: isBackendCol ? name : `custom:${label || name}`,
           label: String(label || name),
           sortable: isBackendCol,
           filterType,
+          filterOptions,
           fieldType: (f as any)?.field_type,
           lookupType: (f as any)?.lookup_type || "",
           multiSelectLookupType: (f as any)?.multi_select_lookup_type ?? (f as any)?.multiSelectLookupType ?? "",
@@ -443,6 +456,8 @@ export default function PlacementList() {
         return p.job_seeker_name || "Unknown";
       case "job":
         return p.job_title || p.job_name || "Unknown";
+      case "placement_type":
+        return p.placement_type || "Contract";
       case "status":
         return p.status || "Active";
       case "start_date":
@@ -552,6 +567,20 @@ export default function PlacementList() {
     placements.forEach((p) => { if (p.status) statuses.add(p.status); });
     return Array.from(statuses).map((s) => ({ label: s, value: s }));
   }, [placements]);
+
+  const placementTypeOptions = useMemo(() => {
+    const types = new Set<string>();
+    placements.forEach((p) => { if (p.placement_type) types.add(p.placement_type); });
+    // Ensure the main 3 types are always there if we want, or just what's in the data
+    if (types.size === 0) {
+      return [
+        { label: "Contract", value: "Contract" },
+        { label: "Direct Hire", value: "Direct Hire" },
+        { label: "Executive Search", value: "Executive Search" }
+      ];
+    }
+    return Array.from(types).map((t) => ({ label: t, value: t }));
+  }, [placements]);
   useEffect(() => {
     const fetchAvailableFields = async () => {
       setIsLoadingFields(true);
@@ -560,7 +589,7 @@ export default function PlacementList() {
         const data = await res.json();
 
         const fields =
-        data.customFields ||
+          data.customFields ||
           (data as any).fields ||
           (data as any).data?.customFields ||
           (data as any).data?.fields ||
@@ -1036,27 +1065,27 @@ export default function PlacementList() {
 
                     {/* Dynamic cells */}
                     {columnFields.map((key) => {
-                        const colInfo = getColumnInfo(key) as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
-                        const fieldInfo = colInfo
-                          ? { key: colInfo.key, label: colInfo.label, fieldType: colInfo.fieldType, lookupType: colInfo.lookupType, multiSelectLookupType: colInfo.multiSelectLookupType }
-                          : { key, label: getColumnLabel(key) };
-                          
-                        return (
-                          <td
-                            key={key}
-                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                            // onClick={(e) => e.stopPropagation()}
-                          >
-                            <FieldValueRenderer
-                              value={getColumnValue(placement, key)}
-                              fieldInfo={fieldInfo}
-                              emptyPlaceholder="—"
-                              clickable
-                              stopPropagation
-                            />
-                          </td>
-                        );
-                      })}
+                      const colInfo = getColumnInfo(key) as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
+                      const fieldInfo = colInfo
+                        ? { key: colInfo.key, label: colInfo.label, fieldType: colInfo.fieldType, lookupType: colInfo.lookupType, multiSelectLookupType: colInfo.multiSelectLookupType }
+                        : { key, label: getColumnLabel(key) };
+
+                      return (
+                        <td
+                          key={key}
+                          className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                        // onClick={(e) => e.stopPropagation()}
+                        >
+                          <FieldValueRenderer
+                            value={getColumnValue(placement, key)}
+                            fieldInfo={fieldInfo}
+                            emptyPlaceholder="—"
+                            clickable
+                            stopPropagation
+                          />
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))
               ) : (

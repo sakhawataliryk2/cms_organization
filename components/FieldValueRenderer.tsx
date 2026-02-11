@@ -109,8 +109,7 @@ export default function FieldValueRenderer({
 }: FieldValueRendererProps) {
   const fieldType = (fieldInfo?.fieldType ?? "").toLowerCase();
   const label = (fieldInfo?.label || "").toLowerCase();
-  // const key = (fieldInfo?.key || "").toLowerCase();
-
+  
   // Address: use addressParts when provided and field is address-type
   const isAddress = isAddressField(fieldInfo?.label, fieldInfo?.key);
   const useCombinedAddress = isAddress && addressParts;
@@ -144,9 +143,24 @@ export default function FieldValueRenderer({
     return <span className={className}>{str}</span>;
   }
 
-  // Date: always plain text (never link as phone/url)
-  if (fieldType === "date" || isDateFieldOrValue(fieldInfo?.label, fieldInfo?.key, raw)) {
-    return <span className={className}>{str}</span>;
+  const isLookup =
+    fieldType === "lookup" || fieldType === "multiselect_lookup";
+
+  if (isLookup) {
+    const lookupType =
+      fieldInfo?.lookupType ||
+      fieldInfo?.multiSelectLookupType;
+    const fallback = lookupFallback != null && lookupFallback !== "" ? lookupFallback : str;
+    return (
+      <span onClick={handleClick} className={className}>
+        <RecordNameResolver
+          id={raw || null}
+          type={lookupType || ''}
+          clickable
+          fallback={fallback}
+        />
+      </span>
+    );
   }
 
   // Status: badge
@@ -168,6 +182,11 @@ export default function FieldValueRenderer({
         {str}
       </span>
     );
+  }
+
+  // Date: always plain text (never link as phone/url)
+  if (fieldType === "date" || isDateFieldOrValue(fieldInfo?.label, fieldInfo?.key, raw)) {
+    return <span className={className}>{str}</span>;
   }
 
   // URL / link: fieldType or value pattern
@@ -221,29 +240,9 @@ export default function FieldValueRenderer({
       </a>
     );
   }
+
   if (fieldType === "phone") {
     return <span className={className}>{str}</span>;
-  }
-
-  // Lookup / multiselect_lookup: RecordNameResolver
-  const isLookup =
-    fieldType === "lookup" || fieldType === "multiselect_lookup";
-  if (isLookup) {
-    const lookupType =
-      fieldInfo?.lookupType ||
-      fieldInfo?.multiSelectLookupType ||
-      "organizations";
-    const fallback = lookupFallback != null && lookupFallback !== "" ? lookupFallback : str;
-    return (
-      <span onClick={handleClick} className={className}>
-        <RecordNameResolver
-          id={raw || null}
-          type={lookupType}
-          clickable={clickable}
-          fallback={fallback}
-        />
-      </span>
-    );
   }
 
   // Default: plain text
