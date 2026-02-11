@@ -1334,7 +1334,6 @@ export default function TaskList() {
                               fallback={String(getColumnValue(task, key) || "") || ""}
                             />
                           ) : /\(\d{3}\)\s\d{3}-\d{4}/.test(getColumnValue(task, key) || "") ? (
-                            <a
                               href={`tel:${(getColumnValue(task, key) || "").replace(/\D/g, "")}`}
                               className="text-blue-600 hover:underline"
                               onClick={(e) => e.stopPropagation()}
