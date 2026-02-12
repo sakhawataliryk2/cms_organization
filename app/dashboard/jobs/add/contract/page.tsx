@@ -1761,7 +1761,7 @@ export default function AddJob() {
         {(isEditMode || jobStep === 3) && (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 gap-4">
-              {!isEditMode && hiringManagerCustomField && !(organizationIdFromUrl && hiringManagerIdFromUrl) && (
+              {/* {!isEditMode && hiringManagerCustomField && !(organizationIdFromUrl && hiringManagerIdFromUrl) && (
                 <div className="flex items-center mb-3">
                   <label className="w-48 font-medium flex items-center">
                     Hiring Manager:
@@ -1786,8 +1786,8 @@ export default function AddJob() {
                     />
                   </div>
                 </div>
-              )}
-              {isEditMode && (
+              )} */}
+              {/* {isEditMode && (
                 <div className="flex items-center mb-3">
                   <label className="w-48 font-medium flex items-center">
                     Hiring Manager:
@@ -1805,94 +1805,7 @@ export default function AddJob() {
                     </button>
                   </div>
                 </div>
-              )}
-              {/* Standard Job Fields */}
-              {/* {formFields
-                            .filter(field => field.visible)
-                            .map((field, index) => (
-                                <div key={field.id} className="flex items-center">
-            
-            <label className="w-48 font-medium">
-                                        {field.label}:
-                                    </label>
-
-            
-            <div className="flex-1 relative">
-                                        {field.type === 'text' || field.type === 'email' || field.type === 'tel' || field.type === 'url' ? (
-                                            <input
-                                                type={field.type}
-                                                name={field.name}
-                                                value={field.value}
-                                                onChange={(e) => handleChange(field.id, e.target.value)}
-                                                placeholder={field.placeholder}
-                                                className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                                                required={field.required}
-                                                readOnly={field.locked}
-                                                disabled={field.locked}
-                                            />
-                                        ) : field.type === 'number' ? (
-                                            <input
-                                                type="number"
-                                                name={field.name}
-                                                value={field.value}
-                                                onChange={(e) => handleChange(field.id, e.target.value)}
-                                                placeholder={field.placeholder}
-                                                className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                                                required={field.required}
-                                            />
-                                        ) : field.type === 'date' ? (
-                                            <div className="relative">
-                                                <input
-                                                    type="date"
-                                                    name={field.name}
-                                                    value={field.value}
-                                                    onChange={(e) => handleChange(field.id, e.target.value)}
-                                                    className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                                                    required={field.required}
-                                                />
-                                            </div>
-                                        ) : field.type === 'select' ? (
-                                            <select
-                                                name={field.name}
-                                                value={field.value}
-                                                onChange={(e) => handleChange(field.id, e.target.value)}
-                                                className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
-                                                required={field.required}
-                                            >
-                                                {!field.required && <option value="">Select {field.label}</option>}
-                                                {field.options?.map((option) => (
-                                                    <option key={option} value={option}>{option}</option>
-                                                ))}
-                                            </select>
-                                        ) : field.type === 'textarea' ? (
-                                            <textarea
-                                                name={field.name}
-                                                value={field.value}
-                                                onChange={(e) => handleChange(field.id, e.target.value)}
-                                                rows={field.name === 'jobDescription' ? 5 : 3}
-                                                placeholder={field.placeholder}
-                                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                                                required={field.required}
-                                            />
-                                        ) : field.type === 'file' ? (
-                                            <div>
-                                                <input
-                                                    type="file"
-                                                    accept=".pdf,.doc,.docx"
-                                                    onChange={handleFileChange}
-                                                    className="w-full p-2 text-gray-700"
-                                                    required={field.required}
-                                                />
-                                                <p className="text-sm text-gray-500 mt-1">Accepted formats: PDF, DOC, DOCX</p>
-                                            </div>
-                                        ) : null}
-
-                                        {field.required && (
-                                            <span className="absolute text-red-500 left-[-10px] top-2">*</span>
-                                        )}
-                                    </div>
-            </div>
-             ))} */}
+              )} */}
 
               {/* Custom Fields Section */}
               {customFields.length > 0 && (

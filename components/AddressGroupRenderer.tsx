@@ -1,21 +1,7 @@
 "use client";
 
 import React from "react";
-import CustomFieldRenderer from "./CustomFieldRenderer";
-
-interface CustomFieldDefinition {
-  id: string;
-  field_name: string;
-  field_label: string;
-  field_type: string;
-  is_required: boolean;
-  is_hidden: boolean;
-  options?: string[] | string | Record<string, unknown> | null;
-  placeholder?: string | null;
-  default_value?: string | null;
-  sort_order: number;
-  lookup_type?: "organizations" | "hiring-managers" | "job-seekers" | "jobs";
-}
+import CustomFieldRenderer, { type CustomFieldDefinition } from "./CustomFieldRenderer";
 
 interface AddressGroupRendererProps {
   fields: CustomFieldDefinition[];

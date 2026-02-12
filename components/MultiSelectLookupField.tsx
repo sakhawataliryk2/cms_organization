@@ -8,7 +8,7 @@ interface LookupOption {
   [key: string]: any;
 }
 
-export type MultiSelectLookupType = 'organizations' | 'hiring-managers' | 'job-seekers' | 'jobs';
+export type MultiSelectLookupType = 'organizations' | 'hiring-managers' | 'job-seekers' | 'jobs' | 'owner';
 
 interface MultiSelectLookupFieldProps {
   /** Value: comma-separated IDs or array of IDs */
@@ -58,8 +58,8 @@ export default function MultiSelectLookupField({
     setIsLoading(true);
     setError(null);
     try {
-      let url = `/api/${lookupType}`;
-      if (filterByParam?.value) {
+      let url = lookupType === 'owner' ? '/api/users/active' : `/api/${lookupType}`;
+      if (filterByParam?.value && lookupType !== 'owner') {
         const u = new URL(url, window.location.origin);
         u.searchParams.set(filterByParam.key, filterByParam.value);
         url = u.pathname + u.search;
@@ -87,6 +87,11 @@ export default function MultiSelectLookupField({
         fetchedOptions = (data.jobs || []).map((job: any) => ({
           id: job.id.toString(),
           name: job.job_title,
+        }));
+      } else if (lookupType === 'owner') {
+        fetchedOptions = (data.users || []).map((user: any) => ({
+          id: user.id.toString(),
+          name: user.name || user.email || '',
         }));
       }
       setOptions(fetchedOptions);

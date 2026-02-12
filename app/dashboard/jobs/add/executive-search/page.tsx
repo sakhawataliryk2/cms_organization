@@ -1262,7 +1262,7 @@ export default function AddExecutiveSearchJob() {
         {(isEditMode || jobStep === 3) && (
           <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
-            {!isEditMode && hiringManagerCustomField && !(organizationIdFromUrl && hiringManagerIdFromUrl) && (
+            {/* {!isEditMode && hiringManagerCustomField && !(organizationIdFromUrl && hiringManagerIdFromUrl) && (
               <div className="flex items-center mb-3">
                 <label className="w-48 font-medium flex items-center">
                   Hiring Manager:
@@ -1287,8 +1287,8 @@ export default function AddExecutiveSearchJob() {
                   />
                 </div>
               </div>
-            )}
-            {isEditMode && (
+            )} */}
+            {/* {isEditMode && (
               <div className="flex items-center mb-3">
                 <label className="w-48 font-medium flex items-center">
                   Hiring Manager:
@@ -1306,7 +1306,7 @@ export default function AddExecutiveSearchJob() {
                   </button>
                 </div>
               </div>
-            )}
+            )} */}
             {/* Custom Fields Section - Only fields from Admin Center → Field Management → Jobs Executive Search */}
             {customFields.length > 0 && (
               <>

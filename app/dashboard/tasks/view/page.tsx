@@ -620,6 +620,15 @@ export default function TaskView() {
     // Modal-local state for Task Overview edit
     const [modalTaskOverviewOrder, setModalTaskOverviewOrder] = useState<string[]>([]);
     const [modalTaskOverviewVisible, setModalTaskOverviewVisible] = useState<Record<string, boolean>>({});
+
+    // Delete request state
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
+    const [deleteForm, setDeleteForm] = useState({
+        reason: "", // Mandatory reason for deletion
+    });
+    const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
+    const [pendingDeleteRequest, setPendingDeleteRequest] = useState<any>(null);
+    const [isLoadingDeleteRequest, setIsLoadingDeleteRequest] = useState(false);
     const [taskOverviewDragActiveId, setTaskOverviewDragActiveId] = useState<string | null>(null);
 
     const fetchAvailableFields = useCallback(async () => {
@@ -1200,34 +1209,155 @@ export default function TaskView() {
         }
     };
 
-    // Handle task deletion
+    // Handle task deletion (kept for backward compatibility, but now shows modal)
     const handleDelete = async (id: string) => {
-        if (!confirm('Are you sure you want to delete this task?')) {
+        checkPendingDeleteRequest();
+        setShowDeleteModal(true);
+    };
+
+    // Check for pending delete request
+    const checkPendingDeleteRequest = async () => {
+        if (!taskId) return;
+
+        setIsLoadingDeleteRequest(true);
+        try {
+            const response = await fetch(
+                `/api/tasks/${taskId}/delete-request?record_type=task`,
+                {
+                    headers: {
+                        Authorization: `Bearer ${document.cookie.replace(
+                            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                            "$1"
+                        )}`,
+                    },
+                }
+            );
+
+            if (response.ok) {
+                const data = await response.json();
+                setPendingDeleteRequest(data.deleteRequest || null);
+            } else {
+                setPendingDeleteRequest(null);
+            }
+        } catch (error) {
+            console.error("Error checking delete request:", error);
+            setPendingDeleteRequest(null);
+        } finally {
+            setIsLoadingDeleteRequest(false);
+        }
+    };
+
+    // Handle delete request submission
+    const handleDeleteRequestSubmit = async () => {
+        if (!deleteForm.reason.trim()) {
+            toast.error("Please enter a reason for deletion");
             return;
         }
 
-        setIsLoading(true);
+        if (!taskId) {
+            toast.error("Task ID is missing");
+            return;
+        }
 
+        setIsSubmittingDelete(true);
         try {
-            const response = await fetch(`/api/tasks/${id}`, {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
+            // Get current user info
+            const userCookie = document.cookie.replace(
+                /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
+                "$1"
+            );
+            let currentUser: any = null;
+            if (userCookie) {
+                try {
+                    currentUser = JSON.parse(decodeURIComponent(userCookie));
+                } catch (e) {
+                    console.error("Error parsing user cookie:", e);
                 }
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to delete task');
             }
 
-            // Redirect to the tasks list
-            router.push('/dashboard/tasks');
-        } catch (error) {
-            console.error('Error deleting task:', error);
-            setError(error instanceof Error ? error.message : 'An error occurred while deleting the task');
-            setIsLoading(false);
+            // Step 1: Add "Delete requested" note to task
+            const noteResponse = await fetch(`/api/tasks/${taskId}/notes`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${document.cookie.replace(
+                        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                        "$1"
+                    )}`,
+                },
+                body: JSON.stringify({
+                    text: `Delete requested by ${currentUser?.name || "Unknown User"} – Pending payroll approval`,
+                    action: "Delete Request",
+                }),
+            });
+
+            if (!noteResponse.ok) {
+                console.error("Failed to add delete note");
+            }
+
+            // Step 2: Create delete request
+            const deleteRequestResponse = await fetch(
+                `/api/tasks/${taskId}/delete-request`,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        Authorization: `Bearer ${document.cookie.replace(
+                            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                            "$1"
+                        )}`,
+                    },
+                    body: JSON.stringify({
+                        reason: deleteForm.reason.trim(),
+                        record_type: "task",
+                        record_number: formatRecordId(task?.id, "task"),
+                        requested_by: currentUser?.id || currentUser?.name || "Unknown",
+                        requested_by_email: currentUser?.email || "",
+                    }),
+                }
+            );
+
+            if (!deleteRequestResponse.ok) {
+                const errorData = await deleteRequestResponse
+                    .json()
+                    .catch(() => ({ message: "Failed to create delete request" }));
+                throw new Error(
+                    errorData.message || "Failed to create delete request"
+                );
+            }
+
+            const deleteRequestData = await deleteRequestResponse.json();
+
+            toast.success(
+                "Delete request submitted successfully. Payroll will be notified via email."
+            );
+
+            // Refresh notes and delete request status
+            if (taskId) {
+                fetchNotes(taskId);
+                checkPendingDeleteRequest();
+            }
+
+            setShowDeleteModal(false);
+            setDeleteForm({ reason: "" });
+        } catch (err) {
+            console.error("Error submitting delete request:", err);
+            toast.error(
+                err instanceof Error
+                    ? err.message
+                    : "Failed to submit delete request. Please try again."
+            );
+        } finally {
+            setIsSubmittingDelete(false);
         }
     };
+
+    // Check for pending delete request on mount
+    useEffect(() => {
+        if (taskId) {
+            checkPendingDeleteRequest();
+        }
+    }, [taskId]);
 
     // Handle task completion toggle
     const handleToggleComplete = async (id: string, currentlyCompleted: boolean) => {
@@ -2751,6 +2881,137 @@ export default function TaskView() {
                                     </button>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Delete Request Modal */}
+            {showDeleteModal && (
+                <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+                        {/* Header */}
+                        <div className="flex justify-between items-center p-4 border-b border-gray-200">
+                            <h2 className="text-lg font-semibold">Request Deletion</h2>
+                            <button
+                                onClick={() => {
+                                    setShowDeleteModal(false);
+                                    setDeleteForm({ reason: "" });
+                                }}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
+                                <span className="text-2xl font-bold">×</span>
+                            </button>
+                        </div>
+
+                        {/* Form Content */}
+                        <div className="p-6 space-y-6">
+                            {/* Task Info */}
+                            <div className="bg-gray-50 p-4 rounded">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    Task to Delete
+                                </label>
+                                <p className="text-sm text-gray-900 font-medium">
+                                    {task
+                                        ? `${formatRecordId(task.id, "task")} ${task.title || "N/A"}`
+                                        : "N/A"}
+                                </p>
+                            </div>
+
+                            {/* Pending Request Warning */}
+                            {pendingDeleteRequest && pendingDeleteRequest.status === "pending" && (
+                                <div className="bg-yellow-50 border border-yellow-200 rounded p-4">
+                                    <p className="text-sm text-yellow-800">
+                                        <strong>Pending Request:</strong> A delete request is already pending payroll approval.
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Denied Request Info */}
+                            {pendingDeleteRequest && pendingDeleteRequest.status === "denied" && (
+                                <div className="bg-red-50 border border-red-200 rounded p-4">
+                                    <p className="text-sm text-red-800">
+                                        <strong>Previous Request Denied:</strong> {pendingDeleteRequest.denial_reason || "No reason provided"}
+                                    </p>
+                                </div>
+                            )}
+
+                            {/* Reason Field - Required */}
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    <span className="text-red-500 mr-1">•</span>
+                                    Reason for Deletion
+                                </label>
+                                <textarea
+                                    value={deleteForm.reason}
+                                    onChange={(e) =>
+                                        setDeleteForm((prev) => ({
+                                            ...prev,
+                                            reason: e.target.value,
+                                        }))
+                                    }
+                                    placeholder="Please provide a detailed reason for deleting this task..."
+                                    className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${
+                                        !deleteForm.reason.trim()
+                                            ? "border-red-300 focus:ring-red-500"
+                                            : "border-gray-300 focus:ring-blue-500"
+                                    }`}
+                                    rows={5}
+                                    required
+                                />
+                                {!deleteForm.reason.trim() && (
+                                    <p className="mt-1 text-sm text-red-500">
+                                        Reason is required
+                                    </p>
+                                )}
+                            </div>
+
+                            {/* Info Box */}
+                            <div className="bg-blue-50 border border-blue-200 rounded p-4">
+                                <p className="text-sm text-blue-800">
+                                    <strong>Note:</strong> This will create a delete request. Payroll will be notified via email and must approve or deny the deletion. The record will be archived (not deleted) until payroll approval.
+                                </p>
+                            </div>
+                        </div>
+
+                        {/* Footer Buttons */}
+                        <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+                            <button
+                                onClick={() => {
+                                    setShowDeleteModal(false);
+                                    setDeleteForm({ reason: "" });
+                                }}
+                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                                disabled={isSubmittingDelete}
+                            >
+                                CANCEL
+                            </button>
+                            <button
+                                onClick={handleDeleteRequestSubmit}
+                                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                                disabled={
+                                    isSubmittingDelete ||
+                                    !deleteForm.reason.trim() ||
+                                    (pendingDeleteRequest && pendingDeleteRequest.status === "pending")
+                                }
+                            >
+                                {isSubmittingDelete ? "SUBMITTING..." : "SUBMIT DELETE REQUEST"}
+                                {!isSubmittingDelete && (
+                                    <svg
+                                        className="w-4 h-4 ml-2"
+                                        fill="none"
+                                        stroke="currentColor"
+                                        viewBox="0 0 24 24"
+                                    >
+                                        <path
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                            strokeWidth={2}
+                                            d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                                        />
+                                    </svg>
+                                )}
+                            </button>
                         </div>
                     </div>
                 </div>

@@ -981,7 +981,7 @@ export default function OrganizationView() {
     }
   }, [organization]);
 
-  // Fetch Field_500 (action fields) for organizations
+  // Fetch action fields - populate with all non-hidden field labels from organizations module
   useEffect(() => {
     const fetchActionFields = async () => {
       setIsLoadingActionFields(true);
@@ -1004,40 +1004,22 @@ export default function OrganizationView() {
 
           const fields = data.customFields || data.fields || data.data?.fields || data.organizationFields || [];
 
-          // Find Field_500 (note action field)
-          const fieldNamesToCheck = ['field_500', 'actions', 'action'];
-
-          const field500 = (fields as any[]).find((f: any) =>
-            fieldNamesToCheck.includes(f.field_name?.toLowerCase()) ||
-            fieldNamesToCheck.includes(f.field_label?.toLowerCase())
+          // Filter out hidden fields and get all non-hidden field labels
+          const nonHiddenFields = (fields as any[]).filter(
+            (f: any) => !f.is_hidden && f.field_label
           );
 
-          if (field500 && field500.options) {
-            // Parse options if it's a string
-            let options = field500.options;
-            if (typeof options === "string") {
-              try {
-                options = JSON.parse(options);
-              } catch { }
-            }
-            if (Array.isArray(options)) {
-              setActionFields(options.map((opt: any) => ({
-                id: opt.value || opt,
-                field_label: opt.label || opt.value || opt,
-                field_name: opt.value || opt,
-              })));
-            } else if (typeof options === "object") {
-              // Handle object format
-              setActionFields(
-                Object.entries(options).map(([key, value]) => ({
-                  id: key,
-                  field_label: String(value),
-                  field_name: key,
-                }))
-              );
-            }
+          if (nonHiddenFields.length > 0) {
+            // Populate action list with all non-hidden field labels
+            setActionFields(
+              nonHiddenFields.map((field: any) => ({
+                id: field.id || field.field_name || field.field_label,
+                field_label: field.field_label,
+                field_name: field.field_name || field.field_label,
+              }))
+            );
           } else {
-            // Fallback to default actions
+            // Fallback to default actions if no fields found
             setActionFields([
               { id: "Outbound Call", field_label: "Outbound Call", field_name: "Outbound Call" },
               { id: "Inbound Call", field_label: "Inbound Call", field_name: "Inbound Call" },
@@ -1047,6 +1029,16 @@ export default function OrganizationView() {
               { id: "Client Visit", field_label: "Client Visit", field_name: "Client Visit" },
             ]);
           }
+        } else {
+          // Fallback to default actions if API call fails
+          setActionFields([
+            { id: "Outbound Call", field_label: "Outbound Call", field_name: "Outbound Call" },
+            { id: "Inbound Call", field_label: "Inbound Call", field_name: "Inbound Call" },
+            { id: "Left Message", field_label: "Left Message", field_name: "Left Message" },
+            { id: "Email", field_label: "Email", field_name: "Email" },
+            { id: "Appointment", field_label: "Appointment", field_name: "Appointment" },
+            { id: "Client Visit", field_label: "Client Visit", field_name: "Client Visit" },
+          ]);
         }
       } catch (err) {
         console.error("Error fetching action fields:", err);
@@ -1101,17 +1093,11 @@ export default function OrganizationView() {
 
   // Search for references for About field
   const searchAboutReferences = async (query: string) => {
-    if (!query || query.trim().length < 2) {
-      setAboutSuggestions([]);
-      setShowAboutDropdown(false);
-      return;
-    }
-
     setIsLoadingAboutSearch(true);
     setShowAboutDropdown(true);
 
     try {
-      const searchTerm = query.trim();
+      const searchTerm = (query || "").trim();
       const token = document.cookie.replace(
         /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
         "$1"
@@ -1144,11 +1130,13 @@ export default function OrganizationView() {
       // Process jobs
       if (jobsRes.status === "fulfilled" && jobsRes.value.ok) {
         const data = await jobsRes.value.json();
-        const jobs = (data.jobs || []).filter(
-          (job: any) =>
-            job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            job.id?.toString().includes(searchTerm)
-        );
+        const jobs = searchTerm
+          ? (data.jobs || []).filter(
+              (job: any) =>
+                job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                job.id?.toString().includes(searchTerm)
+            )
+          : (data.jobs || []);
         jobs.forEach((job: any) => {
           suggestions.push({
             id: job.id,
@@ -1163,11 +1151,13 @@ export default function OrganizationView() {
       // Process organizations
       if (orgsRes.status === "fulfilled" && orgsRes.value.ok) {
         const data = await orgsRes.value.json();
-        const orgs = (data.organizations || []).filter(
-          (org: any) =>
-            org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            org.id?.toString().includes(searchTerm)
-        );
+        const orgs = searchTerm
+          ? (data.organizations || []).filter(
+              (org: any) =>
+                org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                org.id?.toString().includes(searchTerm)
+            )
+          : (data.organizations || []);
         orgs.forEach((org: any) => {
           suggestions.push({
             id: org.id,
@@ -1182,14 +1172,16 @@ export default function OrganizationView() {
       // Process job seekers
       if (jobSeekersRes.status === "fulfilled" && jobSeekersRes.value.ok) {
         const data = await jobSeekersRes.value.json();
-        const seekers = (data.jobSeekers || []).filter(
-          (seeker: any) =>
-            seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            seeker.id?.toString().includes(searchTerm)
-        );
+        const seekers = searchTerm
+          ? (data.jobSeekers || []).filter(
+              (seeker: any) =>
+                seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.id?.toString().includes(searchTerm)
+            )
+          : (data.jobSeekers || []);
         seekers.forEach((seeker: any) => {
           const name =
             seeker.full_name ||
@@ -1207,13 +1199,15 @@ export default function OrganizationView() {
       // Process leads
       if (leadsRes.status === "fulfilled" && leadsRes.value.ok) {
         const data = await leadsRes.value.json();
-        const leads = (data.leads || []).filter(
-          (lead: any) =>
-            lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            lead.id?.toString().includes(searchTerm)
-        );
+        const leads = searchTerm
+          ? (data.leads || []).filter(
+              (lead: any) =>
+                lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                lead.id?.toString().includes(searchTerm)
+            )
+          : (data.leads || []);
         leads.forEach((lead: any) => {
           suggestions.push({
             id: lead.id,
@@ -1228,11 +1222,13 @@ export default function OrganizationView() {
       // Process tasks
       if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
         const data = await tasksRes.value.json();
-        const tasks = (data.tasks || []).filter(
-          (task: any) =>
-            task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            task.id?.toString().includes(searchTerm)
-        );
+        const tasks = searchTerm
+          ? (data.tasks || []).filter(
+              (task: any) =>
+                task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                task.id?.toString().includes(searchTerm)
+            )
+          : (data.tasks || []);
         tasks.forEach((task: any) => {
           suggestions.push({
             id: task.id,
@@ -1246,12 +1242,14 @@ export default function OrganizationView() {
       // Process placements
       if (placementsRes.status === "fulfilled" && placementsRes.value.ok) {
         const data = await placementsRes.value.json();
-        const placements = (data.placements || []).filter(
-          (placement: any) =>
-            placement.jobTitle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            placement.jobSeekerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            placement.id?.toString().includes(searchTerm)
-        );
+        const placements = searchTerm
+          ? (data.placements || []).filter(
+              (placement: any) =>
+                placement.jobTitle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                placement.jobSeekerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                placement.id?.toString().includes(searchTerm)
+            )
+          : (data.placements || []);
         placements.forEach((placement: any) => {
           suggestions.push({
             id: placement.id,
@@ -1266,14 +1264,16 @@ export default function OrganizationView() {
       // Process hiring managers
       if (hiringManagersRes.status === "fulfilled" && hiringManagersRes.value.ok) {
         const data = await hiringManagersRes.value.json();
-        const hms = (data.hiringManagers || []).filter(
-          (hm: any) =>
-            hm.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            hm.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            hm.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            hm.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            hm.id?.toString().includes(searchTerm)
-        );
+        const hms = searchTerm
+          ? (data.hiringManagers || []).filter(
+              (hm: any) =>
+                hm.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                hm.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                hm.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                hm.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                hm.id?.toString().includes(searchTerm)
+            )
+          : (data.hiringManagers || []);
         hms.forEach((hm: any) => {
           const name =
             hm.full_name ||
@@ -6371,39 +6371,33 @@ export default function OrganizationView() {
                     )}
                   </label>
                   <div className="relative" ref={aboutInputRef}>
-                    {/* Selected References Tags */}
-                    {noteForm.aboutReferences.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
-                        {noteForm.aboutReferences.map((ref, index) => (
-                          <span
-                            key={`${ref.type}-${ref.id}-${index}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
+                    <div
+                      className={`min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:outline-none pr-8 ${
+                        validationErrors.about
+                          ? "border-red-500 focus-within:ring-red-500"
+                          : "border-gray-300 focus-within:ring-blue-500"
+                      }`}
+                    >
+                      {/* Selected References Tags - Inside the input container */}
+                      {noteForm.aboutReferences.map((ref, index) => (
+                        <span
+                          key={`${ref.type}-${ref.id}-${index}`}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
+                        >
+                          <HiOutlineOfficeBuilding className="w-4 h-4" />
+                          {ref.display}
+                          <button
+                            type="button"
+                            onClick={() => removeAboutReference(index)}
+                            className="hover:text-blue-600 font-bold leading-none"
+                            title="Remove"
                           >
-                            <HiOutlineOfficeBuilding className="w-4 h-4" />
-                            {ref.display}
-                            <button
-                              type="button"
-                              onClick={() => removeAboutReference(index)}
-                              className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
-                              title="Remove"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                            ×
+                          </button>
+                        </span>
+                      ))}
 
-                    {/* Search Input for References */}
-                    {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
-                      <label className="block text-xs font-medium text-gray-500 mb-1">
-                        Add Additional References
-                      </label>
-                    )}
-                    <div className="relative">
-                      {/* <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Additional References
-                      </label> */}
+                      {/* Search Input for References - Same field to add more */}
                       <input
                         type="text"
                         value={aboutSearchQuery}
@@ -6411,23 +6405,22 @@ export default function OrganizationView() {
                           const value = e.target.value;
                           setAboutSearchQuery(value);
                           searchAboutReferences(value);
+                          setShowAboutDropdown(true);
                         }}
                         onFocus={() => {
-                          if (aboutSearchQuery.trim().length >= 2) {
-                            setShowAboutDropdown(true);
+                          setShowAboutDropdown(true);
+                          if (!aboutSearchQuery.trim()) {
+                            searchAboutReferences("");
                           }
                         }}
                         placeholder={
                           noteForm.aboutReferences.length === 0
                             ? "Search and select records (e.g., Job, Lead, Placement)..."
-                            : "Add another reference..."
+                            : "Add more..."
                         }
-                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 pr-8 ${validationErrors.about
-                          ? "border-red-500 focus:ring-red-500"
-                          : "border-gray-300 focus:ring-blue-500"
-                          }`}
+                        className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
                       />
-                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm">
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
                         <FiSearch className="w-4 h-4" />
                       </span>
                     </div>
@@ -6468,11 +6461,15 @@ export default function OrganizationView() {
                               </div>
                             </button>
                           ))
-                        ) : aboutSearchQuery.trim().length >= 2 ? (
+                        ) : aboutSearchQuery.trim().length > 0 ? (
                           <div className="p-3 text-center text-gray-500 text-sm">
                             No results found
                           </div>
-                        ) : null}
+                        ) : (
+                          <div className="p-3 text-center text-gray-500 text-sm">
+                            Type to search or select from list
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -6532,47 +6529,38 @@ export default function OrganizationView() {
                   )}
                 </div> */}
 
-                {/* Email Notification Section - Search and add (matches About/Reference design) */}
+                {/* Email Notification Section - Search and add (matches MultiSelectLookupField design) */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Email Notification
                   </label>
                   <div className="relative" ref={emailInputRef}>
-                    {/* Selected Users Tags - same style as About/Reference */}
-                    {noteForm.emailNotification.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
+                    {isLoadingUsers ? (
+                      <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50 min-h-[42px]">
+                        Loading users...
+                      </div>
+                    ) : (
+                      <div className="min-h-[42px] flex flex-wrap items-center gap-2 p-2 border border-gray-300 rounded focus-within:ring-2 focus-within:outline-none focus-within:ring-blue-500 pr-8">
+                        {/* Selected Users Tags - Inside the input container */}
                         {noteForm.emailNotification.map((val, index) => (
                           <span
                             key={val}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
                           >
                             <HiOutlineUser className="w-4 h-4 flex-shrink-0" />
                             {val}
                             <button
                               type="button"
                               onClick={() => removeEmailNotification(val)}
-                              className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
+                              className="hover:text-blue-600 font-bold leading-none"
                               title="Remove"
                             >
                               ×
                             </button>
                           </span>
                         ))}
-                      </div>
-                    )}
 
-                    {/* Search Input for Users */}
-                    {noteForm.emailNotification.length > 0 && (
-                      <label className="block text-xs font-medium text-gray-500 mb-1">
-                        Add Additional Users
-                      </label>
-                    )}
-                    <div className="relative">
-                      {isLoadingUsers ? (
-                        <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
-                          Loading users...
-                        </div>
-                      ) : (
+                        {/* Search Input for Users - Same field to add more */}
                         <input
                           type="text"
                           value={emailSearchQuery}
@@ -6585,17 +6573,15 @@ export default function OrganizationView() {
                           placeholder={
                             noteForm.emailNotification.length === 0
                               ? "Search and add users to notify..."
-                              : "Add another user..."
+                              : "Add more..."
                           }
-                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
+                          className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
                         />
-                      )}
-                      {!isLoadingUsers && (
                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
                           <FiSearch className="w-4 h-4" />
                         </span>
-                      )}
-                    </div>
+                      </div>
+                    )}
 
                     {/* Suggestions Dropdown - same structure as About */}
                     {showEmailDropdown && !isLoadingUsers && (

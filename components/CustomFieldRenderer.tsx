@@ -6,7 +6,7 @@ import MultiSelectLookupField, { type MultiSelectLookupType } from "./MultiSelec
 import { FiCalendar, FiLock } from "react-icons/fi";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 
-interface CustomFieldDefinition {
+export interface CustomFieldDefinition {
   id: string;
   field_name: string;
   field_label: string;
@@ -18,7 +18,7 @@ interface CustomFieldDefinition {
   placeholder?: string | null;
   default_value?: string | null;
   sort_order: number;
-  lookup_type?: "organizations" | "hiring-managers" | "job-seekers" | "jobs";
+  lookup_type?: "organizations" | "hiring-managers" | "job-seekers" | "jobs" | "owner";
   sub_field_ids?: number[] | string[];
   /** When set, this field is disabled until the referenced field has a value */
   dependent_on_field_id?: string | null;
@@ -531,90 +531,152 @@ export default function CustomFieldRenderer({
       );
     case "multiselect":
     case "multicheckbox": {
+      // Tag-based multiselect (similar to MultiSelectLookupField and About/Reference field)
       const selectedValues = Array.isArray(value)
         ? value.map((v) => String(v))
         : typeof value === "string" && value.trim() !== ""
           ? value.split(",").map((v) => v.trim()).filter(Boolean)
           : [];
-      const count = selectedValues.length;
-      const labelSingular = (field.field_label || "item").toLowerCase().replace(/\s*\(s\)$/, "");
-      const labelPlural = count === 1 ? labelSingular : `${labelSingular}s`;
-      const removeItem = (item: string) => {
-        if (readOnly) return;
-        onChange(
-          field.field_name,
-          selectedValues.filter((v) => v !== item)
-        );
+      
+      const [searchQuery, setSearchQuery] = React.useState("");
+      const [showDropdown, setShowDropdown] = React.useState(false);
+      const containerRef = React.useRef<HTMLDivElement>(null);
+
+      // Filter options based on search query
+      const q = searchQuery.trim().toLowerCase();
+      const filteredOptions = q
+        ? normalizedOptions.filter((opt) =>
+            opt.toLowerCase().includes(q)
+          )
+        : normalizedOptions;
+      
+      // Get options that are not yet selected
+      const selectableOptions = filteredOptions.filter(
+        (opt) => !selectedValues.includes(opt)
+      );
+
+      const addSelection = (option: string) => {
+        if (readOnly || isDisabledByDependency) return;
+        const next = Array.from(new Set([...selectedValues, option]));
+        onChange(field.field_name, next);
+        setSearchQuery("");
+        setShowDropdown(false);
       };
+
+      const removeSelection = (item: string) => {
+        if (readOnly || isDisabledByDependency) return;
+        const next = selectedValues.filter((v) => v !== item);
+        onChange(field.field_name, next);
+      };
+
+      // Handle click outside to close dropdown
+      React.useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+          if (
+            containerRef.current &&
+            !containerRef.current.contains(e.target as Node)
+          ) {
+            setShowDropdown(false);
+          }
+        };
+        if (showDropdown) {
+          document.addEventListener("mousedown", handleClickOutside);
+        }
+        return () => {
+          document.removeEventListener("mousedown", handleClickOutside);
+        };
+      }, [showDropdown]);
+
+      if (readOnly || isDisabledByDependency) {
+        return (
+          <div className="py-2 px-2 border border-gray-200 rounded bg-gray-50 text-gray-700">
+            {isDisabledByDependency
+              ? "— (select dependent field first)"
+              : selectedValues.length > 0
+                ? selectedValues.join(", ")
+                : "—"}
+          </div>
+        );
+      }
+
       return (
-        <div
-          id={field.field_name}
-          className="w-full p-4 border border-gray-200 rounded-lg bg-white"
-        >
-          {/* Vertical list of checkboxes */}
-          <div className="space-y-3">
-            {normalizedOptions.length === 0 ? (
-              <span className="text-sm text-gray-500">No options configured.</span>
-            ) : (
-              normalizedOptions.map((option) => {
-                const checked = selectedValues.includes(option);
-                return (
-                  <label
+        <div ref={containerRef} className="relative">
+          <div
+            className={`${className} min-h-[42px] flex flex-wrap items-center gap-2 ${
+              isDisabledByDependency
+                ? "bg-gray-100 cursor-not-allowed opacity-70"
+                : ""
+            }`}
+            style={{ borderBottom: "1px solid #d1d5db" }}
+          >
+            {/* Selected tags */}
+            {selectedValues.map((item) => (
+              <span
+                key={item}
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
+              >
+                {item}
+                <button
+                  type="button"
+                  onClick={() => removeSelection(item)}
+                  className="hover:text-blue-600 font-bold leading-none"
+                  aria-label="Remove"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+            
+            {/* Search input */}
+            {normalizedOptions.length > 0 && (
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setShowDropdown(true);
+                }}
+                onFocus={() => setShowDropdown(true)}
+                placeholder={
+                  selectedValues.length === 0
+                    ? field.placeholder || "Type to search and select..."
+                    : "Add more..."
+                }
+                className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
+                disabled={isDisabledByDependency}
+              />
+            )}
+            
+            {normalizedOptions.length === 0 && (
+              <span className="text-sm text-gray-500">
+                No options configured
+              </span>
+            )}
+          </div>
+
+          {/* Dropdown with options */}
+          {showDropdown && !isDisabledByDependency && normalizedOptions.length > 0 && (
+            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
+              {selectableOptions.length > 0 ? (
+                selectableOptions.map((option) => (
+                  <button
                     key={option}
-                    className="flex items-center gap-3 text-sm text-gray-700 cursor-pointer select-none"
+                    type="button"
+                    onClick={() => addSelection(option)}
+                    className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 text-sm"
                   >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={(e) => {
-                        if (readOnly) return;
-                        const next = e.target.checked
-                          ? Array.from(new Set([...selectedValues, option]))
-                          : selectedValues.filter((v) => v !== option);
-                        onChange(field.field_name, next);
-                      }}
-                      className="h-4 w-4 shrink-0 rounded border-gray-300 text-blue-600 focus:ring-blue-500 focus:ring-offset-0"
-                      disabled={readOnly}
-                    />
-                    <span className="text-gray-700">{option}</span>
-                  </label>
-                );
-              })
-            )}
-          </div>
-          {/* Separator */}
-          <div className="border-t border-gray-200 my-4" />
-          {/* Selected count + pill tags */}
-          <div className="space-y-3">
-            <p className="text-sm text-gray-500">
-              Selected: {count} {labelPlural}
-            </p>
-            {count > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {selectedValues.map((item) => (
-                  <span
-                    key={item}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-50 text-blue-800 text-sm"
-                  >
-                    {item}
-                    {!readOnly && (
-                      <button
-                        type="button"
-                        onClick={() => removeItem(item)}
-                        className="p-0.5 rounded-full hover:bg-blue-100 text-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:ring-offset-1"
-                        aria-label={`Remove ${item}`}
-                      >
-                        <span className="sr-only">Remove</span>
-                        <svg className="w-3.5 h-3.5 shrink-0" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
-                          <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                        </svg>
-                      </button>
-                    )}
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+                    {option}
+                  </button>
+                ))
+              ) : (
+                <div className="px-3 py-2 text-gray-500 text-sm">
+                  {filteredOptions.length === 0
+                    ? "No options"
+                    : "All selected or no match"}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       );
     }
