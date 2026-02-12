@@ -2086,7 +2086,10 @@ export default function AddJob() {
                               <CustomFieldRenderer
                                 field={field}
                                 value={fieldValue}
+                                allFields={customFields}
+                                values={customFieldValues}
                                 onChange={handleCustomFieldChangeWithCalculation}
+                                className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                               />
                             )}
                           </div>

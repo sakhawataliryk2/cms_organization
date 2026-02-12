@@ -202,8 +202,6 @@ const LEAD_DEFAULT_HEADER_FIELDS = ["phone", "email"];
 
 // Storage keys for Lead Contact Info, Details, Website Jobs, Our Jobs – field lists come from admin (custom field definitions)
 const LEAD_CONTACT_INFO_STORAGE_KEY = "leadsContactInfoFields";
-// Synthetic field key for Full Address (combined address field)
-const FULL_ADDRESS_KEY = "__full_address__";
 const LEAD_DETAILS_STORAGE_KEY = "leadsDetailsFields";
 const WEBSITE_JOBS_STORAGE_KEY = "leadsWebsiteJobsFields";
 const OUR_JOBS_STORAGE_KEY = "leadsOurJobsFields";
@@ -796,43 +794,15 @@ export default function LeadView() {
     // Remove duplicates from catalogKeys
     const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
 
-    // Check if Full Address should be visible (if any address parts are visible)
-    const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
-    const hasAddressParts = current.some((k) => {
-      const entry = contactInfoFieldCatalog.find((f) => f.key === k);
-      const label = (entry?.label || k).toLowerCase().replace(/\s+/g, " ");
-      return addressPartKeys.has(k.toLowerCase()) || label === "address";
-    });
-    const fullAddressVisible = current.includes(FULL_ADDRESS_KEY) || hasAddressParts;
-
-    const currentInCatalog = current.filter((k) => uniqueCatalogKeys.includes(k) && k !== FULL_ADDRESS_KEY);
+    const currentInCatalog = current.filter((k) => uniqueCatalogKeys.includes(k));
     const rest = uniqueCatalogKeys.filter((k) => !current.includes(k));
-
-    // Build order: preserve Full Address position if it exists, otherwise add it at the beginning if address parts exist
-    let order: string[];
-    const fullAddressIndex = current.indexOf(FULL_ADDRESS_KEY);
-    if (fullAddressIndex !== -1) {
-      // Full Address exists in current order, preserve its position
-      const baseOrder = [...currentInCatalog, ...rest];
-      baseOrder.splice(fullAddressIndex, 0, FULL_ADDRESS_KEY);
-      order = baseOrder;
-    } else if (fullAddressVisible) {
-      // Full Address should be visible but not in order yet, add it at the beginning
-      order = [FULL_ADDRESS_KEY, ...currentInCatalog, ...rest];
-    } else {
-      // No Full Address needed
-      order = [...currentInCatalog, ...rest];
-    }
+    const order = [...currentInCatalog, ...rest];
 
     const uniqueOrder = Array.from(new Set(order));
     setModalContactInfoOrder(uniqueOrder);
     setModalContactInfoVisible(
-      [...uniqueCatalogKeys, FULL_ADDRESS_KEY].reduce((acc, k) => {
-        if (k === FULL_ADDRESS_KEY) {
-          acc[k] = fullAddressVisible;
-        } else {
-          acc[k] = current.includes(k);
-        }
+      uniqueCatalogKeys.reduce((acc, k) => {
+        acc[k] = current.includes(k);
         return acc;
       }, {} as Record<string, boolean>)
     );
@@ -903,33 +873,6 @@ export default function LeadView() {
           const field = contactInfoFieldCatalog.find((f) => f.key === key);
           return field?.label || customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === String(key))?.field_label || key;
         };
-        const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
-        // Check if key is Address 2 (case-insensitive, with various label formats)
-        const isAddress2Key = (key: string) => {
-          const k = (key || "").toLowerCase();
-          const label = (getContactInfoLabel(key) || "").toLowerCase().replace(/\s+/g, " ");
-          return k === "address2" || k === "address 2" || label === "address 2" || label === "address2";
-        };
-        // Address parts that should be combined into Full Address (excludes Address 2)
-        const isAddressPartKey = (key: string) => {
-          // Don't treat Address 2 as an address part - it should show separately
-          if (isAddress2Key(key)) return false;
-          return addressPartKeys.has((key || "").toLowerCase()) ||
-            (getContactInfoLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
-        };
-
-        const getCombinedAddress = () => {
-          if (!lead) return "-";
-          const l = lead as any;
-          console.log("Lead", l);
-          const parts = [
-            l.address ?? l.customFields?.["Address"],
-            l.address2 ?? l.customFields?.["Address 2"],
-            [l.customFields?.["City"], l.customFields?.["State"]].filter(Boolean).join(", ") || [l.city, l.state].filter(Boolean).join(", "),
-            l.zip ?? l.customFields?.["ZIP Code"] ?? l.customFields?.["Zip Code"],
-          ].filter(Boolean);
-          return parts.length > 0 ? parts.join(", ") : "-";
-        };
 
         const getContactInfoValue = (key: string): string => {
           const field = customFieldDefs.find(
@@ -946,35 +889,13 @@ export default function LeadView() {
         };
 
         const contactKeys = Array.from(new Set(visibleFields.contactInfo || []));
-        const hasAnyAddressPart = contactKeys.some((k) => isAddressPartKey(k));
-        const hasFullAddressKey = contactKeys.includes(FULL_ADDRESS_KEY);
-        const effectiveRows: { key: string; label: string; isAddress?: boolean }[] = [];
-        let addressRowAdded = false;
+        const effectiveRows: { key: string; label: string }[] = [];
         for (const key of contactKeys) {
-          // Handle Full Address synthetic field
-          if (key === FULL_ADDRESS_KEY) {
-            if (!addressRowAdded && (hasAnyAddressPart || hasFullAddressKey)) {
-              effectiveRows.push({ key: FULL_ADDRESS_KEY, label: "Full Address", isAddress: true });
-              addressRowAdded = true;
-            }
-            continue;
-          }
-          // Skip address parts (Address, City, State, ZIP) - they'll be combined into Full Address
-          if (isAddressPartKey(key)) {
-            if (!addressRowAdded && (hasAnyAddressPart || hasFullAddressKey)) {
-              effectiveRows.push({ key: FULL_ADDRESS_KEY, label: "Full Address", isAddress: true });
-              addressRowAdded = true;
-            }
-            continue;
-          }
-          // Address 2 should show as a separate field (not combined into Full Address)
-          // So we don't skip it here - it will be added as a regular row below
           effectiveRows.push({ key, label: getContactInfoLabel(key) });
         }
 
-        const renderContactInfoRow = (row: { key: string; label: string; isAddress?: boolean }) => {
-          const value = row.isAddress || row.key === FULL_ADDRESS_KEY ? 
-          getCombinedAddress() : getContactInfoValue(row.key);
+        const renderContactInfoRow = (row: { key: string; label: string }) => {
+          const value = getContactInfoValue(row.key);
           const def = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key);
           const fieldInfo = {
             key: row.key,
@@ -983,17 +904,7 @@ export default function LeadView() {
             lookupType: def?.lookup_type ?? def?.lookupType,
             multiSelectLookupType: def?.multi_select_lookup_type ?? def?.multiSelectLookupType,
           };
-          const o = lead as any;
-          const addressParts =
-            (row.isAddress || row.key === FULL_ADDRESS_KEY) && o
-              ? {
-                  address: o.customFields?.["Address"] ?? o.address,
-                  address2: o.customFields?.["Address 2"] ?? o.address2,
-                  city: o.customFields?.["City"] ?? o.city,
-                  state: o.customFields?.["State"] ?? o.state,
-                  zip: o.customFields?.["ZIP Code"] ?? o.zip_code ?? o.zip,
-                }
-              : undefined;
+ 
           return (
             <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
@@ -1001,7 +912,6 @@ export default function LeadView() {
                 <FieldValueRenderer
                   value={value}
                   fieldInfo={fieldInfo as any}
-                  addressParts={addressParts as any}
                   emptyPlaceholder="-"
                   clickable
                   className="text-sm font-medium text-gray-900"
@@ -1286,7 +1196,6 @@ export default function LeadView() {
 
   // Lead Contact Info modal: save order/visibility and persist for all lead records
   const handleSaveContactInfoFields = useCallback(() => {
-    // Include Full Address key if it's visible, otherwise filter it out
     const newOrder = Array.from(new Set(modalContactInfoOrder.filter((k) => modalContactInfoVisible[k] === true)));
     if (typeof window !== "undefined") {
       localStorage.setItem(LEAD_CONTACT_INFO_STORAGE_KEY, JSON.stringify(newOrder));
@@ -3239,13 +3148,10 @@ export default function LeadView() {
                       strategy={verticalListSortingStrategy}
                     >
                       <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
-                        {Array.from(new Set(modalContactInfoOrder)).map((key, index) => {
-                          // Handle synthetic Full Address field
-                          const label = key === FULL_ADDRESS_KEY
-                            ? "Full Address"
-                            : (contactInfoFieldCatalog.find((f) => f.key === key)?.label ?? key);
+                        {Array.from(new Set(                        modalContactInfoOrder)).map((key, index) => {
+                          const label = contactInfoFieldCatalog.find((f) => f.key === key)?.label ?? key;
                           const entry = contactInfoFieldCatalog.find((f) => f.key === key);
-                          if (!entry && key !== FULL_ADDRESS_KEY) return null;
+                          if (!entry) return null;
                           return (
                             <SortableContactInfoFieldRow
                               key={`contactInfo-${key}-${index}`}
@@ -3265,11 +3171,9 @@ export default function LeadView() {
                     </SortableContext>
                     <DragOverlay dropAnimation={dropAnimationConfig}>
                       {contactInfoDragActiveId ? (() => {
-                        const label = contactInfoDragActiveId === FULL_ADDRESS_KEY
-                          ? "Full Address"
-                          : (contactInfoFieldCatalog.find((f) => f.key === contactInfoDragActiveId)?.label ?? contactInfoDragActiveId);
+                        const label = contactInfoFieldCatalog.find((f) => f.key === contactInfoDragActiveId)?.label ?? contactInfoDragActiveId;
                         const entry = contactInfoFieldCatalog.find((f) => f.key === contactInfoDragActiveId);
-                        if (!entry && contactInfoDragActiveId !== FULL_ADDRESS_KEY) return null;
+                        if (!entry) return null;
                         return (
                           <SortableContactInfoFieldRow
                             id={contactInfoDragActiveId}

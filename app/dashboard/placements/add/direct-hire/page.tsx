@@ -636,6 +636,8 @@ export default function AddPlacement() {
                             <CustomFieldRenderer
                               field={field}
                               value={fieldValue}
+                              allFields={customFields}
+                              values={customFieldValues}
                               onChange={handlePlacementFieldChange}
                             />
                           )

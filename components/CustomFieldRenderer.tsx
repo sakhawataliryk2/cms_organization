@@ -191,6 +191,39 @@ export default function CustomFieldRenderer({
       .trim()
       .toLowerCase() === "credentials";
 
+  // Check if field is an address field (Full Address)
+  const isAddressField = (label?: string): boolean => {
+    const normalize = (value?: string): string =>
+      (value ?? "")
+        .toLowerCase()
+        .replace(/[_-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    const isCloseMatch = (word: string, target: string): boolean => {
+      if (word === target) return true;
+      if (Math.abs(word.length - target.length) > 1) return false;
+
+      let mismatches = 0;
+      for (let i = 0; i < Math.min(word.length, target.length); i++) {
+        if (word[i] !== target[i]) mismatches++;
+        if (mismatches > 1) return false;
+      }
+
+      return true;
+    };
+
+    const l = normalize(label);
+    const words = l.split(" ").filter(Boolean);
+
+    const hasFull = words.some(w => isCloseMatch(w, "full"));
+    const hasAddress = words.some(w => isCloseMatch(w, "address"));
+
+    return hasFull && hasAddress;
+  };
+
+  const fieldIsAddressField = isAddressField(field.field_label);
+
   if (field.is_hidden) return null;
 
   function formatNumberWithCommas(value: string | number) {
@@ -201,6 +234,7 @@ export default function CustomFieldRenderer({
       maximumFractionDigits: 2,
     });
   }
+  
   // Format salary values for display
   const formatSalaryValue = (val: any) => {
     if (field.field_name === "minSalary" || field.field_name === "maxSalary") {
@@ -237,11 +271,81 @@ export default function CustomFieldRenderer({
     return limited;
   };
 
-  // Handle phone number input changes
+  // Handle phone number input changes with cursor position preservation
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.target.value;
+    const cursorPosition = e.target.selectionStart || 0;
+    const oldValue = value || "";
+    
+    // Count digits in old and new values to detect if user is adding or deleting
+    const oldDigits = oldValue.replace(/\D/g, "");
+    const newDigits = input.replace(/\D/g, "");
+    const isAdding = newDigits.length > oldDigits.length;
+    const isDeleting = newDigits.length < oldDigits.length;
+    
+    // Count how many digits are before the cursor in the old value
+    const beforeCursor = oldValue.substring(0, cursorPosition);
+    const digitsBeforeCursor = beforeCursor.replace(/\D/g, "").length;
+    
+    // Format the new value
     const formatted = formatPhoneNumber(input);
+    
+    let newCursorPosition = formatted.length;
+    
+    if (isDeleting) {
+      // When deleting, maintain cursor position relative to digit count
+      let digitCount = 0;
+      for (let i = 0; i < formatted.length; i++) {
+        if (/\d/.test(formatted[i])) {
+          digitCount++;
+          if (digitCount === digitsBeforeCursor) {
+            newCursorPosition = i + 1;
+            break;
+          }
+        }
+      }
+      // If deleting at the start
+      if (digitsBeforeCursor === 0 && formatted.length > 0 && formatted[0] === '(') {
+        newCursorPosition = 1;
+      }
+    } else if (isAdding) {
+      // When adding, advance cursor to after the newly added digit
+      // Count digits in the formatted string up to where we should be
+      const targetDigitCount = digitsBeforeCursor + 1; // One more digit than before
+      let digitCount = 0;
+      for (let i = 0; i < formatted.length; i++) {
+        if (/\d/.test(formatted[i])) {
+          digitCount++;
+          if (digitCount === targetDigitCount) {
+            newCursorPosition = i + 1;
+            break;
+          }
+        }
+      }
+      // If we've reached max digits, put cursor at end
+      if (newDigits.length >= 10) {
+        newCursorPosition = formatted.length;
+      }
+    } else {
+      // No change in digit count (e.g., replacing a digit), maintain relative position
+      let digitCount = 0;
+      for (let i = 0; i < formatted.length; i++) {
+        if (/\d/.test(formatted[i])) {
+          digitCount++;
+          if (digitCount === digitsBeforeCursor) {
+            newCursorPosition = i + 1;
+            break;
+          }
+        }
+      }
+    }
+    
     onChange(field.field_name, formatted);
+    
+    // Restore cursor position after React updates
+    requestAnimationFrame(() => {
+      e.target.setSelectionRange(newCursorPosition, newCursorPosition);
+    });
   };
 
   const fieldProps = {
@@ -266,6 +370,62 @@ export default function CustomFieldRenderer({
     placeholder: field.placeholder || "",
     required: field.is_required,
   };
+
+  // Display combined address value if this is an address field
+  if (fieldIsAddressField && allFields && valuesRecord) {
+    const normalize = (s: string) => (s || "").toLowerCase().trim();
+
+    const findAddressField = (labels: string[]) =>
+      allFields.find((f) =>
+        labels.some((l) => normalize(f.field_label) === normalize(l))
+      );
+
+    const addressField = findAddressField(["address", "address1"]);
+    const address2Field = findAddressField(["address2", "address 2"]);
+    const cityField = findAddressField(["city"]);
+    const stateField = findAddressField(["state"]);
+    const zipField = findAddressField(["zip", "zip code", "postal code"]);
+
+    // Get values from the address sub-fields
+    const address = addressField ? (valuesRecord[addressField.field_name] || "").trim() : "";
+    const address2 = address2Field ? (valuesRecord[address2Field.field_name] || "").trim() : "";
+    const city = cityField ? (valuesRecord[cityField.field_name] || "").trim() : "";
+    const state = stateField ? (valuesRecord[stateField.field_name] || "").trim() : "";
+    const zip = zipField ? (valuesRecord[zipField.field_name] || "").trim() : "";
+
+    // Combine city and state
+    const cityState = [city, state].filter(Boolean).join(", ");
+    
+    // Combine all parts: Address, Address 2, City/State, Zip
+    const combinedParts = [address, address2, cityState, zip].filter(Boolean);
+    const autoCombinedAddress = combinedParts.join(", ");
+
+    // Update Full Address when individual address fields change
+    React.useEffect(() => {
+      // Always update Full Address with combined value when individual fields change
+      // Only update if the combined value is different from current value
+      if (autoCombinedAddress && autoCombinedAddress !== (value || "")) {
+        onChange(field.field_name, autoCombinedAddress);
+      }
+    }, [address, address2, city, state, zip, field.field_name, onChange]);
+
+    // Display as editable text field
+    // onChange updates only the Full Address field, not the sub-fields
+    return (
+      <input
+        id={field.field_name}
+        type="text"
+        value={value || ""}
+        onChange={(e) => {
+          // Update only the Full Address field, don't affect sub-fields
+          onChange(field.field_name, e.target.value);
+        }}
+        className={className}
+        placeholder={field.placeholder || ""}
+        required={field.is_required}
+      />
+    );
+  }
 
   switch (field.field_type) {
     case "textarea":
