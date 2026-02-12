@@ -281,9 +281,94 @@ const SECTION_CONFIG: Record<
       },
     },
   },
+  jobs: {
+    types: [
+      { value: "JOB_DELETE_REQUEST", label: "Job - Delete Request (Payroll)" },
+    ],
+    placeholders: {
+      JOB_DELETE_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{recordType}}",
+        "{{recordNumber}}",
+        "{{requestId}}",
+        "{{reason}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
+    },
+    required: {
+      JOB_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+    },
+    defaults: {
+      JOB_DELETE_REQUEST: {
+        template_name: "Job Delete Request",
+        subject: "Delete Request: {{recordType}} {{recordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Delete Request (Job)</h2>` +
+          `<p>A new job delete request has been submitted and requires your review.</p>` +
+          `<p><strong>Request Details:</strong></p>` +
+          `<ul>` +
+          `<li><strong>Request ID:</strong> {{requestId}} (the approval link uses this ID)</li>` +
+          `<li><strong>Record (Job):</strong> {{recordNumber}}</li>` +
+          `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
+          `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
+          `<li><strong>Reason:</strong> {{reason}}</li>` +
+          `</ul>` +
+          `<p>Please review the request and take the appropriate action using the links below:</p>` +
+          `<p>{{approvalUrl}} {{denyUrl}}</p>` +
+          `</div>`,
+      },
+    },
+  },
+  leads: {
+    types: [
+      { value: "LEAD_DELETE_REQUEST", label: "Lead - Delete Request (Payroll)" },
+    ],
+    placeholders: {
+      LEAD_DELETE_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{recordType}}",
+        "{{recordNumber}}",
+        "{{requestId}}",
+        "{{reason}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
+    },
+    required: {
+      LEAD_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+    },
+    defaults: {
+      LEAD_DELETE_REQUEST: {
+        template_name: "Lead Delete Request",
+        subject: "Delete Request: {{recordType}} {{recordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Delete Request (Lead)</h2>` +
+          `<p>A new lead delete request has been submitted and requires your review.</p>` +
+          `<p><strong>Request Details:</strong></p>` +
+          `<ul>` +
+          `<li><strong>Request ID:</strong> {{requestId}} (the approval link uses this ID)</li>` +
+          `<li><strong>Record (Lead):</strong> {{recordNumber}}</li>` +
+          `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
+          `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
+          `<li><strong>Reason:</strong> {{reason}}</li>` +
+          `</ul>` +
+          `<p>Please review the request and take the appropriate action using the links below:</p>` +
+          `<p>{{approvalUrl}} {{denyUrl}}</p>` +
+          `</div>`,
+      },
+    },
+  },
   tasks: {
     types: [
       { value: "TASK_REMINDER", label: "Task Reminder" },
+      { value: "TASK_DELETE_REQUEST", label: "Task - Delete Request (Payroll)" },
     ],
     placeholders: {
       TASK_REMINDER: [
@@ -298,9 +383,21 @@ const SECTION_CONFIG: Record<
         "{{hiringManagerName}}",
         "{{taskLink}}",
       ],
+      TASK_DELETE_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{recordType}}",
+        "{{recordNumber}}",
+        "{{requestId}}",
+        "{{reason}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
     },
     required: {
       TASK_REMINDER: ["{{taskTitle}}", "{{dueDateAndTime}}", "{{taskLink}}"],
+      TASK_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
     },
     defaults: {
       TASK_REMINDER: {
@@ -321,6 +418,67 @@ const SECTION_CONFIG: Record<
           `<p>{{taskLink}}</p>` +
           `</div>`,
       },
+      TASK_DELETE_REQUEST: {
+        template_name: "Task Delete Request",
+        subject: "Delete Request: {{recordType}} {{recordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Delete Request (Task)</h2>` +
+          `<p>A new task delete request has been submitted and requires your review.</p>` +
+          `<p><strong>Request Details:</strong></p>` +
+          `<ul>` +
+          `<li><strong>Request ID:</strong> {{requestId}} (the approval link uses this ID)</li>` +
+          `<li><strong>Record (Task):</strong> {{recordNumber}}</li>` +
+          `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
+          `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
+          `<li><strong>Reason:</strong> {{reason}}</li>` +
+          `</ul>` +
+          `<p>Please review the request and take the appropriate action using the links below:</p>` +
+          `<p>{{approvalUrl}} {{denyUrl}}</p>` +
+          `</div>`,
+      },
+    },
+  },
+  placements: {
+    types: [
+      { value: "PLACEMENT_DELETE_REQUEST", label: "Placement - Delete Request (Payroll)" },
+    ],
+    placeholders: {
+      PLACEMENT_DELETE_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{recordType}}",
+        "{{recordNumber}}",
+        "{{requestId}}",
+        "{{reason}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
+    },
+    required: {
+      PLACEMENT_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+    },
+    defaults: {
+      PLACEMENT_DELETE_REQUEST: {
+        template_name: "Placement Delete Request",
+        subject: "Delete Request: {{recordType}} {{recordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Delete Request (Placement)</h2>` +
+          `<p>A new placement delete request has been submitted and requires your review.</p>` +
+          `<p><strong>Request Details:</strong></p>` +
+          `<ul>` +
+          `<li><strong>Request ID:</strong> {{requestId}} (the approval link uses this ID)</li>` +
+          `<li><strong>Record (Placement):</strong> {{recordNumber}}</li>` +
+          `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
+          `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
+          `<li><strong>Reason:</strong> {{reason}}</li>` +
+          `</ul>` +
+          `<p>Please review the request and take the appropriate action using the links below:</p>` +
+          `<p>{{approvalUrl}} {{denyUrl}}</p>` +
+          `</div>`,
+      },
     },
   },
 };
@@ -329,7 +487,10 @@ const SECTION_LABELS: Record<string, string> = {
   "job-seeker": "Job Seeker",
   organization: "Organization",
   "hiring-manager": "Hiring Manager",
+  jobs: "Jobs",
+  leads: "Leads",
   tasks: "Tasks",
+  placements: "Placements",
 };
 
 export default function EmailManagementSectionPage() {

@@ -11,7 +11,7 @@ interface LookupOption {
 interface LookupFieldProps {
   value: string;
   onChange: (value: string) => void;
-  lookupType: 'organizations' | 'hiring-managers' | 'job-seekers' | 'jobs';
+  lookupType: 'organizations' | 'hiring-managers' | 'job-seekers' | 'jobs' | 'owner';
   placeholder?: string;
   required?: boolean;
   className?: string;
@@ -40,7 +40,7 @@ export default function LookupField({
     setError(null);
 
     try {
-      const apiEndpoint = `/api/${lookupType}`;
+      const apiEndpoint = lookupType === 'owner' ? '/api/users/active' : `/api/${lookupType}`;
       const response = await fetch(apiEndpoint);
 
       if (!response.ok) {
@@ -71,6 +71,11 @@ export default function LookupField({
         fetchedOptions = (data.jobs || []).map((job: any) => ({
           id: job.id.toString(),
           name: job.job_title
+        }));
+      } else if (lookupType === 'owner') {
+        fetchedOptions = (data.users || []).map((user: any) => ({
+          id: user.id.toString(),
+          name: user.name || user.email || ''
         }));
       }
 

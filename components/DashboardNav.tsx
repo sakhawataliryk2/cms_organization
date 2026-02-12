@@ -61,6 +61,14 @@ interface SearchResults {
   placements?: any[];
 }
 
+interface RecentSearch {
+  type: string;
+  id: number;
+  name: string;
+  url: string;
+  timestamp: number;
+}
+
 function SortablePinnedTab({
   record,
   isActive,
@@ -133,6 +141,7 @@ export default function DashboardNav() {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState<boolean>(false);
 
   const [pinnedRecords, setPinnedRecords] = useState<PinnedRecord[]>([]);
+  const [recentSearches, setRecentSearches] = useState<RecentSearch[]>([]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -211,12 +220,66 @@ export default function DashboardNav() {
     },
   ];
 
+  // Functions to manage recent searches
+  const loadRecentSearches = (): RecentSearch[] => {
+    try {
+      const stored = localStorage.getItem("recentSearches");
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (error) {
+      console.error("Error loading recent searches:", error);
+    }
+    return [];
+  };
+
+  const saveRecentSearches = (searches: RecentSearch[]) => {
+    try {
+      localStorage.setItem("recentSearches", JSON.stringify(searches));
+    } catch (error) {
+      console.error("Error saving recent searches:", error);
+    }
+  };
+
+  const addRecentSearch = (type: string, id: number, name: string, url: string) => {
+    const newSearch: RecentSearch = {
+      type,
+      id,
+      name,
+      url,
+      timestamp: Date.now(),
+    };
+
+    setRecentSearches((prev) => {
+      // Remove duplicate if exists (same type and id)
+      const filtered = prev.filter(
+        (s) => !(s.type === type && s.id === id)
+      );
+      // Add new search at the beginning
+      const updated = [newSearch, ...filtered].slice(0, 7); // Keep only last 7
+      saveRecentSearches(updated);
+      return updated;
+    });
+  };
+
+  const removeRecentSearch = (type: string, id: number) => {
+    setRecentSearches((prev) => {
+      const updated = prev.filter(
+        (s) => !(s.type === type && s.id === id)
+      );
+      saveRecentSearches(updated);
+      return updated;
+    });
+  };
+
   useEffect(() => {
     // Get user data
     const userData = getUser();
     if (userData) {
       setUser(userData);
     }
+    // Load recent searches
+    setRecentSearches(loadRecentSearches());
   }, []);
 
   const hasQuickTabs = showTbiQuickTab || pinnedRecords.length > 0;
@@ -477,12 +540,30 @@ export default function DashboardNav() {
       ];
 
       if (allResults.length > 0) {
-        navigateToResult(allResults[0].type, allResults[0].id);
+        // Find the actual item from searchResults
+        const firstResult = allResults[0];
+        let item: any = null;
+        if (firstResult.type === 'job') {
+          item = searchResults.jobs.find(j => j.id === firstResult.id);
+        } else if (firstResult.type === 'lead') {
+          item = searchResults.leads.find(l => l.id === firstResult.id);
+        } else if (firstResult.type === 'jobSeeker') {
+          item = searchResults.jobSeekers.find(js => js.id === firstResult.id);
+        } else if (firstResult.type === 'organization') {
+          item = searchResults.organizations.find(o => o.id === firstResult.id);
+        } else if (firstResult.type === 'task') {
+          item = searchResults.tasks.find(t => t.id === firstResult.id);
+        } else if (firstResult.type === 'hiringManager') {
+          item = searchResults.hiringManagers?.find(hm => hm.id === firstResult.id);
+        } else if (firstResult.type === 'placement') {
+          item = searchResults.placements?.find(p => p.id === firstResult.id);
+        }
+        navigateToResult(firstResult.type, firstResult.id, item);
       }
     }
   };
 
-  const navigateToResult = (type: string, id: number) => {
+  const navigateToResult = (type: string, id: number, item?: any) => {
     const pathMap: Record<string, string> = {
       job: `/dashboard/jobs/view?id=${id}`,
       lead: `/dashboard/leads/view?id=${id}`,
@@ -494,6 +575,10 @@ export default function DashboardNav() {
     };
     const path = pathMap[type];
     if (path) {
+      // Save to recent searches
+      const displayName = item ? getResultDisplayName(item, type) : `${type} ${id}`;
+      addRecentSearch(type, id, displayName, path);
+      
       router.push(path);
       setSearchQuery("");
       setIsSearchOpen(false);
@@ -763,17 +848,108 @@ export default function DashboardNav() {
                 </form>
 
                 {/* Global search results dropdown */}
-                {searchQuery.trim() && searchQuery.trim().length >= 1 && (
+                {(searchQuery.trim() && searchQuery.trim().length >= 1) || recentSearches.length > 0 ? (
                   <div className="absolute top-full left-0 mt-1 w-full min-w-0 max-w-[min(24rem,100vw-2rem)] md:w-96 bg-slate-800 rounded shadow-lg z-30 max-h-96 overflow-y-auto">
-                    {isSearching ? (
-                      <div className="px-4 py-8 text-center">
-                        <div className="text-gray-400 text-sm">
-                          Searching...
-                        </div>
-                      </div>
-                    ) : searchResults &&
-                      getTotalResultsCount(searchResults) > 0 ? (
+                    {/* Recent Searches - Show when query is empty */}
+                    {(!searchQuery.trim() || searchQuery.trim().length === 0) && recentSearches.length > 0 && (
                       <div className="py-1">
+                        <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                          Recent Searches
+                        </div>
+                        {recentSearches.map((search) => (
+                          <div
+                            key={`recent-${search.type}-${search.id}`}
+                            className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 group"
+                          >
+                            <button
+                              type="button"
+                              className="flex items-center flex-1 min-w-0 text-left hover:text-white"
+                              onClick={() => {
+                                router.push(search.url);
+                                setSearchQuery("");
+                                setIsSearchOpen(false);
+                                setSearchResults(null);
+                              }}
+                            >
+                              <span className="mr-3 shrink-0">
+                                {getResultIcon(search.type)}
+                              </span>
+                              <span className="flex-1 truncate">
+                                {search.name}
+                              </span>
+                            </button>
+                            <button
+                              type="button"
+                              className="ml-2 p-1 text-gray-400 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                removeRecentSearch(search.type, search.id);
+                              }}
+                              title="Remove from recent searches"
+                            >
+                              <FiX size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {/* Search Results - Show when query has content */}
+                    {searchQuery.trim() && searchQuery.trim().length >= 1 && (
+                      <>
+                        {isSearching ? (
+                          <div className="px-4 py-8 text-center">
+                            <div className="text-gray-400 text-sm">
+                              Searching...
+                            </div>
+                          </div>
+                        ) : searchResults &&
+                          getTotalResultsCount(searchResults) > 0 ? (
+                          <div className="py-1">
+                        {/* Recent Searches at top of results */}
+                        {recentSearches.length > 0 && (
+                          <div>
+                            <div className="px-4 py-2 text-xs font-semibold text-gray-400 uppercase border-b border-slate-700">
+                              Recent Searches
+                            </div>
+                            {recentSearches.slice(0, 3).map((search) => (
+                              <div
+                                key={`recent-${search.type}-${search.id}`}
+                                className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 group"
+                              >
+                                <button
+                                  type="button"
+                                  className="flex items-center flex-1 min-w-0 text-left hover:text-white"
+                                  onClick={() => {
+                                    router.push(search.url);
+                                    setSearchQuery("");
+                                    setIsSearchOpen(false);
+                                    setSearchResults(null);
+                                  }}
+                                >
+                                  <span className="mr-3 shrink-0">
+                                    {getResultIcon(search.type)}
+                                  </span>
+                                  <span className="flex-1 truncate">
+                                    {search.name}
+                                  </span>
+                                </button>
+                                <button
+                                  type="button"
+                                  className="ml-2 p-1 text-gray-400 hover:text-white opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    removeRecentSearch(search.type, search.id);
+                                  }}
+                                  title="Remove from recent searches"
+                                >
+                                  <FiX size={14} />
+                                </button>
+                              </div>
+                            ))}
+                            <div className="px-4 py-2 border-b border-slate-700"></div>
+                          </div>
+                        )}
                         {/* Jobs */}
                         {searchResults.jobs.length > 0 && (
                           <div>
@@ -785,7 +961,7 @@ export default function DashboardNav() {
                                 key={`job-${job.id}`}
                                 type="button"
                                 className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
-                                onClick={() => navigateToResult("job", job.id)}
+                                onClick={() => navigateToResult("job", job.id, job)}
                               >
                                 <span className="mr-3 text-blue-400">
                                   {getResultIcon("job")}
@@ -815,7 +991,7 @@ export default function DashboardNav() {
                                 type="button"
                                 className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
                                 onClick={() =>
-                                  navigateToResult("lead", lead.id)
+                                  navigateToResult("lead", lead.id, lead)
                                 }
                               >
                                 <span className="mr-3 text-orange-400">
@@ -846,7 +1022,7 @@ export default function DashboardNav() {
                                 type="button"
                                 className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
                                 onClick={() =>
-                                  navigateToResult("jobSeeker", js.id)
+                                  navigateToResult("jobSeeker", js.id, js)
                                 }
                               >
                                 <span className="mr-3 text-green-400">
@@ -881,7 +1057,7 @@ export default function DashboardNav() {
                                   type="button"
                                   className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
                                   onClick={() =>
-                                    navigateToResult("organization", org.id)
+                                    navigateToResult("organization", org.id, org)
                                   }
                                 >
                                   <span className="mr-3 text-purple-400">
@@ -913,7 +1089,7 @@ export default function DashboardNav() {
                                 type="button"
                                 className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
                                 onClick={() =>
-                                  navigateToResult("task", task.id)
+                                  navigateToResult("task", task.id, task)
                                 }
                               >
                                 <span className="mr-3 text-cyan-400">
@@ -948,7 +1124,7 @@ export default function DashboardNav() {
                                     type="button"
                                     className="flex items-center w-full px-4 py-2 text-sm text-gray-300 hover:bg-slate-700 hover:text-white"
                                     onClick={() =>
-                                      navigateToResult("hiringManager", hm.id)
+                                      navigateToResult("hiringManager", hm.id, hm)
                                     }
                                   >
                                     <span className="mr-3 text-yellow-400">
@@ -988,7 +1164,8 @@ export default function DashboardNav() {
                                     onClick={() =>
                                       navigateToResult(
                                         "placement",
-                                        placement.id
+                                        placement.id,
+                                        placement
                                       )
                                     }
                                   >
@@ -1011,17 +1188,19 @@ export default function DashboardNav() {
                               )}
                             </div>
                           )}
-                      </div>
-                    ) : searchQuery.trim().length >= 1 ? (
-                      <div className="px-4 py-8 text-center">
-                        <div className="text-gray-400 text-sm">
-                          {/* <p>No results found for</p>
-                        <p className="font-medium mt-1">"{searchQuery}"</p> */}
-                        </div>
-                      </div>
-                    ) : null}
+                          </div>
+                        ) : searchQuery.trim().length >= 1 ? (
+                          <div className="px-4 py-8 text-center">
+                            <div className="text-gray-400 text-sm">
+                              {/* <p>No results found for</p>
+                            <p className="font-medium mt-1">"{searchQuery}"</p> */}
+                            </div>
+                          </div>
+                        ) : null}
+                      </>
+                    )}
                   </div>
-                )}
+                ) : null}
               </div>
             ) : (
               <button

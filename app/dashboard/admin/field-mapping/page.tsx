@@ -1614,6 +1614,7 @@ const FieldMapping = () => {
                       <option value="hiring-managers">Hiring Managers</option>
                       <option value="job-seekers">Job Seekers</option>
                       <option value="jobs">Jobs</option>
+                      <option value="owner">Owner</option>
                     </select>
                     <p className="text-xs text-gray-500 mt-1">
                       {editFormData.fieldType === "multiselect_lookup"

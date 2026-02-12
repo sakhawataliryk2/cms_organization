@@ -1265,7 +1265,7 @@ export default function AddDirectHireJob() {
         {(isEditMode || jobStep === 3) && (
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 gap-4">
-              {!isEditMode && hiringManagerCustomField && !(organizationIdFromUrl && hiringManagerIdFromUrl) && (
+              {/* {!isEditMode && hiringManagerCustomField && !(organizationIdFromUrl && hiringManagerIdFromUrl) && (
                 <div className="flex items-center mb-3">
                   <label className="w-48 font-medium flex items-center">
                     Hiring Manager:
@@ -1290,8 +1290,8 @@ export default function AddDirectHireJob() {
                     />
                   </div>
                 </div>
-              )}
-              {isEditMode && (
+              )} */}
+              {/* {isEditMode && (
                 <div className="flex items-center mb-3">
                   <label className="w-48 font-medium flex items-center">
                     Hiring Manager:
@@ -1309,7 +1309,7 @@ export default function AddDirectHireJob() {
                     </button>
                   </div>
                 </div>
-              )}
+              )} */}
               {/* Custom Fields Section - Only fields from Admin Center → Field Management → Jobs Direct Hire */}
               {customFields.length > 0 && (
                 <>

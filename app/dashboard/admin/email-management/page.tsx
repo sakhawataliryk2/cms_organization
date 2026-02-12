@@ -27,9 +27,24 @@ const SECTIONS: Section[] = [
     description: "Hiring manager delete and transfer request emails for payroll",
   },
   {
+    id: "jobs",
+    name: "Jobs",
+    description: "Job delete request emails for payroll",
+  },
+  {
+    id: "leads",
+    name: "Leads",
+    description: "Lead delete request emails for payroll",
+  },
+  {
     id: "tasks",
     name: "Tasks",
-    description: "Task reminder email templates",
+    description: "Task reminder and delete request email templates",
+  },
+  {
+    id: "placements",
+    name: "Placements",
+    description: "Placement delete request emails for payroll",
   },
 ];
 

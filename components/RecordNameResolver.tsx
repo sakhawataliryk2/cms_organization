@@ -28,7 +28,8 @@ export type RecordType =
   | "jobSeeker"
   | "jobSeekers"
   | "hiringManager"
-  | "hiringManagers";
+  | "hiringManagers"
+  | "owner";
 
 type CacheEntry = {
   name: string | null;
@@ -255,7 +256,11 @@ export default function RecordNameResolver({
   const displayName =
     name ?? (isLoading ? loadingText : error ? fallback : fallback);
 
-  if (clickable && viewPath && singleId) {
+  // Owner type should never be clickable
+  const isOwnerType = normalizedType === "owner";
+  const shouldBeClickable = clickable && !isOwnerType && viewPath && singleId;
+
+  if (shouldBeClickable) {
     const href = `${viewPath}?id=${singleId}`;
     return (
       <a

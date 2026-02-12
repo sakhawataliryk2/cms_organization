@@ -9,7 +9,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, sendCalendarInvite, type EmailMessage, type CalendarEvent } from "@/lib/office365";
 import { FiUsers, FiUpload, FiFile, FiX, FiLock, FiUnlock, FiArrowUp, FiArrowDown, FiFilter, FiSearch } from "react-icons/fi";
-import { HiOutlineUser } from "react-icons/hi";
+import { HiOutlineUser, HiOutlineOfficeBuilding } from "react-icons/hi";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { TbGripVertical } from "react-icons/tb";
 import { formatRecordId } from '@/lib/recordIdFormatter';
@@ -498,7 +498,6 @@ export default function JobSeekerView() {
     aboutReferences: any[];
     copyNote: string;
     replaceGeneralContactComments: boolean;
-    additionalReferences: string;
     scheduleNextAction: string;
     emailNotification: string[];
   }>({
@@ -519,7 +518,6 @@ export default function JobSeekerView() {
       : [],
     copyNote: "No",
     replaceGeneralContactComments: false,
-    additionalReferences: "",
     scheduleNextAction: "None",
     emailNotification: [],
   });
@@ -1489,17 +1487,11 @@ Best regards`;
 
   // Search for references for About field
   const searchAboutReferences = async (query: string) => {
-    if (!query || query.trim().length < 2) {
-      setAboutSuggestions([]);
-      setShowAboutDropdown(false);
-      return;
-    }
-
     setIsLoadingAboutSearch(true);
     setShowAboutDropdown(true);
 
     try {
-      const searchTerm = query.trim();
+      const searchTerm = (query || "").trim();
       const token = document.cookie.replace(
         /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
         "$1"
@@ -1532,11 +1524,13 @@ Best regards`;
       // Process jobs
       if (jobsRes.status === "fulfilled" && jobsRes.value.ok) {
         const data = await jobsRes.value.json();
-        const jobs = (data.jobs || []).filter(
-          (job: any) =>
-            job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            job.id?.toString().includes(searchTerm)
-        );
+        const jobs = searchTerm
+          ? (data.jobs || []).filter(
+              (job: any) =>
+                job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                job.id?.toString().includes(searchTerm)
+            )
+          : (data.jobs || []);
         jobs.forEach((job: any) => {
           suggestions.push({
             id: job.id,
@@ -1551,11 +1545,13 @@ Best regards`;
       // Process organizations
       if (orgsRes.status === "fulfilled" && orgsRes.value.ok) {
         const data = await orgsRes.value.json();
-        const orgs = (data.organizations || []).filter(
-          (org: any) =>
-            org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            org.id?.toString().includes(searchTerm)
-        );
+        const orgs = searchTerm
+          ? (data.organizations || []).filter(
+              (org: any) =>
+                org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                org.id?.toString().includes(searchTerm)
+            )
+          : (data.organizations || []);
         orgs.forEach((org: any) => {
           suggestions.push({
             id: org.id,
@@ -1570,14 +1566,16 @@ Best regards`;
       // Process job seekers
       if (jobSeekersRes.status === "fulfilled" && jobSeekersRes.value.ok) {
         const data = await jobSeekersRes.value.json();
-        const seekers = (data.jobSeekers || []).filter(
-          (seeker: any) =>
-            seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            seeker.id?.toString().includes(searchTerm)
-        );
+        const seekers = searchTerm
+          ? (data.jobSeekers || []).filter(
+              (seeker: any) =>
+                seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.id?.toString().includes(searchTerm)
+            )
+          : (data.jobSeekers || []);
         seekers.forEach((seeker: any) => {
           const name =
             seeker.full_name ||
@@ -1595,13 +1593,15 @@ Best regards`;
       // Process leads
       if (leadsRes.status === "fulfilled" && leadsRes.value.ok) {
         const data = await leadsRes.value.json();
-        const leads = (data.leads || []).filter(
-          (lead: any) =>
-            lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            lead.id?.toString().includes(searchTerm)
-        );
+        const leads = searchTerm
+          ? (data.leads || []).filter(
+              (lead: any) =>
+                lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                lead.id?.toString().includes(searchTerm)
+            )
+          : (data.leads || []);
         leads.forEach((lead: any) => {
           suggestions.push({
             id: lead.id,
@@ -1616,14 +1616,16 @@ Best regards`;
       // Process hiring managers
       if (hiringManagersRes.status === "fulfilled" && hiringManagersRes.value.ok) {
         const data = await hiringManagersRes.value.json();
-        const hms = (data.hiringManagers || []).filter(
-          (hm: any) =>
-            hm.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            hm.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            hm.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            hm.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            hm.id?.toString().includes(searchTerm)
-        );
+        const hms = searchTerm
+          ? (data.hiringManagers || []).filter(
+              (hm: any) =>
+                hm.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                hm.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                hm.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                hm.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                hm.id?.toString().includes(searchTerm)
+            )
+          : (data.hiringManagers || []);
         hms.forEach((hm: any) => {
           const name =
             hm.full_name ||
@@ -2820,7 +2822,6 @@ Best regards`;
         copy_note: noteForm.copyNote === "Yes",
         replace_general_contact_comments:
           noteForm.replaceGeneralContactComments,
-        additional_references: noteForm.additionalReferences,
         schedule_next_action: noteForm.scheduleNextAction,
         email_notification: Array.isArray(noteForm.emailNotification) ? noteForm.emailNotification : (noteForm.emailNotification ? [noteForm.emailNotification] : []),
       };
@@ -2892,15 +2893,26 @@ Best regards`;
         about: jobSeeker
           ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
           : "",
-        aboutReferences: [], // ✅ required
+        aboutReferences: jobSeeker
+          ? [
+            {
+              id: jobSeeker.id,
+              type: "Job Seeker",
+              display: `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`,
+              value: formatRecordId(jobSeeker.id, "jobSeeker"),
+            },
+          ]
+          : [],
         copyNote: "No",
         replaceGeneralContactComments: false,
-        additionalReferences: "",
         scheduleNextAction: "None",
         emailNotification: [],
       });
+      setAboutSearchQuery("");
       setEmailSearchQuery("");
       setShowEmailDropdown(false);
+      setShowAboutDropdown(false);
+      setValidationErrors({});
       setShowAddNote(false);
 
       // Refresh history and notes
@@ -6383,91 +6395,93 @@ Best regards`;
                     )}
                   </label>
                   <div className="relative" ref={aboutInputRef}>
-                    {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
-                        {noteForm.aboutReferences.map((ref, index) => (
-                          <span
-                            key={`${ref.type}-${ref.id}-${index}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
+                    <div
+                      className={`min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:outline-none pr-8 ${
+                        validationErrors.about
+                          ? "border-red-500 focus-within:ring-red-500"
+                          : "border-gray-300 focus-within:ring-blue-500"
+                      }`}
+                    >
+                      {/* Selected References Tags - Inside the input container */}
+                      {noteForm.aboutReferences.map((ref, index) => (
+                        <span
+                          key={`${ref.type}-${ref.id}-${index}`}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
+                        >
+                          <HiOutlineOfficeBuilding className="w-4 h-4" />
+                          {ref.display}
+                          <button
+                            type="button"
+                            onClick={() => removeAboutReference(index)}
+                            className="hover:text-blue-600 font-bold leading-none"
+                            title="Remove"
                           >
-                            <FiUsers className="w-4 h-4" />
-                            {ref.display}
-                            <button
-                              type="button"
-                              onClick={() => removeAboutReference(index)}
-                              className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
-                              title="Remove"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                            ×
+                          </button>
+                        </span>
+                      ))}
 
-                    <div className="relative">
-                      {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
-                        <label className="block text-xs font-medium text-gray-500 mb-1">
-                          Add Additional References
-                        </label>
-                      )}
+                      {/* Search Input for References - Same field to add more */}
                       <input
                         type="text"
                         value={aboutSearchQuery}
                         onChange={(e) => {
                           const value = e.target.value;
                           setAboutSearchQuery(value);
-                          if (value.trim().length >= 2) searchAboutReferences(value);
+                          searchAboutReferences(value);
+                          setShowAboutDropdown(true);
                         }}
                         onFocus={() => {
-                          if (aboutSearchQuery.trim().length >= 2) {
-                            setShowAboutDropdown(true);
+                          setShowAboutDropdown(true);
+                          if (!aboutSearchQuery.trim()) {
+                            searchAboutReferences("");
                           }
                         }}
                         placeholder={
-                          noteForm.aboutReferences && noteForm.aboutReferences.length === 0
-                            ? "Search and select records (e.g., Job, Org, Lead, Placement)..."
-                            : "Type to search more references..."
+                          noteForm.aboutReferences.length === 0
+                            ? "Search and select records (e.g., Job, Lead, Placement)..."
+                            : "Add more..."
                         }
-                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 pr-8 ${validationErrors.about
-                          ? "border-red-500 focus:ring-red-500"
-                          : "border-gray-300 focus:ring-blue-500"
-                          }`}
+                        className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
                       />
-                      <span className="absolute right-2 top-2 text-gray-400 text-sm">Q</span>
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
+                        <FiSearch className="w-4 h-4" />
+                      </span>
                     </div>
 
+                    {/* Validation Error */}
                     {validationErrors.about && (
                       <p className="mt-1 text-sm text-red-500">{validationErrors.about}</p>
                     )}
 
+                    {/* Suggestions Dropdown */}
                     {showAboutDropdown && (
                       <div
                         data-about-dropdown
                         className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
                       >
                         {isLoadingAboutSearch ? (
-                          <div className="p-3 text-sm text-gray-500 text-center">Searching...</div>
+                          <div className="p-3 text-center text-gray-500 text-sm">Searching...</div>
                         ) : aboutSuggestions.length > 0 ? (
                           aboutSuggestions.map((suggestion, idx) => (
                             <button
                               key={`${suggestion.type}-${suggestion.id}-${idx}`}
                               type="button"
                               onClick={() => handleAboutReferenceSelect(suggestion)}
-                              className="w-full text-left px-4 py-2 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none border-b border-gray-100 last:border-b-0"
+                              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
                             >
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <div className="text-sm font-medium text-gray-900">{suggestion.display}</div>
-                                  <div className="text-xs text-gray-500">{suggestion.type}</div>
-                                </div>
-                                <span className="text-xs text-blue-600 font-medium">{suggestion.value}</span>
+                              <HiOutlineOfficeBuilding className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-gray-900">{suggestion.display}</div>
+                                <div className="text-xs text-gray-500">{suggestion.type}</div>
                               </div>
                             </button>
                           ))
-                        ) : aboutSearchQuery.trim().length >= 2 ? (
-                          <div className="p-3 text-sm text-gray-500 text-center">No references found</div>
-                        ) : null}
+                        ) : aboutSearchQuery.trim().length > 0 ? (
+                          <div className="p-3 text-center text-gray-500 text-sm">No results found</div>
+                        ) : (
+                          <div className="p-3 text-center text-gray-500 text-sm">Type to search or select from list</div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -6575,58 +6589,53 @@ Best regards`;
                     Email Notification
                   </label>
                   <div className="relative" ref={emailInputRef}>
-                    {noteForm.emailNotification.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
-                        {noteForm.emailNotification.map((val) => (
+                    {isLoadingUsers ? (
+                      <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50 min-h-[42px]">
+                        Loading users...
+                      </div>
+                    ) : (
+                      <div className="min-h-[42px] flex flex-wrap items-center gap-2 p-2 border border-gray-300 rounded focus-within:ring-2 focus-within:outline-none focus-within:ring-blue-500 pr-8">
+                        {/* Selected Users Tags - Inside the input container */}
+                        {noteForm.emailNotification.map((val, index) => (
                           <span
                             key={val}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
                           >
-                            <HiOutlineUser className="w-4 h-4 shrink-0" />
+                            <HiOutlineUser className="w-4 h-4 flex-shrink-0" />
                             {val}
                             <button
                               type="button"
                               onClick={() => removeEmailNotification(val)}
-                              className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
+                              className="hover:text-blue-600 font-bold leading-none"
                               title="Remove"
                             >
                               ×
                             </button>
                           </span>
                         ))}
-                      </div>
-                    )}
-                    {noteForm.emailNotification.length > 0 && (
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Add Additional Users</label>
-                    )}
-                    <div className="relative">
-                      {isLoadingUsers ? (
-                        <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
-                          Loading users...
-                        </div>
-                      ) : (
+
+                        {/* Search Input for Users - Same field to add more */}
                         <input
                           type="text"
                           value={emailSearchQuery}
                           onChange={(e) => {
-                            setEmailSearchQuery(e.target.value);
+                            const value = e.target.value;
+                            setEmailSearchQuery(value);
                             setShowEmailDropdown(true);
                           }}
                           onFocus={() => setShowEmailDropdown(true)}
                           placeholder={
                             noteForm.emailNotification.length === 0
                               ? "Search and add users to notify..."
-                              : "Add another user..."
+                              : "Add more..."
                           }
-                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
+                          className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
                         />
-                      )}
-                      {!isLoadingUsers && (
                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
                           <FiSearch className="w-4 h-4" />
                         </span>
-                      )}
-                    </div>
+                      </div>
+                    )}
                     {showEmailDropdown && !isLoadingUsers && (
                       <div
                         data-email-dropdown

@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
       placements: "/api/placements",
       task: "/api/tasks",
       tasks: "/api/tasks",
-      
+      owner: "/api/users/active",
     };
 
     const basePath = apiPathMap[normalizedType];
@@ -60,13 +60,48 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          message: `Unknown type: "${type}". Supported: organization, hiring-manager, job, job-seeker, lead, placement, task`,
+          message: `Unknown type: "${type}". Supported: organization, hiring-manager, job, job-seeker, lead, placement, task, owner`,
         },
         { status: 400 }
       );
     }
 
     const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
+    
+    // Owner type uses /api/users/active endpoint and finds user by ID
+    if (normalizedType === "owner") {
+      const url = `${apiUrl}${basePath}`;
+      const response = await fetch(url, {
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: data.message || "Failed to fetch users",
+          },
+          { status: response.status }
+        );
+      }
+
+      const users = data.users || [];
+      const user = users.find((u: any) => String(u.id) === String(id));
+      const name = user ? (user.name || user.email || "") : "";
+
+      return NextResponse.json({
+        success: true,
+        name: (name || "").trim() || `User #${id}`,
+        id: String(id),
+        type: normalizedType,
+      });
+    }
+
     const url = `${apiUrl}${basePath}/${id}`;
     const response = await fetch(url, {
       headers: {

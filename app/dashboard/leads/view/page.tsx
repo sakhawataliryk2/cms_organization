@@ -7,8 +7,10 @@ import Image from "next/image";
 import ActionDropdown from "@/components/ActionDropdown";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import LoadingScreen from "@/components/LoadingScreen";
-import { FiTarget } from "react-icons/fi";
+import { FiTarget, FiSearch } from "react-icons/fi";
 import { BsFillPinAngleFill } from "react-icons/bs";
+import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
+import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 // Drag and drop imports
 import DocumentViewer from "@/components/DocumentViewer";
@@ -239,14 +241,66 @@ export default function LeadView() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const historyFilters = useHistoryFilters(history);
   const [showAddNote, setShowAddNote] = useState(false);
-  const [newNote, setNewNote] = useState("");
-  const [noteType, setNoteType] = useState("General Note");
+  
+  // Add Note form state - matching Organization view structure
+  const [noteForm, setNoteForm] = useState({
+    text: "",
+    action: "",
+    about: lead ? `${formatRecordId(lead.id, "lead")} ${lead.name || lead.company_name || ""}` : "",
+    aboutReferences: lead
+      ? [
+        {
+          id: lead.id,
+          type: "Lead",
+          display: `${formatRecordId(lead.id, "lead")} ${lead.name || lead.company_name || "Unnamed"}`,
+          value: formatRecordId(lead.id, "lead"),
+        },
+      ]
+      : [],
+    copyNote: "No",
+    replaceGeneralContactComments: false,
+    scheduleNextAction: "None",
+    emailNotification: [] as string[],
+  });
+  const [users, setUsers] = useState<any[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+
+  // Validation state
+  const [validationErrors, setValidationErrors] = useState<{
+    action?: string;
+    about?: string;
+  }>({});
+
+  // Reference search state for About field
+  const [aboutSearchQuery, setAboutSearchQuery] = useState("");
+  const [aboutSuggestions, setAboutSuggestions] = useState<any[]>([]);
+  const [showAboutDropdown, setShowAboutDropdown] = useState(false);
+  const [isLoadingAboutSearch, setIsLoadingAboutSearch] = useState(false);
+  const aboutInputRef = useRef<HTMLInputElement>(null);
+
+  // Email notification search state
+  const [emailSearchQuery, setEmailSearchQuery] = useState("");
+  const [showEmailDropdown, setShowEmailDropdown] = useState(false);
+  const emailInputRef = useRef<HTMLInputElement>(null);
+
+  // Action fields state
+  const [actionFields, setActionFields] = useState<any[]>([]);
+  const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
 
   // Note sorting & filtering (match Organization Notes design)
   const [noteActionFilter, setNoteActionFilter] = useState<string>("");
   const [noteAuthorFilter, setNoteAuthorFilter] = useState<string>("");
   const [noteSortKey, setNoteSortKey] = useState<"date" | "action" | "author">("date");
   const [noteSortDir, setNoteSortDir] = useState<"asc" | "desc">("desc");
+
+  // Delete request state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteForm, setDeleteForm] = useState({
+    reason: "", // Mandatory reason for deletion
+  });
+  const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
+  const [pendingDeleteRequest, setPendingDeleteRequest] = useState<any>(null);
+  const [isLoadingDeleteRequest, setIsLoadingDeleteRequest] = useState(false);
 
   const sortedFilteredNotes = useMemo(() => {
     let out = [...notes];
@@ -1877,10 +1931,8 @@ export default function LeadView() {
     if (action === "edit" && leadId) {
       router.push(`/dashboard/leads/add?id=${leadId}`);
     } else if (action === "delete" && leadId) {
-      // Confirm before deleting
-      if (confirm("Are you sure you want to delete this lead?")) {
-        deleteLead(leadId);
-      }
+      checkPendingDeleteRequest();
+      setShowDeleteModal(true);
     } else if (action === "add-note") {
       setShowAddNote(true);
       setActiveTab("notes");
@@ -1908,43 +1960,619 @@ export default function LeadView() {
     }
   };
 
-  // Function to delete a lead
-  const deleteLead = async (id: string) => {
-    setIsLoading(true);
+  // Fetch action fields on mount
+  useEffect(() => {
+    const fetchActionFields = async () => {
+      setIsLoadingActionFields(true);
+      try {
+        const response = await fetch("/api/organizations/fields", {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        });
+        if (response.ok) {
+          const raw = await response.text();
+          let data: any = {};
+          try {
+            data = JSON.parse(raw);
+          } catch { }
+
+          const fields = data.customFields || data.fields || data.data?.fields || data.organizationFields || [];
+          const fieldNamesToCheck = ['field_500', 'actions', 'action'];
+
+          const field500 = (fields as any[]).find((f: any) =>
+            fieldNamesToCheck.includes(f.field_name?.toLowerCase()) ||
+            fieldNamesToCheck.includes(f.field_label?.toLowerCase())
+          );
+
+          if (field500 && field500.options) {
+            let options = field500.options;
+            if (typeof options === "string") {
+              try {
+                options = JSON.parse(options);
+              } catch { }
+            }
+            if (Array.isArray(options)) {
+              setActionFields(options.map((opt: any) => ({
+                id: opt.value || opt,
+                field_label: opt.label || opt.value || opt,
+                field_name: opt.value || opt,
+              })));
+            } else if (typeof options === "object") {
+              setActionFields(
+                Object.entries(options).map(([key, value]) => ({
+                  id: key,
+                  field_label: String(value),
+                  field_name: key,
+                }))
+              );
+            }
+          } else {
+            setActionFields([
+              { id: "Outbound Call", field_label: "Outbound Call", field_name: "Outbound Call" },
+              { id: "Inbound Call", field_label: "Inbound Call", field_name: "Inbound Call" },
+              { id: "Left Message", field_label: "Left Message", field_name: "Left Message" },
+              { id: "Email", field_label: "Email", field_name: "Email" },
+              { id: "Appointment", field_label: "Appointment", field_name: "Appointment" },
+              { id: "Client Visit", field_label: "Client Visit", field_name: "Client Visit" },
+            ]);
+          }
+        }
+      } catch (err) {
+        console.error("Error fetching action fields:", err);
+        setActionFields([
+          { id: "Outbound Call", field_label: "Outbound Call", field_name: "Outbound Call" },
+          { id: "Inbound Call", field_label: "Inbound Call", field_name: "Inbound Call" },
+          { id: "Left Message", field_label: "Left Message", field_name: "Left Message" },
+          { id: "Email", field_label: "Email", field_name: "Email" },
+          { id: "Appointment", field_label: "Appointment", field_name: "Appointment" },
+          { id: "Client Visit", field_label: "Client Visit", field_name: "Client Visit" },
+        ]);
+      } finally {
+        setIsLoadingActionFields(false);
+      }
+    };
+
+    fetchActionFields();
+  }, []);
+
+  // Fetch users for email notification dropdown - Internal Users Only
+  useEffect(() => {
+    const fetchUsers = async () => {
+      setIsLoadingUsers(true);
+      try {
+        const response = await fetch("/api/users/active", {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const internalUsers = (data.users || []).filter((user: any) => {
+            return (
+              user.user_type === "internal" ||
+              user.role === "admin" ||
+              user.role === "user" ||
+              (!user.user_type && user.email)
+            );
+          });
+          setUsers(internalUsers);
+        }
+      } catch (err) {
+        console.error("Error fetching users:", err);
+      } finally {
+        setIsLoadingUsers(false);
+      }
+    };
+
+    fetchUsers();
+  }, []);
+
+  // Search for references for About field
+  const searchAboutReferences = async (query: string) => {
+    setIsLoadingAboutSearch(true);
+    setShowAboutDropdown(true);
+
     try {
-      const response = await fetch(`/api/leads/${id}`, {
-        method: "DELETE",
+      const searchTerm = (query || "").trim();
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      const headers = {
+        Authorization: `Bearer ${token}`,
+      };
+
+      const [
+        jobsRes,
+        orgsRes,
+        jobSeekersRes,
+        leadsRes,
+        tasksRes,
+        placementsRes,
+        hiringManagersRes,
+      ] = await Promise.allSettled([
+        fetch("/api/jobs", { headers }),
+        fetch("/api/organizations", { headers }),
+        fetch("/api/job-seekers", { headers }),
+        fetch("/api/leads", { headers }),
+        fetch("/api/tasks", { headers }),
+        fetch("/api/placements", { headers }),
+        fetch("/api/hiring-managers", { headers }),
+      ]);
+
+      const suggestions: any[] = [];
+
+      // Process jobs
+      if (jobsRes.status === "fulfilled" && jobsRes.value.ok) {
+        const data = await jobsRes.value.json();
+        const jobs = searchTerm
+          ? (data.jobs || []).filter(
+              (job: any) =>
+                job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                job.id?.toString().includes(searchTerm)
+            )
+          : (data.jobs || []);
+        jobs.forEach((job: any) => {
+          suggestions.push({
+            id: job.id,
+            type: "Job",
+            display: `${formatRecordId(job.id, "job")} ${job.job_title || "Untitled"}`,
+            value: formatRecordId(job.id, "job"),
+          });
+        });
+      }
+
+      // Process organizations
+      if (orgsRes.status === "fulfilled" && orgsRes.value.ok) {
+        const data = await orgsRes.value.json();
+        const orgs = searchTerm
+          ? (data.organizations || []).filter(
+              (org: any) =>
+                org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                org.id?.toString().includes(searchTerm)
+            )
+          : (data.organizations || []);
+        orgs.forEach((org: any) => {
+          suggestions.push({
+            id: org.id,
+            type: "Organization",
+            display: `${formatRecordId(org.id, "organization")} ${org.name || "Unnamed"}`,
+            value: formatRecordId(org.id, "organization"),
+          });
+        });
+      }
+
+      // Process job seekers
+      if (jobSeekersRes.status === "fulfilled" && jobSeekersRes.value.ok) {
+        const data = await jobSeekersRes.value.json();
+        const seekers = searchTerm
+          ? (data.jobSeekers || []).filter(
+              (seeker: any) =>
+                seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.id?.toString().includes(searchTerm)
+            )
+          : (data.jobSeekers || []);
+        seekers.forEach((seeker: any) => {
+          const name =
+            seeker.full_name ||
+            `${seeker.first_name || ""} ${seeker.last_name || ""}`.trim() ||
+            "Unnamed";
+          suggestions.push({
+            id: seeker.id,
+            type: "Job Seeker",
+            display: `${formatRecordId(seeker.id, "jobSeeker")} ${name}`,
+            value: formatRecordId(seeker.id, "jobSeeker"),
+          });
+        });
+      }
+
+      // Process leads
+      if (leadsRes.status === "fulfilled" && leadsRes.value.ok) {
+        const data = await leadsRes.value.json();
+        const leads = searchTerm
+          ? (data.leads || []).filter(
+              (lead: any) =>
+                lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                lead.id?.toString().includes(searchTerm)
+            )
+          : (data.leads || []);
+        leads.forEach((lead: any) => {
+          suggestions.push({
+            id: lead.id,
+            type: "Lead",
+            display: `${formatRecordId(lead.id, "lead")} ${lead.name || lead.company_name || "Unnamed"}`,
+            value: formatRecordId(lead.id, "lead"),
+          });
+        });
+      }
+
+      // Process tasks
+      if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
+        const data = await tasksRes.value.json();
+        const tasks = searchTerm
+          ? (data.tasks || []).filter(
+              (task: any) =>
+                task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                task.id?.toString().includes(searchTerm)
+            )
+          : (data.tasks || []);
+        tasks.forEach((task: any) => {
+          suggestions.push({
+            id: task.id,
+            type: "Task",
+            display: `#${task.id} ${task.title || "Untitled"}`,
+            value: `#${task.id}`,
+          });
+        });
+      }
+
+      // Process placements
+      if (placementsRes.status === "fulfilled" && placementsRes.value.ok) {
+        const data = await placementsRes.value.json();
+        const placements = searchTerm
+          ? (data.placements || []).filter(
+              (placement: any) =>
+                placement.jobTitle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                placement.jobSeekerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                placement.id?.toString().includes(searchTerm)
+            )
+          : (data.placements || []);
+        placements.forEach((placement: any) => {
+          suggestions.push({
+            id: placement.id,
+            type: "Placement",
+            display: `#${placement.id} ${placement.jobSeekerName || "Unnamed"} - ${placement.jobTitle || "Untitled"}`,
+            value: `#${placement.id}`,
+          });
+        });
+      }
+
+      // Process hiring managers
+      if (hiringManagersRes.status === "fulfilled" && hiringManagersRes.value.ok) {
+        const data = await hiringManagersRes.value.json();
+        const hms = searchTerm
+          ? (data.hiringManagers || []).filter(
+              (hm: any) =>
+                hm.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                hm.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                hm.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                hm.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                hm.id?.toString().includes(searchTerm)
+            )
+          : (data.hiringManagers || []);
+        hms.forEach((hm: any) => {
+          const name =
+            hm.full_name ||
+            `${hm.first_name || ""} ${hm.last_name || ""}`.trim() ||
+            "Unnamed";
+          suggestions.push({
+            id: hm.id,
+            type: "Hiring Manager",
+            display: `${formatRecordId(hm.id, "hiringManager")} ${name}`,
+            value: formatRecordId(hm.id, "hiringManager"),
+          });
+        });
+      }
+
+      // Filter out already selected references
+      const selectedIds = noteForm.aboutReferences.map((ref) => ref.id);
+      const filteredSuggestions = suggestions.filter(
+        (s) => !selectedIds.includes(s.id)
+      );
+
+      // Limit to top 10 suggestions
+      setAboutSuggestions(filteredSuggestions.slice(0, 10));
+    } catch (err) {
+      console.error("Error searching about references:", err);
+      setAboutSuggestions([]);
+    } finally {
+      setIsLoadingAboutSearch(false);
+    }
+  };
+
+  // Handle About reference selection
+  const handleAboutReferenceSelect = (reference: any) => {
+    setNoteForm((prev) => {
+      const newReferences = [...prev.aboutReferences, reference];
+      return {
+        ...prev,
+        aboutReferences: newReferences,
+        about: newReferences.map((ref) => ref.display).join(", "),
+      };
+    });
+    setAboutSearchQuery("");
+    setShowAboutDropdown(false);
+    setAboutSuggestions([]);
+    if (aboutInputRef.current) {
+      aboutInputRef.current.focus();
+    }
+  };
+
+  // Remove About reference
+  const removeAboutReference = (index: number) => {
+    setNoteForm((prev) => {
+      const newReferences = prev.aboutReferences.filter((_, i) => i !== index);
+      return {
+        ...prev,
+        aboutReferences: newReferences,
+        about: newReferences.length > 0
+          ? newReferences.map((ref) => ref.display).join(", ")
+          : "",
+      };
+    });
+  };
+
+  // Filtered users for email notification dropdown
+  const emailNotificationSuggestions = useMemo(() => {
+    const selected = new Set(noteForm.emailNotification);
+    const q = (emailSearchQuery || "").trim().toLowerCase();
+    if (!q) return users.filter((u) => !selected.has(u.email || u.name));
+    return users.filter((u) => {
+      if (selected.has(u.email || u.name)) return false;
+      const name = (u.name || "").toLowerCase();
+      const email = (u.email || "").toLowerCase();
+      return name.includes(q) || email.includes(q);
+    });
+  }, [users, noteForm.emailNotification, emailSearchQuery]);
+
+  // Add user to email notification
+  const handleEmailNotificationSelect = (user: any) => {
+    const value = user.email || user.name;
+    if (!value) return;
+    setNoteForm((prev) => {
+      if (prev.emailNotification.includes(value)) return prev;
+      return { ...prev, emailNotification: [...prev.emailNotification, value] };
+    });
+    setEmailSearchQuery("");
+    setShowEmailDropdown(false);
+    if (emailInputRef.current) emailInputRef.current.focus();
+  };
+
+  // Remove user from email notification
+  const removeEmailNotification = (value: string) => {
+    setNoteForm((prev) => ({
+      ...prev,
+      emailNotification: prev.emailNotification.filter((v) => v !== value),
+    }));
+  };
+
+  // Close About dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        aboutInputRef.current &&
+        !aboutInputRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest('[data-about-dropdown]')
+      ) {
+        setShowAboutDropdown(false);
+      }
+      if (
+        emailInputRef.current &&
+        !emailInputRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest('[data-email-dropdown]')
+      ) {
+        setShowEmailDropdown(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Update noteForm when lead changes
+  useEffect(() => {
+    if (lead) {
+      const defaultAboutRef = [
+        {
+          id: lead.id,
+          type: "Lead",
+          display: `${formatRecordId(lead.id, "lead")} ${lead.name || lead.company_name || "Unnamed"}`,
+          value: formatRecordId(lead.id, "lead"),
+        },
+      ];
+      setNoteForm((prev) => ({
+        ...prev,
+        about: defaultAboutRef[0].display,
+        aboutReferences: defaultAboutRef,
+      }));
+    }
+  }, [lead]);
+
+  // Function to delete a lead (kept for backward compatibility, but now shows modal)
+  const deleteLead = async (id: string) => {
+    checkPendingDeleteRequest();
+    setShowDeleteModal(true);
+  };
+
+  // Check for pending delete request
+  const checkPendingDeleteRequest = async () => {
+    if (!leadId) return;
+
+    setIsLoadingDeleteRequest(true);
+    try {
+      const response = await fetch(
+        `/api/leads/${leadId}/delete-request?record_type=lead`,
+        {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setPendingDeleteRequest(data.deleteRequest || null);
+      } else {
+        setPendingDeleteRequest(null);
+      }
+    } catch (error) {
+      console.error("Error checking delete request:", error);
+      setPendingDeleteRequest(null);
+    } finally {
+      setIsLoadingDeleteRequest(false);
+    }
+  };
+
+  // Handle delete request submission
+  const handleDeleteRequestSubmit = async () => {
+    if (!deleteForm.reason.trim()) {
+      toast.error("Please enter a reason for deletion");
+      return;
+    }
+
+    if (!leadId) {
+      toast.error("Lead ID is missing");
+      return;
+    }
+
+    setIsSubmittingDelete(true);
+    try {
+      // Get current user info
+      const userCookie = document.cookie.replace(
+        /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      let currentUser: any = null;
+      if (userCookie) {
+        try {
+          currentUser = JSON.parse(decodeURIComponent(userCookie));
+        } catch (e) {
+          console.error("Error parsing user cookie:", e);
+        }
+      }
+
+      // Step 1: Add "Delete requested" note to lead
+      const noteResponse = await fetch(`/api/leads/${leadId}/notes`, {
+        method: "POST",
         headers: {
+          "Content-Type": "application/json",
           Authorization: `Bearer ${document.cookie.replace(
             /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
             "$1"
           )}`,
         },
+        body: JSON.stringify({
+          text: `Delete requested by ${currentUser?.name || "Unknown User"} – Pending payroll approval`,
+          action: "Delete Request",
+        }),
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to delete lead");
+      if (!noteResponse.ok) {
+        console.error("Failed to add delete note");
       }
 
-      // Redirect to leads list after successful deletion
-      router.push("/dashboard/leads");
+      // Step 2: Create delete request
+      const deleteRequestResponse = await fetch(
+        `/api/leads/${leadId}/delete-request`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+          body: JSON.stringify({
+            reason: deleteForm.reason.trim(),
+            record_type: "lead",
+            record_number: formatRecordId(lead?.id, "lead"),
+            requested_by: currentUser?.id || currentUser?.name || "Unknown",
+            requested_by_email: currentUser?.email || "",
+          }),
+        }
+      );
+
+      if (!deleteRequestResponse.ok) {
+        const errorData = await deleteRequestResponse
+          .json()
+          .catch(() => ({ message: "Failed to create delete request" }));
+        throw new Error(
+          errorData.message || "Failed to create delete request"
+        );
+      }
+
+      const deleteRequestData = await deleteRequestResponse.json();
+
+      toast.success(
+        "Delete request submitted successfully. Payroll will be notified via email."
+      );
+
+      // Refresh notes and delete request status
+      if (leadId) {
+        fetchNotes(leadId);
+        checkPendingDeleteRequest();
+      }
+
+      setShowDeleteModal(false);
+      setDeleteForm({ reason: "" });
     } catch (err) {
-      console.error("Error deleting lead:", err);
-      setError(
+      console.error("Error submitting delete request:", err);
+      toast.error(
         err instanceof Error
           ? err.message
-          : "An error occurred while deleting the lead"
+          : "Failed to submit delete request. Please try again."
       );
-      setIsLoading(false);
+    } finally {
+      setIsSubmittingDelete(false);
     }
   };
 
-  // Handle adding a new note
+  // Check for pending delete request on mount
+  useEffect(() => {
+    if (leadId) {
+      checkPendingDeleteRequest();
+    }
+  }, [leadId]);
+
+  // Handle adding a new note with validation
   const handleAddNote = async () => {
-    if (!newNote.trim() || !leadId) return;
+    if (!leadId) return;
+
+    // Clear previous validation errors
+    setValidationErrors({});
+
+    // Validate required fields
+    const errors: { action?: string; about?: string } = {};
+    if (!noteForm.action || noteForm.action.trim() === "") {
+      errors.action = "Action is required";
+    }
+    if (
+      !noteForm.aboutReferences ||
+      noteForm.aboutReferences.length === 0
+    ) {
+      errors.about = "At least one About/Reference is required";
+    }
+
+    // If validation errors exist, set them and prevent save
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors(errors);
+      return; // Keep form open
+    }
 
     try {
+      // Format about references as structured data
+      const aboutData = noteForm.aboutReferences.map((ref) => ({
+        id: ref.id,
+        type: ref.type,
+        display: ref.display,
+        value: ref.value,
+      }));
+
       const response = await fetch(`/api/leads/${leadId}/notes`, {
         method: "POST",
         headers: {
@@ -1955,13 +2583,32 @@ export default function LeadView() {
           )}`,
         },
         body: JSON.stringify({
-          text: newNote,
-          note_type: noteType
+          text: noteForm.text,
+          action: noteForm.action,
+          about: JSON.stringify(aboutData),
+          about_references: aboutData,
+          copy_note: noteForm.copyNote === "Yes",
+          replace_general_contact_comments: noteForm.replaceGeneralContactComments,
+          schedule_next_action: noteForm.scheduleNextAction,
+          email_notification: Array.isArray(noteForm.emailNotification) ? noteForm.emailNotification.join(",") : (noteForm.emailNotification ? [noteForm.emailNotification].join(",") : ""),
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
+        // Handle backend validation errors
+        if (errorData.errors) {
+          const backendErrors: { action?: string; about?: string } = {};
+          if (errorData.errors.action) {
+            backendErrors.action = errorData.errors.action;
+          }
+          if (errorData.errors.about || errorData.errors.about_references) {
+            backendErrors.about =
+              errorData.errors.about || errorData.errors.about_references;
+          }
+          setValidationErrors(backendErrors);
+          return; // Keep form open
+        }
         throw new Error(errorData.message || "Failed to add note");
       }
 
@@ -1970,17 +2617,43 @@ export default function LeadView() {
       // Add the new note to the list
       setNotes([data.note, ...notes]);
 
+      toast.success("Note added successfully");
+
       // Clear the form
-      setNewNote("");
-      setNoteType("General Note");
+      const defaultAboutRef = lead
+        ? [
+          {
+            id: lead.id,
+            type: "Lead",
+            display: `${formatRecordId(lead.id, "lead")} ${lead.name || lead.company_name || "Unnamed"}`,
+            value: formatRecordId(lead.id, "lead"),
+          },
+        ]
+        : [];
+
+      setNoteForm({
+        text: "",
+        action: "",
+        about: lead
+          ? `${formatRecordId(lead.id, "lead")} ${lead.name || lead.company_name || ""}`
+          : "",
+        aboutReferences: defaultAboutRef,
+        copyNote: "No",
+        replaceGeneralContactComments: false,
+        scheduleNextAction: "None",
+        emailNotification: [],
+      });
+      setAboutSearchQuery("");
+      setEmailSearchQuery("");
+      setShowEmailDropdown(false);
+      setValidationErrors({});
       setShowAddNote(false);
 
       // Refresh history to show the note addition
-      fetchNotes(leadId);
-      fetchHistory(leadId);
-
-      // Show success message
-      toast.success("Note added successfully");
+      if (leadId) {
+        fetchNotes(leadId);
+        fetchHistory(leadId);
+      }
     } catch (err) {
       console.error("Error adding note:", err);
       toast.error(
@@ -1989,6 +2662,15 @@ export default function LeadView() {
           : "An error occurred while adding a note"
       );
     }
+  };
+
+  // Close Add Note modal handler
+  const handleCloseAddNoteModal = () => {
+    setShowAddNote(false);
+    setValidationErrors({});
+    setAboutSearchQuery("");
+    setEmailSearchQuery("");
+    setShowEmailDropdown(false);
   };
 
   // Update the actionOptions
@@ -2054,50 +2736,324 @@ export default function LeadView() {
         </button>
       </div>
 
-      {/* Add Note Form */}
+      {/* Add Note Modal */}
       {showAddNote && (
-        <div className="mb-6 p-4 bg-gray-50 rounded border">
-          <h3 className="font-medium mb-2">Add New Note</h3>
-          <div className="mb-3">
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Note Type <span className="text-red-500">*</span>
-            </label>
-            <select
-              value={noteType}
-              onChange={(e) => setNoteType(e.target.value)}
-              className="w-full p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="General Note">General Note</option>
-              <option value="Phone Call">Phone Call</option>
-              <option value="Email">Email</option>
-              <option value="Interview">Interview</option>
-            </select>
-          </div>
-          <textarea
-            value={newNote}
-            onChange={(e) => setNewNote(e.target.value)}
-            placeholder="Enter your note here..."
-            className="w-full p-2 border rounded mb-3 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            rows={4}
-          />
-          <div className="flex justify-end space-x-2">
-            <button
-              onClick={() => {
-                setShowAddNote(false);
-                setNewNote("");
-                setNoteType("General Note");
-              }}
-              className="px-3 py-1 border rounded text-gray-700 hover:bg-gray-100 text-sm"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleAddNote}
-              className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-              disabled={!newNote.trim()}
-            >
-              Save Note
-            </button>
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <div className="flex items-center space-x-2">
+                <Image src="/file.svg" alt="Note" width={20} height={20} />
+                <h2 className="text-lg font-semibold">Add Note</h2>
+              </div>
+              <button
+                onClick={handleCloseAddNoteModal}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="p-6">
+              <div className="space-y-4">
+                {/* Note Text Area */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Note Text {" "}
+                    {noteForm.text.length > 0 ? (
+                      <span className="text-green-500">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
+                  </label>
+                  <textarea
+                    value={noteForm.text}
+                    onChange={(e) =>
+                      setNoteForm((prev) => ({ ...prev, text: e.target.value }))
+                    }
+                    autoFocus
+                    placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
+                    className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={6}
+                  />
+                </div>
+
+                {/* Action Dropdown - Required */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Action{" "}
+                    {noteForm.action ? (
+                      <span className="text-green-500">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
+                  </label>
+                  {isLoadingActionFields ? (
+                    <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                      Loading actions...
+                    </div>
+                  ) : (
+                    <>
+                      <select
+                        value={noteForm.action}
+                        onChange={(e) => {
+                          setNoteForm((prev) => ({ ...prev, action: e.target.value }));
+                          if (validationErrors.action) {
+                            setValidationErrors((prev) => {
+                              const newErrors = { ...prev };
+                              delete newErrors.action;
+                              return newErrors;
+                            });
+                          }
+                        }}
+                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 ${validationErrors.action
+                          ? "border-red-500 focus:ring-red-500"
+                          : "border-gray-300 focus:ring-blue-500"
+                          }`}
+                      >
+                        <option value="">Select Action</option>
+                        {actionFields.map((field) => (
+                          <option
+                            key={field.id || field.field_name}
+                            value={field.field_label || field.field_name}
+                          >
+                            {field.field_label || field.field_name}
+                          </option>
+                        ))}
+                      </select>
+                      {validationErrors.action && (
+                        <p className="mt-1 text-sm text-red-500">
+                          {validationErrors.action}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* About Section - Required, Multiple References */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    About / Reference{" "}
+                    {(noteForm.aboutReferences && noteForm.aboutReferences.length > 0) ? (
+                      <span className="text-green-500">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
+                  </label>
+                  <div className="relative" ref={aboutInputRef}>
+                    <div
+                      className={`min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:outline-none pr-8 ${
+                        validationErrors.about
+                          ? "border-red-500 focus-within:ring-red-500"
+                          : "border-gray-300 focus-within:ring-blue-500"
+                      }`}
+                    >
+                      {/* Selected References Tags - Inside the input container */}
+                      {noteForm.aboutReferences.map((ref, index) => (
+                        <span
+                          key={`${ref.type}-${ref.id}-${index}`}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
+                        >
+                          <HiOutlineOfficeBuilding className="w-4 h-4" />
+                          {ref.display}
+                          <button
+                            type="button"
+                            onClick={() => removeAboutReference(index)}
+                            className="hover:text-blue-600 font-bold leading-none"
+                            title="Remove"
+                          >
+                            ×
+                          </button>
+                        </span>
+                      ))}
+
+                      {/* Search Input for References - Same field to add more */}
+                      <input
+                        type="text"
+                        value={aboutSearchQuery}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setAboutSearchQuery(value);
+                          searchAboutReferences(value);
+                          setShowAboutDropdown(true);
+                        }}
+                        onFocus={() => {
+                          setShowAboutDropdown(true);
+                          if (!aboutSearchQuery.trim()) {
+                            searchAboutReferences("");
+                          }
+                        }}
+                        placeholder={
+                          noteForm.aboutReferences.length === 0
+                            ? "Search and select records (e.g., Job, Lead, Placement)..."
+                            : "Add more..."
+                        }
+                        className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
+                      />
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
+                        <FiSearch className="w-4 h-4" />
+                      </span>
+                    </div>
+
+                    {/* Validation Error */}
+                    {validationErrors.about && (
+                      <p className="mt-1 text-sm text-red-500">
+                        {validationErrors.about}
+                      </p>
+                    )}
+
+                    {/* Suggestions Dropdown */}
+                    {showAboutDropdown && (
+                      <div
+                        data-about-dropdown
+                        className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
+                      >
+                        {isLoadingAboutSearch ? (
+                          <div className="p-3 text-center text-gray-500 text-sm">
+                            Searching...
+                          </div>
+                        ) : aboutSuggestions.length > 0 ? (
+                          aboutSuggestions.map((suggestion, idx) => (
+                            <button
+                              key={`${suggestion.type}-${suggestion.id}-${idx}`}
+                              type="button"
+                              onClick={() => handleAboutReferenceSelect(suggestion)}
+                              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
+                            >
+                              <HiOutlineOfficeBuilding className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {suggestion.display}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {suggestion.type}
+                                </div>
+                              </div>
+                            </button>
+                          ))
+                        ) : aboutSearchQuery.trim().length > 0 ? (
+                          <div className="p-3 text-center text-gray-500 text-sm">
+                            No results found
+                          </div>
+                        ) : (
+                          <div className="p-3 text-center text-gray-500 text-sm">
+                            Type to search or select from list
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Email Notification Section - Search and add (matches MultiSelectLookupField design) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Email Notification
+                  </label>
+                  <div className="relative" ref={emailInputRef}>
+                    {isLoadingUsers ? (
+                      <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50 min-h-[42px]">
+                        Loading users...
+                      </div>
+                    ) : (
+                      <div className="min-h-[42px] flex flex-wrap items-center gap-2 p-2 border border-gray-300 rounded focus-within:ring-2 focus-within:outline-none focus-within:ring-blue-500 pr-8">
+                        {/* Selected Users Tags - Inside the input container */}
+                        {noteForm.emailNotification.map((val, index) => (
+                          <span
+                            key={val}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
+                          >
+                            <HiOutlineUser className="w-4 h-4 flex-shrink-0" />
+                            {val}
+                            <button
+                              type="button"
+                              onClick={() => removeEmailNotification(val)}
+                              className="hover:text-blue-600 font-bold leading-none"
+                              title="Remove"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+
+                        {/* Search Input for Users - Same field to add more */}
+                        <input
+                          type="text"
+                          value={emailSearchQuery}
+                          onChange={(e) => {
+                            const value = e.target.value;
+                            setEmailSearchQuery(value);
+                            setShowEmailDropdown(true);
+                          }}
+                          onFocus={() => setShowEmailDropdown(true)}
+                          placeholder={
+                            noteForm.emailNotification.length === 0
+                              ? "Search and add users to notify..."
+                              : "Add more..."
+                          }
+                          className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
+                        />
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
+                          <FiSearch className="w-4 h-4" />
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Suggestions Dropdown - same structure as About */}
+                    {showEmailDropdown && !isLoadingUsers && (
+                      <div
+                        data-email-dropdown
+                        className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
+                      >
+                        {emailNotificationSuggestions.length > 0 ? (
+                          emailNotificationSuggestions.slice(0, 10).map((user, idx) => (
+                            <button
+                              key={user.id ?? idx}
+                              type="button"
+                              onClick={() => handleEmailNotificationSelect(user)}
+                              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
+                            >
+                              <HiOutlineUser className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {user.name || user.email}
+                                </div>
+                                {user.email && user.name && (
+                                  <div className="text-xs text-gray-500">{user.email}</div>
+                                )}
+                              </div>
+                            </button>
+                          ))
+                        ) : (
+                          <div className="p-3 text-center text-gray-500 text-sm">
+                            {emailSearchQuery.trim().length >= 1
+                              ? "No matching users found"
+                              : "Type to search internal users"}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">
+                    Only internal system users are available for notification
+                  </p>
+                </div>
+              </div>
+
+              {/* Form Actions */}
+              <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
+                <button
+                  onClick={handleCloseAddNoteModal}
+                  className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium"
+                >
+                  CANCEL
+                </button>
+                <button
+                  onClick={handleAddNote}
+                  className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                >
+                  SAVE
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -3539,6 +4495,137 @@ export default function LeadView() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Request Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+            {/* Header */}
+            <div className="flex justify-between items-center p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold">Request Deletion</h2>
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteForm({ reason: "" });
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            {/* Form Content */}
+            <div className="p-6 space-y-6">
+              {/* Lead Info */}
+              <div className="bg-gray-50 p-4 rounded">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Lead to Delete
+                </label>
+                <p className="text-sm text-gray-900 font-medium">
+                  {lead
+                    ? `${formatRecordId(lead.id, "lead")} ${lead.first_name || ""} ${lead.last_name || ""}`.trim() || lead.organization_name || "N/A"
+                    : "N/A"}
+                </p>
+              </div>
+
+              {/* Pending Request Warning */}
+              {pendingDeleteRequest && pendingDeleteRequest.status === "pending" && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded p-4">
+                  <p className="text-sm text-yellow-800">
+                    <strong>Pending Request:</strong> A delete request is already pending payroll approval.
+                  </p>
+                </div>
+              )}
+
+              {/* Denied Request Info */}
+              {pendingDeleteRequest && pendingDeleteRequest.status === "denied" && (
+                <div className="bg-red-50 border border-red-200 rounded p-4">
+                  <p className="text-sm text-red-800">
+                    <strong>Previous Request Denied:</strong> {pendingDeleteRequest.denial_reason || "No reason provided"}
+                  </p>
+                </div>
+              )}
+
+              {/* Reason Field - Required */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <span className="text-red-500 mr-1">•</span>
+                  Reason for Deletion
+                </label>
+                <textarea
+                  value={deleteForm.reason}
+                  onChange={(e) =>
+                    setDeleteForm((prev) => ({
+                      ...prev,
+                      reason: e.target.value,
+                    }))
+                  }
+                  placeholder="Please provide a detailed reason for deleting this lead..."
+                  className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${
+                    !deleteForm.reason.trim()
+                      ? "border-red-300 focus:ring-red-500"
+                      : "border-gray-300 focus:ring-blue-500"
+                  }`}
+                  rows={5}
+                  required
+                />
+                {!deleteForm.reason.trim() && (
+                  <p className="mt-1 text-sm text-red-500">
+                    Reason is required
+                  </p>
+                )}
+              </div>
+
+              {/* Info Box */}
+              <div className="bg-blue-50 border border-blue-200 rounded p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> This will create a delete request. Payroll will be notified via email and must approve or deny the deletion. The record will be archived (not deleted) until payroll approval.
+                </p>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteForm({ reason: "" });
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSubmittingDelete}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={handleDeleteRequestSubmit}
+                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                disabled={
+                  isSubmittingDelete ||
+                  !deleteForm.reason.trim() ||
+                  (pendingDeleteRequest && pendingDeleteRequest.status === "pending")
+                }
+              >
+                {isSubmittingDelete ? "SUBMITTING..." : "SUBMIT DELETE REQUEST"}
+                {!isSubmittingDelete && (
+                  <svg
+                    className="w-4 h-4 ml-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
+                  </svg>
+                )}
+              </button>
             </div>
           </div>
         </div>

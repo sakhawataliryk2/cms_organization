@@ -8,7 +8,7 @@ import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
 import { FiBriefcase, FiSearch } from "react-icons/fi";
-import { HiOutlineUser } from "react-icons/hi";
+import { HiOutlineUser, HiOutlineOfficeBuilding } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 // Drag and drop imports
@@ -537,6 +537,15 @@ export default function JobView() {
   const [documentColumnFilters, setDocumentColumnFilters] = useState<Record<string, ColumnFilterState>>({});
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  // Delete request state
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleteForm, setDeleteForm] = useState({
+    reason: "", // Mandatory reason for deletion
+  });
+  const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
+  const [pendingDeleteRequest, setPendingDeleteRequest] = useState<any>(null);
+  const [isLoadingDeleteRequest, setIsLoadingDeleteRequest] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const [showAddDocument, setShowAddDocument] = useState(false);
@@ -1098,7 +1107,6 @@ export default function JobView() {
       : [],
     copyNote: "No",
     replaceGeneralContactComments: false,
-    additionalReferences: "",
     scheduleNextAction: "None",
     emailNotification: [] as string[], // Changed to array for multi-select
   });
@@ -1115,11 +1123,12 @@ export default function JobView() {
   const [actionFields, setActionFields] = useState<any[]>([]);
   const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
 
-  // Reference autocomplete state
-  const [referenceSuggestions, setReferenceSuggestions] = useState<any[]>([]);
-  const [showReferenceDropdown, setShowReferenceDropdown] = useState(false);
-  const [isLoadingReferences, setIsLoadingReferences] = useState(false);
-  const referenceInputRef = useRef<HTMLInputElement>(null);
+  // Reference search state for About field
+  const [aboutSearchQuery, setAboutSearchQuery] = useState("");
+  const [aboutSuggestions, setAboutSuggestions] = useState<any[]>([]);
+  const [showAboutDropdown, setShowAboutDropdown] = useState(false);
+  const [isLoadingAboutSearch, setIsLoadingAboutSearch] = useState(false);
+  const aboutInputRef = useRef<HTMLInputElement>(null);
 
   // Email notification search state (search-and-add like About/Reference)
   const [emailSearchQuery, setEmailSearchQuery] = useState("");
@@ -2227,42 +2236,27 @@ export default function JobView() {
     );
   };
 
-  // Close reference dropdown when clicking outside
+  // Close About and Email dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
-        referenceInputRef.current &&
-        !referenceInputRef.current.contains(event.target as Node)
+        aboutInputRef.current &&
+        !aboutInputRef.current.contains(event.target as Node) &&
+        !(event.target as HTMLElement).closest('[data-about-dropdown]')
       ) {
-        setShowReferenceDropdown(false);
+        setShowAboutDropdown(false);
       }
-    };
-
-    if (showReferenceDropdown) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => {
-        document.removeEventListener("mousedown", handleClickOutside);
-      };
-    }
-  }, [showReferenceDropdown]);
-
-  // Close email notification dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
       if (
         emailInputRef.current &&
         !emailInputRef.current.contains(event.target as Node) &&
-        !(event.target as HTMLElement).closest("[data-email-dropdown]")
+        !(event.target as HTMLElement).closest('[data-email-dropdown]')
       ) {
         setShowEmailDropdown(false);
       }
     };
-
-    if (showEmailDropdown) {
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }
-  }, [showEmailDropdown]);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   // Fetch users for email notification dropdown - Internal Users Only
   const fetchUsers = async () => {
@@ -2297,18 +2291,13 @@ export default function JobView() {
   };
 
   // Search for references (jobs, organizations, job seekers, etc.)
-  const searchReferences = async (query: string) => {
-    if (!query || query.trim().length < 2) {
-      setReferenceSuggestions([]);
-      setShowReferenceDropdown(false);
-      return;
-    }
-
-    setIsLoadingReferences(true);
-    setShowReferenceDropdown(true);
+  // Search for references for About field
+  const searchAboutReferences = async (query: string) => {
+    setIsLoadingAboutSearch(true);
+    setShowAboutDropdown(true);
 
     try {
-      const searchTerm = query.trim();
+      const searchTerm = (query || "").trim();
       const token = document.cookie.replace(
         /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
         "$1"
@@ -2340,13 +2329,13 @@ export default function JobView() {
       // Process jobs
       if (jobsRes.status === "fulfilled" && jobsRes.value.ok) {
         const data = await jobsRes.value.json();
-        const term = searchTerm.toLowerCase();
-
-        const jobs = (data.jobs || []).filter((job: any) =>
-          job.job_title?.toLowerCase().includes(term) ||
-          job.id?.toString().includes(term) ||
-          ("j" + job.id?.toString()).toLowerCase().includes(term)
-        );
+        const jobs = searchTerm
+          ? (data.jobs || []).filter(
+              (job: any) =>
+                job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                job.id?.toString().includes(searchTerm)
+            )
+          : (data.jobs || []);
 
         jobs.forEach((job: any) => {
           suggestions.push({
@@ -2362,12 +2351,13 @@ export default function JobView() {
       // Process organizations
       if (orgsRes.status === "fulfilled" && orgsRes.value.ok) {
         const data = await orgsRes.value.json();
-        const term = searchTerm.toLowerCase();
-
-        const orgs = (data.organizations || []).filter((org: any) =>
-          org.name?.toLowerCase().includes(term) ||
-          org.id?.toString().includes(term)
-        );
+        const orgs = searchTerm
+          ? (data.organizations || []).filter(
+              (org: any) =>
+                org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                org.id?.toString().includes(searchTerm)
+            )
+          : (data.organizations || []);
 
         orgs.forEach((org: any) => {
           suggestions.push({
@@ -2382,20 +2372,16 @@ export default function JobView() {
       // Process job seekers
       if (jobSeekersRes.status === "fulfilled" && jobSeekersRes.value.ok) {
         const data = await jobSeekersRes.value.json();
-        const seekers = (data.jobSeekers || []).filter(
-          (seeker: any) =>
-            seeker.full_name
-              ?.toLowerCase()
-              .includes(searchTerm.toLowerCase()) ||
-            seeker.first_name
-              ?.toLowerCase()
-              .includes(searchTerm.toLowerCase()) ||
-            seeker.last_name
-              ?.toLowerCase()
-              .includes(searchTerm.toLowerCase()) ||
-            seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            seeker.id?.toString().includes(searchTerm)
-        );
+        const seekers = searchTerm
+          ? (data.jobSeekers || []).filter(
+              (seeker: any) =>
+                seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                seeker.id?.toString().includes(searchTerm)
+            )
+          : (data.jobSeekers || []);
         seekers.forEach((seeker: any) => {
           const name =
             seeker.full_name ||
@@ -2413,15 +2399,15 @@ export default function JobView() {
       // Process leads
       if (leadsRes.status === "fulfilled" && leadsRes.value.ok) {
         const data = await leadsRes.value.json();
-        const leads = (data.leads || []).filter(
-          (lead: any) =>
-            lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            lead.company_name
-              ?.toLowerCase()
-              .includes(searchTerm.toLowerCase()) ||
-            lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            lead.id?.toString().includes(searchTerm)
-        );
+        const leads = searchTerm
+          ? (data.leads || []).filter(
+              (lead: any) =>
+                lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                lead.id?.toString().includes(searchTerm)
+            )
+          : (data.leads || []);
         leads.forEach((lead: any) => {
           suggestions.push({
             id: lead.id,
@@ -2436,11 +2422,13 @@ export default function JobView() {
       // Process tasks
       if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
         const data = await tasksRes.value.json();
-        const tasks = (data.tasks || []).filter(
-          (task: any) =>
-            task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            task.id?.toString().includes(searchTerm)
-        );
+        const tasks = searchTerm
+          ? (data.tasks || []).filter(
+              (task: any) =>
+                task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                task.id?.toString().includes(searchTerm)
+            )
+          : (data.tasks || []);
         tasks.forEach((task: any) => {
           suggestions.push({
             id: task.id,
@@ -2454,16 +2442,14 @@ export default function JobView() {
       // Process placements
       if (placementsRes.status === "fulfilled" && placementsRes.value.ok) {
         const data = await placementsRes.value.json();
-        const placements = (data.placements || []).filter(
-          (placement: any) =>
-            placement.jobTitle
-              ?.toLowerCase()
-              .includes(searchTerm.toLowerCase()) ||
-            placement.jobSeekerName
-              ?.toLowerCase()
-              .includes(searchTerm.toLowerCase()) ||
-            placement.id?.toString().includes(searchTerm)
-        );
+        const placements = searchTerm
+          ? (data.placements || []).filter(
+              (placement: any) =>
+                placement.jobTitle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                placement.jobSeekerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                placement.id?.toString().includes(searchTerm)
+            )
+          : (data.placements || []);
         placements.forEach((placement: any) => {
           suggestions.push({
             id: placement.id,
@@ -2475,44 +2461,51 @@ export default function JobView() {
         });
       }
 
+      // Filter out already selected references
+      const selectedIds = noteForm.aboutReferences.map((ref) => ref.id);
+      const filteredSuggestions = suggestions.filter(
+        (s) => !selectedIds.includes(s.id)
+      );
+
       // Limit to top 10 suggestions
-      setReferenceSuggestions(suggestions.slice(0, 10));
+      setAboutSuggestions(filteredSuggestions.slice(0, 10));
     } catch (err) {
-      console.error("Error searching references:", err);
-      setReferenceSuggestions([]);
+      console.error("Error searching about references:", err);
+      setAboutSuggestions([]);
     } finally {
-      setIsLoadingReferences(false);
+      setIsLoadingAboutSearch(false);
     }
   };
 
-  // Handle reference input change
-  const handleReferenceInputChange = (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const value = e.target.value;
-    setNoteForm((prev) => ({ ...prev, additionalReferences: value }));
-    searchReferences(value);
-  };
-
-  // Handle reference selection
-  const handleReferenceSelect = (reference: any) => {
-    setNoteForm((prev) => ({
-      ...prev,
-      aboutReferences: [...prev.aboutReferences, reference],
-    }));
-    setShowReferenceDropdown(false);
-    setReferenceSuggestions([]);
-    if (referenceInputRef.current) {
-      referenceInputRef.current.focus();
-    }
-  };
-
-  // Remove reference
-  const removeReference = (index: number) => {
+  // Handle About reference selection
+  const handleAboutReferenceSelect = (reference: any) => {
     setNoteForm((prev) => {
-      const newRefs = [...prev.aboutReferences];
-      newRefs.splice(index, 1);
-      return { ...prev, aboutReferences: newRefs };
+      const newReferences = [...prev.aboutReferences, reference];
+      return {
+        ...prev,
+        aboutReferences: newReferences,
+        about: newReferences.map((ref) => ref.display).join(", "),
+      };
+    });
+    setAboutSearchQuery("");
+    setShowAboutDropdown(false);
+    setAboutSuggestions([]);
+    if (aboutInputRef.current) {
+      aboutInputRef.current.focus();
+    }
+  };
+
+  // Remove About reference
+  const removeAboutReference = (index: number) => {
+    setNoteForm((prev) => {
+      const newReferences = prev.aboutReferences.filter((_, i) => i !== index);
+      return {
+        ...prev,
+        aboutReferences: newReferences,
+        about: newReferences.length > 0
+          ? newReferences.map((ref) => ref.display).join(", ")
+          : "",
+      };
     });
   };
 
@@ -3158,7 +3151,6 @@ export default function JobView() {
           copy_note: noteForm.copyNote === "Yes",
           replace_general_contact_comments:
             noteForm.replaceGeneralContactComments,
-          additional_references: noteForm.additionalReferences,
           schedule_next_action: noteForm.scheduleNextAction,
           email_notification: noteForm.emailNotification.join(","),
         }),
@@ -3200,10 +3192,10 @@ export default function JobView() {
         aboutReferences: defaultAboutRef,
         copyNote: "No",
         replaceGeneralContactComments: false,
-        additionalReferences: "",
         scheduleNextAction: "None",
         emailNotification: [],
       });
+      setAboutSearchQuery("");
       setEmailSearchQuery("");
       setShowEmailDropdown(false);
       setValidationErrors({});
@@ -3397,9 +3389,8 @@ export default function JobView() {
     setPublishTargets({ linkedin: false, job_board: true });
   };
 
-  // Close add note modal
+  // Close Add Note modal handler
   const handleCloseAddNoteModal = () => {
-    setShowAddNote(false);
     const defaultAboutRef = job
       ? [
         {
@@ -3410,6 +3401,12 @@ export default function JobView() {
         },
       ]
       : [];
+    setShowAddNote(false);
+    setValidationErrors({});
+    setAboutSearchQuery("");
+    setEmailSearchQuery("");
+    setShowEmailDropdown(false);
+    setShowAboutDropdown(false);
     setNoteForm({
       text: "",
       action: "",
@@ -3417,13 +3414,9 @@ export default function JobView() {
       aboutReferences: defaultAboutRef,
       copyNote: "No",
       replaceGeneralContactComments: false,
-      additionalReferences: "",
       scheduleNextAction: "None",
       emailNotification: [],
     });
-    setEmailSearchQuery("");
-    setShowEmailDropdown(false);
-    setValidationErrors({});
   };
 
   const handleGoBack = () => {
@@ -3574,7 +3567,8 @@ export default function JobView() {
     if (action === "edit") {
       handleEdit();
     } else if (action === "delete" && jobId) {
-      handleDelete(jobId);
+      checkPendingDeleteRequest();
+      setShowDeleteModal(true);
     } else if (action === "add-task") {
       // Navigate to add task page with job context
       if (jobId) {
@@ -3861,41 +3855,155 @@ export default function JobView() {
     });
   };
 
-  // Handle job deletion
+  // Handle job deletion (kept for backward compatibility, but now shows modal)
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this job?")) {
+    checkPendingDeleteRequest();
+    setShowDeleteModal(true);
+  };
+
+  // Check for pending delete request
+  const checkPendingDeleteRequest = async () => {
+    if (!jobId) return;
+
+    setIsLoadingDeleteRequest(true);
+    try {
+      const response = await fetch(
+        `/api/jobs/${jobId}/delete-request?record_type=job`,
+        {
+          headers: {
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        setPendingDeleteRequest(data.deleteRequest || null);
+      } else {
+        setPendingDeleteRequest(null);
+      }
+    } catch (error) {
+      console.error("Error checking delete request:", error);
+      setPendingDeleteRequest(null);
+    } finally {
+      setIsLoadingDeleteRequest(false);
+    }
+  };
+
+  // Handle delete request submission
+  const handleDeleteRequestSubmit = async () => {
+    if (!deleteForm.reason.trim()) {
+      toast.error("Please enter a reason for deletion");
       return;
     }
 
-    setIsLoading(true);
+    if (!jobId) {
+      toast.error("Job ID is missing");
+      return;
+    }
 
+    setIsSubmittingDelete(true);
     try {
-      const response = await fetch(`/api/jobs/${id}`, {
-        method: "DELETE",
+      // Get current user info
+      const userCookie = document.cookie.replace(
+        /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      let currentUser: any = null;
+      if (userCookie) {
+        try {
+          currentUser = JSON.parse(decodeURIComponent(userCookie));
+        } catch (e) {
+          console.error("Error parsing user cookie:", e);
+        }
+      }
+
+      // Step 1: Add "Delete requested" note to job
+      const noteResponse = await fetch(`/api/jobs/${jobId}/notes`, {
+        method: "POST",
         headers: {
+          "Content-Type": "application/json",
           Authorization: `Bearer ${document.cookie.replace(
             /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
             "$1"
           )}`,
         },
+        body: JSON.stringify({
+          text: `Delete requested by ${currentUser?.name || "Unknown User"} – Pending payroll approval`,
+          action: "Delete Request",
+        }),
       });
 
-      if (!response.ok) {
-        throw new Error("Failed to delete job");
+      if (!noteResponse.ok) {
+        console.error("Failed to add delete note");
       }
 
-      // Redirect to the jobs list
-      router.push("/dashboard/jobs");
-    } catch (error) {
-      console.error("Error deleting job:", error);
-      setError(
-        error instanceof Error
-          ? error.message
-          : "An error occurred while deleting the job"
+      // Step 2: Create delete request
+      const deleteRequestResponse = await fetch(
+        `/api/jobs/${jobId}/delete-request`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+          body: JSON.stringify({
+            reason: deleteForm.reason.trim(),
+            record_type: "job",
+            record_number: formatRecordId(job?.id, "job"),
+            requested_by: currentUser?.id || currentUser?.name || "Unknown",
+            requested_by_email: currentUser?.email || "",
+          }),
+        }
       );
-      setIsLoading(false);
+
+      if (!deleteRequestResponse.ok) {
+        const errorData = await deleteRequestResponse
+          .json()
+          .catch(() => ({ message: "Failed to create delete request" }));
+        throw new Error(
+          errorData.message || "Failed to create delete request"
+        );
+      }
+
+      const deleteRequestData = await deleteRequestResponse.json();
+
+      toast.success(
+        "Delete request submitted successfully. Payroll will be notified via email."
+      );
+
+      // Refresh notes and delete request status
+      if (jobId) {
+        fetchNotes(jobId);
+        checkPendingDeleteRequest();
+      }
+
+      setShowDeleteModal(false);
+      setDeleteForm({ reason: "" });
+    } catch (err) {
+      console.error("Error submitting delete request:", err);
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Failed to submit delete request. Please try again."
+      );
+    } finally {
+      setIsSubmittingDelete(false);
     }
   };
+
+  // Check for pending delete request on mount
+  useEffect(() => {
+    if (jobId) {
+      checkPendingDeleteRequest();
+    }
+  }, [jobId]);
 
   const actionOptions = [
     { label: "Add Note", action: () => handleActionSelected("add-note") },
@@ -6087,58 +6195,58 @@ export default function JobView() {
                       <span className="text-red-500">*</span>
                     )}
                   </label>
-                  <div className="relative" ref={referenceInputRef}>
-                    {/* Selected References Tags */}
-                    {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
-                        {noteForm.aboutReferences.map((ref, index) => (
-                          <span
-                            key={`${ref.type}-${ref.id}-${index}`}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
+                  <div className="relative" ref={aboutInputRef}>
+                    <div
+                      className={`min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:outline-none pr-8 ${
+                        validationErrors.about
+                          ? "border-red-500 focus-within:ring-red-500"
+                          : "border-gray-300 focus-within:ring-blue-500"
+                      }`}
+                    >
+                      {/* Selected References Tags - Inside the input container */}
+                      {noteForm.aboutReferences.map((ref, index) => (
+                        <span
+                          key={`${ref.type}-${ref.id}-${index}`}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
+                        >
+                          <HiOutlineOfficeBuilding className="w-4 h-4" />
+                          {ref.display}
+                          <button
+                            type="button"
+                            onClick={() => removeAboutReference(index)}
+                            className="hover:text-blue-600 font-bold leading-none"
+                            title="Remove"
                           >
-                            <FiBriefcase className="w-4 h-4" />
-                            {ref.display}
-                            <button
-                              type="button"
-                              onClick={() => removeReference(index)}
-                              className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
-                              title="Remove"
-                            >
-                              ×
-                            </button>
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                            ×
+                          </button>
+                        </span>
+                      ))}
 
-                    {/* Search Input for References */}
-                    <div className="relative">
-                      {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
-                        <label className="block text-xs font-medium text-gray-500 mb-1">
-                          Add Additional References
-                        </label>
-                      )}
+                      {/* Search Input for References - Same field to add more */}
                       <input
                         type="text"
-                        value={noteForm.additionalReferences}
-                        onChange={handleReferenceInputChange}
+                        value={aboutSearchQuery}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setAboutSearchQuery(value);
+                          searchAboutReferences(value);
+                          setShowAboutDropdown(true);
+                        }}
                         onFocus={() => {
-                          if (noteForm.additionalReferences.trim().length >= 2) {
-                            searchReferences(noteForm.additionalReferences);
+                          setShowAboutDropdown(true);
+                          if (!aboutSearchQuery.trim()) {
+                            searchAboutReferences("");
                           }
                         }}
                         placeholder={
-                          noteForm.aboutReferences && noteForm.aboutReferences.length === 0
-                            ? "Search and select records (e.g., Job, Org, Candidate)..."
-                            : "Type to search more references..."
+                          noteForm.aboutReferences.length === 0
+                            ? "Search and select records (e.g., Job, Lead, Placement)..."
+                            : "Add more..."
                         }
-                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 pr-8 ${validationErrors.about
-                          ? "border-red-500 focus:ring-red-500"
-                          : "border-gray-300 focus:ring-blue-500"
-                          }`}
+                        className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
                       />
-                      <span className="absolute right-2 top-2 text-gray-400 text-sm">
-                        Q
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
+                        <FiSearch className="w-4 h-4" />
                       </span>
                     </div>
 
@@ -6150,42 +6258,43 @@ export default function JobView() {
                     )}
 
                     {/* Suggestions Dropdown */}
-                    {showReferenceDropdown && (
-                      <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
-                        {isLoadingReferences ? (
-                          <div className="p-3 text-sm text-gray-500 text-center">
+                    {showAboutDropdown && (
+                      <div
+                        data-about-dropdown
+                        className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
+                      >
+                        {isLoadingAboutSearch ? (
+                          <div className="p-3 text-center text-gray-500 text-sm">
                             Searching...
                           </div>
-                        ) : referenceSuggestions.length > 0 ? (
-                          <>
-                            {referenceSuggestions.map((ref, index) => (
-                              <button
-                                key={`${ref.type}-${ref.id}-${index}`}
-                                type="button"
-                                onClick={() => handleReferenceSelect(ref)}
-                                className="w-full text-left px-4 py-2 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none border-b border-gray-100 last:border-b-0"
-                              >
-                                <div className="flex items-center justify-between">
-                                  <div>
-                                    <div className="text-sm font-medium text-gray-900">
-                                      {ref.display}
-                                    </div>
-                                    <div className="text-xs text-gray-500">
-                                      {ref.type}
-                                    </div>
-                                  </div>
-                                  <span className="text-xs text-blue-600 font-medium">
-                                    {ref.value}
-                                  </span>
+                        ) : aboutSuggestions.length > 0 ? (
+                          aboutSuggestions.map((suggestion, idx) => (
+                            <button
+                              key={`${suggestion.type}-${suggestion.id}-${idx}`}
+                              type="button"
+                              onClick={() => handleAboutReferenceSelect(suggestion)}
+                              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
+                            >
+                              <HiOutlineOfficeBuilding className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                              <div className="flex-1">
+                                <div className="text-sm font-medium text-gray-900">
+                                  {suggestion.display}
                                 </div>
-                              </button>
-                            ))}
-                          </>
-                        ) : noteForm.additionalReferences.trim().length >= 2 ? (
-                          <div className="p-3 text-sm text-gray-500 text-center">
-                            No references found
+                                <div className="text-xs text-gray-500">
+                                  {suggestion.type}
+                                </div>
+                              </div>
+                            </button>
+                          ))
+                        ) : aboutSearchQuery.trim().length > 0 ? (
+                          <div className="p-3 text-center text-gray-500 text-sm">
+                            No results found
                           </div>
-                        ) : null}
+                        ) : (
+                          <div className="p-3 text-center text-gray-500 text-sm">
+                            Type to search or select from list
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -6197,60 +6306,53 @@ export default function JobView() {
                     Email Notification
                   </label>
                   <div className="relative" ref={emailInputRef}>
-                    {noteForm.emailNotification.length > 0 && (
-                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
+                    {isLoadingUsers ? (
+                      <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50 min-h-[42px]">
+                        Loading users...
+                      </div>
+                    ) : (
+                      <div className="min-h-[42px] flex flex-wrap items-center gap-2 p-2 border border-gray-300 rounded focus-within:ring-2 focus-within:outline-none focus-within:ring-blue-500 pr-8">
+                        {/* Selected Users Tags - Inside the input container */}
                         {noteForm.emailNotification.map((val, index) => (
                           <span
                             key={val}
-                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
                           >
-                            <HiOutlineUser className="w-4 h-4 shrink-0" />
+                            <HiOutlineUser className="w-4 h-4 flex-shrink-0" />
                             {val}
                             <button
                               type="button"
                               onClick={() => removeEmailNotification(val)}
-                              className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
+                              className="hover:text-blue-600 font-bold leading-none"
                               title="Remove"
                             >
                               ×
                             </button>
                           </span>
                         ))}
-                      </div>
-                    )}
-                    {noteForm.emailNotification.length > 0 && (
-                      <label className="block text-xs font-medium text-gray-500 mb-1">
-                        Add Additional Users
-                      </label>
-                    )}
-                    <div className="relative">
-                      {isLoadingUsers ? (
-                        <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
-                          Loading users...
-                        </div>
-                      ) : (
+
+                        {/* Search Input for Users - Same field to add more */}
                         <input
                           type="text"
                           value={emailSearchQuery}
                           onChange={(e) => {
-                            setEmailSearchQuery(e.target.value);
+                            const value = e.target.value;
+                            setEmailSearchQuery(value);
                             setShowEmailDropdown(true);
                           }}
                           onFocus={() => setShowEmailDropdown(true)}
                           placeholder={
                             noteForm.emailNotification.length === 0
                               ? "Search and add users to notify..."
-                              : "Add another user..."
+                              : "Add more..."
                           }
-                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
+                          className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
                         />
-                      )}
-                      {!isLoadingUsers && (
                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
                           <FiSearch className="w-4 h-4" />
                         </span>
-                      )}
-                    </div>
+                      </div>
+                    )}
                     {showEmailDropdown && !isLoadingUsers && (
                       <div
                         data-email-dropdown
@@ -6751,6 +6853,137 @@ export default function JobView() {
                   </button>
                 </div>
               </DndContext>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Request Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+            {/* Header */}
+            <div className="flex justify-between items-center p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold">Request Deletion</h2>
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteForm({ reason: "" });
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            {/* Form Content */}
+            <div className="p-6 space-y-6">
+              {/* Job Info */}
+              <div className="bg-gray-50 p-4 rounded">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Job to Delete
+                </label>
+                <p className="text-sm text-gray-900 font-medium">
+                  {job
+                    ? `${formatRecordId(job.id, "job")} ${job.job_title || "N/A"}`
+                    : "N/A"}
+                </p>
+              </div>
+
+              {/* Pending Request Warning */}
+              {pendingDeleteRequest && pendingDeleteRequest.status === "pending" && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded p-4">
+                  <p className="text-sm text-yellow-800">
+                    <strong>Pending Request:</strong> A delete request is already pending payroll approval.
+                  </p>
+                </div>
+              )}
+
+              {/* Denied Request Info */}
+              {pendingDeleteRequest && pendingDeleteRequest.status === "denied" && (
+                <div className="bg-red-50 border border-red-200 rounded p-4">
+                  <p className="text-sm text-red-800">
+                    <strong>Previous Request Denied:</strong> {pendingDeleteRequest.denial_reason || "No reason provided"}
+                  </p>
+                </div>
+              )}
+
+              {/* Reason Field - Required */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <span className="text-red-500 mr-1">•</span>
+                  Reason for Deletion
+                </label>
+                <textarea
+                  value={deleteForm.reason}
+                  onChange={(e) =>
+                    setDeleteForm((prev) => ({
+                      ...prev,
+                      reason: e.target.value,
+                    }))
+                  }
+                  placeholder="Please provide a detailed reason for deleting this job..."
+                  className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${
+                    !deleteForm.reason.trim()
+                      ? "border-red-300 focus:ring-red-500"
+                      : "border-gray-300 focus:ring-blue-500"
+                  }`}
+                  rows={5}
+                  required
+                />
+                {!deleteForm.reason.trim() && (
+                  <p className="mt-1 text-sm text-red-500">
+                    Reason is required
+                  </p>
+                )}
+              </div>
+
+              {/* Info Box */}
+              <div className="bg-blue-50 border border-blue-200 rounded p-4">
+                <p className="text-sm text-blue-800">
+                  <strong>Note:</strong> This will create a delete request. Payroll will be notified via email and must approve or deny the deletion. The record will be archived (not deleted) until payroll approval.
+                </p>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeleteForm({ reason: "" });
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={isSubmittingDelete}
+              >
+                CANCEL
+              </button>
+              <button
+                onClick={handleDeleteRequestSubmit}
+                className="px-4 py-2 bg-red-500 text-white rounded hover:bg-red-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
+                disabled={
+                  isSubmittingDelete ||
+                  !deleteForm.reason.trim() ||
+                  (pendingDeleteRequest && pendingDeleteRequest.status === "pending")
+                }
+              >
+                {isSubmittingDelete ? "SUBMITTING..." : "SUBMIT DELETE REQUEST"}
+                {!isSubmittingDelete && (
+                  <svg
+                    className="w-4 h-4 ml-2"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                    />
+                  </svg>
+                )}
+              </button>
             </div>
           </div>
         </div>
