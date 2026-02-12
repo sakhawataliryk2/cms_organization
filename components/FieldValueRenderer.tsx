@@ -32,6 +32,7 @@ export interface FieldValueRendererProps {
   lookupFallback?: string;
 }
 
+// Checks if field is a date
 function isDateFieldOrValue(label?: string, key?: string, value?: string): boolean {
   const l = (label ?? "").toLowerCase();
   const k = (key ?? "").toLowerCase();
@@ -39,6 +40,37 @@ function isDateFieldOrValue(label?: string, key?: string, value?: string): boole
   const looksLikeDate = value != null && DATE_PATTERN.test(String(value).trim());
   return hasDateInName || looksLikeDate;
 }
+
+// Checks if field is Full Address
+const isAddressField = (label?: string): boolean => {
+  const normalize = (value?: string): string =>
+    (value ?? "")
+      .toLowerCase()
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const isCloseMatch = (word: string, target: string): boolean => {
+    if (word === target) return true;
+    if (Math.abs(word.length - target.length) > 1) return false;
+
+    let mismatches = 0;
+    for (let i = 0; i < Math.min(word.length, target.length); i++) {
+      if (word[i] !== target[i]) mismatches++;
+      if (mismatches > 1) return false;
+    }
+
+    return true;
+  };
+
+  const l = normalize(label);
+  const words = l.split(" ").filter(Boolean);
+
+  const hasFull = words.some(w => isCloseMatch(w, "full"));
+  const hasAddress = words.some(w => isCloseMatch(w, "address"));
+
+  return hasFull && hasAddress;
+};
 
 export default function FieldValueRenderer({
   value,
@@ -54,17 +86,11 @@ export default function FieldValueRenderer({
   const fieldType = (fieldInfo?.fieldType ?? "").toLowerCase();
   const label = (fieldInfo?.label || "").toLowerCase();
 
-  const raw =
-    value != null && value !== ""
-      ? String(value).trim()
-      : "";
+  const raw = value != null && value !== "" ? String(value).trim() : "";
   const isEmpty = raw === "";
   const str = isEmpty ? emptyPlaceholder : raw;
 
-  const isStatus =
-    forceRenderAsStatus ||
-    fieldType === "status" ||
-    label === "status";
+  const isStatus = forceRenderAsStatus || fieldType === "status" || label === "status";
 
   const handleClick = (e: React.MouseEvent) => {
     if (stopPropagation) e.stopPropagation();
@@ -75,19 +101,15 @@ export default function FieldValueRenderer({
   }
 
   // Lookup fields
-  const isLookup =
-    fieldType === "lookup" || fieldType === "multiselect_lookup";
-
+  const isLookup = fieldType === "lookup" || fieldType === "multiselect_lookup";
   if (isLookup) {
-    const lookupType =
-      fieldInfo?.lookupType ||
-      fieldInfo?.multiSelectLookupType;
+    const lookupType = fieldInfo?.lookupType || fieldInfo?.multiSelectLookupType;
     const fallback = lookupFallback != null && lookupFallback !== "" ? lookupFallback : str;
     return (
       <span onClick={handleClick} className={className}>
         <RecordNameResolver
           id={raw || null}
-          type={lookupType || ''}
+          type={lookupType || ""}
           clickable
           fallback={fallback}
         />
@@ -101,12 +123,12 @@ export default function FieldValueRenderer({
       statusVariant === "deletion"
         ? "bg-red-100 text-red-800"
         : statusVariant === "archived"
-          ? "bg-amber-100 text-amber-800"
-          : statusVariant === "blue"
-            ? "bg-blue-100 text-blue-800"
-            : statusVariant === "gray"
-              ? "bg-gray-100 text-gray-800"
-              : "bg-green-100 text-green-800";
+        ? "bg-amber-100 text-amber-800"
+        : statusVariant === "blue"
+        ? "bg-blue-100 text-blue-800"
+        : statusVariant === "gray"
+        ? "bg-gray-100 text-gray-800"
+        : "bg-green-100 text-green-800";
     return (
       <span
         className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${statusClass} ${className}`}
@@ -119,6 +141,23 @@ export default function FieldValueRenderer({
   // Date: plain text
   if (fieldType === "date" || isDateFieldOrValue(fieldInfo?.label, fieldInfo?.key, raw)) {
     return <span className={className}>{str}</span>;
+  }
+
+  // Full Address: clickable Google Maps link
+  if (isAddressField(fieldInfo?.label) && str !== emptyPlaceholder) {
+    const fullAddress = `${str}, USA`;
+    const encodedAddress = encodeURIComponent(fullAddress);
+    return (
+      <a
+        href={`https://www.google.com/maps/search/?api=1&query=${encodedAddress}`}
+        target="_blank"
+        rel="noopener noreferrer"
+        className={`text-blue-600 hover:underline ${className}`}
+        onClick={handleClick}
+      >
+        {str}
+      </a>
+    );
   }
 
   // URL / link
