@@ -234,7 +234,7 @@ export default function CustomFieldRenderer({
       maximumFractionDigits: 2,
     });
   }
-  
+
   // Format salary values for display
   const formatSalaryValue = (val: any) => {
     if (field.field_name === "minSalary" || field.field_name === "maxSalary") {
@@ -415,6 +415,8 @@ export default function CustomFieldRenderer({
       <input
         id={field.field_name}
         type="text"
+        readOnly
+        // disabled
         value={value || ""}
         onChange={(e) => {
           // Update only the Full Address field, don't affect sub-fields
