@@ -12,7 +12,19 @@ import CustomFieldRenderer, {
 import AddressGroupRenderer, {
   getAddressFields,
 } from "@/components/AddressGroupRenderer";
-import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
+
+interface CustomFieldDefinition {
+  id: string;
+  field_name: string;
+  field_label: string;
+  field_type: string;
+  is_required: boolean;
+  is_hidden: boolean;
+  options?: string[] | string | Record<string, unknown> | null;
+  placeholder?: string;
+  default_value?: string;
+  sort_order: number;
+}
 
 // Define field type for typesafety
 interface FormField {
@@ -63,6 +75,74 @@ const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
   "Date Added": "dateAdded", "Date Created": "dateAdded",
 };
 
+// Multi-value tag input component for Skills field
+interface MultiValueTagInputProps {
+  values: string[];
+  onChange: (values: string[]) => void;
+  placeholder?: string;
+}
+
+function MultiValueTagInput({
+  values,
+  onChange,
+  placeholder = "Type and press Enter",
+}: MultiValueTagInputProps) {
+  const [inputValue, setInputValue] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter" && inputValue.trim()) {
+      e.preventDefault();
+      const trimmedValue = inputValue.trim();
+      if (!values.includes(trimmedValue)) {
+        onChange([...values, trimmedValue]);
+        setInputValue("");
+      }
+    } else if (
+      e.key === "Backspace" &&
+      inputValue === "" &&
+      values.length > 0
+    ) {
+      // Remove last tag when backspace is pressed on empty input
+      onChange(values.slice(0, -1));
+    }
+  };
+
+  const handleRemove = (index: number) => {
+    onChange(values.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div className="w-full min-h-[42px] p-2 border-b border-gray-300 focus-within:border-blue-500 flex flex-wrap gap-2 items-center">
+      {values.map((skill, index) => (
+        <span
+          key={index}
+          className="inline-flex items-center px-3 py-1 rounded-full text-sm bg-blue-100 text-blue-800"
+        >
+          {skill}
+          <button
+            type="button"
+            onClick={() => handleRemove(index)}
+            className="ml-2 text-blue-600 hover:text-blue-800 focus:outline-none"
+            aria-label={`Remove ${skill}`}
+          >
+            ×
+          </button>
+        </span>
+      ))}
+      <input
+        ref={inputRef}
+        type="text"
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        onKeyDown={handleKeyDown}
+        placeholder={values.length === 0 ? placeholder : ""}
+        className="flex-1 min-w-[120px] outline-none border-none bg-transparent"
+      />
+    </div>
+  );
+}
+
 export default function AddJobSeeker() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -91,8 +171,9 @@ export default function AddJobSeeker() {
     suggestions?: any[];
   }>({ isValid: true, message: "", isChecking: false });
 
-  // This state will hold only the resume text field (hardcoded)
+  // This state will hold the dynamic form fields configuration
   const [formFields, setFormFields] = useState<FormField[]>([]);
+  const [resumeFile, setResumeFile] = useState<File | null>(null);
   const {
     customFields,
     customFieldValues,
@@ -140,8 +221,117 @@ export default function AddJobSeeker() {
     // Fetch active users for owner dropdown
     fetchActiveUsers();
 
-    // Initialize only resume text field (hardcoded)
+    // Initialize form fields with locked last contact date
     setFormFields([
+      {
+        id: "firstName",
+        name: "firstName",
+        label: "First Name",
+        type: "text",
+        required: true,
+        visible: true,
+        value: "",
+      },
+      {
+        id: "lastName",
+        name: "lastName",
+        label: "Last Name",
+        type: "text",
+        required: true,
+        visible: true,
+        value: "",
+      },
+      {
+        id: "email",
+        name: "email",
+        label: "Email",
+        type: "email",
+        required: true,
+        visible: true,
+        value: "",
+      },
+      {
+        id: "phone",
+        name: "phone",
+        label: "Phone",
+        type: "tel",
+        required: true,
+        visible: true,
+        value: "",
+      },
+      {
+        id: "mobilePhone",
+        name: "mobilePhone",
+        label: "Mobile Phone",
+        type: "tel",
+        required: false,
+        visible: true,
+        value: "",
+      },
+      {
+        id: "address",
+        name: "address",
+        label: "Address",
+        type: "text",
+        required: false,
+        visible: true,
+        value: "",
+      },
+      {
+        id: "city",
+        name: "city",
+        label: "City",
+        type: "text",
+        required: false,
+        visible: true,
+        value: "",
+      },
+      {
+        id: "state",
+        name: "state",
+        label: "State",
+        type: "text",
+        required: false,
+        visible: true,
+        value: "",
+      },
+      {
+        id: "zip",
+        name: "zip",
+        label: "ZIP Code",
+        type: "text",
+        required: false,
+        visible: true,
+        value: "",
+      },
+      {
+        id: "status",
+        name: "status",
+        label: "Status",
+        type: "select",
+        required: true,
+        visible: true,
+        options: ["New lead", "Active", "Qualified", "Placed", "Inactive"],
+        value: "New lead",
+      },
+      {
+        id: "currentOrganization",
+        name: "currentOrganization",
+        label: "Current Organization",
+        type: "text",
+        required: false,
+        visible: true,
+        value: "",
+      },
+      {
+        id: "title",
+        name: "title",
+        label: "Title",
+        type: "text",
+        required: false,
+        visible: true,
+        value: "",
+      },
       {
         id: "resumeText",
         name: "resumeText",
@@ -150,6 +340,64 @@ export default function AddJobSeeker() {
         required: false,
         visible: true,
         value: "",
+      },
+      {
+        id: "resumeUpload",
+        name: "resumeUpload",
+        label: "Upload Resume",
+        type: "file",
+        required: false,
+        visible: true,
+        value: "",
+      },
+      {
+        id: "skills",
+        name: "skills",
+        label: "Skills",
+        type: "textarea",
+        required: false,
+        visible: true,
+        value: "",
+        placeholder: "Enter skills separated by commas",
+      },
+      {
+        id: "desiredSalary",
+        name: "desiredSalary",
+        label: "Desired Salary",
+        type: "text",
+        required: false,
+        visible: true,
+        value: "",
+        placeholder: "e.g. $75,000",
+      },
+      {
+        id: "owner",
+        name: "owner",
+        label: "Owner",
+        type: "select",
+        required: false,
+        visible: true,
+        value: currentUser?.name || "",
+        options: [], // Will be populated with active users
+      },
+      {
+        id: "dateAdded",
+        name: "dateAdded",
+        label: "Date Added",
+        type: "date",
+        required: false,
+        visible: true,
+        value: new Date().toISOString().split("T")[0],
+      },
+      {
+        id: "lastContactDate",
+        name: "lastContactDate",
+        label: "Last Contact Date",
+        type: "date",
+        required: false,
+        visible: true,
+        value: "",
+        locked: true, // This field is now locked and auto-updated
       },
     ]);
   }, []);
@@ -345,24 +593,48 @@ export default function AddJobSeeker() {
         // ✅ Set the mapped custom field values (field_name as keys) - same as Organizations
         setCustomFieldValues(mappedCustomFieldValues);
 
-        // Update only resumeText field
+        // Update formFields with existing job seeker data
         setFormFields((prevFields) => {
-          const resumeField = prevFields.find((f) => f.id === "resumeText");
-          if (resumeField) {
-            return prevFields.map((field) =>
-              field.id === "resumeText"
-                ? {
-                    ...field,
-                    value:
-                      jobSeeker.resume_text !== null &&
-                      jobSeeker.resume_text !== undefined
-                        ? String(jobSeeker.resume_text)
-                        : "",
-                  }
-                : field
+          const updatedFields = [...prevFields];
+
+          // Helper function to find and update a field
+          const updateField = (id: string, value: any) => {
+            const fieldIndex = updatedFields.findIndex(
+              (field) => field.id === id
             );
-          }
-          return prevFields;
+            if (fieldIndex !== -1) {
+              updatedFields[fieldIndex] = {
+                ...updatedFields[fieldIndex],
+                value:
+                  value !== null && value !== undefined ? String(value) : "",
+              };
+            }
+          };
+
+          // Update standard fields
+          updateField("firstName", jobSeeker.first_name);
+          updateField("lastName", jobSeeker.last_name);
+          updateField("email", jobSeeker.email);
+          updateField("phone", jobSeeker.phone);
+          updateField("mobilePhone", jobSeeker.mobile_phone);
+          updateField("address", jobSeeker.address);
+          updateField("city", jobSeeker.city);
+          updateField("state", jobSeeker.state);
+          updateField("zip", jobSeeker.zip);
+          updateField("status", jobSeeker.status);
+          updateField("currentOrganization", jobSeeker.current_organization);
+          updateField("title", jobSeeker.title);
+          updateField("resumeText", jobSeeker.resume_text);
+          updateField("skills", jobSeeker.skills);
+          updateField("desiredSalary", jobSeeker.desired_salary);
+          updateField("owner", jobSeeker.owner);
+          updateField(
+            "dateAdded",
+            jobSeeker.date_added ? jobSeeker.date_added.split("T")[0] : ""
+          );
+          // Note: lastContactDate is locked, so we don't update it
+
+          return updatedFields;
         });
 
         setIsEditMode(true);
@@ -450,35 +722,85 @@ export default function AddJobSeeker() {
     setCustomFieldValues,
   ]);
 
-  // Sync resumeText from formFields to custom fields (if Resume Text custom field exists)
+  // ✅ Sync formFields changes to custom fields (two-way binding)
+  // When user types in basic fields, update matching custom fields
   useEffect(() => {
-    if (customFieldsLoading || customFields.length === 0) {
+    // Only sync if custom fields are loaded and we're not currently fetching
+    if (customFieldsLoading || customFields.length === 0 || isLoading) {
       return;
     }
 
-    const resumeTextField = formFields.find((f) => f.id === "resumeText");
-    if (!resumeTextField) return;
+    // Map of form field IDs to their possible labels (for matching with custom field labels)
+    // This ensures custom fields with various label variations are mapped correctly
+    const formFieldToLabelMap: Record<string, string[]> = {
+      firstName: ["First Name", "First", "FName"],
+      lastName: ["Last Name", "Last", "LName"],
+      email: ["Email", "Email Address", "E-mail"],
+      phone: ["Phone", "Phone Number", "Telephone"],
+      mobilePhone: ["Mobile Phone", "Mobile", "Cell Phone"],
+      address: ["Address", "Street Address"],
+      city: ["City"],
+      state: ["State"],
+      zip: ["ZIP Code", "ZIP", "Zip Code", "Postal Code"],
+      status: ["Status", "Current Status"],
+      currentOrganization: ["Current Organization", "Organization", "Company"],
+      title: ["Title", "Job Title", "Position"],
+      resumeText: ["Resume Text", "Resume", "CV"],
+      skills: ["Skills", "Skill Set", "Technical Skills"],
+      desiredSalary: ["Desired Salary", "Salary", "Expected Salary"],
+      owner: ["Owner", "Assigned To", "Assigned Owner"],
+      dateAdded: ["Date Added", "Added Date", "Created Date"],
+    };
 
-    // Find Resume Text custom field
-    const resumeCustomField = customFields.find(
-      (f) =>
-        f.field_label === "Resume Text" ||
-        f.field_label === "Resume" ||
-        f.field_label === "CV"
-    );
+    // Get current form field values
+    const formFieldValues: Record<string, string> = {};
+    formFields.forEach((field) => {
+      if (field.visible && !field.locked) {
+        formFieldValues[field.id] = field.value;
+      }
+    });
 
-    if (resumeCustomField && resumeTextField.value) {
-      setCustomFieldValues((prev) => {
-        if (prev[resumeCustomField.field_name] !== resumeTextField.value) {
-          return {
-            ...prev,
-            [resumeCustomField.field_name]: resumeTextField.value,
-          };
+    // Update custom fields based on form field values
+    // Use a functional update to avoid dependency on customFieldValues
+    setCustomFieldValues((prevCustomFields) => {
+      const updatedCustomFields: Record<string, any> = { ...prevCustomFields };
+      let hasChanges = false;
+
+      customFields.forEach((customField) => {
+        // Find matching form field by checking if custom field label matches any label in the map
+        const matchingFormFieldId = Object.keys(formFieldToLabelMap).find(
+          (formFieldId) => {
+            const possibleLabels = formFieldToLabelMap[formFieldId];
+            return possibleLabels.includes(customField.field_label);
+          }
+        );
+
+        if (
+          matchingFormFieldId &&
+          formFieldValues[matchingFormFieldId] !== undefined
+        ) {
+          const formValue = formFieldValues[matchingFormFieldId];
+          const currentCustomValue =
+            updatedCustomFields[customField.field_name];
+
+          // Only update if value has changed
+          if (currentCustomValue !== formValue) {
+            updatedCustomFields[customField.field_name] = formValue;
+            hasChanges = true;
+          }
         }
-        return prev;
       });
-    }
-  }, [formFields, customFields, customFieldsLoading, setCustomFieldValues]);
+
+      // Only return updated object if there are changes, otherwise return previous to prevent unnecessary re-renders
+      return hasChanges ? updatedCustomFields : prevCustomFields;
+    });
+  }, [
+    formFields,
+    customFields,
+    customFieldsLoading,
+    isLoading,
+    setCustomFieldValues,
+  ]);
 
   // Email validation with debounce
   //   useEffect(() => {
@@ -567,6 +889,12 @@ export default function AddJobSeeker() {
     );
   };
 
+  // Handle file selection
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setResumeFile(e.target.files[0]);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -577,12 +905,10 @@ export default function AddJobSeeker() {
       return;
     }
 
-    // Check address validation if address is provided (from custom fields)
-    const addressFields = getAddressFields(customFields);
-    const hasAddress = addressFields.some((field) => {
-      const value = customFieldValues[field.field_name];
-      return value && String(value).trim() !== "";
-    });
+    // Check address validation if address is provided
+    const hasAddress = formFields.some(
+      (f) => (f.id === "address" || f.id === "city") && f.value.trim()
+    );
 
     if (hasAddress && !addressValidation.isValid) {
       setError(
@@ -806,18 +1132,6 @@ export default function AddJobSeeker() {
     router.back();
   };
 
-  const isFormValid = useMemo(() => {
-    if (!emailValidation.isValid) return false;
-    const addressFields = getAddressFields(customFields);
-    const hasAddress = addressFields.some((field) => {
-      const value = customFieldValues[field.field_name];
-      return value && String(value).trim() !== "";
-    });
-    if (hasAddress && !addressValidation.isValid) return false;
-    const customFieldValidation = validateCustomFields();
-    return customFieldValidation.isValid;
-  }, [emailValidation.isValid, addressValidation.isValid, customFields, customFieldValues, validateCustomFields]);
-
   // Show loading screen when submitting
   if (isSubmitting) {
     return (
@@ -944,101 +1258,65 @@ export default function AddJobSeeker() {
                     (field.field_name?.includes("17") ||
                       field.field_name?.toLowerCase().includes("field_17")));
 
+                const isSkillsField =
+                  field.field_name === "Field_32" ||
+                  field.field_name === "field_32" ||
+                  field.field_name?.toLowerCase() === "field_32" ||
+                  (field.field_label === "Skills" &&
+                    (field.field_name?.includes("32") ||
+                      field.field_name?.toLowerCase().includes("field_32")));
+
+                const isAdditionalSkillField =
+                  field.field_name === "Field_33" ||
+                  field.field_name === "field_33" ||
+                  field.field_name?.toLowerCase() === "field_33" ||
+                  (field.field_label === "Additional Skill" &&
+                    (field.field_name?.includes("33") ||
+                      field.field_name?.toLowerCase().includes("field_33")));
+
+                const isCertificationsField =
+                  field.field_name === "Field_34" ||
+                  field.field_name === "field_34" ||
+                  field.field_name?.toLowerCase() === "field_34" ||
+                  (field.field_label === "Certifications" &&
+                    (field.field_name?.includes("34") ||
+                      field.field_name?.toLowerCase().includes("field_34")));
+
+                const isSoftwaresField =
+                  field.field_name === "Field_35" ||
+                  field.field_name === "field_35" ||
+                  field.field_name?.toLowerCase() === "field_35" ||
+                  (field.field_label === "Softwares" &&
+                    (field.field_name?.includes("35") ||
+                      field.field_name?.toLowerCase().includes("field_35")));
+
+                const parseMultiValue = (val: any): string[] => {
+                  if (!val) return [];
+                  if (Array.isArray(val)) return val.filter((s) => s && s.trim());
+                  if (typeof val === "string") {
+                    return val
+                      .split(",")
+                      .map((s) => s.trim())
+                      .filter((s) => s);
+                  }
+                  return [];
+                };
+
+                const isMultiValueField =
+                  isSkillsField ||
+                  isAdditionalSkillField ||
+                  isCertificationsField ||
+                  isSoftwaresField;
+                const multiValueArray = isMultiValueField
+                  ? parseMultiValue(fieldValue)
+                  : [];
+
                 const hasValidValue = () => {
                   if (fieldValue === null || fieldValue === undefined) return false;
                   const trimmed = String(fieldValue).trim();
 
-                  if (trimmed === "") return false;
-
-                  /* ================= DATE FIELD (TIMEZONE SAFE) ================= */
-                  if (field.field_type === "date") {
-                    let normalizedDate = trimmed;
-
-                    // Convert MM/DD/YYYY → YYYY-MM-DD
-                    if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
-                      const [mm, dd, yyyy] = trimmed.split("/");
-                      normalizedDate = `${yyyy}-${mm}-${dd}`;
-                    }
-
-                    // Strict YYYY-MM-DD format
-                    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
-                      return false;
-                    }
-
-                    const [year, month, day] = normalizedDate.split("-").map(Number);
-
-                    // Manual date validation (NO timezone usage)
-                    if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
-                      return false;
-                    }
-
-                    const daysInMonth = new Date(year, month, 0).getDate();
-                    if (day > daysInMonth) {
-                      return false;
-                    }
-
-                    return true;
-                  }
-                  /* =============================================================== */
-
-                  // ZIP code
-                  const isZipCodeField =
-                    field.field_label?.toLowerCase().includes("zip") ||
-                    field.field_label?.toLowerCase().includes("postal code") ||
-                    field.field_name?.toLowerCase().includes("zip");
-
-                  if (isZipCodeField) {
-                    return /^\d{5}$/.test(trimmed);
-                  }
-
-                  // Non-negative number fields
-                  const isNonNegativeField =
-                    field.field_label?.toLowerCase().includes("employees") ||
-                    field.field_label?.toLowerCase().includes("offices") ||
-                    field.field_label?.toLowerCase().includes("oasis key");
-
-                  if (isNonNegativeField && field.field_type === "number") {
-                    const num = Number(trimmed);
-                    return !isNaN(num) && num >= 0;
-                  }
-
-                  // Special validation for phone fields
-                  const isPhoneField =
-                    (field.field_type === "phone" ||
-                      field.field_label?.toLowerCase().includes("phone"));
-                  if (isPhoneField && trimmed !== "") {
-                    // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
-                    // Remove all non-numeric characters to check digit count
-                    const digitsOnly = trimmed.replace(/\D/g, "");
-                    // Must have exactly 10 digits
-                    if (digitsOnly.length !== 10) {
-                      return false;
-                    }
-                    // Check if formatted correctly as (000) 000-0000
-                    const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
-                    if (!phoneRegex.test(trimmed)) return false;
-                    // NANP: valid area code (2-9), exchange (2-9), and area code in US list
-                    return isValidUSPhoneNumber(trimmed);
-                  }
-
-                  // URL field
-                  const isUrlField =
-                    field.field_type === "url" ||
-                    field.field_label?.toLowerCase().includes("website") ||
-                    field.field_label?.toLowerCase().includes("url");
-
-                  if (isUrlField) {
-                    try {
-                      const url = trimmed.startsWith("http")
-                        ? new URL(trimmed)
-                        : new URL(`https://${trimmed}`);
-                      return url.hostname.includes(".");
-                    } catch {
-                      return false;
-                    }
-                  }
-
                   if (field.field_type === "select") {
+                    if (trimmed === "") return false;
                     if (
                       trimmed.toLowerCase() === "select an option" ||
                       trimmed.toLowerCase() === "select owner" ||
@@ -1061,6 +1339,11 @@ export default function AddJobSeeker() {
                     return true;
                   }
 
+                  if (isMultiValueField) {
+                    return multiValueArray.length > 0;
+                  }
+
+                  if (trimmed === "") return false;
                   return true;
                 };
 
@@ -1092,14 +1375,32 @@ export default function AddJobSeeker() {
                             </option>
                           ))}
                         </select>
+                      ) : isMultiValueField ? (
+                        <MultiValueTagInput
+                          values={multiValueArray}
+                          onChange={(newValues) => {
+                            handleCustomFieldChange(
+                              field.field_name,
+                              newValues.join(", ")
+                            );
+                          }}
+                          placeholder={
+                            isSkillsField
+                              ? "Type a skill and press Enter"
+                              : isAdditionalSkillField
+                              ? "Type an additional skill and press Enter"
+                              : isCertificationsField
+                              ? "Type a certification and press Enter"
+                              : isSoftwaresField
+                              ? "Type a software and press Enter"
+                              : "Type a value and press Enter"
+                          }
+                        />
                       ) : (
                         <CustomFieldRenderer
                           field={field}
                           value={fieldValue}
-                          allFields={customFields}
-                          values={customFieldValues}
                           onChange={handleCustomFieldChange}
-                          className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                         />
                       )}
                     </div>
@@ -1315,8 +1616,8 @@ export default function AddJobSeeker() {
             </div>
           )}
 
-          <div className="h-20" aria-hidden="true" />
-          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
+          {/* Form Buttons */}
+          <div className="flex justify-end space-x-4 mt-8">
             <button
               type="button"
               onClick={handleGoBack}
@@ -1326,12 +1627,15 @@ export default function AddJobSeeker() {
             </button>
             <button
               type="submit"
-              disabled={isSubmitting || !isFormValid}
-              className={`px-4 py-2 rounded ${
-                isSubmitting || !isFormValid
-                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                  : "bg-blue-500 text-white hover:bg-blue-600"
-              }`}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              disabled={
+                !emailValidation.isValid ||
+                (!addressValidation.isValid &&
+                  formFields.some(
+                    (f) =>
+                      (f.id === "address" || f.id === "city") && f.value.trim()
+                  ))
+              }
             >
               {isEditMode ? "Update" : "Save"}
             </button>

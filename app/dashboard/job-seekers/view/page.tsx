@@ -9,7 +9,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, sendCalendarInvite, type EmailMessage, type CalendarEvent } from "@/lib/office365";
 import { FiUsers, FiUpload, FiFile, FiX, FiLock, FiUnlock, FiArrowUp, FiArrowDown, FiFilter, FiSearch } from "react-icons/fi";
-import { HiOutlineUser, HiOutlineOfficeBuilding } from "react-icons/hi";
+import { HiOutlineUser } from "react-icons/hi";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { TbGripVertical } from "react-icons/tb";
 import { formatRecordId } from '@/lib/recordIdFormatter';
@@ -49,8 +49,8 @@ import {
   useSortable,
   verticalListSortingStrategy,
   horizontalListSortingStrategy,
-  arrayMove,
   sortableKeyboardCoordinates,
+  arrayMove,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
@@ -111,55 +111,6 @@ function SortableJobSeekerDetailsFieldRow({
         className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
       />
       <span className="text-sm text-gray-700 flex-1">{label}</span>
-    </div>
-  );
-}
-
-// Sortable row for Header Fields edit modal (vertical drag + checkbox + label)
-function SortableHeaderFieldRow({
-  id,
-  label,
-  checked,
-  onToggle,
-  isOverlay,
-}: {
-  id: string;
-  label: string;
-  checked: boolean;
-  onToggle: () => void;
-  isOverlay?: boolean;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style: React.CSSProperties = {
-    transform: CSS.Translate.toString(transform),
-    transition,
-    opacity: isDragging && !isOverlay ? 0.5 : 1,
-  };
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
-    >
-      {!isOverlay && (
-        <button
-          {...attributes}
-          {...listeners}
-          className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
-          title="Drag to reorder"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <TbGripVertical size={18} />
-        </button>
-      )}
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onToggle}
-        onClick={(e) => e.stopPropagation()}
-        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 shrink-0"
-      />
-      <span className="text-sm text-gray-700 flex-1 truncate">{label}</span>
     </div>
   );
 }
@@ -395,6 +346,23 @@ const OVERVIEW_STORAGE_KEY = "jobSeekersOverviewFields";
 
 const JOBSEEKER_VIEW_TAB_IDS = ["summary", "modify", "history", "notes", "docs", "references", "applications", "onboarding"];
 
+interface NoteFormState {
+  text: string;
+  action: string;
+  about: string;
+  aboutReferences: Array<{
+    id: string;
+    type: string;
+    display: string;
+    value: string;
+  }>;
+  copyNote: string;
+  replaceGeneralContactComments: boolean;
+  additionalReferences: string;
+  scheduleNextAction: string;
+  emailNotification: string[];
+}
+
 export default function JobSeekerView() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -491,16 +459,7 @@ export default function JobSeekerView() {
   const [tasksError, setTasksError] = useState<string | null>(null);
 
   // Add Note form state
-  const [noteForm, setNoteForm] = useState<{
-    text: string;
-    action: string;
-    about: string;
-    aboutReferences: any[];
-    copyNote: string;
-    replaceGeneralContactComments: boolean;
-    scheduleNextAction: string;
-    emailNotification: string[];
-  }>({
+  const [noteForm, setNoteForm] = useState<NoteFormState>({
     text: "",
     action: "",
     about: jobSeeker
@@ -518,6 +477,7 @@ export default function JobSeekerView() {
       : [],
     copyNote: "No",
     replaceGeneralContactComments: false,
+    additionalReferences: "",
     scheduleNextAction: "None",
     emailNotification: [],
   });
@@ -588,12 +548,6 @@ export default function JobSeekerView() {
 
   // High-performance sensors configuration
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
-
-  // Sensors for Header Fields modal drag-and-drop
-  const headerFieldsSensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
         distance: 8,
@@ -663,17 +617,6 @@ export default function JobSeekerView() {
 
   const headerFieldCatalog = buildHeaderFieldCatalog();
 
-  // Initialize headerFieldsOrder when headerFields or catalog changes
-  useEffect(() => {
-    if (headerFieldCatalog.length > 0 && headerFieldsOrder.length === 0) {
-      // Initialize order with headerFields, then add remaining catalog fields
-      const catalogKeys = headerFieldCatalog.map((f) => f.key);
-      const selectedOrder = headerFields.filter((k) => catalogKeys.includes(k));
-      const newFields = catalogKeys.filter((k) => !selectedOrder.includes(k));
-      setHeaderFieldsOrder([...selectedOrder, ...newFields]);
-    }
-  }, [headerFieldCatalog.length, headerFields]);
-
   const getHeaderFieldLabel = (key: string) => {
     const found = headerFieldCatalog.find((f) => f.key === key);
     return found?.label || key;
@@ -725,8 +668,6 @@ export default function JobSeekerView() {
   const [modalJobSeekerDetailsOrder, setModalJobSeekerDetailsOrder] = useState<string[]>([]);
   const [modalJobSeekerDetailsVisible, setModalJobSeekerDetailsVisible] = useState<Record<string, boolean>>({});
   const [jobSeekerDetailsDragActiveId, setJobSeekerDetailsDragActiveId] = useState<string | null>(null);
-  const [headerFieldsDragActiveId, setHeaderFieldsDragActiveId] = useState<string | null>(null);
-  const [headerFieldsOrder, setHeaderFieldsOrder] = useState<string[]>([]);
 
   // Overview edit modal: order and visibility (synced when modal opens)
   const [modalOverviewOrder, setModalOverviewOrder] = useState<string[]>([]);
@@ -1487,11 +1428,17 @@ Best regards`;
 
   // Search for references for About field
   const searchAboutReferences = async (query: string) => {
+    if (!query || query.trim().length < 2) {
+      setAboutSuggestions([]);
+      setShowAboutDropdown(false);
+      return;
+    }
+
     setIsLoadingAboutSearch(true);
     setShowAboutDropdown(true);
 
     try {
-      const searchTerm = (query || "").trim();
+      const searchTerm = query.trim();
       const token = document.cookie.replace(
         /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
         "$1"
@@ -1524,13 +1471,11 @@ Best regards`;
       // Process jobs
       if (jobsRes.status === "fulfilled" && jobsRes.value.ok) {
         const data = await jobsRes.value.json();
-        const jobs = searchTerm
-          ? (data.jobs || []).filter(
-              (job: any) =>
-                job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                job.id?.toString().includes(searchTerm)
-            )
-          : (data.jobs || []);
+        const jobs = (data.jobs || []).filter(
+          (job: any) =>
+            job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            job.id?.toString().includes(searchTerm)
+        );
         jobs.forEach((job: any) => {
           suggestions.push({
             id: job.id,
@@ -1545,13 +1490,11 @@ Best regards`;
       // Process organizations
       if (orgsRes.status === "fulfilled" && orgsRes.value.ok) {
         const data = await orgsRes.value.json();
-        const orgs = searchTerm
-          ? (data.organizations || []).filter(
-              (org: any) =>
-                org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                org.id?.toString().includes(searchTerm)
-            )
-          : (data.organizations || []);
+        const orgs = (data.organizations || []).filter(
+          (org: any) =>
+            org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            org.id?.toString().includes(searchTerm)
+        );
         orgs.forEach((org: any) => {
           suggestions.push({
             id: org.id,
@@ -1566,16 +1509,14 @@ Best regards`;
       // Process job seekers
       if (jobSeekersRes.status === "fulfilled" && jobSeekersRes.value.ok) {
         const data = await jobSeekersRes.value.json();
-        const seekers = searchTerm
-          ? (data.jobSeekers || []).filter(
-              (seeker: any) =>
-                seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                seeker.id?.toString().includes(searchTerm)
-            )
-          : (data.jobSeekers || []);
+        const seekers = (data.jobSeekers || []).filter(
+          (seeker: any) =>
+            seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            seeker.id?.toString().includes(searchTerm)
+        );
         seekers.forEach((seeker: any) => {
           const name =
             seeker.full_name ||
@@ -1593,15 +1534,13 @@ Best regards`;
       // Process leads
       if (leadsRes.status === "fulfilled" && leadsRes.value.ok) {
         const data = await leadsRes.value.json();
-        const leads = searchTerm
-          ? (data.leads || []).filter(
-              (lead: any) =>
-                lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                lead.id?.toString().includes(searchTerm)
-            )
-          : (data.leads || []);
+        const leads = (data.leads || []).filter(
+          (lead: any) =>
+            lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            lead.id?.toString().includes(searchTerm)
+        );
         leads.forEach((lead: any) => {
           suggestions.push({
             id: lead.id,
@@ -1616,16 +1555,14 @@ Best regards`;
       // Process hiring managers
       if (hiringManagersRes.status === "fulfilled" && hiringManagersRes.value.ok) {
         const data = await hiringManagersRes.value.json();
-        const hms = searchTerm
-          ? (data.hiringManagers || []).filter(
-              (hm: any) =>
-                hm.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                hm.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                hm.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                hm.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                hm.id?.toString().includes(searchTerm)
-            )
-          : (data.hiringManagers || []);
+        const hms = (data.hiringManagers || []).filter(
+          (hm: any) =>
+            hm.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            hm.id?.toString().includes(searchTerm)
+        );
         hms.forEach((hm: any) => {
           const name =
             hm.full_name ||
@@ -2007,25 +1944,6 @@ Best regards`;
   };
 
   // Job Seeker Details modal: drag end (reorder)
-  const handleHeaderFieldsDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-    setHeaderFieldsDragActiveId(null);
-    if (!over || active.id === over.id) return;
-    setHeaderFieldsOrder((prev) => {
-      const oldIndex = prev.indexOf(active.id as string);
-      const newIndex = prev.indexOf(over.id as string);
-      if (oldIndex === -1 || newIndex === -1) return prev;
-      return arrayMove(prev, oldIndex, newIndex);
-    });
-    // Also update headerFields order if both are in headerFields
-    setHeaderFields((prev) => {
-      const oldIndex = prev.indexOf(active.id as string);
-      const newIndex = prev.indexOf(over.id as string);
-      if (oldIndex === -1 || newIndex === -1) return prev;
-      return arrayMove(prev, oldIndex, newIndex);
-    });
-  }, []);
-
   const handleJobSeekerDetailsDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     setJobSeekerDetailsDragActiveId(null);
@@ -2822,6 +2740,7 @@ Best regards`;
         copy_note: noteForm.copyNote === "Yes",
         replace_general_contact_comments:
           noteForm.replaceGeneralContactComments,
+        additional_references: noteForm.additionalReferences,
         schedule_next_action: noteForm.scheduleNextAction,
         email_notification: Array.isArray(noteForm.emailNotification) ? noteForm.emailNotification : (noteForm.emailNotification ? [noteForm.emailNotification] : []),
       };
@@ -2893,26 +2812,15 @@ Best regards`;
         about: jobSeeker
           ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
           : "",
-        aboutReferences: jobSeeker
-          ? [
-            {
-              id: jobSeeker.id,
-              type: "Job Seeker",
-              display: `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`,
-              value: formatRecordId(jobSeeker.id, "jobSeeker"),
-            },
-          ]
-          : [],
+        aboutReferences: [], // ✅ required
         copyNote: "No",
         replaceGeneralContactComments: false,
+        additionalReferences: "",
         scheduleNextAction: "None",
         emailNotification: [],
       });
-      setAboutSearchQuery("");
       setEmailSearchQuery("");
       setShowEmailDropdown(false);
-      setShowAboutDropdown(false);
-      setValidationErrors({});
       setShowAddNote(false);
 
       // Refresh history and notes
@@ -6395,93 +6303,91 @@ Best regards`;
                     )}
                   </label>
                   <div className="relative" ref={aboutInputRef}>
-                    <div
-                      className={`min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:outline-none pr-8 ${
-                        validationErrors.about
-                          ? "border-red-500 focus-within:ring-red-500"
-                          : "border-gray-300 focus-within:ring-blue-500"
-                      }`}
-                    >
-                      {/* Selected References Tags - Inside the input container */}
-                      {noteForm.aboutReferences.map((ref, index) => (
-                        <span
-                          key={`${ref.type}-${ref.id}-${index}`}
-                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
-                        >
-                          <HiOutlineOfficeBuilding className="w-4 h-4" />
-                          {ref.display}
-                          <button
-                            type="button"
-                            onClick={() => removeAboutReference(index)}
-                            className="hover:text-blue-600 font-bold leading-none"
-                            title="Remove"
+                    {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
+                        {noteForm.aboutReferences.map((ref, index) => (
+                          <span
+                            key={`${ref.type}-${ref.id}-${index}`}
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
                           >
-                            ×
-                          </button>
-                        </span>
-                      ))}
+                            <FiUsers className="w-4 h-4" />
+                            {ref.display}
+                            <button
+                              type="button"
+                              onClick={() => removeAboutReference(index)}
+                              className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
+                              title="Remove"
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
 
-                      {/* Search Input for References - Same field to add more */}
+                    <div className="relative">
+                      {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
+                        <label className="block text-xs font-medium text-gray-500 mb-1">
+                          Add Additional References
+                        </label>
+                      )}
                       <input
                         type="text"
                         value={aboutSearchQuery}
                         onChange={(e) => {
                           const value = e.target.value;
                           setAboutSearchQuery(value);
-                          searchAboutReferences(value);
-                          setShowAboutDropdown(true);
+                          if (value.trim().length >= 2) searchAboutReferences(value);
                         }}
                         onFocus={() => {
-                          setShowAboutDropdown(true);
-                          if (!aboutSearchQuery.trim()) {
-                            searchAboutReferences("");
+                          if (aboutSearchQuery.trim().length >= 2) {
+                            setShowAboutDropdown(true);
                           }
                         }}
                         placeholder={
-                          noteForm.aboutReferences.length === 0
-                            ? "Search and select records (e.g., Job, Lead, Placement)..."
-                            : "Add more..."
+                          noteForm.aboutReferences && noteForm.aboutReferences.length === 0
+                            ? "Search and select records (e.g., Job, Org, Lead, Placement)..."
+                            : "Type to search more references..."
                         }
-                        className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
+                        className={`w-full p-2 border rounded focus:outline-none focus:ring-2 pr-8 ${validationErrors.about
+                          ? "border-red-500 focus:ring-red-500"
+                          : "border-gray-300 focus:ring-blue-500"
+                          }`}
                       />
-                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
-                        <FiSearch className="w-4 h-4" />
-                      </span>
+                      <span className="absolute right-2 top-2 text-gray-400 text-sm">Q</span>
                     </div>
 
-                    {/* Validation Error */}
                     {validationErrors.about && (
                       <p className="mt-1 text-sm text-red-500">{validationErrors.about}</p>
                     )}
 
-                    {/* Suggestions Dropdown */}
                     {showAboutDropdown && (
                       <div
                         data-about-dropdown
                         className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
                       >
                         {isLoadingAboutSearch ? (
-                          <div className="p-3 text-center text-gray-500 text-sm">Searching...</div>
+                          <div className="p-3 text-sm text-gray-500 text-center">Searching...</div>
                         ) : aboutSuggestions.length > 0 ? (
                           aboutSuggestions.map((suggestion, idx) => (
                             <button
                               key={`${suggestion.type}-${suggestion.id}-${idx}`}
                               type="button"
                               onClick={() => handleAboutReferenceSelect(suggestion)}
-                              className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
+                              className="w-full text-left px-4 py-2 hover:bg-blue-50 focus:bg-blue-50 focus:outline-none border-b border-gray-100 last:border-b-0"
                             >
-                              <HiOutlineOfficeBuilding className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                              <div className="flex-1">
-                                <div className="text-sm font-medium text-gray-900">{suggestion.display}</div>
-                                <div className="text-xs text-gray-500">{suggestion.type}</div>
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <div className="text-sm font-medium text-gray-900">{suggestion.display}</div>
+                                  <div className="text-xs text-gray-500">{suggestion.type}</div>
+                                </div>
+                                <span className="text-xs text-blue-600 font-medium">{suggestion.value}</span>
                               </div>
                             </button>
                           ))
-                        ) : aboutSearchQuery.trim().length > 0 ? (
-                          <div className="p-3 text-center text-gray-500 text-sm">No results found</div>
-                        ) : (
-                          <div className="p-3 text-center text-gray-500 text-sm">Type to search or select from list</div>
-                        )}
+                        ) : aboutSearchQuery.trim().length >= 2 ? (
+                          <div className="p-3 text-sm text-gray-500 text-center">No references found</div>
+                        ) : null}
                       </div>
                     )}
                   </div>
@@ -6589,53 +6495,58 @@ Best regards`;
                     Email Notification
                   </label>
                   <div className="relative" ref={emailInputRef}>
-                    {isLoadingUsers ? (
-                      <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50 min-h-[42px]">
-                        Loading users...
-                      </div>
-                    ) : (
-                      <div className="min-h-[42px] flex flex-wrap items-center gap-2 p-2 border border-gray-300 rounded focus-within:ring-2 focus-within:outline-none focus-within:ring-blue-500 pr-8">
-                        {/* Selected Users Tags - Inside the input container */}
-                        {noteForm.emailNotification.map((val, index) => (
+                    {noteForm.emailNotification.length > 0 && (
+                      <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
+                        {noteForm.emailNotification.map((val) => (
                           <span
                             key={val}
-                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
+                            className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
                           >
-                            <HiOutlineUser className="w-4 h-4 flex-shrink-0" />
+                            <HiOutlineUser className="w-4 h-4 shrink-0" />
                             {val}
                             <button
                               type="button"
                               onClick={() => removeEmailNotification(val)}
-                              className="hover:text-blue-600 font-bold leading-none"
+                              className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
                               title="Remove"
                             >
                               ×
                             </button>
                           </span>
                         ))}
-
-                        {/* Search Input for Users - Same field to add more */}
+                      </div>
+                    )}
+                    {noteForm.emailNotification.length > 0 && (
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Add Additional Users</label>
+                    )}
+                    <div className="relative">
+                      {isLoadingUsers ? (
+                        <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
+                          Loading users...
+                        </div>
+                      ) : (
                         <input
                           type="text"
                           value={emailSearchQuery}
                           onChange={(e) => {
-                            const value = e.target.value;
-                            setEmailSearchQuery(value);
+                            setEmailSearchQuery(e.target.value);
                             setShowEmailDropdown(true);
                           }}
                           onFocus={() => setShowEmailDropdown(true)}
                           placeholder={
                             noteForm.emailNotification.length === 0
                               ? "Search and add users to notify..."
-                              : "Add more..."
+                              : "Add another user..."
                           }
-                          className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
+                          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
                         />
+                      )}
+                      {!isLoadingUsers && (
                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
                           <FiSearch className="w-4 h-4" />
                         </span>
-                      </div>
-                    )}
+                      )}
+                    </div>
                     {showEmailDropdown && !isLoadingUsers && (
                       <div
                         data-email-dropdown
@@ -6691,102 +6602,145 @@ Best regards`;
           </div>
         </div>
       )}
-      {/* Header Fields Modal */}
+      {/* Header Fields Modal (PENCIL-HEADER-MODAL) */}
+      {/* Header Fields Modal (Organization-style UI) */}
       {showHeaderFieldModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded shadow-xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
+            {/* Top bar */}
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Customize Header Fields</h2>
+              <div>
+                <h2 className="text-lg font-semibold">
+                  Customize Header Fields
+                </h2>
+                <p className="text-xs text-gray-600">
+                  Select fields, reorder them, and it saves per Job Seeker.
+                </p>
+              </div>
+
               <button
                 onClick={() => setShowHeaderFieldModal(false)}
                 className="p-1 rounded hover:bg-gray-200"
+                aria-label="Close"
               >
                 <span className="text-2xl font-bold">×</span>
               </button>
             </div>
-            <div className="p-6">
-              <DndContext
-                sensors={headerFieldsSensors}
-                collisionDetection={closestCorners}
-                onDragStart={(e) => setHeaderFieldsDragActiveId(e.active.id as string)}
-                onDragEnd={handleHeaderFieldsDragEnd}
-                onDragCancel={() => setHeaderFieldsDragActiveId(null)}
-                modifiers={[restrictToVerticalAxis]}
-              >
-                <p className="text-sm text-gray-600 mb-4">
-                  Drag to reorder. Toggle visibility with the checkbox. Changes apply to all job seeker records.
-                </p>
-                <SortableContext
-                  items={headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
-                    {(headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)).length === 0 ? (
-                      <div className="text-center py-4 text-gray-500">
-                        No fields available
+
+            {/* Body */}
+            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* LEFT: Available Fields (checkbox list) */}
+              <div>
+                <h3 className="font-medium mb-3">Available Fields</h3>
+
+                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                  {headerFieldCatalog.map((f) => {
+                    const checked = headerFields.includes(f.key);
+                    return (
+                      <label
+                        key={f.key}
+                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => {
+                            setHeaderFields((prev) => {
+                              if (prev.includes(f.key))
+                                return prev.filter((x) => x !== f.key);
+                              return [...prev, f.key];
+                            });
+                          }}
+                          className="w-4 h-4"
+                        />
+                        <span className="text-sm text-gray-800">{f.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* RIGHT: Header Order (only visible ones) */}
+              <div>
+                <h3 className="font-medium mb-3">Header Order</h3>
+
+                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
+                  {headerFields.length === 0 ? (
+                    <div className="text-sm text-gray-500 italic">
+                      No fields selected
+                    </div>
+                  ) : (
+                    headerFields.map((key, idx) => {
+                      const info = getHeaderFieldInfo(key);
+                      const fieldInfo = info ? { key: info.key, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key, label: getHeaderFieldLabel(key) };
+                      return (
+                      <div
+                        key={key}
+                        className="flex items-center justify-between p-2 border rounded"
+                      >
+                        <div>
+                          <div className="text-sm font-medium">
+                            {getHeaderFieldLabel(key)}
+                          </div>
+                          <div className="text-xs text-gray-500">
+                            Value: <FieldValueRenderer value={getHeaderFieldValue(key)} fieldInfo={fieldInfo} emptyPlaceholder="-" className="text-gray-700" />
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                            disabled={idx === 0}
+                            onClick={() => moveHeaderField(key, "up")}
+                            title="Move up"
+                          >
+                            ↑
+                          </button>
+
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
+                            disabled={idx === headerFields.length - 1}
+                            onClick={() => moveHeaderField(key, "down")}
+                            title="Move down"
+                          >
+                            ↓
+                          </button>
+
+                          <button
+                            className="px-2 py-1 border rounded text-xs hover:bg-red-50 text-red-600"
+                            onClick={() => removeHeaderField(key)}
+                            title="Remove"
+                          >
+                            Remove
+                          </button>
+                        </div>
                       </div>
-                    ) : (
-                      (headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)).map((key) => {
-                        const label = getHeaderFieldLabel(key);
-                        const checked = headerFields.includes(key);
-                        return (
-                          <SortableHeaderFieldRow
-                            key={key}
-                            id={key}
-                            label={label}
-                            checked={checked}
-                            onToggle={() => {
-                              if (checked) {
-                                setHeaderFields((prev) => prev.filter((x) => x !== key));
-                              } else {
-                                setHeaderFields((prev) => [...prev, key]);
-                                // Add to order if not already there
-                                if (!headerFieldsOrder.includes(key)) {
-                                  setHeaderFieldsOrder((prev) => [...prev, key]);
-                                }
-                              }
-                            }}
-                          />
-                        );
-                      })
-                    )}
-                  </div>
-                </SortableContext>
-                <DragOverlay dropAnimation={dropAnimationConfig}>
-                  {headerFieldsDragActiveId ? (
-                    <SortableHeaderFieldRow
-                      id={headerFieldsDragActiveId}
-                      label={getHeaderFieldLabel(headerFieldsDragActiveId)}
-                      checked={headerFields.includes(headerFieldsDragActiveId)}
-                      onToggle={() => {}}
-                      isOverlay
-                    />
-                  ) : null}
-                </DragOverlay>
-                <div className="flex justify-end gap-2 pt-4 border-t mt-4">
+                    ); })
+                  )}
+                </div>
+
+                {/* Footer buttons (Reset + Done) */}
+                <div className="flex justify-end gap-2 mt-4">
                   <button
-                    onClick={() => {
-                      setHeaderFields(DEFAULT_HEADER_FIELDS);
-                      setHeaderFieldsOrder(DEFAULT_HEADER_FIELDS);
-                    }}
-                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                    className="px-4 py-2 border rounded hover:bg-gray-50"
+                    onClick={resetHeaderFields}
                   >
                     Reset
                   </button>
+
                   <button
+                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={async () => {
                       const success = await saveHeaderConfig();
                       if (success) {
                         setShowHeaderFieldModal(false);
                       }
                     }}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={headerFields.length === 0}
                   >
                     Done
                   </button>
                 </div>
-              </DndContext>
+              </div>
             </div>
           </div>
         </div>

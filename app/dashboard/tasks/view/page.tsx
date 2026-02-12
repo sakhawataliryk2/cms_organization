@@ -234,6 +234,23 @@ function SortableTaskOverviewFieldRow({
 
 const TASK_VIEW_TAB_IDS = ['summary', 'modify', 'history', 'notes'];
 
+interface NoteFormState {
+  text: string;
+  action?: string;
+  about: string;
+  aboutReferences?: Array<{
+    id: string;
+    type: string;
+    display: string;
+    value: string;
+  }>;
+  copyNote: string;
+  replaceGeneralContactComments: boolean;
+  additionalReferences: string;
+  scheduleNextAction: string;
+  emailNotification: string;
+}
+
 export default function TaskView() {
     const router = useRouter();
     const searchParams = useSearchParams();
@@ -319,9 +336,11 @@ export default function TaskView() {
     }, [notes, noteActionFilter, noteAuthorFilter, noteSortKey, noteSortDir]);
 
     // Add Note form state - matching jobs view structure
-    const [noteForm, setNoteForm] = useState({
+    const [noteForm, setNoteForm] = useState<NoteFormState>({
         text: '',
+        action: '',
         about: task ? `${task.id} ${task.title}` : '',
+        aboutReferences: [],
         copyNote: 'No',
         replaceGeneralContactComments: false,
         additionalReferences: '',
