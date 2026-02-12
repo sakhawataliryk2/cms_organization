@@ -58,8 +58,6 @@ const HIRING_MANAGER_DEFAULT_HEADER_FIELDS = ["phone", "email"];
 // Storage keys for Hiring Manager Details and Organization Details – field lists come from admin (custom field definitions)
 const HM_DETAILS_STORAGE_KEY = "hiringManagerDetailsFields";
 const HM_ORGANIZATION_DETAILS_STORAGE_KEY = "hiringManagerOrganizationDetailsFields";
-// Synthetic field key for Full Address (combined address field)
-const FULL_ADDRESS_KEY = "__full_address__";
 
 // Droppable Column Container
 function DroppableContainer({ id, children, items }: { id: string, children: React.ReactNode, items: string[] }) {
@@ -829,32 +827,6 @@ export default function HiringManagerView() {
       const label = (getDetailsLabel(key) || "").toLowerCase();
       return k === "status" || label === "status";
     };
-    const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
-    // Check if key is Address 2 (case-insensitive, with various label formats)
-    const isAddress2Key = (key: string) => {
-      const k = (key || "").toLowerCase();
-      const label = (getDetailsLabel(key) || "").toLowerCase().replace(/\s+/g, " ");
-      return k === "address2" || k === "address 2" || label === "address 2" || label === "address2";
-    };
-    // Address parts that should be combined into Full Address (excludes Address 2)
-    const isAddressPartKey = (key: string) => {
-      // Don't treat Address 2 as an address part - it should show separately
-      if (isAddress2Key(key)) return false;
-      return addressPartKeys.has((key || "").toLowerCase()) ||
-        (getDetailsLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
-    };
-
-    const getCombinedAddress = () => {
-      if (!hiringManager) return "-";
-      const o = hiringManager as any;
-      const parts = [
-        o.address ?? customObj?.["Address"],
-        o.address2 ?? customObj?.["Address 2"],
-        [customObj?.["City"], customObj?.["State"]].filter(Boolean).join(", ") || [o.city, o.state].filter(Boolean).join(", "),
-        o.zip ?? customObj?.["ZIP Code"] ?? customObj?.["Zip Code"],
-      ].filter(Boolean);
-      return parts.length > 0 ? parts.join(", ") : "-";
-    };
 
     const getDetailsValue = (key: string): string => {
       if (isStatusField(key)) {
@@ -871,26 +843,9 @@ export default function HiringManagerView() {
 
 
     const detailsKeys = Array.from(new Set(visibleFields.details || []));
-    const hasAnyAddressPart = detailsKeys.some((k) => isAddressPartKey(k));
-    const hasFullAddressKey = detailsKeys.includes(FULL_ADDRESS_KEY);
-    const effectiveRows: { key: string; label: string; isAddress?: boolean; isStatus?: boolean }[] = [];
-    let addressRowAdded = false;
+    const effectiveRows: { key: string; label: string; isStatus?: boolean }[] = [];
     let statusRowAdded = false;
     for (const key of detailsKeys) {
-      if (key === FULL_ADDRESS_KEY) {
-        if (!addressRowAdded && (hasAnyAddressPart || hasFullAddressKey)) {
-          effectiveRows.push({ key: FULL_ADDRESS_KEY, label: "Full Address", isAddress: true });
-          addressRowAdded = true;
-        }
-        continue;
-      }
-      if (isAddressPartKey(key)) {
-        if (!addressRowAdded && (hasAnyAddressPart || hasFullAddressKey)) {
-          effectiveRows.push({ key: FULL_ADDRESS_KEY, label: "Full Address", isAddress: true });
-          addressRowAdded = true;
-        }
-        continue;
-      }
       if (isStatusField(key)) statusRowAdded = true;
       effectiveRows.push({
         key,
@@ -906,8 +861,8 @@ export default function HiringManagerView() {
       effectiveRows.push({ key: statusKey, label: "Status", isStatus: true });
     }
 
-    const renderDetailsRow = (row: { key: string; label: string; isAddress?: boolean; isStatus?: boolean }) => {
-      const value = row.isAddress || row.key === FULL_ADDRESS_KEY ? getCombinedAddress() : getDetailsValue(row.key);
+    const renderDetailsRow = (row: { key: string; label: string; isStatus?: boolean }) => {
+      const value = getDetailsValue(row.key);
       const def = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key);
       const fieldInfo = {
         key: row.key,
@@ -1004,66 +959,18 @@ export default function HiringManagerView() {
       return "-";
     };
 
-    const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
-    // Check if key is Address 2 (case-insensitive, with various label formats)
-    const isAddress2Key = (key: string) => {
-      const k = (key || "").toLowerCase();
-      const label = (getOrganizationDetailLabel(key) || "").toLowerCase().replace(/\s+/g, " ");
-      return k === "address2" || k === "address 2" || label === "address 2" || label === "address2";
-    };
-    // Address parts that should be combined into Full Address (excludes Address 2)
-    const isAddressPartKey = (key: string) => {
-      // Don't treat Address 2 as an address part - it should show separately
-      if (isAddress2Key(key)) return false;
-      return addressPartKeys.has((key || "").toLowerCase()) ||
-        (getOrganizationDetailLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
-    };
-
-    const getCombinedAddress = () => {
-      if (!fetchedOrganization) return "-";
-      const o = fetchedOrganization as any;
-      const parts = [
-        o.customFields?.["Address"],
-        o.customFields?.["Address 2"],
-        [o.customFields?.["City"], o.customFields?.["State"]].filter(Boolean).join(", "),
-        o.customFields?.["ZIP Code"],
-      ].filter(Boolean);
-      return parts.length > 0 ? parts.join(", ") : "-";
-    };
-
     const orgDetailsKeys = Array.from(new Set(visibleFields.organizationDetails || []));
-    const hasAnyAddressPart = orgDetailsKeys.some((k) => isAddressPartKey(k));
-    const hasFullAddressKey = orgDetailsKeys.includes(FULL_ADDRESS_KEY);
-    const effectiveRows: { key: string; label: string; isAddress?: boolean }[] = [];
-    let addressRowAdded = false;
+    const effectiveRows: { key: string; label: string }[] = [];
     for (const key of orgDetailsKeys) {
-      // Handle Full Address synthetic field
-      if (key === FULL_ADDRESS_KEY) {
-        if (!addressRowAdded && (hasAnyAddressPart || hasFullAddressKey)) {
-          effectiveRows.push({ key: FULL_ADDRESS_KEY, label: "Full Address", isAddress: true });
-          addressRowAdded = true;
-        }
-        continue;
-      }
-      // Skip address parts (Address, City, State, ZIP) - they'll be combined into Full Address
-      if (isAddressPartKey(key)) {
-        if (!addressRowAdded && (hasAnyAddressPart || hasFullAddressKey)) {
-          effectiveRows.push({ key: FULL_ADDRESS_KEY, label: "Full Address", isAddress: true });
-          addressRowAdded = true;
-        }
-        continue;
-      }
-      // Address 2 should show as a separate field (not combined into Full Address)
-      // So we don't skip it here - it will be added as a regular row below
       effectiveRows.push({ key, label: getOrganizationDetailLabel(key) });
     }
 
-    const renderOrganizationDetailsRow = (row: { key: string; label: string; isAddress?: boolean }) => {
+    const renderOrganizationDetailsRow = (row: { key: string; label: string }) => {
       const customFieldDefs = (organizationAvailableFields || []).filter((f: any) => {
         const isHidden = f?.is_hidden === true || f?.hidden === true || f?.isHidden === true;
         return !isHidden;
       });
-      const value = row.isAddress || row.key === FULL_ADDRESS_KEY ? getCombinedAddress() : getOrganizationDetailValue(row.key);
+      const value = getOrganizationDetailValue(row.key);
       const def = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === row.key);
       const fieldInfo = {
         key: row.key,
@@ -1072,17 +979,6 @@ export default function HiringManagerView() {
         lookupType: def?.lookup_type ?? def?.lookupType,
         multiSelectLookupType: def?.multi_select_lookup_type ?? def?.multiSelectLookupType,
       };
-      const o = fetchedOrganization as any;
-      const addressParts =
-        (row.isAddress || row.key === FULL_ADDRESS_KEY) && o
-          ? {
-            address: o.customFields?.["Address"] ?? o.address,
-            address2: o.customFields?.["Address 2"] ?? o.address2,
-            city: o.customFields?.["City"] ?? o.city,
-            state: o.customFields?.["State"] ?? o.state,
-            zip: o.customFields?.["ZIP Code"] ?? o.zip_code ?? o.zip,
-          }
-          : undefined;
       return (
         <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
@@ -1090,7 +986,6 @@ export default function HiringManagerView() {
             <FieldValueRenderer
               value={value}
               fieldInfo={fieldInfo}
-              addressParts={addressParts}
               emptyPlaceholder="-"
               clickable
               className="text-sm font-medium text-gray-900"
@@ -1669,40 +1564,15 @@ export default function HiringManagerView() {
     const catalogKeys = detailsFieldCatalog.map((f) => f.key);
     const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
 
-    // Check if Full Address should be visible (if any address parts are visible)
-    const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
-    const hasAddressParts = current.some((k) => {
-      const entry = detailsFieldCatalog.find((f) => f.key === k);
-      const label = (entry?.label || k).toLowerCase().replace(/\s+/g, " ");
-      return addressPartKeys.has(k.toLowerCase()) || label === "address";
-    });
-    const fullAddressVisible = current.includes(FULL_ADDRESS_KEY) || hasAddressParts;
-
-    const currentInCatalog = current.filter((k) => uniqueCatalogKeys.includes(k) && k !== FULL_ADDRESS_KEY);
+    const currentInCatalog = current.filter((k) => uniqueCatalogKeys.includes(k));
     const rest = uniqueCatalogKeys.filter((k) => !current.includes(k));
-
-    // Build order: always include Full Address in modal order for sorting, preserve its position if it exists
-    let order: string[];
-    const fullAddressIndex = current.indexOf(FULL_ADDRESS_KEY);
-    if (fullAddressIndex !== -1) {
-      // Full Address exists in current order, preserve its position
-      const baseOrder = [...currentInCatalog, ...rest];
-      baseOrder.splice(fullAddressIndex, 0, FULL_ADDRESS_KEY);
-      order = baseOrder;
-    } else {
-      // Full Address not in current order, add it at the beginning so it's always available for sorting
-      order = [FULL_ADDRESS_KEY, ...currentInCatalog, ...rest];
-    }
+    const order = [...currentInCatalog, ...rest];
 
     const uniqueOrder = Array.from(new Set(order));
     setModalDetailsOrder(uniqueOrder);
     setModalDetailsVisible(
-      [...uniqueCatalogKeys, FULL_ADDRESS_KEY].reduce((acc, k) => {
-        if (k === FULL_ADDRESS_KEY) {
-          acc[k] = fullAddressVisible;
-        } else {
-          acc[k] = current.includes(k);
-        }
+      uniqueCatalogKeys.reduce((acc, k) => {
+        acc[k] = current.includes(k);
         return acc;
       }, {} as Record<string, boolean>)
     );
@@ -1715,40 +1585,15 @@ export default function HiringManagerView() {
     const catalogKeys = organizationDetailsFieldCatalog.map((f) => f.key);
     const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
 
-    // Check if Full Address should be visible (if any address parts are visible)
-    const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
-    const hasAddressParts = current.some((k) => {
-      const entry = organizationDetailsFieldCatalog.find((f) => f.key === k);
-      const label = (entry?.label || k).toLowerCase().replace(/\s+/g, " ");
-      return addressPartKeys.has(k.toLowerCase()) || label === "address";
-    });
-    const fullAddressVisible = current.includes(FULL_ADDRESS_KEY) || hasAddressParts;
-
-    const currentInCatalog = current.filter((k) => uniqueCatalogKeys.includes(k) && k !== FULL_ADDRESS_KEY);
+    const currentInCatalog = current.filter((k) => uniqueCatalogKeys.includes(k));
     const rest = uniqueCatalogKeys.filter((k) => !current.includes(k));
-
-    // Build order: always include Full Address in modal order for sorting, preserve its position if it exists
-    let order: string[];
-    const fullAddressIndex = current.indexOf(FULL_ADDRESS_KEY);
-    if (fullAddressIndex !== -1) {
-      // Full Address exists in current order, preserve its position
-      const baseOrder = [...currentInCatalog, ...rest];
-      baseOrder.splice(fullAddressIndex, 0, FULL_ADDRESS_KEY);
-      order = baseOrder;
-    } else {
-      // Full Address not in current order, add it at the beginning so it's always available for sorting
-      order = [FULL_ADDRESS_KEY, ...currentInCatalog, ...rest];
-    }
+    const order = [...currentInCatalog, ...rest];
 
     const uniqueOrder = Array.from(new Set(order));
     setModalOrganizationDetailsOrder(uniqueOrder);
     setModalOrganizationDetailsVisible(
-      [...uniqueCatalogKeys, FULL_ADDRESS_KEY].reduce((acc, k) => {
-        if (k === FULL_ADDRESS_KEY) {
-          acc[k] = fullAddressVisible;
-        } else {
-          acc[k] = current.includes(k);
-        }
+      uniqueCatalogKeys.reduce((acc, k) => {
+        acc[k] = current.includes(k);
         return acc;
       }, {} as Record<string, boolean>)
     );
@@ -1789,7 +1634,6 @@ export default function HiringManagerView() {
 
   // Hiring Manager Details modal: save order/visibility and persist for all records
   const handleSaveDetailsFields = useCallback(() => {
-    // Include Full Address key if it's visible, otherwise filter it out
     const newOrder = Array.from(new Set(modalDetailsOrder.filter((k) => modalDetailsVisible[k] === true)));
     if (typeof window !== "undefined") {
       localStorage.setItem(HM_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
@@ -1813,7 +1657,6 @@ export default function HiringManagerView() {
 
   // Hiring Manager Organization Details modal: save order/visibility and persist for all records
   const handleSaveOrganizationDetailsFields = useCallback(() => {
-    // Include Full Address key if it's visible, otherwise filter it out
     const newOrder = Array.from(new Set(modalOrganizationDetailsOrder.filter((k) => modalOrganizationDetailsVisible[k] === true)));
     if (typeof window !== "undefined") {
       localStorage.setItem(HM_ORGANIZATION_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
@@ -4880,12 +4723,9 @@ export default function HiringManagerView() {
                     >
                       <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
                         {modalDetailsOrder.map((key, index) => {
-                          // Handle synthetic Full Address field
-                          const label = key === FULL_ADDRESS_KEY
-                            ? "Full Address"
-                            : (detailsFieldCatalog.find((f) => f.key === key)?.label ?? key);
+                          const label = detailsFieldCatalog.find((f) => f.key === key)?.label ?? key;
                           const field = detailsFieldCatalog.find((f) => f.key === key);
-                          if (!field && key !== FULL_ADDRESS_KEY) return null;
+                          if (!field) return null;
                           return (
                             <SortableDetailsFieldRow
                               key={`details-${key}-${index}`}
@@ -4906,11 +4746,9 @@ export default function HiringManagerView() {
                     <DragOverlay>
                       {detailsDragActiveId ? (
                         (() => {
-                          const label = detailsDragActiveId === FULL_ADDRESS_KEY
-                            ? "Full Address"
-                            : (detailsFieldCatalog.find((f) => f.key === detailsDragActiveId)?.label ?? detailsDragActiveId);
+                          const label = detailsFieldCatalog.find((f) => f.key === detailsDragActiveId)?.label ?? detailsDragActiveId;
                           const field = detailsFieldCatalog.find((f) => f.key === detailsDragActiveId);
-                          if (!field && detailsDragActiveId !== FULL_ADDRESS_KEY) return null;
+                          if (!field) return null;
                           return (
                             <SortableDetailsFieldRow
                               id={detailsDragActiveId}
@@ -4956,12 +4794,9 @@ export default function HiringManagerView() {
                     >
                       <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
                         {modalOrganizationDetailsOrder.map((key, index) => {
-                          // Handle synthetic Full Address field
-                          const label = key === FULL_ADDRESS_KEY
-                            ? "Full Address"
-                            : (organizationDetailsFieldCatalog.find((f) => f.key === key)?.label ?? key);
+                          const label = organizationDetailsFieldCatalog.find((f) => f.key === key)?.label ?? key;
                           const field = organizationDetailsFieldCatalog.find((f) => f.key === key);
-                          if (!field && key !== FULL_ADDRESS_KEY) return null;
+                          if (!field) return null;
                           return (
                             <SortableOrganizationDetailsFieldRow
                               key={`organizationDetails-${key}-${index}`}
@@ -4982,11 +4817,9 @@ export default function HiringManagerView() {
                     <DragOverlay>
                       {organizationDetailsDragActiveId ? (
                         (() => {
-                          const label = organizationDetailsDragActiveId === FULL_ADDRESS_KEY
-                            ? "Full Address"
-                            : (organizationDetailsFieldCatalog.find((f) => f.key === organizationDetailsDragActiveId)?.label ?? organizationDetailsDragActiveId);
+                          const label = organizationDetailsFieldCatalog.find((f) => f.key === organizationDetailsDragActiveId)?.label ?? organizationDetailsDragActiveId;
                           const field = organizationDetailsFieldCatalog.find((f) => f.key === organizationDetailsDragActiveId);
-                          if (!field && organizationDetailsDragActiveId !== FULL_ADDRESS_KEY) return null;
+                          if (!field) return null;
                           return (
                             <SortableOrganizationDetailsFieldRow
                               id={organizationDetailsDragActiveId}

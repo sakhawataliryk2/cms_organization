@@ -13,80 +13,25 @@ const PHONE_PATTERN = /^\(\d{3}\)\s*\d{3}-\d{4}$/;
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$|^\d{1,2}\/\d{1,2}\/\d{2,4}$|^\d{1,2}-\d{1,2}-\d{2,4}$/;
 
 export interface FieldInfo {
-  /** Field type from admin: url, link, email, phone, status, lookup, multiselect_lookup, text, number */
   fieldType?: string;
-  /** Lookup entity type for RecordNameResolver (e.g. "organizations", "job") */
   lookupType?: string;
-  /** Multi-select lookup entity type */
   multiSelectLookupType?: string;
-  /** Display label (e.g. "Status") – used to treat as status when key is status */
   label?: string;
-  /** Column/key name (e.g. "status") */
   key?: string;
 }
 
-/** Parts for combined address: Address, Address 2, City, State, Zip */
-export interface AddressParts {
-  address?: string | null;
-  address2?: string | null;
-  city?: string | null;
-  state?: string | null;
-  zip?: string | null;
-}
-
 export interface FieldValueRendererProps {
-  /** Raw value to render */
   value: string | number | null | undefined;
-  /** Field metadata for type-based rendering */
   fieldInfo?: FieldInfo | null;
-  /** When field is Address/Full Address, use these to build "Address, Address 2, City, State, Zip" (overrides value when present) */
-  addressParts?: AddressParts | null;
-  /** Placeholder when value is empty */
   emptyPlaceholder?: string;
-  /** For lookup: make RecordNameResolver clickable */
   clickable?: boolean;
-  /** Optional class for the wrapper (e.g. text-sm font-medium) */
   className?: string;
-  /** Optional: stop propagation on inner links (e.g. in table row click) */
   stopPropagation?: boolean;
-  /** Status badge variant: "default" (green), "archived" (amber), "deletion" (red), "blue", "gray" */
   statusVariant?: "default" | "archived" | "deletion" | "blue" | "gray";
-  /** When true, render value as status badge (e.g. for archive_reason column) */
   forceRenderAsStatus?: boolean;
-  /** For lookup: fallback text when resolution fails (defaults to value) */
   lookupFallback?: string;
 }
 
-/**
- * Renders a field value according to its type (url, email, phone, status, lookup, text).
- * Use in overview headers and list table cells for consistent behavior.
- */
-/** Build combined address: Address, Address 2, City, State, Zip (only non-empty parts) */
-function formatCombinedAddress(parts: AddressParts): string {
-  const a = (parts.address ?? "").trim();
-  const a2 = (parts.address2 ?? "").trim();
-  const city = (parts.city ?? "").trim();
-  const state = (parts.state ?? "").trim();
-  const zip = (parts.zip ?? "").trim();
-  const cityState = [city, state].filter(Boolean).join(", ");
-  const combined = [a, a2, cityState, zip].filter(Boolean).join(", ");
-  return combined;
-}
-
-/** True when field is Address or Full Address (combined line), not Address 2 alone */
-function isAddressField(label?: string, key?: string): boolean {
-  const l = (label ?? "").toLowerCase().replace(/\s+/g, " ");
-  const k = (key ?? "").toLowerCase().replace(/\s+/g, " ");
-  return (
-    l === "address" ||
-    l === "full address" ||
-    k === "address" ||
-    k === "full_address" ||
-    k === "__full_address__"
-  );
-}
-
-/** True when field is a date (by label/key) or value looks like a date so we never render as phone/link */
 function isDateFieldOrValue(label?: string, key?: string, value?: string): boolean {
   const l = (label ?? "").toLowerCase();
   const k = (key ?? "").toLowerCase();
@@ -98,7 +43,6 @@ function isDateFieldOrValue(label?: string, key?: string, value?: string): boole
 export default function FieldValueRenderer({
   value,
   fieldInfo,
-  addressParts,
   emptyPlaceholder = DEFAULT_EMPTY,
   clickable = true,
   className = "",
@@ -109,18 +53,11 @@ export default function FieldValueRenderer({
 }: FieldValueRendererProps) {
   const fieldType = (fieldInfo?.fieldType ?? "").toLowerCase();
   const label = (fieldInfo?.label || "").toLowerCase();
-  
-  // Address: use addressParts when provided and field is address-type
-  const isAddress = isAddressField(fieldInfo?.label, fieldInfo?.key);
-  const useCombinedAddress = isAddress && addressParts;
-  const combinedAddressStr = useCombinedAddress ? formatCombinedAddress(addressParts) : "";
 
   const raw =
-    useCombinedAddress && combinedAddressStr
-      ? combinedAddressStr
-      : value != null && value !== ""
-        ? String(value).trim()
-        : "";
+    value != null && value !== ""
+      ? String(value).trim()
+      : "";
   const isEmpty = raw === "";
   const str = isEmpty ? emptyPlaceholder : raw;
 
@@ -133,16 +70,11 @@ export default function FieldValueRenderer({
     if (stopPropagation) e.stopPropagation();
   };
 
-  // Empty value: show placeholder (no links)
   if (isEmpty) {
     return <span className={className}>{str}</span>;
   }
 
-  // Address / Full Address: always plain text (combined from addressParts or value)
-  if (isAddress) {
-    return <span className={className}>{str}</span>;
-  }
-
+  // Lookup fields
   const isLookup =
     fieldType === "lookup" || fieldType === "multiselect_lookup";
 
@@ -184,12 +116,12 @@ export default function FieldValueRenderer({
     );
   }
 
-  // Date: always plain text (never link as phone/url)
+  // Date: plain text
   if (fieldType === "date" || isDateFieldOrValue(fieldInfo?.label, fieldInfo?.key, raw)) {
     return <span className={className}>{str}</span>;
   }
 
-  // URL / link: fieldType or value pattern
+  // URL / link
   const isUrl =
     fieldType === "url" ||
     fieldType === "link" ||
@@ -212,7 +144,7 @@ export default function FieldValueRenderer({
     );
   }
 
-  // Email: fieldType or value contains @
+  // Email
   const isEmail = fieldType === "email" || str.includes("@");
   if (isEmail) {
     return (
@@ -226,7 +158,7 @@ export default function FieldValueRenderer({
     );
   }
 
-  // Phone: only (XXX) XXX-XXXX format gets tel: link so dates like 2026-02-05 stay plain
+  // Phone
   const matchesPhoneFormat = PHONE_PATTERN.test(str);
   if (matchesPhoneFormat) {
     const digits = str.replace(/\D/g, "");

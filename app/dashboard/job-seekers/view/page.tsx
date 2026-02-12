@@ -343,8 +343,6 @@ function SortablePanel({ id, children, isOverlay = false }: { id: string; childr
 // Storage keys for Job Seeker Details and Overview – field lists come from admin (custom field definitions)
 const JOB_SEEKER_DETAILS_STORAGE_KEY = "jobSeekersJobSeekerDetailsFields";
 const OVERVIEW_STORAGE_KEY = "jobSeekersOverviewFields";
-// Synthetic field key for Full Address (combined address field)
-const FULL_ADDRESS_KEY = "__full_address__";
 
 const JOBSEEKER_VIEW_TAB_IDS = ["summary", "modify", "history", "notes", "docs", "references", "applications", "onboarding"];
 
@@ -1896,42 +1894,14 @@ Best regards`;
     const current = visibleFields.jobSeekerDetails || [];
     const catalogKeys = jobSeekerDetailsFieldCatalog.map((f) => f.key);
 
-    // Check if Full Address should be visible (if any address parts are visible)
-    const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
-    const hasAddressParts = current.some((k) => {
-      const entry = jobSeekerDetailsFieldCatalog.find((f) => f.key === k);
-      const label = (entry?.label || k).toLowerCase().replace(/\s+/g, " ");
-      return addressPartKeys.has(k.toLowerCase()) || label === "address";
-    });
-    const fullAddressVisible = current.includes(FULL_ADDRESS_KEY) || hasAddressParts;
-
-    const currentInCatalog = current.filter((k) => catalogKeys.includes(k) && k !== FULL_ADDRESS_KEY);
+    const currentInCatalog = current.filter((k) => catalogKeys.includes(k));
     const rest = catalogKeys.filter((k) => !current.includes(k));
-
-    // Build order: preserve Full Address position if it exists, otherwise add it at the beginning if address parts exist
-    let order: string[];
-    const fullAddressIndex = current.indexOf(FULL_ADDRESS_KEY);
-    if (fullAddressIndex !== -1) {
-      // Full Address exists in current order, preserve its position
-      const baseOrder = [...currentInCatalog, ...rest];
-      baseOrder.splice(fullAddressIndex, 0, FULL_ADDRESS_KEY);
-      order = baseOrder;
-    } else if (fullAddressVisible) {
-      // Full Address should be visible but not in order yet, add it at the beginning
-      order = [FULL_ADDRESS_KEY, ...currentInCatalog, ...rest];
-    } else {
-      // No Full Address needed
-      order = [...currentInCatalog, ...rest];
-    }
+    const order = [...currentInCatalog, ...rest];
 
     setModalJobSeekerDetailsOrder(order);
     setModalJobSeekerDetailsVisible(
-      [...catalogKeys, FULL_ADDRESS_KEY].reduce((acc, k) => {
-        if (k === FULL_ADDRESS_KEY) {
-          acc[k] = fullAddressVisible;
-        } else {
-          acc[k] = current.includes(k);
-        }
+      catalogKeys.reduce((acc, k) => {
+        acc[k] = current.includes(k);
         return acc;
       }, {} as Record<string, boolean>)
     );
@@ -1943,42 +1913,14 @@ Best regards`;
     const current = visibleFields.overview || [];
     const catalogKeys = overviewFieldCatalog.map((f) => f.key);
 
-    // Check if Full Address should be visible (if any address parts are visible)
-    const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
-    const hasAddressParts = current.some((k) => {
-      const entry = overviewFieldCatalog.find((f) => f.key === k);
-      const label = (entry?.label || k).toLowerCase().replace(/\s+/g, " ");
-      return addressPartKeys.has(k.toLowerCase()) || label === "address";
-    });
-    const fullAddressVisible = current.includes(FULL_ADDRESS_KEY) || hasAddressParts;
-
-    const currentInCatalog = current.filter((k) => catalogKeys.includes(k) && k !== FULL_ADDRESS_KEY);
+    const currentInCatalog = current.filter((k) => catalogKeys.includes(k));
     const rest = catalogKeys.filter((k) => !current.includes(k));
-
-    // Build order: preserve Full Address position if it exists, otherwise add it at the beginning if address parts exist
-    let order: string[];
-    const fullAddressIndex = current.indexOf(FULL_ADDRESS_KEY);
-    if (fullAddressIndex !== -1) {
-      // Full Address exists in current order, preserve its position
-      const baseOrder = [...currentInCatalog, ...rest];
-      baseOrder.splice(fullAddressIndex, 0, FULL_ADDRESS_KEY);
-      order = baseOrder;
-    } else if (fullAddressVisible) {
-      // Full Address should be visible but not in order yet, add it at the beginning
-      order = [FULL_ADDRESS_KEY, ...currentInCatalog, ...rest];
-    } else {
-      // No Full Address needed
-      order = [...currentInCatalog, ...rest];
-    }
+    const order = [...currentInCatalog, ...rest];
 
     setModalOverviewOrder(order);
     setModalOverviewVisible(
-      [...catalogKeys, FULL_ADDRESS_KEY].reduce((acc, k) => {
-        if (k === FULL_ADDRESS_KEY) {
-          acc[k] = fullAddressVisible;
-        } else {
-          acc[k] = current.includes(k);
-        }
+      catalogKeys.reduce((acc, k) => {
+        acc[k] = current.includes(k);
         return acc;
       }, {} as Record<string, boolean>)
     );
@@ -2009,7 +1951,6 @@ Best regards`;
 
   // Job Seeker Details modal: save order/visibility and persist for all job seeker records
   const handleSaveJobSeekerDetailsFields = useCallback(() => {
-    // Include Full Address key if it's visible, otherwise filter it out
     const newOrder = modalJobSeekerDetailsOrder.filter((k) => modalJobSeekerDetailsVisible[k] === true);
     if (typeof window !== "undefined") {
       localStorage.setItem(JOB_SEEKER_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
@@ -2033,7 +1974,6 @@ Best regards`;
 
   // Overview modal: save order/visibility and persist for all job seeker records
   const handleSaveOverviewFields = useCallback(() => {
-    // Include Full Address key if it's visible, otherwise filter it out
     const newOrder = modalOverviewOrder.filter((k) => modalOverviewVisible[k] === true);
     if (typeof window !== "undefined") {
       localStorage.setItem(OVERVIEW_STORAGE_KEY, JSON.stringify(newOrder));
@@ -4070,56 +4010,9 @@ Best regards`;
       overviewFieldCatalog.find((f) => f.key === key)?.label ||
       customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === key)?.field_label ||
       key;
-    const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
-    // Check if key is Address 2 (case-insensitive, with various label formats)
-    const isAddress2Key = (key: string) => {
-      const k = (key || "").toLowerCase();
-      const label = (getOverviewLabel(key) || "").toLowerCase().replace(/\s+/g, " ");
-      return k === "address2" || k === "address 2" || label === "address 2" || label === "address2";
-    };
-    // Address parts that should be combined into Full Address (excludes Address 2)
-    const isAddressPartKey = (key: string) => {
-      // Don't treat Address 2 as an address part - it should show separately
-      if (isAddress2Key(key)) return false;
-      return addressPartKeys.has((key || "").toLowerCase()) ||
-        (getOverviewLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
-    };
-
-    const getCombinedAddress = () => {
-      if (!jobSeeker) return "-";
-      const parts = [
-        customObj?.["Address"],
-        customObj?.["Address 2"],
-        [customObj?.["City"], customObj?.["State"]].filter(Boolean).join(", "),
-        customObj?.["ZIP Code"],
-      ].filter(Boolean);
-      return parts.length > 0 ? parts.join(", ") : "-";
-    };
-
     const overviewKeys = visibleFields.overview || [];
-    const hasAnyAddressPart = overviewKeys.some((k) => isAddressPartKey(k));
-    const hasFullAddressKey = overviewKeys.includes(FULL_ADDRESS_KEY);
-    const effectiveRows: { key: string; label: string; isAddress?: boolean }[] = [];
-    let addressRowAdded = false;
+    const effectiveRows: { key: string; label: string }[] = [];
     for (const key of overviewKeys) {
-      // Handle Full Address synthetic field
-      if (key === FULL_ADDRESS_KEY) {
-        if (!addressRowAdded && (hasAnyAddressPart || hasFullAddressKey)) {
-          effectiveRows.push({ key: FULL_ADDRESS_KEY, label: "Full Address", isAddress: true });
-          addressRowAdded = true;
-        }
-        continue;
-      }
-      // Skip address parts (Address, City, State, ZIP) - they'll be combined into Full Address
-      if (isAddressPartKey(key)) {
-        if (!addressRowAdded && (hasAnyAddressPart || hasFullAddressKey)) {
-          effectiveRows.push({ key: FULL_ADDRESS_KEY, label: "Full Address", isAddress: true });
-          addressRowAdded = true;
-        }
-        continue;
-      }
-      // Address 2 should show as a separate field (not combined into Full Address)
-      // So we don't skip it here - it will be added as a regular row below
       effectiveRows.push({ key, label: getOverviewLabel(key) });
     }
 
@@ -4173,14 +4066,7 @@ Best regards`;
       <PanelWithHeader title="Overview" onEdit={() => handleEditPanel("overview")}>
         <div className="space-y-0 border border-gray-200 rounded">
           {effectiveRows.map((row) =>
-            row.isAddress || row.key === FULL_ADDRESS_KEY ? (
-              <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
-                <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
-                <div className="flex-1 p-2 text-sm">{getCombinedAddress()}</div>
-              </div>
-            ) : (
-              renderOverviewRow(row.key)
-            )
+            renderOverviewRow(row.key)
           )}
         </div>
       </PanelWithHeader>
@@ -4199,56 +4085,9 @@ Best regards`;
       jobSeekerDetailsFieldCatalog.find((f) => f.key === key)?.label ||
       customFieldDefs.find((f: any) => String(f.field_name || f.field_key || f.api_name || f.id) === key)?.field_label ||
       key;
-    const addressPartKeys = new Set(["address", "city", "state", "zip", "zip_code", "zip code", "postal code"]);
-    // Check if key is Address 2 (case-insensitive, with various label formats)
-    const isAddress2Key = (key: string) => {
-      const k = (key || "").toLowerCase();
-      const label = (getDetailsLabel(key) || "").toLowerCase().replace(/\s+/g, " ");
-      return k === "address2" || k === "address 2" || label === "address 2" || label === "address2";
-    };
-    // Address parts that should be combined into Full Address (excludes Address 2)
-    const isAddressPartKey = (key: string) => {
-      // Don't treat Address 2 as an address part - it should show separately
-      if (isAddress2Key(key)) return false;
-      return addressPartKeys.has((key || "").toLowerCase()) ||
-        (getDetailsLabel(key) || "").toLowerCase().replace(/\s+/g, " ") === "address";
-    };
-
-    const getCombinedAddress = () => {
-      if (!jobSeeker) return "-";
-      const parts = [
-        customObj?.["Address"],
-        customObj?.["Address 2"],
-        [customObj?.["City"], customObj?.["State"]].filter(Boolean).join(", "),
-        customObj?.["ZIP Code"],
-      ].filter(Boolean);
-      return parts.length > 0 ? parts.join(", ") : "-";
-    };
-
     const detailsKeys = visibleFields.jobSeekerDetails || [];
-    const hasAnyAddressPart = detailsKeys.some((k) => isAddressPartKey(k));
-    const hasFullAddressKey = detailsKeys.includes(FULL_ADDRESS_KEY);
-    const effectiveRows: { key: string; label: string; isAddress?: boolean }[] = [];
-    let addressRowAdded = false;
+    const effectiveRows: { key: string; label: string }[] = [];
     for (const key of detailsKeys) {
-      // Handle Full Address synthetic field
-      if (key === FULL_ADDRESS_KEY) {
-        if (!addressRowAdded && (hasAnyAddressPart || hasFullAddressKey)) {
-          effectiveRows.push({ key: FULL_ADDRESS_KEY, label: "Full Address", isAddress: true });
-          addressRowAdded = true;
-        }
-        continue;
-      }
-      // Skip address parts (Address, City, State, ZIP) - they'll be combined into Full Address
-      if (isAddressPartKey(key)) {
-        if (!addressRowAdded && (hasAnyAddressPart || hasFullAddressKey)) {
-          effectiveRows.push({ key: FULL_ADDRESS_KEY, label: "Full Address", isAddress: true });
-          addressRowAdded = true;
-        }
-        continue;
-      }
-      // Address 2 should show as a separate field (not combined into Full Address)
-      // So we don't skip it here - it will be added as a regular row below
       effectiveRows.push({ key, label: getDetailsLabel(key) });
     }
 
@@ -4300,14 +4139,7 @@ Best regards`;
       <PanelWithHeader title="Job Seeker Details" onEdit={() => handleEditPanel("jobSeekerDetails")}>
         <div className="space-y-0 border border-gray-200 rounded">
           {effectiveRows.map((row) =>
-            row.isAddress || row.key === FULL_ADDRESS_KEY ? (
-              <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
-                <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
-                <div className="flex-1 p-2 text-sm">{getCombinedAddress()}</div>
-              </div>
-            ) : (
-              renderJobSeekerDetailsRow(row.key)
-            )
+            renderJobSeekerDetailsRow(row.key)
           )}
         </div>
       </PanelWithHeader>
@@ -5602,12 +5434,9 @@ Best regards`;
                     >
                       <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
                         {modalJobSeekerDetailsOrder.map((key) => {
-                          // Handle synthetic Full Address field
-                          const label = key === FULL_ADDRESS_KEY
-                            ? "Full Address"
-                            : (jobSeekerDetailsFieldCatalog.find((f) => f.key === key)?.label ?? key);
+                          const label = jobSeekerDetailsFieldCatalog.find((f) => f.key === key)?.label ?? key;
                           const entry = jobSeekerDetailsFieldCatalog.find((f) => f.key === key);
-                          if (!entry && key !== FULL_ADDRESS_KEY) return null;
+                          if (!entry) return null;
                           return (
                             <SortableJobSeekerDetailsFieldRow
                               key={key}
@@ -5627,11 +5456,9 @@ Best regards`;
                     </SortableContext>
                     <DragOverlay dropAnimation={dropAnimationConfig}>
                       {jobSeekerDetailsDragActiveId ? (() => {
-                        const label = jobSeekerDetailsDragActiveId === FULL_ADDRESS_KEY
-                          ? "Full Address"
-                          : (jobSeekerDetailsFieldCatalog.find((f) => f.key === jobSeekerDetailsDragActiveId)?.label ?? jobSeekerDetailsDragActiveId);
+                        const label = jobSeekerDetailsFieldCatalog.find((f) => f.key === jobSeekerDetailsDragActiveId)?.label ?? jobSeekerDetailsDragActiveId;
                         const entry = jobSeekerDetailsFieldCatalog.find((f) => f.key === jobSeekerDetailsDragActiveId);
-                        if (!entry && jobSeekerDetailsDragActiveId !== FULL_ADDRESS_KEY) return null;
+                        if (!entry) return null;
                         return (
                           <SortableJobSeekerDetailsFieldRow
                             id={jobSeekerDetailsDragActiveId}
@@ -5760,12 +5587,9 @@ Best regards`;
                     >
                       <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
                         {modalOverviewOrder.map((key) => {
-                          // Handle synthetic Full Address field
-                          const label = key === FULL_ADDRESS_KEY
-                            ? "Full Address"
-                            : (overviewFieldCatalog.find((f) => f.key === key)?.label ?? key);
+                          const label = overviewFieldCatalog.find((f) => f.key === key)?.label ?? key;
                           const entry = overviewFieldCatalog.find((f) => f.key === key);
-                          if (!entry && key !== FULL_ADDRESS_KEY) return null;
+                          if (!entry) return null;
                           return (
                             <SortableJobSeekerDetailsFieldRow
                               key={key}
@@ -5785,11 +5609,9 @@ Best regards`;
                     </SortableContext>
                     <DragOverlay dropAnimation={dropAnimationConfig}>
                       {overviewDragActiveId ? (() => {
-                        const label = overviewDragActiveId === FULL_ADDRESS_KEY
-                          ? "Full Address"
-                          : (overviewFieldCatalog.find((f) => f.key === overviewDragActiveId)?.label ?? overviewDragActiveId);
+                        const label = overviewFieldCatalog.find((f) => f.key === overviewDragActiveId)?.label ?? overviewDragActiveId;
                         const entry = overviewFieldCatalog.find((f) => f.key === overviewDragActiveId);
-                        if (!entry && overviewDragActiveId !== FULL_ADDRESS_KEY) return null;
+                        if (!entry) return null;
                         return (
                           <SortableJobSeekerDetailsFieldRow
                             id={overviewDragActiveId}

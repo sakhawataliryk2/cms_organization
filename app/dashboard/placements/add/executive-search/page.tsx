@@ -619,27 +619,29 @@ export default function AddPlacement() {
                         ))}
                     </label>
                     <div className="flex-1">
-                        {
-                          field?.field_label === "Organization" ? (
-                            <LookupField
-                              value={String(organizationIdValue)}
-                              onChange={(value) => {
-                                handleCustomFieldChange(field.field_name, value);
-                              }}
-                              lookupType="organizations"
-                              placeholder="Select an organization"
-                              required={field.is_required}
-                              disabled={true}
-                              className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                            />
-                          ) : (
-                            <CustomFieldRenderer
-                              field={field}
-                              value={fieldValue}
-                              onChange={handlePlacementFieldChange}
-                            />
-                          )
-                        }
+                      {
+                        field?.field_label === "Organization" ? (
+                          <LookupField
+                            value={String(organizationIdValue)}
+                            onChange={(value) => {
+                              handleCustomFieldChange(field.field_name, value);
+                            }}
+                            lookupType="organizations"
+                            placeholder="Select an organization"
+                            required={field.is_required}
+                            disabled={true}
+                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                          />
+                        ) : (
+                          <CustomFieldRenderer
+                            field={field}
+                            value={fieldValue}
+                            allFields={customFields}
+                            values={customFieldValues}
+                            onChange={handlePlacementFieldChange}
+                          />
+                        )
+                      }
                     </div>
                   </div>
                 );

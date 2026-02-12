@@ -65,23 +65,23 @@ export default function AddTask() {
   const parseReminderToMinutes = (reminderValue: string | number | null | undefined): number | null => {
     if (!reminderValue) return null;
     if (typeof reminderValue === 'number') return reminderValue;
-  
+
     const str = String(reminderValue).toLowerCase().trim();
     if (str === '' || str === 'none' || str === 'null') return null;
-  
+
     // Improved regex to handle plurals and common abbreviations
     const match = str.match(/(\d+)\s*(minutes?|mins?|hours?|hrs?|days?|d)?/i);
     if (!match) return null;
-  
+
     const num = parseInt(match[1], 10);
     const unit = match[2]?.toLowerCase() || 'minute';
-  
+
     if (unit.startsWith('d')) return num * 1440; // days to minutes
     if (unit.startsWith('h')) return num * 60;   // hours to minutes
     return num; // minutes
   };
-  
-  
+
+
   // Helper function to convert minutes to reminder string format
   const minutesToReminderString = (minutes: number | null | undefined): string => {
     if (!minutes || minutes <= 0) return '';
@@ -531,10 +531,10 @@ export default function AddTask() {
       const dateCol = "due_date";
       const timeCol = "due_time";
       const rawDate = apiData[dateCol];
-      
+
       console.log('[Task Submit] Raw due_date before normalization:', rawDate);
       console.log('[Task Submit] Raw due_time before normalization:', apiData[timeCol]);
-      
+
       if (rawDate !== undefined && rawDate !== null) {
         const dateStr = String(rawDate).trim();
         if (dateStr === "") {
@@ -545,12 +545,12 @@ export default function AddTask() {
             // Split datetime into date and time parts
             const separator = dateStr.includes("T") ? "T" : " ";
             const [datePart, timePart] = dateStr.split(separator);
-            
+
             // Extract just the date part (YYYY-MM-DD)
             const dateMatch = datePart.match(/^(\d{4}-\d{2}-\d{2})/);
             if (dateMatch) {
               apiData[dateCol] = dateMatch[1];
-              
+
               // If time part exists and due_time is not already set, extract time
               if (timePart && (!apiData[timeCol] || apiData[timeCol] === "")) {
                 const timeMatch = timePart.match(/(\d{1,2}):(\d{2})(?::(\d{2}))?/);
@@ -587,7 +587,7 @@ export default function AddTask() {
           }
         }
       }
-      
+
       console.log('[Task Submit] Final normalized due_date:', apiData[dateCol]);
       console.log('[Task Submit] Final normalized due_time:', apiData[timeCol]);
 
@@ -613,7 +613,7 @@ export default function AddTask() {
               const [, h, m, sec] = timeMatch;
               apiData[timeCol] = `${h.padStart(2, "0")}:${m.padStart(2, "0")}:${(sec || "00").padStart(2, "0")}`;
               console.log('[Task Submit] Extracted time from due_time datetime string:', apiData[timeCol]);
-              
+
               // If due_date is not set, extract date from this datetime string
               if (!apiData[dateCol] || apiData[dateCol] === "") {
                 const datePart = s.split("T")[0];
@@ -635,7 +635,7 @@ export default function AddTask() {
               const [, h, m, sec] = timeMatch;
               apiData[timeCol] = `${h.padStart(2, "0")}:${m.padStart(2, "0")}:${(sec || "00").padStart(2, "0")}`;
               console.log('[Task Submit] Extracted time from space-separated datetime:', apiData[timeCol]);
-              
+
               // Extract date if not set
               if (!apiData[dateCol] || apiData[dateCol] === "") {
                 const dateMatch = datePart.match(/^(\d{4}-\d{2}-\d{2})/);
@@ -659,7 +659,7 @@ export default function AddTask() {
           }
         }
       }
-      
+
       console.log('[Task Submit] After time normalization, apiData[timeCol]:', apiData[timeCol]);
 
       // assigned_to: convert user name/option text to numeric user ID
@@ -803,7 +803,7 @@ export default function AddTask() {
       let data: { message?: string; error?: string; errors?: string[]; task?: { id: string } } = {};
       try {
         data = responseText ? JSON.parse(responseText) : {};
-      } catch (_) {}
+      } catch (_) { }
 
       if (!response.ok) {
         const msg =
@@ -1030,18 +1030,18 @@ export default function AddTask() {
 
                   const dynamicOwnerOptions =
                     isOwnerField &&
-                    String(field.field_type || "").toLowerCase() === "select" &&
-                    activeUsers.length > 0
+                      String(field.field_type || "").toLowerCase() === "select" &&
+                      activeUsers.length > 0
                       ? Array.from(
-                          new Set(
-                            [
-                              ...activeUsers
-                                .map((u) => String(u.name || "").trim())
-                                .filter(Boolean),
-                              String(currentUser?.name || "").trim(),
-                            ].filter(Boolean)
-                          )
+                        new Set(
+                          [
+                            ...activeUsers
+                              .map((u) => String(u.name || "").trim())
+                              .filter(Boolean),
+                            String(currentUser?.name || "").trim(),
+                          ].filter(Boolean)
                         )
+                      )
                       : null;
 
                   // Assigned To is rendered as type-to-match (autocomplete), not dropdown
@@ -1051,115 +1051,115 @@ export default function AddTask() {
                       : field;
 
                   const fieldValue = customFieldValues[field.field_name] || "";
-                      const assignedToValue = String(customFieldValues[field.field_name] ?? "").trim();
-                      const assignedToMatches = isAssignedField && activeUsers.length > 0
-                        ? activeUsers.filter(
-                            (u) =>
-                              String(u.name || "").toLowerCase().includes(assignedToValue.toLowerCase()) ||
-                              String(u.email || "").toLowerCase().includes(assignedToValue.toLowerCase())
-                          )
-                        : [];
+                  const assignedToValue = String(customFieldValues[field.field_name] ?? "").trim();
+                  const assignedToMatches = isAssignedField && activeUsers.length > 0
+                    ? activeUsers.filter(
+                      (u) =>
+                        String(u.name || "").toLowerCase().includes(assignedToValue.toLowerCase()) ||
+                        String(u.email || "").toLowerCase().includes(assignedToValue.toLowerCase())
+                    )
+                    : [];
 
-                      // Helper function to check if field has a valid value
-                      const hasValidValue = () => {
-                        if (fieldValue === null || fieldValue === undefined) return false;
+                  // Helper function to check if field has a valid value
+                  const hasValidValue = () => {
+                    if (fieldValue === null || fieldValue === undefined) return false;
 
-                        const trimmed = String(fieldValue).trim();
-                        if (trimmed === "") return false;
+                    const trimmed = String(fieldValue).trim();
+                    if (trimmed === "") return false;
 
-                        /* ================= DATE FIELD (TIMEZONE SAFE) ================= */
-                        if (field.field_type === "date") {
-                          let normalizedDate = trimmed;
+                    /* ================= DATE FIELD (TIMEZONE SAFE) ================= */
+                    if (field.field_type === "date") {
+                      let normalizedDate = trimmed;
 
-                          // Convert MM/DD/YYYY → YYYY-MM-DD
-                          if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
-                            const [mm, dd, yyyy] = trimmed.split("/");
-                            normalizedDate = `${yyyy}-${mm}-${dd}`;
-                          }
+                      // Convert MM/DD/YYYY → YYYY-MM-DD
+                      if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
+                        const [mm, dd, yyyy] = trimmed.split("/");
+                        normalizedDate = `${yyyy}-${mm}-${dd}`;
+                      }
 
-                          // Strict YYYY-MM-DD format
-                          if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
-                            return false;
-                          }
+                      // Strict YYYY-MM-DD format
+                      if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+                        return false;
+                      }
 
-                          const [year, month, day] = normalizedDate.split("-").map(Number);
+                      const [year, month, day] = normalizedDate.split("-").map(Number);
 
-                          // Manual date validation (NO timezone usage)
-                          if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
-                            return false;
-                          }
+                      // Manual date validation (NO timezone usage)
+                      if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
+                        return false;
+                      }
 
-                          const daysInMonth = new Date(year, month, 0).getDate();
-                          if (day > daysInMonth) {
-                            return false;
-                          }
+                      const daysInMonth = new Date(year, month, 0).getDate();
+                      if (day > daysInMonth) {
+                        return false;
+                      }
 
-                          return true;
-                        }
-                        /* =============================================================== */
+                      return true;
+                    }
+                    /* =============================================================== */
 
-                        // ZIP code
-                        const isZipCodeField =
-                          field.field_label?.toLowerCase().includes("zip") ||
-                          field.field_label?.toLowerCase().includes("postal code") ||
-                          field.field_name?.toLowerCase().includes("zip");
+                    // ZIP code
+                    const isZipCodeField =
+                      field.field_label?.toLowerCase().includes("zip") ||
+                      field.field_label?.toLowerCase().includes("postal code") ||
+                      field.field_name?.toLowerCase().includes("zip");
 
-                        if (isZipCodeField) {
-                          return /^\d{5}$/.test(trimmed);
-                        }
+                    if (isZipCodeField) {
+                      return /^\d{5}$/.test(trimmed);
+                    }
 
-                        // Non-negative number fields
-                        const isNonNegativeField =
-                          field.field_label?.toLowerCase().includes("employees") ||
-                          field.field_label?.toLowerCase().includes("offices") ||
-                          field.field_label?.toLowerCase().includes("oasis key");
+                    // Non-negative number fields
+                    const isNonNegativeField =
+                      field.field_label?.toLowerCase().includes("employees") ||
+                      field.field_label?.toLowerCase().includes("offices") ||
+                      field.field_label?.toLowerCase().includes("oasis key");
 
-                        if (isNonNegativeField && field.field_type === "number") {
-                          const num = Number(trimmed);
-                          return !isNaN(num) && num >= 0;
-                        }
+                    if (isNonNegativeField && field.field_type === "number") {
+                      const num = Number(trimmed);
+                      return !isNaN(num) && num >= 0;
+                    }
 
-                        // Phone field
-                        const isPhoneField =
-                          (field.field_type === "phone" ||
-                            field.field_label?.toLowerCase().includes("phone"));
+                    // Phone field
+                    const isPhoneField =
+                      (field.field_type === "phone" ||
+                        field.field_label?.toLowerCase().includes("phone"));
 
-                        if (isPhoneField && trimmed !== "") {
-                          // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
-                          // Remove all non-numeric characters to check digit count
-                          const digitsOnly = trimmed.replace(/\D/g, "");
-                          // Must have exactly 10 digits
-                          if (digitsOnly.length !== 10) {
-                            return false;
-                          }
-                          // Check if formatted correctly as (000) 000-0000
-                          const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
-                          if (!phoneRegex.test(trimmed)) return false;
-                          // NANP: valid area code (2-9), exchange (2-9), and area code in US list
-                          return isValidUSPhoneNumber(trimmed);
-                        }
+                    if (isPhoneField && trimmed !== "") {
+                      // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
+                      // Remove all non-numeric characters to check digit count
+                      const digitsOnly = trimmed.replace(/\D/g, "");
+                      // Must have exactly 10 digits
+                      if (digitsOnly.length !== 10) {
+                        return false;
+                      }
+                      // Check if formatted correctly as (000) 000-0000
+                      const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
+                      if (!phoneRegex.test(trimmed)) return false;
+                      // NANP: valid area code (2-9), exchange (2-9), and area code in US list
+                      return isValidUSPhoneNumber(trimmed);
+                    }
 
-                        // URL field
-                        const isUrlField =
-                          field.field_type === "url" ||
-                          field.field_label?.toLowerCase().includes("website") ||
-                          field.field_label?.toLowerCase().includes("url");
+                    // URL field
+                    const isUrlField =
+                      field.field_type === "url" ||
+                      field.field_label?.toLowerCase().includes("website") ||
+                      field.field_label?.toLowerCase().includes("url");
 
-                        if (isUrlField) {
-                          try {
-                            const url = trimmed.startsWith("http")
-                              ? new URL(trimmed)
-                              : new URL(`https://${trimmed}`);
-                            return url.hostname.includes(".");
-                          } catch {
-                            return false;
-                          }
-                        }
+                    if (isUrlField) {
+                      try {
+                        const url = trimmed.startsWith("http")
+                          ? new URL(trimmed)
+                          : new URL(`https://${trimmed}`);
+                        return url.hostname.includes(".");
+                      } catch {
+                        return false;
+                      }
+                    }
 
-                        return true;
-                      };
+                    return true;
+                  };
 
-                      return (
+                  return (
                     <div key={field.id} className="flex items-center gap-2">
                       <label className="w-48 font-medium">
                         {field.field_label}:
@@ -1186,6 +1186,20 @@ export default function AddTask() {
                               <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 max-h-48 overflow-auto">
                                 {assignedToValue.length === 0
                                   ? activeUsers.map((u) => (
+                                    <button
+                                      key={u.id}
+                                      type="button"
+                                      className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
+                                      onClick={() => {
+                                        handleCustomFieldChange(field.field_name, String(u.name || "").trim());
+                                        setAssignedToDropdownOpen(false);
+                                      }}
+                                    >
+                                      {u.name || ""}{u.email ? ` (${u.email})` : ""}
+                                    </button>
+                                  ))
+                                  : assignedToMatches.length > 0
+                                    ? assignedToMatches.map((u) => (
                                       <button
                                         key={u.id}
                                         type="button"
@@ -1198,31 +1212,20 @@ export default function AddTask() {
                                         {u.name || ""}{u.email ? ` (${u.email})` : ""}
                                       </button>
                                     ))
-                                  : assignedToMatches.length > 0
-                                    ? assignedToMatches.map((u) => (
-                                        <button
-                                          key={u.id}
-                                          type="button"
-                                          className="w-full text-left px-3 py-2 hover:bg-gray-100 text-sm"
-                                          onClick={() => {
-                                            handleCustomFieldChange(field.field_name, String(u.name || "").trim());
-                                            setAssignedToDropdownOpen(false);
-                                          }}
-                                        >
-                                          {u.name || ""}{u.email ? ` (${u.email})` : ""}
-                                        </button>
-                                      ))
                                     : (
-                                        <div className="px-3 py-2 text-sm text-gray-500">No matching user</div>
-                                      )}
+                                      <div className="px-3 py-2 text-sm text-gray-500">No matching user</div>
+                                    )}
                               </div>
                             )}
                           </>
                         ) : (
                           <CustomFieldRenderer
-                            field={fieldToRender}
-                            value={customFieldValues[field.field_name]}
+                            field={field}
+                            value={fieldValue}
+                            allFields={customFields}
+                            values={customFieldValues}
                             onChange={handleCustomFieldChange}
+                            className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                           />
                         )}
                       </div>
@@ -1245,11 +1248,10 @@ export default function AddTask() {
             <button
               type="submit"
               disabled={isSubmitting || !isFormValid}
-              className={`px-4 py-2 rounded ${
-                isSubmitting || !isFormValid
+              className={`px-4 py-2 rounded ${isSubmitting || !isFormValid
                   ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                   : "bg-blue-500 text-white hover:bg-blue-600"
-              }`}
+                }`}
             >
               {isEditMode ? "Update" : "Save"}
             </button>

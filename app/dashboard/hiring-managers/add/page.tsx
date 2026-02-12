@@ -1550,7 +1550,7 @@ export default function AddHiringManager() {
                         // Render read-only organization name (readable name only, no ID)
                         <input
                           type="text"
-                          value={organizationName || customFieldValues[field.field_name] || ""}
+                          value={organizationName || fieldValue || ""}
                           readOnly
                           className="w-full p-2 border-b border-gray-300 bg-gray-50 text-gray-600 cursor-not-allowed"
                           title="Organization name is auto-populated from the selected organization"
@@ -1558,8 +1558,11 @@ export default function AddHiringManager() {
                       ) : (
                         <CustomFieldRenderer
                           field={field}
-                          value={customFieldValues[field.field_name] || ""}
+                          value={fieldValue}
+                          allFields={customFields}
+                          values={customFieldValues}
                           onChange={handleCustomFieldChange}
+                          className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                         />
                       )}
                     </div>

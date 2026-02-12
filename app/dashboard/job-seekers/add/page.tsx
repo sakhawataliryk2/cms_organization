@@ -1499,7 +1499,10 @@ export default function AddJobSeeker() {
                         <CustomFieldRenderer
                           field={field}
                           value={fieldValue}
+                          allFields={customFields}
+                          values={customFieldValues}
                           onChange={handleCustomFieldChange}
+                          className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                         />
                       )}
                     </div>

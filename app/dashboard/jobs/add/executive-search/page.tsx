@@ -1455,8 +1455,11 @@ export default function AddExecutiveSearchJob() {
                             // Field_11, Field_12, and Field_512 are editable
                             <CustomFieldRenderer
                               field={field}
+                              allFields={customFields}
+                              values={customFieldValues}
                               value={fieldValue}
                               onChange={handleCustomFieldChangeWithCalculation}
+                              className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
                             />
                           )}
                         </div>
