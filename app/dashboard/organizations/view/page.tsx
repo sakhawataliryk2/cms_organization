@@ -406,6 +406,23 @@ function SortableColumnHeader({
 
 const ORG_VIEW_TAB_IDS = ["summary", "modify", "notes", "history", "quotes", "invoices", "contacts", "docs", "opportunities", "jobs", "placements"];
 
+interface NoteFormState {
+  text: string;
+  action: string;
+  about: string;
+  aboutReferences: Array<{
+    id: string;
+    type: string;
+    display: string;
+    value: string;
+  }>;
+  copyNote: string;
+  replaceGeneralContactComments: boolean;
+  additionalReferences: string;
+  scheduleNextAction: string;
+  emailNotification: string[];
+}
+
 export default function OrganizationView() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -492,7 +509,7 @@ export default function OrganizationView() {
   const historyFilters = useHistoryFilters(history);
   const [showAddNote, setShowAddNote] = useState(false);
   // Add Note form state - matching jobs view structure
-  const [noteForm, setNoteForm] = useState({
+  const [noteForm, setNoteForm] = useState<NoteFormState>({
     text: "",
     action: "",
     about: organization ? `${formatRecordId(organization.id, "organization")} ${organization.name}` : "",
@@ -510,7 +527,7 @@ export default function OrganizationView() {
     replaceGeneralContactComments: false,
     additionalReferences: "",
     scheduleNextAction: "None",
-    emailNotification: [] as string[],
+    emailNotification: [],
   });
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
