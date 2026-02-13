@@ -163,7 +163,7 @@ export default function DashboardNav() {
         const newItems = arrayMove(items, oldIndex, newIndex);
         // Save to storage
         savePinnedRecords(newItems);
-        // dispatchPinnhanged(); // Avoid double update in same window
+        // dispatchPin; // Avoid double update in same window
         return newItems;
       });
     }
