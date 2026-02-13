@@ -1092,42 +1092,9 @@ export default function HiringManagerList() {
                           { label: "View", action: () => handleViewHiringManager(hm.id) },
                           {
                             label: "Delete",
-                            action: async () => {
-                              if (
-                                !window.confirm(
-                                  "Are you sure you want to delete this hiring manager?"
-                                )
-                              )
-                                return;
-                              setIsLoading(true);
-                              try {
-                                const token = document.cookie
-                                  .split("; ")
-                                  .find((row) => row.startsWith("token="))
-                                  ?.split("=")[1];
-                                const res = await fetch(
-                                  `/api/hiring-managers/${hm.id}`,
-                                  {
-                                    method: "DELETE",
-                                    headers: token
-                                      ? { Authorization: `Bearer ${token}` }
-                                      : undefined,
-                                  }
-                                );
-                                if (!res.ok)
-                                  throw new Error(
-                                    "Failed to delete hiring manager"
-                                  );
-                                await fetchHiringManagers();
-                              } catch (err) {
-                                setError(
-                                  err instanceof Error
-                                    ? err.message
-                                    : "Delete failed"
-                                );
-                              } finally {
-                                setIsLoading(false);
-                              }
+                            action: () => {
+                              // Navigate to view page with delete parameter to open delete modal
+                              router.push(`/dashboard/hiring-managers/view?id=${hm.id}&delete=true`);
                             },
                           },
                         ]}

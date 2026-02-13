@@ -1185,31 +1185,9 @@ export default function LeadList() {
                       { label: "View", action: () => handleViewLead(lead.id) },
                       {
                         label: "Delete",
-                        action: async () => {
-                          if (
-                            !window.confirm(
-                              "Are you sure you want to delete this lead?"
-                            )
-                          )
-                            return;
-                          setIsDeleting(true);
-                          try {
-                            const response = await fetch(
-                              `/api/leads/${lead.id}`,
-                              { method: "DELETE" }
-                            );
-                            if (!response.ok)
-                              throw new Error("Failed to delete lead");
-                            await fetchLeads();
-                          } catch (err) {
-                            setDeleteError(
-                              err instanceof Error
-                                ? err.message
-                                : "An error occurred"
-                            );
-                          } finally {
-                            setIsDeleting(false);
-                          }
+                        action: () => {
+                          // Navigate to view page with delete parameter to open delete modal
+                          router.push(`/dashboard/leads/view?id=${lead.id}&delete=true`);
                         },
                       },
                     ]}

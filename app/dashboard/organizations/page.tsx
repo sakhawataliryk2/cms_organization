@@ -1204,31 +1204,9 @@ export default function OrganizationList() {
                             { label: "View", action: () => handleViewOrganization(org.id) },
                             {
                               label: "Delete",
-                              action: async () => {
-                                if (
-                                  !window.confirm(
-                                    "Are you sure you want to delete this organization?"
-                                  )
-                                )
-                                  return;
-                                setIsDeleting(true);
-                                try {
-                                  const response = await fetch(
-                                    `/api/organizations/${org.id}`,
-                                    { method: "DELETE" }
-                                  );
-                                  if (!response.ok)
-                                    throw new Error("Failed to delete organization");
-                                  await fetchOrganizations();
-                                } catch (err) {
-                                  setDeleteError(
-                                    err instanceof Error
-                                      ? err.message
-                                      : "An error occurred"
-                                  );
-                                } finally {
-                                  setIsDeleting(false);
-                                }
+                              action: () => {
+                                // Navigate to view page with delete parameter to open delete modal
+                                router.push(`/dashboard/organizations/view?id=${org.id}&delete=true`);
                               },
                             },
                           ]}

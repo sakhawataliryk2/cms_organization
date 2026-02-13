@@ -393,6 +393,7 @@ export default function DashboardNav() {
   // Close menus when clicking outside
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
+      // Close Add menu if clicking outside
       if (
         addMenuRef.current &&
         !addMenuRef.current.contains(event.target as Node) &&
@@ -401,25 +402,37 @@ export default function DashboardNav() {
       ) {
         setIsAddMenuOpen(false);
       }
+      
+      // Close User menu if clicking outside
       if (
         userMenuRef.current &&
         !userMenuRef.current.contains(event.target as Node)
       ) {
         setIsUserMenuOpen(false);
       }
+      
+      // Close Search dropdown if clicking outside
       if (
+        isSearchOpen &&
         searchRef.current &&
         !searchRef.current.contains(event.target as Node)
       ) {
-        // Don't close search on outside click, only clear query if needed
+        setIsSearchOpen(false);
+        // Optionally clear search query when closing - commented out to preserve query
+        // setSearchQuery("");
+        // setSearchResults(null);
       }
     }
 
-    document.addEventListener("mousedown", handleClickOutside);
+    // Only add listener if any menu is open
+    if (isAddMenuOpen || isUserMenuOpen || isSearchOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    
     return () => {
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, []);
+  }, [isAddMenuOpen, isUserMenuOpen, isSearchOpen]);
 
   const handleLogout = async () => {
     try {
@@ -849,7 +862,10 @@ export default function DashboardNav() {
 
                 {/* Global search results dropdown */}
                 {(searchQuery.trim() && searchQuery.trim().length >= 1) || recentSearches.length > 0 ? (
-                  <div className="absolute top-full left-0 mt-1 w-full min-w-0 max-w-[min(24rem,100vw-2rem)] md:w-96 bg-slate-800 rounded shadow-lg z-30 max-h-96 overflow-y-auto">
+                  <div 
+                    className="absolute top-full left-0 mt-1 w-full min-w-0 max-w-[min(24rem,100vw-2rem)] md:w-96 bg-slate-800 rounded shadow-lg z-30 max-h-96 overflow-y-auto"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {/* Recent Searches - Show when query is empty */}
                     {(!searchQuery.trim() || searchQuery.trim().length === 0) && recentSearches.length > 0 && (
                       <div className="py-1">

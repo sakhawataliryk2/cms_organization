@@ -540,6 +540,18 @@ export default function JobView() {
 
   // Delete request state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const deleteFromUrl = searchParams.get("delete");
+
+  // Check for delete parameter in URL to open delete modal
+  useEffect(() => {
+    if (deleteFromUrl === "true" && !showDeleteModal) {
+      setShowDeleteModal(true);
+      // Remove the delete parameter from URL after opening modal
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("delete");
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }
+  }, [deleteFromUrl, showDeleteModal, searchParams, router]);
   const [deleteForm, setDeleteForm] = useState({
     reason: "", // Mandatory reason for deletion
   });
@@ -6513,6 +6525,7 @@ export default function JobView() {
                   required
                 >
                   <option value="">Select type</option>
+                  <option value="zoom">Zoom Meeting</option>
                   <option value="Interview">Interview</option>
                   <option value="Meeting">Meeting</option>
                   <option value="Phone Call">Phone Call</option>
