@@ -12,7 +12,7 @@ import { BsFillPinAngleFill } from "react-icons/bs";
 import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
-// Drag and drop imports
+// Drag and drop 
 import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
