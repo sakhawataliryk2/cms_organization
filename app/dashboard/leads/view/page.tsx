@@ -143,6 +143,55 @@ function SortableContactInfoFieldRow({
   );
 }
 
+// Sortable row for Header Fields edit modal (vertical drag + checkbox + label)
+function SortableHeaderFieldRow({
+  id,
+  label,
+  checked,
+  onToggle,
+  isOverlay,
+}: {
+  id: string;
+  label: string;
+  checked: boolean;
+  onToggle: () => void;
+  isOverlay?: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging && !isOverlay ? 0.5 : 1,
+  };
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
+    >
+      {!isOverlay && (
+        <button
+          {...attributes}
+          {...listeners}
+          className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
+          title="Drag to reorder"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <TbGripVertical size={18} />
+        </button>
+      )}
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={onToggle}
+        onClick={(e) => e.stopPropagation()}
+        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 shrink-0"
+      />
+      <span className="text-sm text-gray-700 flex-1 truncate">{label}</span>
+    </div>
+  );
+}
+
 // Sortable row for Lead Details edit modal (vertical drag + checkbox + label)
 function SortableDetailsFieldRow({
   id,
@@ -453,16 +502,6 @@ export default function LeadView() {
     },
   }), []);
 
-  const dropAnimationConfig = useMemo(() => ({
-    sideEffects: defaultDropAnimationSideEffects({
-      styles: {
-        active: {
-          opacity: "0.5",
-        },
-      },
-    }),
-  }), []);
-
   // Initialize columns from localStorage or default
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -690,6 +729,27 @@ export default function LeadView() {
     defaultFields: LEAD_DEFAULT_HEADER_FIELDS,
   });
 
+  // Sensors for Header Fields modal drag-and-drop
+  const headerFieldsSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  // Drop animation config for drag overlay
+  const dropAnimationConfig = useMemo(() => ({
+    sideEffects: defaultDropAnimationSideEffects({
+      styles: {
+        active: {
+          opacity: "0.5",
+        },
+      },
+    }),
+  }), []);
+
+  const [headerFieldsDragActiveId, setHeaderFieldsDragActiveId] = useState<string | null>(null);
+  // Maintain order for all header fields (including unselected ones for proper ordering)
+  const [headerFieldsOrder, setHeaderFieldsOrder] = useState<string[]>([]);
+
   const buildHeaderFieldCatalog = () => {
     const seen = new Set<string>();
     const fromApi = (availableFields || [])
@@ -737,25 +797,35 @@ export default function LeadView() {
     return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
   };
 
-  const removeHeaderField = (key: string) => {
-    setHeaderFields((prev) => prev.filter((k) => k !== key));
-  };
-
-  const moveHeaderField = (fieldKey: string, dir: "up" | "down") => {
+  const handleHeaderFieldsDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    setHeaderFieldsDragActiveId(null);
+    if (!over || active.id === over.id) return;
+    setHeaderFieldsOrder((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+    // Also update headerFields order if both are in headerFields
     setHeaderFields((prev) => {
-      const idx = prev.indexOf(fieldKey);
-      if (idx === -1) return prev;
-
-      const targetIdx = dir === "up" ? idx - 1 : idx + 1;
-      if (targetIdx < 0 || targetIdx >= prev.length) return prev;
-
-      const next = [...prev];
-      const temp = next[idx];
-      next[idx] = next[targetIdx];
-      next[targetIdx] = temp;
-      return next;
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
     });
   };
+
+  // Initialize headerFieldsOrder when headerFields or catalog changes
+  useEffect(() => {
+    if (headerFieldCatalog.length > 0 && headerFieldsOrder.length === 0) {
+      // Initialize order with headerFields, then add remaining catalog fields
+      const catalogKeys = headerFieldCatalog.map((f) => f.key);
+      const selectedOrder = headerFields.filter((k) => catalogKeys.includes(k));
+      const newFields = catalogKeys.filter((k) => !selectedOrder.includes(k));
+      setHeaderFieldsOrder([...selectedOrder, ...newFields]);
+    }
+  }, [headerFieldCatalog.length, headerFields]);
 
   // Fetch lead data when component mounts
   useEffect(() => {
@@ -980,7 +1050,6 @@ export default function LeadView() {
                   fieldInfo={fieldInfo as any}
                   emptyPlaceholder="-"
                   clickable
-                  className="text-sm font-medium text-gray-900"
                 />
               </div>
             </div>
@@ -1076,7 +1145,6 @@ export default function LeadView() {
                       fieldInfo={fieldInfo as any}
                       emptyPlaceholder="-"
                       clickable
-                      className="text-sm font-medium text-gray-900"
                     />
                   </div>
                 </div>
@@ -3442,7 +3510,6 @@ export default function LeadView() {
                       fieldInfo={info ? { key: info.key, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key: fk, label: getHeaderFieldLabel(fk) }}
                       emptyPlaceholder="-"
                       clickable
-                      className="text-sm font-medium text-gray-900"
                     />
                   </div>
                 );
@@ -3962,9 +4029,10 @@ export default function LeadView() {
         entityId={leadId || ""}
       />
 
+      {/* Header Fields Modal */}
       {showHeaderFieldModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">Customize Header Fields</h2>
               <button
@@ -3974,109 +4042,89 @@ export default function LeadView() {
                 <span className="text-2xl font-bold">×</span>
               </button>
             </div>
-
-            <div className="p-6 grid grid-cols-2 gap-6">
-              <div>
-                <h3 className="font-medium mb-3">Available Fields</h3>
-                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
-                  {headerFieldCatalog.map((f) => {
-                    const checked = headerFields.includes(f.key);
-                    return (
-                      <label
-                        key={f.key}
-                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => {
-                            setHeaderFields((prev) =>
-                              prev.includes(f.key)
-                                ? prev.filter((x) => x !== f.key)
-                                : [...prev, f.key]
-                            );
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm text-gray-800">{f.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div>
-                <h3 className="font-medium mb-3">Header Order</h3>
-                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
-                  {headerFields.length === 0 ? (
-                    <div className="text-sm text-gray-500 italic">
-                      No fields selected
-                    </div>
-                  ) : (
-                    headerFields.map((key, idx) => {
-                      const info = getHeaderFieldInfo(key);
-                      const fieldInfo = info ? { key: info.key, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key, label: getHeaderFieldLabel(key) };
-                      return (
-                      <div
-                        key={key}
-                        className="flex items-center justify-between p-2 border rounded"
-                      >
-                        <div>
-                          <div className="text-sm font-medium">
-                            {getHeaderFieldLabel(key)}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            Value: <FieldValueRenderer value={getHeaderFieldValue(key)} fieldInfo={fieldInfo} emptyPlaceholder="-" className="text-gray-700" />
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
-                            disabled={idx === 0}
-                            onClick={() => moveHeaderField(key, "up")}
-                          >
-                            ↑
-                          </button>
-                          <button
-                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
-                            disabled={idx === headerFields.length - 1}
-                            onClick={() => moveHeaderField(key, "down")}
-                          >
-                            ↓
-                          </button>
-                          <button
-                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 text-red-600"
-                            onClick={() => removeHeaderField(key)}
-                          >
-                            Remove
-                          </button>
-                        </div>
+            <div className="p-6">
+              <DndContext
+                sensors={headerFieldsSensors}
+                collisionDetection={closestCorners}
+                onDragStart={(e) => setHeaderFieldsDragActiveId(e.active.id as string)}
+                onDragEnd={handleHeaderFieldsDragEnd}
+                onDragCancel={() => setHeaderFieldsDragActiveId(null)}
+                modifiers={[restrictToVerticalAxis]}
+              >
+                <p className="text-sm text-gray-600 mb-4">
+                  Drag to reorder. Toggle visibility with the checkbox. Changes apply to all lead records.
+                </p>
+                <SortableContext
+                  items={headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
+                    {(headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)).length === 0 ? (
+                      <div className="text-center py-4 text-gray-500">
+                        No fields available
                       </div>
-                    ); })
-                  )}
-                </div>
-
-                <div className="flex justify-end gap-2 mt-4">
+                    ) : (
+                      (headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)).map((key) => {
+                        const label = getHeaderFieldLabel(key);
+                        const checked = headerFields.includes(key);
+                        return (
+                          <SortableHeaderFieldRow
+                            key={key}
+                            id={key}
+                            label={label}
+                            checked={checked}
+                            onToggle={() => {
+                              if (checked) {
+                                setHeaderFields((prev) => prev.filter((x) => x !== key));
+                              } else {
+                                setHeaderFields((prev) => [...prev, key]);
+                                // Add to order if not already there
+                                if (!headerFieldsOrder.includes(key)) {
+                                  setHeaderFieldsOrder((prev) => [...prev, key]);
+                                }
+                              }
+                            }}
+                          />
+                        );
+                      })
+                    )}
+                  </div>
+                </SortableContext>
+                <DragOverlay dropAnimation={dropAnimationConfig}>
+                  {headerFieldsDragActiveId ? (
+                    <SortableHeaderFieldRow
+                      id={headerFieldsDragActiveId}
+                      label={getHeaderFieldLabel(headerFieldsDragActiveId)}
+                      checked={headerFields.includes(headerFieldsDragActiveId)}
+                      onToggle={() => {}}
+                      isOverlay
+                    />
+                  ) : null}
+                </DragOverlay>
+                <div className="flex justify-end gap-2 pt-4 border-t mt-4">
                   <button
-                    className="px-4 py-2 border rounded hover:bg-gray-50"
-                    onClick={() => setHeaderFields(LEAD_DEFAULT_HEADER_FIELDS)}
+                    onClick={() => {
+                      setHeaderFields(LEAD_DEFAULT_HEADER_FIELDS);
+                      setHeaderFieldsOrder(LEAD_DEFAULT_HEADER_FIELDS);
+                    }}
+                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
                   >
                     Reset
                   </button>
                   <button
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     onClick={async () => {
                       const success = await saveHeaderConfig();
                       if (success) {
                         setShowHeaderFieldModal(false);
                       }
                     }}
+                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={headerFields.length === 0}
                   >
                     Done
                   </button>
                 </div>
-              </div>
+              </DndContext>
             </div>
           </div>
         </div>

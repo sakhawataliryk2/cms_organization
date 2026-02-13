@@ -32,6 +32,21 @@ export interface FieldValueRendererProps {
   lookupFallback?: string;
 }
 
+function formatToMMDDYYYY(value: string): string {
+  if (!value) return value;
+
+  const date = new Date(value);
+
+  if (isNaN(date.getTime())) return value; // fallback if invalid
+
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const year = date.getFullYear();
+
+  return `${month}/${day}/${year}`;
+}
+
+
 // Checks if field is a date
 function isDateFieldOrValue(label?: string, key?: string, value?: string): boolean {
   const l = (label ?? "").toLowerCase();
@@ -140,8 +155,10 @@ export default function FieldValueRenderer({
 
   // Date: plain text
   if (fieldType === "date" || isDateFieldOrValue(fieldInfo?.label, fieldInfo?.key, raw)) {
-    return <span className={className}>{str}</span>;
+    const formattedDate = formatToMMDDYYYY(raw);
+    return <span className={className}>{formattedDate}</span>;
   }
+  
 
   // Full Address: clickable Google Maps link
   if (isAddressField(fieldInfo?.label) && str !== emptyPlaceholder) {
