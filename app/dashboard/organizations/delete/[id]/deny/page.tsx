@@ -173,19 +173,6 @@ export default function DenyDeletePage() {
                   required
                 />
               </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Denial Reason <span className="text-red-500">*</span>
-              </label>
-              <textarea
-                value={denialReason}
-                onChange={(e) => setDenialReason(e.target.value)}
-                className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-red-500"
-                rows={4}
-                placeholder="Enter the reason for denying this delete request..."
-                required
-              />
-            </div>
               {message && (
                 <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-2 rounded text-sm">
                   {message}
@@ -208,13 +195,6 @@ export default function DenyDeletePage() {
               </div>
             </form>
           )}
-
-        {status === "loading" && (
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-500 mx-auto mb-4"></div>
-            <p className="text-gray-600">Processing denial...</p>
-          </div>
-        )}
 
           {status === "success" && (
             <div className="text-center py-4">
@@ -251,6 +231,7 @@ export default function DenyDeletePage() {
               </button>
             </div>
           )}
+        </div>
       </div>
     </div>
   );
