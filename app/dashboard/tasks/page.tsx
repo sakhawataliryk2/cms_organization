@@ -1216,40 +1216,9 @@ export default function TaskList() {
                             { label: "View", action: () => handleViewTask(task.id) },
                             {
                               label: "Delete",
-                              action: async () => {
-                                if (
-                                  !window.confirm(
-                                    "Are you sure you want to delete this task?"
-                                  )
-                                )
-                                  return;
-                                setIsLoading(true);
-                                try {
-                                  const token = document.cookie
-                                    .split("; ")
-                                    .find((row) => row.startsWith("token="))
-                                    ?.split("=")[1];
-                                  const res = await fetch(
-                                    `/api/tasks/${task.id}`,
-                                    {
-                                      method: "DELETE",
-                                      headers: token
-                                        ? { Authorization: `Bearer ${token}` }
-                                        : undefined,
-                                    }
-                                  );
-                                  if (!res.ok)
-                                    throw new Error("Failed to delete task");
-                                  await fetchTasks();
-                                } catch (err) {
-                                  setError(
-                                    err instanceof Error
-                                      ? err.message
-                                      : "Delete failed"
-                                  );
-                                } finally {
-                                  setIsLoading(false);
-                                }
+                              action: () => {
+                                // Navigate to view page with delete parameter to open delete modal
+                                router.push(`/dashboard/tasks/view?id=${task.id}&delete=true`);
                               },
                             },
                           ]}

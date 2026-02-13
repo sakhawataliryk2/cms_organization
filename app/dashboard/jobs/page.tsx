@@ -1126,28 +1126,9 @@ export default function JobList() {
                             },
                             {
                               label: "Delete",
-                              action: async () => {
-                                if (
-                                  !window.confirm(
-                                    "Are you sure you want to delete this job?"
-                                  )
-                                )
-                                  return;
-                                setIsLoading(true);
-                                try {
-                                  await fetch(`/api/jobs/${job.id}`, {
-                                    method: "DELETE",
-                                    headers: {
-                                      Authorization: `Bearer ${document.cookie.replace(
-                                        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-                                        "$1"
-                                      )}`,
-                                    },
-                                  });
-                                  await fetchJobs();
-                                } finally {
-                                  setIsLoading(false);
-                                }
+                              action: () => {
+                                // Navigate to view page with delete parameter to open delete modal
+                                router.push(`/dashboard/jobs/view?id=${job.id}&delete=true`);
                               },
                             },
                           ]}

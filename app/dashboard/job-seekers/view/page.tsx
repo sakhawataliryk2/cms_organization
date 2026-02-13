@@ -876,6 +876,7 @@ export default function JobSeekerView() {
 
   // Delete request modal state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const deleteFromUrl = searchParams.get("delete");
   const [deleteForm, setDeleteForm] = useState({ reason: "" });
   const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
   const [pendingDeleteRequest, setPendingDeleteRequest] = useState<any>(null);
@@ -2993,6 +2994,28 @@ Best regards`;
   useEffect(() => {
     if (showDeleteModal && jobSeekerId) checkPendingDeleteRequest();
   }, [showDeleteModal, jobSeekerId]);
+
+  // Check for delete parameter in URL to open delete modal
+  useEffect(() => {
+    if (deleteFromUrl === "true" && !showDeleteModal) {
+      setShowDeleteModal(true);
+      // Remove the delete parameter from URL after opening modal
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("delete");
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }
+  }, [deleteFromUrl, showDeleteModal, searchParams, router]);
+
+  // Check for delete parameter in URL to open delete modal
+  useEffect(() => {
+    if (deleteFromUrl === "true" && !showDeleteModal) {
+      setShowDeleteModal(true);
+      // Remove the delete parameter from URL after opening modal
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("delete");
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }
+  }, [deleteFromUrl, showDeleteModal, searchParams, router]);
 
   const handleDeleteRequestSubmit = async () => {
     if (!deleteForm.reason.trim()) {
@@ -5855,6 +5878,7 @@ Best regards`;
                   required
                 >
                   <option value="">Select type</option>
+                  <option value="zoom">Zoom Meeting</option>
                   <option value="Interview">Interview</option>
                   <option value="Meeting">Meeting</option>
                   <option value="Phone Call">Phone Call</option>

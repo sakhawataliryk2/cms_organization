@@ -1114,37 +1114,9 @@ export default function TearsheetList() {
                           { label: "View", action: () => handleViewTearsheet(ts.id) },
                           {
                             label: "Delete",
-                            action: async () => {
-                              if (
-                                !window.confirm(
-                                  "Are you sure you want to delete this tearsheet?"
-                                )
-                              )
-                                return;
-                              setIsDeleting(true);
-                              try {
-                                const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-                                const response = await fetch(
-                                  `/api/tearsheets/${ts.id}`,
-                                  { 
-                                    method: "DELETE",
-                                    headers: {
-                                      Authorization: `Bearer ${token}`,
-                                    },
-                                  }
-                                );
-                                if (!response.ok)
-                                  throw new Error("Failed to delete tearsheet");
-                                await fetchTearsheets();
-                              } catch (err) {
-                                setDeleteError(
-                                  err instanceof Error
-                                    ? err.message
-                                    : "An error occurred"
-                                );
-                              } finally {
-                                setIsDeleting(false);
-                              }
+                            action: () => {
+                              // Navigate to view page with delete parameter to open delete modal
+                              router.push(`/dashboard/tearsheets/view?id=${ts.id}&delete=true`);
                             },
                           },
                         ]}

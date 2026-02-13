@@ -230,6 +230,7 @@ export default function HiringManagerView() {
   const searchParams = useSearchParams();
   const hiringManagerId = searchParams.get("id");
   const tabFromUrl = searchParams.get("tab");
+  const deleteFromUrl = searchParams.get("delete");
 
   const [activeTab, setActiveTabState] = useState(() =>
     tabFromUrl && HM_VIEW_TAB_IDS.includes(tabFromUrl) ? tabFromUrl : "summary"
@@ -250,6 +251,7 @@ export default function HiringManagerView() {
       setActiveTabState("summary");
     }
   }, [tabFromUrl]);
+
 
   // Hiring manager data
   const [hiringManager, setHiringManager] = useState<any>(null);
@@ -1354,6 +1356,17 @@ export default function HiringManagerView() {
   const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
   const [pendingDeleteRequest, setPendingDeleteRequest] = useState<any>(null);
   const [isLoadingDeleteRequest, setIsLoadingDeleteRequest] = useState(false);
+
+  // Check for delete parameter in URL to open delete modal
+  useEffect(() => {
+    if (deleteFromUrl === "true" && !showDeleteModal) {
+      setShowDeleteModal(true);
+      // Remove the delete parameter from URL after opening modal
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("delete");
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }
+  }, [deleteFromUrl, showDeleteModal, searchParams, router]);
 
   // Password Reset modal state
   const [showPasswordResetModal, setShowPasswordResetModal] = useState(false);
@@ -5077,6 +5090,7 @@ export default function HiringManagerView() {
                     required
                   >
                     <option value="">Select type</option>
+                    <option value="zoom">Zoom Meeting</option>
                     <option value="Interview">Interview</option>
                     <option value="Meeting">Meeting</option>
                     <option value="Phone Call">Phone Call</option>
@@ -5324,7 +5338,7 @@ export default function HiringManagerView() {
                         required
                       />
                       {showTransferDropdown && (transferSearchQuery || availableHiringManagersForTransfer.length > 0) && (
-                        <div className="absolute z-[60] w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
+                        <div className="absolute z-60 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
                           {filteredTransferHiringManagers.length > 0 ? (
                             filteredTransferHiringManagers.map((hm: any) => {
                               const displayName = hm?.full_name || `${hm?.last_name || ""}, ${hm?.first_name || ""}`.trim() || "Unnamed";
@@ -5803,7 +5817,7 @@ export default function HiringManagerView() {
                                 onClick={() => handleAboutReferenceSelect(suggestion)}
                                 className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
                               >
-                                <FiUserCheck className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                <FiUserCheck className="w-4 h-4 text-gray-500 shrink-0" />
                                 <div className="flex-1">
                                   <div className="text-sm font-medium text-gray-900">
                                     {suggestion.display}

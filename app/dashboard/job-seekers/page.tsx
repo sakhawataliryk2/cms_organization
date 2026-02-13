@@ -1058,41 +1058,9 @@ export default function JobSeekerList() {
                           },
                           {
                             label: "Delete",
-                            action: async () => {
-                              if (
-                                !window.confirm(
-                                  "Are you sure you want to delete this job seeker?"
-                                )
-                              )
-                                return;
-                              setIsDeleting(true);
-                              try {
-                                const response = await fetch(
-                                  `/api/job-seekers/${jobSeeker.id}`,
-                                  {
-                                    method: "DELETE",
-                                    headers: {
-                                      Authorization: `Bearer ${document.cookie.replace(
-                                        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-                                        "$1"
-                                      )}`,
-                                    },
-                                  }
-                                );
-                                if (!response.ok)
-                                  throw new Error(
-                                    "Failed to delete job seeker"
-                                  );
-                                await fetchJobSeekers();
-                              } catch (err) {
-                                setError(
-                                  err instanceof Error
-                                    ? err.message
-                                    : "An error occurred"
-                                );
-                              } finally {
-                                setIsDeleting(false);
-                              }
+                            action: () => {
+                              // Navigate to view page with delete parameter to open delete modal
+                              router.push(`/dashboard/job-seekers/view?id=${jobSeeker.id}&delete=true`);
                             },
                           },
                         ]}

@@ -31,24 +31,64 @@ export async function POST(request: NextRequest) {
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
         
         // Prepare appointment data for backend
-        const appointmentData = {
+        // Support both new format (participant_type/participant_id) and legacy format (job_seeker_id, etc.)
+        const appointmentData: any = {
             date: body.date,
             time: body.time,
             type: body.type,
-            client: body.client || '',
-            job: body.job || '',
-            job_id: body.jobId || null,
-            job_seeker_id: body.jobSeekerId || null,
-            hiring_manager_id: body.hiringManagerId || null,
-            organization_id: body.organizationId || null,
-            references: body.references || [],
-            owner: body.owner || '',
-            description: body.description || '',
-            location: body.location || '',
             duration: body.duration || 30, // Default 30 minutes
-            attendees: body.attendees || [], // Array of user IDs/emails
-            send_invites: body.sendInvites !== false, // Default to true
+            description: body.description || null,
         };
+
+        // New format: participant_type and participant_id
+        if (body.participant_type && body.participant_id) {
+            appointmentData.participant_type = body.participant_type;
+            appointmentData.participant_id = body.participant_id;
+        }
+        // Legacy format: support for backward compatibility
+        else if (body.job_seeker_id) {
+            appointmentData.job_seeker_id = body.job_seeker_id;
+        } else if (body.jobSeekerId) {
+            appointmentData.job_seeker_id = body.jobSeekerId;
+        } else if (body.hiring_manager_id) {
+            appointmentData.hiring_manager_id = body.hiring_manager_id;
+        } else if (body.hiringManagerId) {
+            appointmentData.hiring_manager_id = body.hiringManagerId;
+        } else if (body.organization_id) {
+            appointmentData.organization_id = body.organization_id;
+        } else if (body.organizationId) {
+            appointmentData.organization_id = body.organizationId;
+        }
+
+        // Job ID (optional)
+        if (body.job_id) {
+            appointmentData.job_id = body.job_id;
+        } else if (body.jobId) {
+            appointmentData.job_id = body.jobId;
+        }
+
+        // Legacy fields for backward compatibility (if provided)
+        if (body.client) {
+            appointmentData.client = body.client;
+        }
+        if (body.job && typeof body.job === 'string') {
+            appointmentData.job = body.job;
+        }
+        if (body.location) {
+            appointmentData.location = body.location;
+        }
+        if (body.owner) {
+            appointmentData.owner = body.owner;
+        }
+        if (body.references && Array.isArray(body.references)) {
+            appointmentData.references = body.references;
+        }
+        if (body.attendees && Array.isArray(body.attendees)) {
+            appointmentData.attendees = body.attendees;
+        }
+        if (body.sendInvites !== undefined) {
+            appointmentData.send_invites = body.sendInvites;
+        }
 
         console.log('Creating appointment with data:', appointmentData);
 
@@ -116,6 +156,10 @@ export async function GET(request: NextRequest) {
         const date = searchParams.get('date');
         const startDate = searchParams.get('startDate');
         const endDate = searchParams.get('endDate');
+        const status = searchParams.get('status');
+        const ownerId = searchParams.get('ownerId');
+        const participantType = searchParams.get('participantType');
+        const participantId = searchParams.get('participantId');
 
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
         let url = `${apiUrl}/api/planner/appointments`;
@@ -125,6 +169,10 @@ export async function GET(request: NextRequest) {
         if (date) params.append('date', date);
         if (startDate) params.append('startDate', startDate);
         if (endDate) params.append('endDate', endDate);
+        if (status) params.append('status', status);
+        if (ownerId) params.append('ownerId', ownerId);
+        if (participantType) params.append('participantType', participantType);
+        if (participantId) params.append('participantId', participantId);
         
         if (params.toString()) {
             url += `?${params.toString()}`;

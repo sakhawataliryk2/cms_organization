@@ -611,12 +611,24 @@ export default function OrganizationView() {
 
   // Delete request modal state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const deleteFromUrl = searchParams.get("delete");
   const [deleteForm, setDeleteForm] = useState({
     reason: "", // Mandatory reason for deletion
   });
   const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
   const [pendingDeleteRequest, setPendingDeleteRequest] = useState<any>(null);
   const [isLoadingDeleteRequest, setIsLoadingDeleteRequest] = useState(false);
+
+  // Check for delete parameter in URL to open delete modal
+  useEffect(() => {
+    if (deleteFromUrl === "true" && !showDeleteModal) {
+      setShowDeleteModal(true);
+      // Remove the delete parameter from URL after opening modal
+      const params = new URLSearchParams(searchParams.toString());
+      params.delete("delete");
+      router.replace(`?${params.toString()}`, { scroll: false });
+    }
+  }, [deleteFromUrl, showDeleteModal, searchParams, router]);
 
   // Dependency check state
   const [isLoadingDependencies, setIsLoadingDependencies] = useState(false);
