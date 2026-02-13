@@ -3536,12 +3536,13 @@ export default function OrganizationView() {
     if (!organizationId) return;
     setIsLoadingDependencies(true);
     try {
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
       const response = await fetch(`/api/organizations/${organizationId}/dependencies`, {
         headers: {
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
+          Authorization: `Bearer ${token}`,
         },
       });
 
@@ -3549,12 +3550,16 @@ export default function OrganizationView() {
         const data = await response.json();
         setDependencyCounts(data.counts);
 
-        // Check if there are any dependencies
+        // Check if there are any dependencies (using counts or details length)
         const hasDependencies = data.counts && (
           (data.counts.hiring_managers > 0) ||
           (data.counts.jobs > 0) ||
           (data.counts.placements > 0) ||
-          (data.counts.child_organizations > 0)
+          (data.counts.child_organizations > 0) ||
+          (data.counts.details?.hiring_managers?.length > 0) ||
+          (data.counts.details?.jobs?.length > 0) ||
+          (data.counts.details?.placements?.length > 0) ||
+          (data.counts.details?.child_organizations?.length > 0)
         );
 
         if (hasDependencies) {
@@ -5024,7 +5029,6 @@ export default function OrganizationView() {
                       fieldInfo={info ? { key: info.key ?? fk, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key: fk, label: getHeaderFieldLabel(fk) }}
                       emptyPlaceholder="-"
                       clickable
-                      className="text-sm font-medium text-gray-900"
                     />
                   </div>
                 );
@@ -6972,84 +6976,173 @@ export default function OrganizationView() {
       {/* Dependency Warning Modal */}
       {showDependencyWarningModal && (
         <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-lg w-full mx-4">
-            <div className="p-6">
-              <div className="flex justify-center mb-4">
-                <div className="bg-orange-100 p-3 rounded-full">
-                  <svg className="w-8 h-8 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
+          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+              <h2 className="text-lg font-semibold">Linked Records Found</h2>
+              <button
+                onClick={() => setShowDependencyWarningModal(false)}
+                className="p-1 rounded hover:bg-gray-200"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6 overflow-y-auto flex-1">
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="bg-orange-100 p-2 rounded-full">
+                    <svg className="w-5 h-5 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                    </svg>
+                  </div>
+                  <p className="text-sm text-gray-600">
+                    This organization has linked records. You must either transfer these records to another organization or request a cascade deletion.
+                  </p>
                 </div>
               </div>
 
-              <h3 className="text-xl font-bold text-center text-gray-900 mb-2">
-                Cannot Delete Organization
-              </h3>
+              {/* Detailed Records */}
+              <div className="space-y-4">
+                {/* Hiring Managers */}
+                {dependencyCounts?.details?.hiring_managers?.length > 0 && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="bg-gray-50 px-4 py-2 border-b">
+                      <h4 className="text-sm font-semibold text-gray-900">
+                        Hiring Managers ({dependencyCounts.details.hiring_managers.length})
+                      </h4>
+                    </div>
+                    <div className="divide-y">
+                      {dependencyCounts.details.hiring_managers.map((hm: any) => (
+                        <div key={hm.id} className="px-4 py-2 hover:bg-gray-50">
+                          <div className="flex items-center justify-between">
+                            <button
+                              onClick={() => router.push(`/dashboard/hiring-managers/view?id=${hm.id}`)}
+                              className="text-left flex-1 text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              <span className="font-medium">{formatRecordId(hm.id, "hiringManager")}</span>
+                              <span className="ml-2">{hm.name}</span>
+                              {hm.title && <span className="ml-2 text-gray-500 text-xs">({hm.title})</span>}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-              <p className="text-sm text-gray-600 text-center mb-6">
-                This organization has linked records. You must either transfer these records to another organization or request a cascade deletion.
-              </p>
+                {/* Jobs */}
+                {dependencyCounts?.details?.jobs?.length > 0 && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="bg-gray-50 px-4 py-2 border-b">
+                      <h4 className="text-sm font-semibold text-gray-900">
+                        Jobs ({dependencyCounts.details.jobs.length})
+                      </h4>
+                    </div>
+                    <div className="divide-y">
+                      {dependencyCounts.details.jobs.map((job: any) => (
+                        <div key={job.id} className="px-4 py-2 hover:bg-gray-50">
+                          <div className="flex items-center justify-between">
+                            <button
+                              onClick={() => router.push(`/dashboard/jobs/view?id=${job.id}`)}
+                              className="text-left flex-1 text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              <span className="font-medium">{formatRecordId(job.id, "job")}</span>
+                              <span className="ml-2">{job.name}</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
-              <div className="bg-gray-50 rounded p-4 mb-6">
-                <h4 className="text-sm font-semibold text-gray-900 mb-2">Linked Records Found:</h4>
-                <ul className="space-y-1 text-sm text-gray-600">
-                  {dependencyCounts?.hiring_managers > 0 && (
-                    <li className="flex justify-between">
-                      <span>Hiring Managers</span>
-                      <span className="font-medium">{dependencyCounts.hiring_managers}</span>
-                    </li>
-                  )}
-                  {dependencyCounts?.jobs > 0 && (
-                    <li className="flex justify-between">
-                      <span>Jobs</span>
-                      <span className="font-medium">{dependencyCounts.jobs}</span>
-                    </li>
-                  )}
-                  {dependencyCounts?.placements > 0 && (
-                    <li className="flex justify-between">
-                      <span>Placements</span>
-                      <span className="font-medium">{dependencyCounts.placements}</span>
-                    </li>
-                  )}
-                  {dependencyCounts?.child_organizations > 0 && (
-                    <li className="flex justify-between">
-                      <span>Child Organizations</span>
-                      <span className="font-medium">{dependencyCounts.child_organizations}</span>
-                    </li>
-                  )}
-                </ul>
+                {/* Placements */}
+                {dependencyCounts?.details?.placements?.length > 0 && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="bg-gray-50 px-4 py-2 border-b">
+                      <h4 className="text-sm font-semibold text-gray-900">
+                        Placements ({dependencyCounts.details.placements.length})
+                      </h4>
+                    </div>
+                    <div className="divide-y">
+                      {dependencyCounts.details.placements.map((placement: any) => (
+                        <div key={placement.id} className="px-4 py-2 hover:bg-gray-50">
+                          <div className="flex items-center justify-between">
+                            <button
+                              onClick={() => router.push(`/dashboard/placements/view?id=${placement.id}`)}
+                              className="text-left flex-1 text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              <span className="font-medium">{formatRecordId(placement.id, "placement")}</span>
+                              <span className="ml-2">{placement.name}</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Child Organizations */}
+                {dependencyCounts?.details?.child_organizations?.length > 0 && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="bg-gray-50 px-4 py-2 border-b">
+                      <h4 className="text-sm font-semibold text-gray-900">
+                        Child Organizations ({dependencyCounts.details.child_organizations.length})
+                      </h4>
+                    </div>
+                    <div className="divide-y">
+                      {dependencyCounts.details.child_organizations.map((org: any) => (
+                        <div key={org.id} className="px-4 py-2 hover:bg-gray-50">
+                          <div className="flex items-center justify-between">
+                            <button
+                              onClick={() => router.push(`/dashboard/organizations/view?id=${org.id}`)}
+                              className="text-left flex-1 text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              <span className="font-medium">{formatRecordId(org.id, "organization")}</span>
+                              <span className="ml-2">{org.name}</span>
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
+            </div>
 
-              <div className="space-y-3">
-                <button
-                  onClick={() => {
-                    setShowDependencyWarningModal(false);
-                    // Open Transfer Modal
-                    handleActionSelected("transfer");
-                  }}
-                  className="w-full flex justify-center items-center px-4 py-2 border border-transparent rounded shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Transfer Organization Records
-                </button>
+            {/* Footer Actions */}
+            <div className="p-4 border-t bg-gray-50 space-y-3">
 
-                <button
-                  onClick={() => {
-                    setShowDependencyWarningModal(false);
-                    setDeleteActionType("cascade");
-                    setShowDeleteModal(true);
-                  }}
-                  className="w-full flex justify-center items-center px-4 py-2 border border-red-300 rounded shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
-                >
-                  Request Cascade Deletion (Delete All)
-                </button>
+              <button
+                onClick={() => {
+                  setShowDependencyWarningModal(false);
+                  // Open Transfer Modal
+                  handleActionSelected("transfer");
+                }}
+                className="w-full flex justify-center items-center px-4 py-2 border border-transparent rounded shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                Transfer Organization Records
+              </button>
 
-                <button
-                  onClick={() => setShowDependencyWarningModal(false)}
-                  className="w-full flex justify-center items-center px-4 py-2 border border-gray-300 rounded shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Cancel
-                </button>
-              </div>
+              <button
+                onClick={() => {
+                  setShowDependencyWarningModal(false);
+                  setDeleteActionType("cascade");
+                  setShowDeleteModal(true);
+                }}
+                className="w-full flex justify-center items-center px-4 py-2 border border-red-300 rounded shadow-sm text-sm font-medium text-red-700 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              >
+                Request Cascade Deletion (Delete All)
+              </button>
+
+              <button
+                onClick={() => setShowDependencyWarningModal(false)}
+                className="w-full flex justify-center items-center px-4 py-2 border border-gray-300 rounded shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+              >
+                Cancel
+              </button>
             </div>
           </div>
         </div>

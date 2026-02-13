@@ -1854,7 +1854,7 @@ const Planners = () => {
 
       {/* Add Appointment Modal */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-gray-800 bg-opacity-50 flex justify-center items-center px-4 z-50">
+        <div className="fixed inset-0 bg-black/50 flex justify-center items-center px-4 z-50">
           <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-semibold text-gray-800">Add Appointment</h3>

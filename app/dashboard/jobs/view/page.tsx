@@ -4981,7 +4981,6 @@ export default function JobView() {
                       fieldInfo={info ? { key: info.key, label: info.label, fieldType: info.fieldType, lookupType: info.lookupType, multiSelectLookupType: info.multiSelectLookupType } : { key: fk, label: getHeaderFieldLabel(fk) }}
                       emptyPlaceholder="-"
                       clickable
-                      className="text-sm font-medium text-gray-900"
                     />
                   </div>
                 );
