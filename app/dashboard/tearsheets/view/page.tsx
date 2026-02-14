@@ -46,7 +46,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-const TEARSHEET_VIEW_TAB_IDS = ["overview", "organizations", "hiring-managers", "jobs", "leads"];
+const TEARSHEET_VIEW_TAB_IDS = ["overview", "organizations", "hiring-managers", "jobs", "leads", "tasks"];
 
 type ColumnSortState = "asc" | "desc" | null;
 type ColumnFilterState = string | null;
@@ -373,6 +373,7 @@ export default function TearsheetView() {
   const [hiringManagers, setHiringManagers] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
+  const [tasks, setTasks] = useState<any[]>([]);
   const [isLoadingTabData, setIsLoadingTabData] = useState(false);
 
   // Column configuration for tab tables
@@ -396,15 +397,20 @@ export default function TearsheetView() {
   const [leadColumnFilters, setLeadColumnFilters] = useState<Record<string, ColumnFilterState>>({});
   const [leadSearchTerm, setLeadSearchTerm] = useState("");
 
+  const [taskColumnFields, setTaskColumnFields] = useState<string[]>(["id", "name", "status", "priority", "due_date", "owner"]);
+  const [taskColumnSorts, setTaskColumnSorts] = useState<Record<string, ColumnSortState>>({});
+  const [taskColumnFilters, setTaskColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+  const [taskSearchTerm, setTaskSearchTerm] = useState("");
+
   // Panel editing state
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [panelFieldOrder, setPanelFieldOrder] = useState<Record<string, string[]>>({
     overview: ["name", "id", "created", "owner"],
-    statistics: ["job_seekers", "hiring_managers", "job_orders", "leads", "organizations", "placements"],
+    statistics: ["job_seekers", "hiring_managers", "job_orders", "leads", "organizations", "placements", "tasks"],
   });
   const [panelFieldVisible, setPanelFieldVisible] = useState<Record<string, Record<string, boolean>>>({
     overview: { name: true, id: true, created: true, owner: true },
-    statistics: { job_seekers: true, hiring_managers: true, job_orders: true, leads: true, organizations: true, placements: true },
+    statistics: { job_seekers: true, hiring_managers: true, job_orders: true, leads: true, organizations: true, placements: true, tasks: true },
   });
   const [modalFieldOrder, setModalFieldOrder] = useState<string[]>([]);
   const [modalFieldVisible, setModalFieldVisible] = useState<Record<string, boolean>>({});
@@ -480,7 +486,7 @@ export default function TearsheetView() {
 
   // Action options
   const actionOptions = [
-    { label: "Add Note", action: () => {} },
+    { label: "Add Note", action: () => { } },
     { label: "Delete", action: handleDelete },
   ];
 
@@ -614,6 +620,10 @@ export default function TearsheetView() {
           case "leads":
             endpoint = `/api/tearsheets/${tearsheetId}/records?type=leads`;
             setter = (data: any) => setLeads(data.records || []);
+            break;
+          case "tasks":
+            endpoint = `/api/tearsheets/${tearsheetId}/records?type=tasks`;
+            setter = (data: any) => setTasks(data.records || []);
             break;
           default:
             return;
@@ -777,6 +787,7 @@ export default function TearsheetView() {
         // Falls back to tearsheet.organization_count during initial render before fetch completes
         organizations: organizations.length || (tearsheet.organization_count || 0),
         placements: tearsheet.placement_count || 0,
+        tasks: tearsheet.task_count || 0,
       },
     };
     return fieldMap[panelId]?.[fieldKey] ?? "-";
@@ -797,6 +808,7 @@ export default function TearsheetView() {
         leads: "Leads",
         organizations: "Organizations",
         placements: "Placements",
+        tasks: "Tasks",
       },
     };
     return labelMap[panelId]?.[fieldKey] ?? fieldKey;
@@ -1037,6 +1049,7 @@ export default function TearsheetView() {
                 else if (activeTab === "hiring-managers") setHmSearchTerm(e.target.value);
                 else if (activeTab === "jobs") setJobSearchTerm(e.target.value);
                 else if (activeTab === "leads") setLeadSearchTerm(e.target.value);
+                else if (activeTab === "tasks") setTaskSearchTerm(e.target.value);
               }}
             />
           </div>
@@ -1055,6 +1068,9 @@ export default function TearsheetView() {
                 } else if (activeTab === "leads") {
                   setLeadSearchTerm("");
                   setLeadColumnFilters({});
+                } else if (activeTab === "tasks") {
+                  setTaskSearchTerm("");
+                  setTaskColumnFilters({});
                 }
               }}
               className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 flex items-center gap-2"
@@ -1076,6 +1092,7 @@ export default function TearsheetView() {
                 else if (activeTab === "hiring-managers") setHmColumnFields(arrayMove(columnFields, oldIndex, newIndex));
                 else if (activeTab === "jobs") setJobColumnFields(arrayMove(columnFields, oldIndex, newIndex));
                 else if (activeTab === "leads") setLeadColumnFields(arrayMove(columnFields, oldIndex, newIndex));
+                else if (activeTab === "tasks") setTaskColumnFields(arrayMove(columnFields, oldIndex, newIndex));
               }
             }
           }}>
@@ -1156,6 +1173,7 @@ export default function TearsheetView() {
     { id: "hiring-managers", label: "Hiring Managers" },
     { id: "jobs", label: "Jobs" },
     { id: "leads", label: "Leads" },
+    { id: "tasks", label: "Tasks" },
   ];
 
   return (
@@ -1301,11 +1319,10 @@ export default function TearsheetView() {
         {tabs.map((tab) => (
           <button
             key={tab.id}
-            className={`px-4 py-2 ${
-              activeTab === tab.id
+            className={`px-4 py-2 ${activeTab === tab.id
                 ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
                 : "text-gray-700 hover:bg-gray-200"
-            }`}
+              }`}
             onClick={() => setActiveTab(tab.id)}
           >
             {tab.label}
@@ -1444,6 +1461,38 @@ export default function TearsheetView() {
           () => "text",
           (row) => router.push(`/dashboard/leads/view?id=${row.id}`)
         )}
+
+        {activeTab === "tasks" && renderTable(
+          tasks,
+          taskColumnFields,
+          taskColumnSorts,
+          taskColumnFilters,
+          taskSearchTerm,
+          setTaskColumnSorts,
+          setTaskColumnFilters,
+          (row, key) => {
+            if (key === "id") return row.id;
+            if (key === "name") return row.name || row.title || "-";
+            if (key === "status") return row.status || "-";
+            if (key === "priority") return row.priority || "-";
+            if (key === "due_date") return row.due_date ? new Date(row.due_date).toLocaleDateString() : "-";
+            if (key === "owner") return row.owner || "-";
+            if (key === "assigned_to") return row.assigned_to || "-";
+            return row[key] || "-";
+          },
+          (key) => {
+            if (key === "id") return "ID";
+            if (key === "name") return "Title";
+            if (key === "status") return "Status";
+            if (key === "priority") return "Priority";
+            if (key === "due_date") return "Due Date";
+            if (key === "owner") return "Owner";
+            if (key === "assigned_to") return "Assigned To";
+            return key;
+          },
+          () => "text",
+          (row) => router.push(`/dashboard/tasks/view?id=${row.id}`)
+        )}
       </div>
 
       {/* Edit Fields Modal */}
@@ -1504,7 +1553,7 @@ export default function TearsheetView() {
                       id={panelDragActiveId}
                       label={getFieldLabel(editingPanel, panelDragActiveId)}
                       checked={modalFieldVisible[panelDragActiveId] ?? true}
-                      onToggle={() => {}}
+                      onToggle={() => { }}
                       isOverlay
                     />
                   ) : null}
