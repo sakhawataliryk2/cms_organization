@@ -18,6 +18,11 @@ import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
+import BulkActionsButton from "@/components/BulkActionsButton";
+import BulkOwnershipModal from "@/components/BulkOwnershipModal";
+import BulkStatusModal from "@/components/BulkStatusModal";
+import BulkTearsheetModal from "@/components/BulkTearsheetModal";
+import BulkNoteModal from "@/components/BulkNoteModal";
 
 interface Job {
   id: string;
@@ -278,6 +283,13 @@ export default function JobList() {
   const [jobs, setJobs] = useState<Job[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Individual row action modals state
+  const [showOwnershipModal, setShowOwnershipModal] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showTearsheetModal, setShowTearsheetModal] = useState(false);
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
   const [favorites, setFavorites] = useState<JobsFavorite[]>([]);
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
@@ -734,52 +746,6 @@ export default function JobList() {
     }
   };
 
-  const deleteSelectedJobs = async () => {
-    if (selectedJobs.length === 0) return;
-
-    const confirmMessage =
-      selectedJobs.length === 1
-        ? "Are you sure you want to delete this job?"
-        : `Are you sure you want to delete these ${selectedJobs.length} jobs?`;
-
-    if (!window.confirm(confirmMessage)) return;
-
-    setIsLoading(true);
-
-    try {
-      const deletePromises = selectedJobs.map((id) =>
-        fetch(`/api/jobs/${id}`, {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${document.cookie.replace(
-              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-              "$1"
-            )}`,
-          },
-        })
-      );
-
-      const results = await Promise.allSettled(deletePromises);
-      const failures = results.filter((result) => result.status === "rejected");
-
-      if (failures.length > 0) {
-        throw new Error(`Failed to delete ${failures.length} jobs`);
-      }
-
-      await fetchJobs();
-      setSelectedJobs([]);
-      setSelectAll(false);
-    } catch (err) {
-      console.error("Error deleting jobs:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while deleting jobs"
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const exportJobsToXML = async () => {
     if (selectedJobs.length === 0) return;
@@ -854,6 +820,53 @@ export default function JobList() {
     }
   };
 
+  // CSV Export function for selected records
+  const handleCSVExport = () => {
+    if (selectedJobs.length === 0) return;
+
+    const selectedData = jobs.filter((job) =>
+      selectedJobs.includes(job.id)
+    );
+
+    // Get headers from currently displayed columns
+    const headers = ['ID', ...columnFields.map((key) => getColumnLabel(key))];
+
+    // Escape CSV values
+    const escapeCSV = (value: any): string => {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    // Create CSV rows
+    const csvRows = [
+      headers.map(escapeCSV).join(','),
+      ...selectedData.map((job) => {
+        const row = [
+          `J ${job.id}`,
+          ...columnFields.map((key) => escapeCSV(getColumnValue(job, key)))
+        ];
+        return row.join(',');
+      })
+    ];
+
+    const csvContent = csvRows.join('\n');
+    const BOM = '\uFEFF'; // UTF-8 BOM for Excel compatibility
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `jobs-export-${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   const formatDate = (dateString: string) => {
     if (!dateString) return "";
     const date = new Date(dateString);
@@ -862,6 +875,28 @@ export default function JobList() {
       day: "2-digit",
       year: "numeric",
     }).format(date);
+  };
+
+  // Find custom field definitions for actions
+  const findFieldByLabel = (label: string) => {
+    return availableFields.find(f => {
+      const fieldLabel = (f.field_label || '').toLowerCase();
+      const fieldName = (f.field_name || '').toLowerCase();
+      const searchLabel = label.toLowerCase();
+      return fieldLabel === searchLabel || fieldName === searchLabel;
+    });
+  };
+
+  const ownerField = findFieldByLabel('Owner');
+  const statusField = findFieldByLabel('Status');
+
+  const handleIndividualActionSuccess = () => {
+    fetchJobs();
+    setSelectedJobId(null);
+    setShowOwnershipModal(false);
+    setShowStatusModal(false);
+    setShowTearsheetModal(false);
+    setShowNoteModal(false);
   };
 
   const getStatusColor = (status: string) => {
@@ -936,16 +971,18 @@ export default function JobList() {
             )}
           </div>
           {selectedJobs.length > 0 && (
-            <>
-              <button onClick={exportJobsToXML} className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
-                Export to XML ({selectedJobs.length})
-              </button>
-              <button onClick={deleteSelectedJobs} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-                Delete Selected ({selectedJobs.length})
-              </button>
-            </>
+            <BulkActionsButton
+              selectedCount={selectedJobs.length}
+              entityType="job"
+              entityIds={selectedJobs}
+              availableFields={availableFields}
+              onSuccess={() => {
+                fetchJobs();
+                setSelectedJobs([]);
+                setSelectAll(false);
+              }}
+              onCSVExport={handleCSVExport}
+            />
           )}
           <button onClick={() => setShowColumnModal(true)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">Columns</button>
           <button onClick={handleAddJob} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center">
@@ -981,14 +1018,20 @@ export default function JobList() {
           </div>
         </div>
         {selectedJobs.length > 0 && (
-          <>
-            <div className="w-full md:hidden">
-              <button onClick={exportJobsToXML} className="w-full px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center justify-center gap-2">Export to XML ({selectedJobs.length})</button>
-            </div>
-            <div className="w-full md:hidden">
-              <button onClick={deleteSelectedJobs} className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center justify-center gap-2">Delete Selected ({selectedJobs.length})</button>
-            </div>
-          </>
+          <div className="w-full md:hidden">
+            <BulkActionsButton
+              selectedCount={selectedJobs.length}
+              entityType="job"
+              entityIds={selectedJobs}
+              availableFields={availableFields}
+              onSuccess={() => {
+                fetchJobs();
+                setSelectedJobs([]);
+                setSelectAll(false);
+              }}
+              onCSVExport={handleCSVExport}
+            />
+          </div>
         )}
         <div className="w-full md:hidden">
           <button onClick={() => setShowColumnModal(true)} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center">Columns</button>
@@ -1124,11 +1167,38 @@ export default function JobList() {
                               label: "Export to XML",
                               action: () => exportSingleJobToXML(job.id),
                             },
-                            {
-                              label: "Delete",
+                            ...(ownerField ? [{
+                              label: "Change Ownership",
                               action: () => {
-                                // Navigate to view page with delete parameter to open delete modal
-                                router.push(`/dashboard/jobs/view?id=${job.id}&delete=true`);
+                                setSelectedJobId(job.id);
+                                setShowOwnershipModal(true);
+                              },
+                            }] : []),
+                            ...(statusField ? [{
+                              label: "Change Status",
+                              action: () => {
+                                setSelectedJobId(job.id);
+                                setShowStatusModal(true);
+                              },
+                            }] : []),
+                            {
+                              label: "Add Note",
+                              action: () => {
+                                setSelectedJobId(job.id);
+                                setShowNoteModal(true);
+                              },
+                            },
+                            {
+                              label: "Add To TearSheet",
+                              action: () => {
+                                setSelectedJobId(job.id);
+                                setShowTearsheetModal(true);
+                              },
+                            },
+                            {
+                              label: "Create Task",
+                              action: () => {
+                                router.push(`/dashboard/tasks/add?relatedEntity=job&relatedEntityId=${job.id}`);
                               },
                             },
                           ]}
@@ -1454,6 +1524,63 @@ export default function JobList() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Individual row action modals */}
+      {showOwnershipModal && ownerField && selectedJobId && (
+        <BulkOwnershipModal
+          open={showOwnershipModal}
+          onClose={() => {
+            setShowOwnershipModal(false);
+            setSelectedJobId(null);
+          }}
+          entityType="job"
+          entityIds={[selectedJobId]}
+          fieldLabel={ownerField.field_label || 'Owner'}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showStatusModal && statusField && selectedJobId && (
+        <BulkStatusModal
+          open={showStatusModal}
+          onClose={() => {
+            setShowStatusModal(false);
+            setSelectedJobId(null);
+          }}
+          entityType="job"
+          entityIds={[selectedJobId]}
+          fieldLabel={statusField.field_label || 'Status'}
+          options={statusField.options || []}
+          availableFields={availableFields}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showTearsheetModal && selectedJobId && (
+        <BulkTearsheetModal
+          open={showTearsheetModal}
+          onClose={() => {
+            setShowTearsheetModal(false);
+            setSelectedJobId(null);
+          }}
+          entityType="job"
+          entityIds={[selectedJobId]}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showNoteModal && selectedJobId && (
+        <BulkNoteModal
+          open={showNoteModal}
+          onClose={() => {
+            setShowNoteModal(false);
+            setSelectedJobId(null);
+          }}
+          entityType="job"
+          entityIds={[selectedJobId]}
+          onSuccess={handleIndividualActionSuccess}
+        />
       )}
     </div>
   );

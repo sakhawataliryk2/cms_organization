@@ -19,6 +19,12 @@ import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "re
 import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import RecordNameResolver from "@/components/RecordNameResolver";
+import BulkActionsButton from "@/components/BulkActionsButton";
+import BulkOwnershipModal from "@/components/BulkOwnershipModal";
+import BulkStatusModal from "@/components/BulkStatusModal";
+import BulkTearsheetModal from "@/components/BulkTearsheetModal";
+import BulkNoteModal from "@/components/BulkNoteModal";
+import { toast } from "sonner";
 
 type PlacementFavorite = {
   id: string;
@@ -272,10 +278,15 @@ export default function PlacementList() {
   const [selectAll, setSelectAll] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
+  
+  // Individual row action modals state
+  const [showOwnershipModal, setShowOwnershipModal] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showTearsheetModal, setShowTearsheetModal] = useState(false);
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [selectedPlacementId, setSelectedPlacementId] = useState<string | null>(null);
 
   // Per-column sorting state
   const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
@@ -725,6 +736,240 @@ export default function PlacementList() {
     return result;
   }, [placements, searchTerm, columnFilters, columnSorts]);
 
+  // Find custom field definitions for actions
+  const findFieldByLabel = (label: string) => {
+    return availableFields.find(f => {
+      const fieldLabel = (f.field_label || '').toLowerCase();
+      const fieldName = (f.field_name || '').toLowerCase();
+      const searchLabel = label.toLowerCase();
+      return fieldLabel === searchLabel || fieldName === searchLabel;
+    });
+  };
+
+  const ownerField = findFieldByLabel('Owner');
+  const statusField = findFieldByLabel('Status');
+
+  const handleIndividualActionSuccess = () => {
+    fetchPlacements();
+    setSelectedPlacementId(null);
+    setShowOwnershipModal(false);
+    setShowStatusModal(false);
+    setShowTearsheetModal(false);
+    setShowNoteModal(false);
+  };
+
+  // Email handlers for single placement
+  const handleEmailCandidates = async (placementId: string) => {
+    const emailSet = new Set<string>();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+    
+    const extractEmailsFromValue = (value: any): void => {
+      if (!value) return;
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (emailRegex.test(trimmed)) emailSet.add(trimmed.toLowerCase());
+        const matches = trimmed.match(/[^\s,;]+@[^\s,;]+\.[^\s,;]+/gi);
+        if (matches) matches.forEach(m => {
+          const t = m.trim();
+          if (emailRegex.test(t)) emailSet.add(t.toLowerCase());
+        });
+        return;
+      }
+      if (Array.isArray(value)) value.forEach(extractEmailsFromValue);
+      if (typeof value === "object") {
+        if (value.email) extractEmailsFromValue(value.email);
+        if (value.email_address) extractEmailsFromValue(value.email_address);
+        Object.values(value).forEach(extractEmailsFromValue);
+      }
+    };
+    
+    try {
+      const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+      
+      const response = await fetch(`/api/placements/${placementId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const data = await response.json();
+      const placement = data?.placement || data;
+      const jobSeekerId = placement?.jobSeekerId || placement?.job_seeker_id;
+      
+      if (jobSeekerId) {
+        const jsResponse = await fetch(`/api/job-seekers/${jobSeekerId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        const jsData = await jsResponse.json();
+        const jobSeeker = jsData?.jobSeeker || jsData;
+        
+        if (jobSeeker?.email) extractEmailsFromValue(jobSeeker.email);
+        if (jobSeeker?.email_address) extractEmailsFromValue(jobSeeker.email_address);
+        if (jobSeeker?.contact_email) extractEmailsFromValue(jobSeeker.contact_email);
+        if (jobSeeker?.contactEmail) extractEmailsFromValue(jobSeeker.contactEmail);
+        if (jobSeeker?.contacts) extractEmailsFromValue(jobSeeker.contacts);
+        if (Array.isArray(jobSeeker?.contact_info)) {
+          jobSeeker.contact_info.forEach((c: any) => {
+            const email = c?.email || c?.email_address;
+            if (email && emailRegex.test(email.trim())) {
+              emailSet.add(email.trim().toLowerCase());
+            }
+          });
+        }
+      }
+      
+      if (emailSet.size === 0) {
+        toast.error("Candidate email(s) not available for this placement");
+        return;
+      }
+      
+      window.location.href = `mailto:${Array.from(emailSet).join(";")}`;
+    } catch (err) {
+      toast.error("Failed to open email compose");
+    }
+  };
+
+  const handleEmailBillingContacts = async (placementId: string) => {
+    const emailSet = new Set<string>();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+    
+    const extractEmailsFromValue = (value: any): void => {
+      if (!value) return;
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (emailRegex.test(trimmed)) emailSet.add(trimmed.toLowerCase());
+        const matches = trimmed.match(/[^\s,;]+@[^\s,;]+\.[^\s,;]+/gi);
+        if (matches) matches.forEach(m => {
+          const t = m.trim();
+          if (emailRegex.test(t)) emailSet.add(t.toLowerCase());
+        });
+        return;
+      }
+      if (Array.isArray(value)) value.forEach(extractEmailsFromValue);
+      if (typeof value === "object") {
+        if (value.email) extractEmailsFromValue(value.email);
+        if (value.email_address) extractEmailsFromValue(value.email_address);
+        Object.values(value).forEach(extractEmailsFromValue);
+      }
+    };
+    
+    try {
+      const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+      
+      const response = await fetch(`/api/placements/${placementId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const data = await response.json();
+      const placement = data?.placement || data;
+      const jobId = placement?.jobId || placement?.job_id;
+      
+      if (jobId) {
+        const jobResponse = await fetch(`/api/jobs/${jobId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        const jobData = await jobResponse.json();
+        const job = jobData?.job || jobData;
+        
+        if (job?.billing_contact_email) extractEmailsFromValue(job.billing_contact_email);
+        if (job?.billing_contacts) extractEmailsFromValue(job.billing_contacts);
+        if (job?.billingContacts) extractEmailsFromValue(job.billingContacts);
+        if (Array.isArray(job?.contacts)) {
+          job.contacts.forEach((c: any) => {
+            const type = (c?.type || c?.contact_type || "").toLowerCase();
+            if (type === "billing") {
+              const email = c?.email || c?.email_address;
+              if (email && emailRegex.test(email.trim())) {
+                emailSet.add(email.trim().toLowerCase());
+              }
+            }
+          });
+        }
+      }
+      
+      if (emailSet.size === 0) {
+        toast.error("Billing contact email(s) not available for this placement");
+        return;
+      }
+      
+      window.location.href = `mailto:${Array.from(emailSet).join(";")}`;
+    } catch (err) {
+      toast.error("Failed to open email compose");
+    }
+  };
+
+  const handleEmailApprovers = async (placementId: string) => {
+    const emailSet = new Set<string>();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+    
+    const extractEmailsFromValue = (value: any): void => {
+      if (!value) return;
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (emailRegex.test(trimmed)) emailSet.add(trimmed.toLowerCase());
+        const matches = trimmed.match(/[^\s,;]+@[^\s,;]+\.[^\s,;]+/gi);
+        if (matches) matches.forEach(m => {
+          const t = m.trim();
+          if (emailRegex.test(t)) emailSet.add(t.toLowerCase());
+        });
+        return;
+      }
+      if (Array.isArray(value)) value.forEach(extractEmailsFromValue);
+      if (typeof value === "object") {
+        if (value.email) extractEmailsFromValue(value.email);
+        if (value.email_address) extractEmailsFromValue(value.email_address);
+        Object.values(value).forEach(extractEmailsFromValue);
+      }
+    };
+    
+    try {
+      const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+      
+      const response = await fetch(`/api/placements/${placementId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const data = await response.json();
+      const placement = data?.placement || data;
+      const jobId = placement?.jobId || placement?.job_id;
+      
+      if (jobId) {
+        const jobResponse = await fetch(`/api/jobs/${jobId}`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        });
+        const jobData = await jobResponse.json();
+        const job = jobData?.job || jobData;
+        
+        if (job?.approver_email) extractEmailsFromValue(job.approver_email);
+        if (job?.approverEmail) extractEmailsFromValue(job.approverEmail);
+        if (job?.approvers) extractEmailsFromValue(job.approvers);
+        if (Array.isArray(job?.contacts)) {
+          job.contacts.forEach((c: any) => {
+            const type = (c?.type || c?.contact_type || "").toLowerCase();
+            if (type === "approver" || type === "approval") {
+              const email = c?.email || c?.email_address;
+              if (email && emailRegex.test(email.trim())) {
+                emailSet.add(email.trim().toLowerCase());
+              }
+            }
+          });
+        }
+        if (Array.isArray(job?.approvers_list)) {
+          job.approvers_list.forEach((a: any) => {
+            const email = a?.email || a?.email_address;
+            if (email && emailRegex.test(email.trim())) {
+              emailSet.add(email.trim().toLowerCase());
+            }
+          });
+        }
+      }
+      
+      if (emailSet.size === 0) {
+        toast.error("Approver email(s) not available for this placement");
+        return;
+      }
+      
+      window.location.href = `mailto:${Array.from(emailSet).join(";")}`;
+    } catch (err) {
+      toast.error("Failed to open email compose");
+    }
+  };
+
   const handleViewPlacement = (id: string) => {
     router.push(`/dashboard/placements/view?id=${id}`);
   };
@@ -761,64 +1006,56 @@ export default function PlacementList() {
     }
   };
 
-  const deleteSelectedPlacements = async () => {
-    // Don't do anything if no placements are selected
+  // CSV Export function for selected records
+  const handleCSVExport = () => {
     if (selectedPlacements.length === 0) return;
 
-    // Confirm deletion
-    const confirmMessage =
-      selectedPlacements.length === 1
-        ? "Are you sure you want to delete this placement?"
-        : `Are you sure you want to delete these ${selectedPlacements.length} placements?`;
+    const selectedData = placements.filter((p) =>
+      selectedPlacements.includes(p.id)
+    );
 
-    if (!window.confirm(confirmMessage)) return;
+    // Get headers from currently displayed columns
+    const headers = ['ID', ...columnFields.map((key) => getColumnLabel(key))];
 
-    setIsDeleting(true);
-    setDeleteError(null);
-
-    try {
-      // Create promises for all delete operations
-      const deletePromises = selectedPlacements.map((id) =>
-        fetch(`/api/placements/${id}`, {
-          method: "DELETE",
-        })
-      );
-
-      // Execute all delete operations
-      const results = await Promise.allSettled(deletePromises);
-
-      // Check for failures
-      const failures = results.filter((result) => result.status === "rejected");
-
-      if (failures.length > 0) {
-        throw new Error(`Failed to delete ${failures.length} placements`);
+    // Escape CSV values
+    const escapeCSV = (value: any): string => {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
       }
+      return str;
+    };
 
-      // Refresh placements after successful deletion
-      await fetchPlacements();
+    // Create CSV rows
+    const csvRows = [
+      headers.map(escapeCSV).join(','),
+      ...selectedData.map((p) => {
+        const row = [
+          `P ${p.id}`,
+          ...columnFields.map((key) => escapeCSV(getColumnValue(p, key)))
+        ];
+        return row.join(',');
+      })
+    ];
 
-      // Clear selection after deletion
-      setSelectedPlacements([]);
-      setSelectAll(false);
-    } catch (err) {
-      console.error("Error deleting placements:", err);
-      setDeleteError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while deleting placements"
-      );
-    } finally {
-      setIsDeleting(false);
-    }
+    const csvContent = csvRows.join('\n');
+    const BOM = '\uFEFF'; // UTF-8 BOM for Excel compatibility
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `placements-export-${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
 
   if (isLoading) {
     return <LoadingScreen message="Loading placements..." />;
-  }
-
-  if (isDeleting) {
-    return <LoadingScreen message="Deleting placements..." />;
   }
 
   return (
@@ -829,12 +1066,18 @@ export default function PlacementList() {
 
         <div className="flex space-x-4">
           {selectedPlacements.length > 0 && (
-            <button
-              onClick={deleteSelectedPlacements}
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center"
-            >
-              Delete Selected ({selectedPlacements.length})
-            </button>
+            <BulkActionsButton
+              selectedCount={selectedPlacements.length}
+              entityType="placement"
+              entityIds={selectedPlacements}
+              availableFields={availableFields}
+              onSuccess={() => {
+                fetchPlacements();
+                setSelectedPlacements([]);
+                setSelectAll(false);
+              }}
+              onCSVExport={handleCSVExport}
+            />
           )}
 
           {/* Favorites Dropdown */}
@@ -919,12 +1162,6 @@ export default function PlacementList() {
         </div>
       )}
 
-      {/* Delete Error message */}
-      {deleteError && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 m-4 rounded">
-          <p>{deleteError}</p>
-        </div>
-      )}
 
       {/* Search */}
       <div className="p-4 border-b border-gray-200">
@@ -1052,6 +1289,52 @@ export default function PlacementList() {
                         label="Actions"
                         options={[
                           { label: "View", action: () => handleViewPlacement(placement.id) },
+                          ...(ownerField ? [{
+                            label: "Change Ownership",
+                            action: () => {
+                              setSelectedPlacementId(placement.id);
+                              setShowOwnershipModal(true);
+                            },
+                          }] : []),
+                          ...(statusField ? [{
+                            label: "Change Status",
+                            action: () => {
+                              setSelectedPlacementId(placement.id);
+                              setShowStatusModal(true);
+                            },
+                          }] : []),
+                          {
+                            label: "Add Note",
+                            action: () => {
+                              setSelectedPlacementId(placement.id);
+                              setShowNoteModal(true);
+                            },
+                          },
+                          {
+                            label: "Add To TearSheet",
+                            action: () => {
+                              setSelectedPlacementId(placement.id);
+                              setShowTearsheetModal(true);
+                            },
+                          },
+                          {
+                            label: "Create Task",
+                            action: () => {
+                              router.push(`/dashboard/tasks/add?relatedEntity=placement&relatedEntityId=${placement.id}`);
+                            },
+                          },
+                          {
+                            label: "Email Candidates",
+                            action: () => handleEmailCandidates(placement.id),
+                          },
+                          {
+                            label: "Email Billing Contacts",
+                            action: () => handleEmailBillingContacts(placement.id),
+                          },
+                          {
+                            label: "Email Approvers",
+                            action: () => handleEmailApprovers(placement.id),
+                          },
                         ]}
                       />
                     </td>
@@ -1383,6 +1666,63 @@ export default function PlacementList() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Individual row action modals */}
+      {showOwnershipModal && ownerField && selectedPlacementId && (
+        <BulkOwnershipModal
+          open={showOwnershipModal}
+          onClose={() => {
+            setShowOwnershipModal(false);
+            setSelectedPlacementId(null);
+          }}
+          entityType="placement"
+          entityIds={[selectedPlacementId]}
+          fieldLabel={ownerField.field_label || 'Owner'}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showStatusModal && statusField && selectedPlacementId && (
+        <BulkStatusModal
+          open={showStatusModal}
+          onClose={() => {
+            setShowStatusModal(false);
+            setSelectedPlacementId(null);
+          }}
+          entityType="placement"
+          entityIds={[selectedPlacementId]}
+          fieldLabel={statusField.field_label || 'Status'}
+          options={statusField.options || []}
+          availableFields={availableFields}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showTearsheetModal && selectedPlacementId && (
+        <BulkTearsheetModal
+          open={showTearsheetModal}
+          onClose={() => {
+            setShowTearsheetModal(false);
+            setSelectedPlacementId(null);
+          }}
+          entityType="placement"
+          entityIds={[selectedPlacementId]}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showNoteModal && selectedPlacementId && (
+        <BulkNoteModal
+          open={showNoteModal}
+          onClose={() => {
+            setShowNoteModal(false);
+            setSelectedPlacementId(null);
+          }}
+          entityType="placement"
+          entityIds={[selectedPlacementId]}
+          onSuccess={handleIndividualActionSuccess}
+        />
       )}
     </div>
   );

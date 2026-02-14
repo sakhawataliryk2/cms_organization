@@ -18,6 +18,11 @@ import { TbGripVertical } from "react-icons/tb";
 import { FiArrowDown, FiArrowUp, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
+import BulkActionsButton from "@/components/BulkActionsButton";
+import BulkOwnershipModal from "@/components/BulkOwnershipModal";
+import BulkStatusModal from "@/components/BulkStatusModal";
+import BulkTearsheetModal from "@/components/BulkTearsheetModal";
+import BulkNoteModal from "@/components/BulkNoteModal";
 
 interface Lead {
   id: string;
@@ -287,8 +292,13 @@ export default function LeadList() {
   const [selectAll, setSelectAll] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
+  
+  // Individual row action modals state
+  const [showOwnershipModal, setShowOwnershipModal] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showTearsheetModal, setShowTearsheetModal] = useState(false);
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
 
   // Favorites State
   const [favorites, setFavorites] = useState<LeadsFavorite[]>([]);
@@ -764,56 +774,6 @@ export default function LeadList() {
     }
   };
 
-  const deleteSelectedLeads = async () => {
-    // Don't do anything if no leads are selected
-    if (selectedLeads.length === 0) return;
-
-    // Confirm deletion
-    const confirmMessage =
-      selectedLeads.length === 1
-        ? "Are you sure you want to delete this lead?"
-        : `Are you sure you want to delete these ${selectedLeads.length} leads?`;
-
-    if (!window.confirm(confirmMessage)) return;
-
-    setIsDeleting(true);
-    setDeleteError(null);
-
-    try {
-      // Create promises for all delete operations
-      const deletePromises = selectedLeads.map((id) =>
-        fetch(`/api/leads/${id}`, {
-          method: "DELETE",
-        })
-      );
-
-      // Execute all delete operations
-      const results = await Promise.allSettled(deletePromises);
-
-      // Check for failures
-      const failures = results.filter((result) => result.status === "rejected");
-
-      if (failures.length > 0) {
-        throw new Error(`Failed to delete ${failures.length} leads`);
-      }
-
-      // Refresh leads after successful deletion
-      await fetchLeads();
-
-      // Clear selection after deletion
-      setSelectedLeads([]);
-      setSelectAll(false);
-    } catch (err) {
-      console.error("Error deleting leads:", err);
-      setDeleteError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while deleting leads"
-      );
-    } finally {
-      setIsDeleting(false);
-    }
-  };
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "";
@@ -825,12 +785,30 @@ export default function LeadList() {
     }).format(date);
   };
 
+  // Find custom field definitions for actions
+  const findFieldByLabel = (label: string) => {
+    return availableFields.find(f => {
+      const fieldLabel = (f.field_label || '').toLowerCase();
+      const fieldName = (f.field_name || '').toLowerCase();
+      const searchLabel = label.toLowerCase();
+      return fieldLabel === searchLabel || fieldName === searchLabel;
+    });
+  };
+
+  const ownerField = findFieldByLabel('Owner');
+  const statusField = findFieldByLabel('Status');
+
+  const handleIndividualActionSuccess = () => {
+    fetchLeads();
+    setSelectedLeadId(null);
+    setShowOwnershipModal(false);
+    setShowStatusModal(false);
+    setShowTearsheetModal(false);
+    setShowNoteModal(false);
+  };
+
   if (isLoading) {
     return <LoadingScreen message="Loading leads..." />;
-  }
-
-  if (isDeleting) {
-    return <LoadingScreen message="Deleting leads..." />;
   }
 
   return (
@@ -847,24 +825,17 @@ export default function LeadList() {
 
         <div className="hidden md:flex items-center space-x-4">
           {selectedLeads.length > 0 && (
-            <button
-              onClick={deleteSelectedLeads}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5 mr-1"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              Delete Selected ({selectedLeads.length})
-            </button>
+            <BulkActionsButton
+              selectedCount={selectedLeads.length}
+              entityType="lead"
+              entityIds={selectedLeads}
+              availableFields={availableFields}
+              onSuccess={() => {
+                fetchLeads();
+                setSelectedLeads([]);
+                setSelectAll(false);
+              }}
+            />
           )}
           {/* Favorites Dropdown - ref on wrapper so click-outside works for both desktop and mobile */}
           <div ref={favoritesMenuRef} className="relative">
@@ -1034,18 +1005,20 @@ export default function LeadList() {
           </div>
         </div>
 
-        {/* Mobile: Delete Selected - full width (when any selected) */}
+        {/* Mobile: Bulk Actions - full width (when any selected) */}
         {selectedLeads.length > 0 && (
           <div className="w-full md:hidden">
-            <button
-              onClick={deleteSelectedLeads}
-              className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center justify-center gap-2"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
-              Delete Selected ({selectedLeads.length})
-            </button>
+            <BulkActionsButton
+              selectedCount={selectedLeads.length}
+              entityType="lead"
+              entityIds={selectedLeads}
+              availableFields={availableFields}
+              onSuccess={() => {
+                fetchLeads();
+                setSelectedLeads([]);
+                setSelectAll(false);
+              }}
+            />
           </div>
         )}
 
@@ -1078,11 +1051,11 @@ export default function LeadList() {
       )}
 
       {/* Delete Error message */}
-      {deleteError && (
+      {/* {deleteError && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 m-4 rounded">
           <p>{deleteError}</p>
         </div>
-      )}
+      )} */}
 
       {/* Search and Filter */}
       <div className="p-4 border-b border-gray-200">
@@ -1207,11 +1180,44 @@ export default function LeadList() {
                     label="Actions"
                     options={[
                       { label: "View", action: () => handleViewLead(lead.id) },
-                      {
-                        label: "Delete",
+                      ...(ownerField ? [{
+                        label: "Change Ownership",
                         action: () => {
-                          // Navigate to view page with delete parameter to open delete modal
-                          router.push(`/dashboard/leads/view?id=${lead.id}&delete=true`);
+                          setSelectedLeadId(lead.id);
+                          setShowOwnershipModal(true);
+                        },
+                      }] : []),
+                      ...(statusField ? [{
+                        label: "Change Status",
+                        action: () => {
+                          setSelectedLeadId(lead.id);
+                          setShowStatusModal(true);
+                        },
+                      }] : []),
+                      {
+                        label: "Add Note",
+                        action: () => {
+                          setSelectedLeadId(lead.id);
+                          setShowNoteModal(true);
+                        },
+                      },
+                      {
+                        label: "Add To TearSheet",
+                        action: () => {
+                          setSelectedLeadId(lead.id);
+                          setShowTearsheetModal(true);
+                        },
+                      },
+                      {
+                        label: "Create Task",
+                        action: () => {
+                          router.push(`/dashboard/tasks/add?relatedEntity=lead&relatedEntityId=${lead.id}`);
+                        },
+                      },
+                      {
+                        label: "Convert to Opportunity",
+                        action: () => {
+                          router.push(`/dashboard/jobs/add?leadId=${lead.id}`);
                         },
                       },
                     ]}
@@ -1545,6 +1551,62 @@ export default function LeadList() {
         </div>
       )}
 
+      {/* Individual row action modals */}
+      {showOwnershipModal && ownerField && selectedLeadId && (
+        <BulkOwnershipModal
+          open={showOwnershipModal}
+          onClose={() => {
+            setShowOwnershipModal(false);
+            setSelectedLeadId(null);
+          }}
+          entityType="lead"
+          entityIds={[selectedLeadId]}
+          fieldLabel={ownerField.field_label || 'Owner'}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showStatusModal && statusField && selectedLeadId && (
+        <BulkStatusModal
+          open={showStatusModal}
+          onClose={() => {
+            setShowStatusModal(false);
+            setSelectedLeadId(null);
+          }}
+          entityType="lead"
+          entityIds={[selectedLeadId]}
+          fieldLabel={statusField.field_label || 'Status'}
+          options={statusField.options || []}
+          availableFields={availableFields}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showTearsheetModal && selectedLeadId && (
+        <BulkTearsheetModal
+          open={showTearsheetModal}
+          onClose={() => {
+            setShowTearsheetModal(false);
+            setSelectedLeadId(null);
+          }}
+          entityType="lead"
+          entityIds={[selectedLeadId]}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showNoteModal && selectedLeadId && (
+        <BulkNoteModal
+          open={showNoteModal}
+          onClose={() => {
+            setShowNoteModal(false);
+            setSelectedLeadId(null);
+          }}
+          entityType="lead"
+          entityIds={[selectedLeadId]}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
     </div>
   );
 }

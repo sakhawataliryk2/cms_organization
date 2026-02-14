@@ -21,12 +21,16 @@ const LINKED_API_PATH: Record<TearsheetEntityType, string> = {
 };
 
 function getAssociateBody(
-  entityType: TearsheetEntityType,
+  entityType: TearsheetEntityType | string,
   entityId: string
 ): Record<string, number> {
   const id = parseInt(entityId, 10);
   if (Number.isNaN(id)) return {};
-  switch (entityType) {
+  
+  // Normalize entityType: handle both hyphenated (from BulkActionsButton) and underscored formats
+  const normalizedType = String(entityType).replace(/-/g, '_');
+  
+  switch (normalizedType) {
     case 'organization':
       return { organization_id: id };
     case 'job':
@@ -40,6 +44,7 @@ function getAssociateBody(
     case 'task':
       return { task_id: id };
     default:
+      console.warn(`Unknown entity type for tearsheet association: ${entityType} (normalized: ${normalizedType})`);
       return {};
   }
 }
@@ -212,23 +217,44 @@ export default function BulkTearsheetModal({
     // Associate each entity to the tearsheet
     for (const entityId of entityIds) {
       try {
+        // getAssociateBody now handles both hyphenated and underscored formats
         const associateBody = getAssociateBody(
-          entityType as TearsheetEntityType,
+          entityType,
           entityId
         );
+        
+        if (Object.keys(associateBody).length === 0) {
+          errors.push(`Record ${entityId}: Invalid entity type "${entityType}"`);
+          console.error(`Failed to create associate body for entityType: ${entityType}, entityId: ${entityId}`);
+          continue;
+        }
+        
+        console.log(`Associating ${entityType} ${entityId} to tearsheet ${tearsheetId} with body:`, associateBody);
+        
         const assocRes = await fetch(`/api/tearsheets/${tearsheetId}/associate`, {
           method: 'POST',
           headers: authHeaders,
           body: JSON.stringify(associateBody),
         });
+        
         if (!assocRes.ok) {
-          const errData = await assocRes.json().catch(() => ({}));
+          const responseText = await assocRes.text();
+          let errData: any = {};
+          try {
+            errData = JSON.parse(responseText);
+          } catch {
+            errData = { message: responseText || 'Failed to associate' };
+          }
           errors.push(
             `Record ${entityId}: ${errData.message || errData.error || 'Failed'}`
           );
+          console.error(`Failed to associate ${entityType} ${entityId}:`, errData);
+        } else {
+          console.log(`Successfully associated ${entityType} ${entityId} to tearsheet ${tearsheetId}`);
         }
       } catch (err) {
         errors.push(`Record ${entityId}: ${err instanceof Error ? err.message : 'Failed'}`);
+        console.error(`Error associating ${entityType} ${entityId}:`, err);
       }
     }
 

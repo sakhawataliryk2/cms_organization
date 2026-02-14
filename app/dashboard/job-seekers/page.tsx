@@ -18,6 +18,11 @@ import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
+import BulkActionsButton from "@/components/BulkActionsButton";
+import BulkOwnershipModal from "@/components/BulkOwnershipModal";
+import BulkStatusModal from "@/components/BulkStatusModal";
+import BulkTearsheetModal from "@/components/BulkTearsheetModal";
+import BulkNoteModal from "@/components/BulkNoteModal";
 
 interface JobSeeker {
   id: string;
@@ -376,7 +381,13 @@ export default function JobSeekerList() {
   const [jobSeekers, setJobSeekers] = useState<JobSeeker[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+  
+  // Individual row action modals state
+  const [showOwnershipModal, setShowOwnershipModal] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showTearsheetModal, setShowTearsheetModal] = useState(false);
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [selectedJsId, setSelectedJsId] = useState<string | null>(null);
 
   const humanize = (s: string) =>
     s
@@ -738,61 +749,73 @@ export default function JobSeekerList() {
     }
   };
 
-  const deleteSelectedJobSeekers = async () => {
-    // Don't do anything if no job seekers are selected
+  // CSV Export function for selected records
+  const handleCSVExport = () => {
     if (selectedJobSeekers.length === 0) return;
 
-    // Confirm deletion
-    const confirmMessage =
-      selectedJobSeekers.length === 1
-        ? "Are you sure you want to delete this job seeker?"
-        : `Are you sure you want to delete these ${selectedJobSeekers.length} job seekers?`;
+    const selectedData = jobSeekers.filter((js) =>
+      selectedJobSeekers.includes(js.id)
+    );
 
-    if (!window.confirm(confirmMessage)) return;
+    // Get headers from currently displayed columns
+    const headers = ['ID', ...columnFields.map((key) => getColumnLabel(key))];
 
-    setIsDeleting(true);
-    setError(null);
-
-    try {
-      // Create promises for all delete operations
-      const deletePromises = selectedJobSeekers.map((id) =>
-        fetch(`/api/job-seekers/${id}`, {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${document.cookie.replace(
-              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-              "$1"
-            )}`,
-          },
-        })
-      );
-
-      // Execute all delete operations
-      const results = await Promise.allSettled(deletePromises);
-
-      // Check for failures
-      const failures = results.filter((result) => result.status === "rejected");
-
-      if (failures.length > 0) {
-        throw new Error(`Failed to delete ${failures.length} job seekers`);
+    // Escape CSV values
+    const escapeCSV = (value: any): string => {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
       }
+      return str;
+    };
 
-      // Refresh job seekers after successful deletion
-      await fetchJobSeekers();
+    // Create CSV rows
+    const csvRows = [
+      headers.map(escapeCSV).join(','),
+      ...selectedData.map((js) => {
+        const row = [
+          `JS ${js.id}`,
+          ...columnFields.map((key) => escapeCSV(getColumnValue(js, key)))
+        ];
+        return row.join(',');
+      })
+    ];
 
-      // Clear selection after deletion
-      setSelectedJobSeekers([]);
-      setSelectAll(false);
-    } catch (err) {
-      console.error("Error deleting job seekers:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while deleting job seekers"
-      );
-    } finally {
-      setIsDeleting(false);
-    }
+    const csvContent = csvRows.join('\n');
+    const BOM = '\uFEFF'; // UTF-8 BOM for Excel compatibility
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `job-seekers-export-${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Find custom field definitions for actions
+  const findFieldByLabel = (label: string) => {
+    return availableFields.find(f => {
+      const fieldLabel = (f.field_label || '').toLowerCase();
+      const fieldName = (f.field_name || '').toLowerCase();
+      const searchLabel = label.toLowerCase();
+      return fieldLabel === searchLabel || fieldName === searchLabel;
+    });
+  };
+
+  const ownerField = findFieldByLabel('Owner');
+  const statusField = findFieldByLabel('Status');
+
+  const handleIndividualActionSuccess = () => {
+    fetchJobSeekers();
+    setSelectedJsId(null);
+    setShowOwnershipModal(false);
+    setShowStatusModal(false);
+    setShowTearsheetModal(false);
+    setShowNoteModal(false);
   };
 
   const formatDate = (dateString: string) => {
@@ -826,10 +849,6 @@ export default function JobSeekerList() {
     return <LoadingScreen message="Loading job seekers..." />;
   }
 
-  if (isDeleting) {
-    return <LoadingScreen message="Deleting job seekers..." />;
-  }
-
   return (
     <div className="bg-white rounded-lg shadow">
       {/* Header - responsive: mobile = title+add row, then full-width Favorites, Columns */}
@@ -844,10 +863,18 @@ export default function JobSeekerList() {
 
         <div className="hidden md:flex items-center space-x-4">
           {selectedJobSeekers.length > 0 && (
-            <button onClick={deleteSelectedJobSeekers} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-              Delete Selected ({selectedJobSeekers.length})
-            </button>
+            <BulkActionsButton
+              selectedCount={selectedJobSeekers.length}
+              entityType="job-seeker"
+              entityIds={selectedJobSeekers}
+              availableFields={availableFields}
+              onSuccess={() => {
+                fetchJobSeekers();
+                setSelectedJobSeekers([]);
+                setSelectAll(false);
+              }}
+              onCSVExport={handleCSVExport}
+            />
           )}
           <div ref={favoritesMenuRef} className="relative">
             <button onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2 bg-white">
@@ -883,7 +910,18 @@ export default function JobSeekerList() {
 
         {selectedJobSeekers.length > 0 && (
           <div className="w-full md:hidden">
-            <button onClick={deleteSelectedJobSeekers} className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center justify-center gap-2">Delete Selected ({selectedJobSeekers.length})</button>
+            <BulkActionsButton
+              selectedCount={selectedJobSeekers.length}
+              entityType="job-seeker"
+              entityIds={selectedJobSeekers}
+              availableFields={availableFields}
+              onSuccess={() => {
+                fetchJobSeekers();
+                setSelectedJobSeekers([]);
+                setSelectAll(false);
+              }}
+              onCSVExport={handleCSVExport}
+            />
           </div>
         )}
         <div className="w-full md:hidden" ref={favoritesMenuMobileRef}>
@@ -1056,11 +1094,38 @@ export default function JobSeekerList() {
                                 `/dashboard/job-seekers/add?id=${jobSeeker.id}`
                               ),
                           },
-                          {
-                            label: "Delete",
+                          ...(ownerField ? [{
+                            label: "Change Ownership",
                             action: () => {
-                              // Navigate to view page with delete parameter to open delete modal
-                              router.push(`/dashboard/job-seekers/view?id=${jobSeeker.id}&delete=true`);
+                              setSelectedJsId(jobSeeker.id);
+                              setShowOwnershipModal(true);
+                            },
+                          }] : []),
+                          ...(statusField ? [{
+                            label: "Change Status",
+                            action: () => {
+                              setSelectedJsId(jobSeeker.id);
+                              setShowStatusModal(true);
+                            },
+                          }] : []),
+                          {
+                            label: "Add Note",
+                            action: () => {
+                              setSelectedJsId(jobSeeker.id);
+                              setShowNoteModal(true);
+                            },
+                          },
+                          {
+                            label: "Add To TearSheet",
+                            action: () => {
+                              setSelectedJsId(jobSeeker.id);
+                              setShowTearsheetModal(true);
+                            },
+                          },
+                          {
+                            label: "Create Task",
+                            action: () => {
+                              router.push(`/dashboard/tasks/add?relatedEntity=job_seeker&relatedEntityId=${jobSeeker.id}`);
                             },
                           },
                         ]}
@@ -1397,6 +1462,63 @@ export default function JobSeekerList() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Individual row action modals */}
+      {showOwnershipModal && ownerField && selectedJsId && (
+        <BulkOwnershipModal
+          open={showOwnershipModal}
+          onClose={() => {
+            setShowOwnershipModal(false);
+            setSelectedJsId(null);
+          }}
+          entityType="job-seeker"
+          entityIds={[selectedJsId]}
+          fieldLabel={ownerField.field_label || 'Owner'}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showStatusModal && statusField && selectedJsId && (
+        <BulkStatusModal
+          open={showStatusModal}
+          onClose={() => {
+            setShowStatusModal(false);
+            setSelectedJsId(null);
+          }}
+          entityType="job-seeker"
+          entityIds={[selectedJsId]}
+          fieldLabel={statusField.field_label || 'Status'}
+          options={statusField.options || []}
+          availableFields={availableFields}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showTearsheetModal && selectedJsId && (
+        <BulkTearsheetModal
+          open={showTearsheetModal}
+          onClose={() => {
+            setShowTearsheetModal(false);
+            setSelectedJsId(null);
+          }}
+          entityType="job-seeker"
+          entityIds={[selectedJsId]}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showNoteModal && selectedJsId && (
+        <BulkNoteModal
+          open={showNoteModal}
+          onClose={() => {
+            setShowNoteModal(false);
+            setSelectedJsId(null);
+          }}
+          entityType="job-seeker"
+          entityIds={[selectedJsId]}
+          onSuccess={handleIndividualActionSuccess}
+        />
       )}
     </div>
   );

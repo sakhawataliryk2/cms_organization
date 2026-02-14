@@ -539,13 +539,18 @@ export default function TearsheetView() {
 
         setTearsheet(data.tearsheet);
 
-        // Track view
-        await fetch(`/api/tearsheets/${tearsheetId}/view`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-          },
-        });
+        // Track view (fail silently if endpoint doesn't exist)
+        try {
+          await fetch(`/api/tearsheets/${tearsheetId}/view`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          });
+        } catch (viewErr) {
+          // Silently ignore view tracking errors - this is a non-critical feature
+          console.debug('View tracking failed (non-critical):', viewErr);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch tearsheet");
       } finally {
