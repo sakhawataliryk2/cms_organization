@@ -18,6 +18,10 @@ import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "re
 import ActionDropdown from "@/components/ActionDropdown";
 import RecordNameResolver from "@/components/RecordNameResolver";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
+import BulkActionsButton from "@/components/BulkActionsButton";
+import BulkOwnershipModal from "@/components/BulkOwnershipModal";
+import BulkStatusModal from "@/components/BulkStatusModal";
+import BulkNoteModal from "@/components/BulkNoteModal";
 
 interface Task {
   id: string;
@@ -296,6 +300,12 @@ export default function TaskList() {
   const [error, setError] = useState<string | null>(null);
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
+  
+  // Individual row action modals state
+  const [showOwnershipModal, setShowOwnershipModal] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
 
   // Per-column sorting state
   const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
@@ -830,50 +840,72 @@ export default function TaskList() {
     }
   };
 
-  const deleteSelectedTasks = async () => {
+  // CSV Export function for selected records
+  const handleCSVExport = () => {
     if (selectedTasks.length === 0) return;
 
-    const confirmMessage = selectedTasks.length === 1
-      ? 'Are you sure you want to delete this task?'
-      : `Are you sure you want to delete these ${selectedTasks.length} tasks?`;
+    const selectedData = tasks.filter((task) =>
+      selectedTasks.includes(task.id)
+    );
 
-    if (!window.confirm(confirmMessage)) return;
+    // Get headers from currently displayed columns
+    const headers = ['ID', ...columnFields.map((key) => getColumnLabel(key))];
 
-    setIsLoading(true);
-
-    try {
-      // Create promises for all delete operations
-      const deletePromises = selectedTasks.map(id =>
-        fetch(`/api/tasks/${id}`, {
-          method: 'DELETE',
-          headers: {
-            'Authorization': `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`
-          }
-        })
-      );
-
-      // Execute all delete operations
-      const results = await Promise.allSettled(deletePromises);
-
-      // Check for failures
-      const failures = results.filter(result => result.status === 'rejected');
-
-      if (failures.length > 0) {
-        throw new Error(`Failed to delete ${failures.length} tasks`);
+    // Escape CSV values
+    const escapeCSV = (value: any): string => {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
       }
+      return str;
+    };
 
-      // Refresh tasks after successful deletion
-      await fetchTasks();
+    // Create CSV rows
+    const csvRows = [
+      headers.map(escapeCSV).join(','),
+      ...selectedData.map((task) => {
+        const row = [
+          `T ${task.id}`,
+          ...columnFields.map((key) => escapeCSV(getColumnValue(task, key)))
+        ];
+        return row.join(',');
+      })
+    ];
 
-      // Clear selection after deletion
-      setSelectedTasks([]);
-      setSelectAll(false);
-    } catch (err) {
-      console.error('Error deleting tasks:', err);
-      setError(err instanceof Error ? err.message : 'An error occurred while deleting tasks');
-    } finally {
-      setIsLoading(false);
-    }
+    const csvContent = csvRows.join('\n');
+    const BOM = '\uFEFF'; // UTF-8 BOM for Excel compatibility
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `tasks-export-${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  // Find custom field definitions for actions
+  const findFieldByLabel = (label: string) => {
+    return availableFields.find(f => {
+      const fieldLabel = (f.field_label || '').toLowerCase();
+      const fieldName = (f.field_name || '').toLowerCase();
+      const searchLabel = label.toLowerCase();
+      return fieldLabel === searchLabel || fieldName === searchLabel;
+    });
+  };
+
+  const ownerField = findFieldByLabel('Owner');
+  const statusField = findFieldByLabel('Status');
+
+  const handleIndividualActionSuccess = () => {
+    fetchTasks();
+    setSelectedTaskId(null);
+    setShowOwnershipModal(false);
+    setShowStatusModal(false);
+    setShowNoteModal(false);
   };
 
   const toggleTaskComplete = async (taskId: string, isCompleted: boolean) => {
@@ -919,15 +951,18 @@ export default function TaskList() {
         <h1 className="text-xl font-bold">Tasks</h1>
         <div className="flex space-x-4">
           {selectedTasks.length > 0 && (
-            <button
-              onClick={deleteSelectedTasks}
-              className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
-              </svg>
-              Delete Selected ({selectedTasks.length})
-            </button>
+            <BulkActionsButton
+              selectedCount={selectedTasks.length}
+              entityType="task"
+              entityIds={selectedTasks}
+              availableFields={availableFields}
+              onSuccess={() => {
+                fetchTasks();
+                setSelectedTasks([]);
+                setSelectAll(false);
+              }}
+              onCSVExport={handleCSVExport}
+            />
           )}
           <div className="relative" ref={favoritesMenuRef}>
             <button
@@ -1059,12 +1094,20 @@ export default function TaskList() {
             )}
           </div>
           {selectedTasks.length > 0 && (
-            <button
-              onClick={deleteSelectedTasks}
-              className="w-full md:hidden px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center justify-center"
-            >
-              Delete Selected ({selectedTasks.length})
-            </button>
+            <div className="w-full md:hidden">
+              <BulkActionsButton
+                selectedCount={selectedTasks.length}
+                entityType="task"
+                entityIds={selectedTasks}
+                availableFields={availableFields}
+                onSuccess={() => {
+                  fetchTasks();
+                  setSelectedTasks([]);
+                  setSelectAll(false);
+                }}
+                onCSVExport={handleCSVExport}
+              />
+            </div>
           )}
           <button
             onClick={() => setShowColumnModal(true)}
@@ -1214,11 +1257,25 @@ export default function TaskList() {
                           label="Actions"
                           options={[
                             { label: "View", action: () => handleViewTask(task.id) },
-                            {
-                              label: "Delete",
+                            ...(ownerField ? [{
+                              label: "Change Ownership",
                               action: () => {
-                                // Navigate to view page with delete parameter to open delete modal
-                                router.push(`/dashboard/tasks/view?id=${task.id}&delete=true`);
+                                setSelectedTaskId(task.id);
+                                setShowOwnershipModal(true);
+                              },
+                            }] : []),
+                            ...(statusField ? [{
+                              label: "Change Status",
+                              action: () => {
+                                setSelectedTaskId(task.id);
+                                setShowStatusModal(true);
+                              },
+                            }] : []),
+                            {
+                              label: "Add Note",
+                              action: () => {
+                                setSelectedTaskId(task.id);
+                                setShowNoteModal(true);
                               },
                             },
                           ]}
@@ -1620,6 +1677,50 @@ export default function TaskList() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Individual row action modals */}
+      {showOwnershipModal && ownerField && selectedTaskId && (
+        <BulkOwnershipModal
+          open={showOwnershipModal}
+          onClose={() => {
+            setShowOwnershipModal(false);
+            setSelectedTaskId(null);
+          }}
+          entityType="task"
+          entityIds={[selectedTaskId]}
+          fieldLabel={ownerField.field_label || 'Owner'}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showStatusModal && statusField && selectedTaskId && (
+        <BulkStatusModal
+          open={showStatusModal}
+          onClose={() => {
+            setShowStatusModal(false);
+            setSelectedTaskId(null);
+          }}
+          entityType="task"
+          entityIds={[selectedTaskId]}
+          fieldLabel={statusField.field_label || 'Status'}
+          options={statusField.options || []}
+          availableFields={availableFields}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showNoteModal && selectedTaskId && (
+        <BulkNoteModal
+          open={showNoteModal}
+          onClose={() => {
+            setShowNoteModal(false);
+            setSelectedTaskId(null);
+          }}
+          entityType="task"
+          entityIds={[selectedTaskId]}
+          onSuccess={handleIndividualActionSuccess}
+        />
       )}
     </div>
   );

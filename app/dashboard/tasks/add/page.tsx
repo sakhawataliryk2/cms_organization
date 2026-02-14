@@ -47,7 +47,42 @@ export default function AddTask() {
   const taskId = searchParams.get("id");
   const relatedEntity = searchParams.get("relatedEntity");
   const relatedEntityId = searchParams.get("relatedEntityId");
+  const relatedEntityIds = searchParams.get("relatedEntityIds"); // Comma-separated IDs for bulk creation
   const organizationNameFromUrl = searchParams.get("organizationName");
+  
+  // Parse multiple entity IDs if present
+  const entityIdsArray = relatedEntityIds 
+    ? relatedEntityIds.split(',').map(id => id.trim()).filter(id => id)
+    : relatedEntityId 
+      ? [relatedEntityId]
+      : [];
+  
+  const isBulkMode = entityIdsArray.length > 1;
+  
+  // Debug logging for bulk mode detection
+  useEffect(() => {
+    if (relatedEntityIds || relatedEntityId) {
+      console.log('🔍 Task Add Page - Entity Detection:', {
+        relatedEntity,
+        relatedEntityId,
+        relatedEntityIds,
+        entityIdsArray,
+        isBulkMode,
+        count: entityIdsArray.length
+      });
+    }
+  }, [relatedEntity, relatedEntityId, relatedEntityIds, entityIdsArray, isBulkMode]);
+  
+  // Debug logging
+  if (relatedEntity === 'hiring_manager') {
+    console.log('📋 Hiring Manager Task Creation:', {
+      relatedEntityId,
+      relatedEntityIds,
+      entityIdsArray,
+      isBulkMode,
+      count: entityIdsArray.length
+    });
+  }
 
   const [isEditMode, setIsEditMode] = useState(!!taskId);
   const [isLoadingTask, setIsLoadingTask] = useState(!!taskId);
@@ -268,7 +303,13 @@ export default function AddTask() {
   // Prefill Job, Job Seeker, or Hiring Manager from URL (relatedEntity & relatedEntityId)
   useEffect(() => {
     if (isEditMode) return;
-    if (!relatedEntity || !relatedEntityId) return;
+    if (!relatedEntity) return;
+    
+    // Check if we have IDs (either single or multiple)
+    const hasEntityIds = (relatedEntityId && relatedEntityId.trim() !== "") || 
+                         (relatedEntityIds && relatedEntityIds.trim() !== "");
+    if (!hasEntityIds) return;
+    
     const entity = relatedEntity.toLowerCase();
     if (!["job", "job_seeker", "hiring_manager", "lead", "placement"].includes(entity)) return;
     if (customFieldsLoading || customFields.length === 0) return;
@@ -277,52 +318,50 @@ export default function AddTask() {
     const isLookup = (f: any) => String(f.field_type || "").toLowerCase() === "lookup";
     const lookupType = (f: any) => String(f.lookup_type || "").toLowerCase();
 
-    let targetField: any = null;
-    if (entity === "job") {
-      targetField = customFields.find((f: any) => {
-        const label = String(f.field_label || "").toLowerCase();
-        return (
-          (isLookup(f) && lookupType(f) === "jobs") ||
-          (label.includes("job") && !label.includes("seeker"))
-        );
-      });
-    } else if (entity === "job_seeker") {
-      targetField = customFields.find(
-        (f: any) =>
-          (isLookup(f) && lookupType(f) === "job-seekers") ||
-          String(f.field_label || "").toLowerCase().includes("job seeker") ||
-          String(f.field_label || "").toLowerCase().includes("jobseeker")
-      );
-    } else if (entity === "hiring_manager") {
-      targetField = customFields.find(
-        (f: any) =>
-          (isLookup(f) && lookupType(f) === "hiring-managers") ||
-          String(f.field_label || "").toLowerCase().includes("hiring manager")
-      );
-    } else if (entity === "lead") {
-      targetField = customFields.find((f: any) => {
-        const label = String(f.field_label || "").toLowerCase();
-        return (
-          (isLookup(f) && (lookupType(f) === "leads" || lookupType(f) === "lead")) ||
-          (label.includes("lead") && !label.includes("manager"))
-        );
-      });
-    } else if (entity === "placement") {
-      targetField = customFields.find(
-        (f: any) =>
-          (isLookup(f) && lookupType(f) === "placements") ||
-          String(f.field_label || "").toLowerCase().includes("placement")
-      );
-    }
+    // Map entity types to their lookup_type values
+    const entityLookupTypeMap: Record<string, string[]> = {
+      "job": ["jobs", "job"],
+      "job_seeker": ["job-seekers", "jobseekers", "job_seeker"],
+      "hiring_manager": ["hiring-managers", "hiringmanagers", "hiring_manager"],
+      "lead": ["leads", "lead"],
+      "placement": ["placements", "placement"],
+      "organization": ["organizations", "organization"]
+    };
+    
+    const expectedLookupTypes = entityLookupTypeMap[entity] || [];
+    
+    // Match ONLY by lookup_type, not by label
+    const targetField = customFields.find((f: any) => {
+      if (!isLookup(f)) return false;
+      const fieldLookupType = lookupType(f);
+      return expectedLookupTypes.some(expected => fieldLookupType === expected);
+    });
 
     if (!targetField?.field_name) return;
 
     hasPrefilledRelatedFromUrlRef.current.add(entity);
-    setCustomFieldValues((prev) => ({
-      ...prev,
-      [targetField.field_name]: String(relatedEntityId),
-    }));
-  }, [isEditMode, relatedEntity, relatedEntityId, customFieldsLoading, customFields, setCustomFieldValues]);
+    
+    // In bulk mode (multiple IDs), use array; otherwise use single ID
+    // Handle bulk mode for ALL entity types, not just hiring_manager
+    if (entityIdsArray.length > 1) {
+      // Bulk mode: pre-populate with array of IDs
+      setCustomFieldValues((prev) => ({
+        ...prev,
+        [targetField.field_name]: entityIdsArray,
+      }));
+      console.log(`📋 Bulk mode - Pre-filled ${entity} field with IDs:`, entityIdsArray);
+    } else {
+      // Single mode: use single ID
+      const singleId = relatedEntityId || (entityIdsArray.length > 0 ? entityIdsArray[0] : "");
+      if (singleId) {
+        setCustomFieldValues((prev) => ({
+          ...prev,
+          [targetField.field_name]: String(singleId),
+        }));
+        console.log(`📋 Single mode - Pre-filled ${entity} field with ID:`, singleId);
+      }
+    }
+  }, [isEditMode, relatedEntity, relatedEntityId, relatedEntityIds, entityIdsArray, customFieldsLoading, customFields, setCustomFieldValues]);
 
   // Fetch active users for assignment dropdown
   const fetchActiveUsers = async () => {
@@ -691,7 +730,8 @@ export default function AddTask() {
         ? JSON.parse(JSON.stringify(customFieldsForDB))
         : {};
 
-      if (relatedEntity && relatedEntityId) {
+      // Only set single entity ID if not in bulk mode
+      if (!isBulkMode && relatedEntity && relatedEntityId) {
         const rid = Number(relatedEntityId);
         switch (relatedEntity) {
           case "organization":
@@ -784,49 +824,173 @@ export default function AddTask() {
           ? JSON.parse(JSON.stringify(apiData.custom_fields))
           : {};
 
-      const url = isEditMode ? `/api/tasks/${taskId}` : "/api/tasks";
-      const method = isEditMode ? "PUT" : "POST";
+      // Handle bulk creation for multiple entity IDs
+      if (isBulkMode && !isEditMode && relatedEntity && entityIdsArray.length > 0) {
+        const results = {
+          successful: [] as string[],
+          failed: [] as string[],
+          errors: [] as Array<{ id: string; error: string }>
+        };
 
-      const response = await fetch(url, {
-        method: method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-            "$1"
-          )}`,
-        },
-        body: JSON.stringify(cleanPayload),
-      });
+        // Determine the entity field name based on entity type
+        const entityFieldMap: Record<string, string> = {
+          'organization': 'organization_id',
+          'job': 'job_id',
+          'lead': 'lead_id',
+          'hiring_manager': 'hiring_manager_id',
+          'job_seeker': 'job_seeker_id',
+          'placement': 'placement_id'
+        };
+        const entityField = entityFieldMap[relatedEntity];
 
-      const responseText = await response.text();
-      let data: { message?: string; error?: string; errors?: string[]; task?: { id: string } } = {};
-      try {
-        data = responseText ? JSON.parse(responseText) : {};
-      } catch (_) { }
+        if (!entityField) {
+          setError(`Unsupported entity type: ${relatedEntity}`);
+          setIsSubmitting(false);
+          return;
+        }
 
-      if (!response.ok) {
-        const msg =
-          data.message ||
-          data.error ||
-          (Array.isArray(data.errors) ? data.errors.join("; ") : null) ||
-          response.statusText ||
-          `Failed to ${isEditMode ? "update" : "create"} task`;
-        setError(msg);
-        setIsSubmitting(false);
-        return;
-      }
+        // Get entity IDs from form if multiselect was used, otherwise use entityIdsArray from URL
+        let entityIdsToProcess = entityIdsArray;
+        
+        // Map entity types to their lookup_type values (match ONLY by lookup_type)
+        const entityLookupTypeMap: Record<string, string[]> = {
+          "job": ["jobs", "job"],
+          "job_seeker": ["job-seekers", "jobseekers", "job_seeker"],
+          "hiring_manager": ["hiring-managers", "hiringmanagers", "hiring_manager"],
+          "lead": ["leads", "lead"],
+          "placement": ["placements", "placement"],
+          "organization": ["organizations", "organization"]
+        };
+        
+        // Find the related entity field in the form - match ONLY by lookup_type
+        const expectedLookupTypes = relatedEntity ? (entityLookupTypeMap[relatedEntity.toLowerCase()] || []) : [];
+        const relatedEntityField = expectedLookupTypes.length > 0 ? customFields.find((f: any) => {
+          const fieldType = String(f.field_type || "").toLowerCase();
+          const fieldLookupType = String(f.lookup_type || "").toLowerCase();
+          
+          const isLookupField = fieldType === "lookup" || fieldType === "multiselect_lookup";
+          if (!isLookupField) return false;
+          
+          // Match ONLY by lookup_type
+          return expectedLookupTypes.some(expected => fieldLookupType === expected);
+        }) : null;
+        
+        if (relatedEntityField) {
+          const formValue = customFieldValues[relatedEntityField.field_name];
+          if (formValue) {
+            // If it's an array (multiselect), use it; otherwise use single value or fallback to URL IDs
+            if (Array.isArray(formValue) && formValue.length > 0) {
+              entityIdsToProcess = formValue.map(id => String(id));
+            } else if (formValue && String(formValue).trim() !== "") {
+              entityIdsToProcess = [String(formValue)];
+            }
+          }
+        }
 
-      console.log(
-        `Task ${isEditMode ? "updated" : "created"} successfully:`,
-        data
-      );
+        console.log(`📋 Bulk submit - Processing ${entityIdsToProcess.length} ${relatedEntity} IDs:`, entityIdsToProcess);
 
-      const resultId = isEditMode ? taskId : data.task ? data.task.id : null;
-      if (resultId) {
-        router.push("/dashboard/tasks/view?id=" + resultId);
+        // Create a task for each entity ID
+        for (const entityId of entityIdsToProcess) {
+          try {
+            const taskPayload = {
+              ...cleanPayload,
+              [entityField]: parseInt(entityId)
+            };
+
+            const response = await fetch("/api/tasks", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${document.cookie.replace(
+                  /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                  "$1"
+                )}`,
+              },
+              body: JSON.stringify(taskPayload),
+            });
+
+            const responseText = await response.text();
+            let data: { message?: string; error?: string; errors?: string[]; task?: { id: string } } = {};
+            try {
+              data = responseText ? JSON.parse(responseText) : {};
+            } catch (_) { }
+
+            if (response.ok) {
+              results.successful.push(entityId);
+            } else {
+              const msg =
+                data.message ||
+                data.error ||
+                (Array.isArray(data.errors) ? data.errors.join("; ") : null) ||
+                response.statusText ||
+                'Failed to create task';
+              results.failed.push(entityId);
+              results.errors.push({ id: entityId, error: msg });
+            }
+          } catch (error) {
+            results.failed.push(entityId);
+            results.errors.push({
+              id: entityId,
+              error: error instanceof Error ? error.message : 'Failed to create task'
+            });
+          }
+        }
+
+        // Show results
+        if (results.failed.length > 0) {
+          const errorDetails = results.errors.map(e => `ID ${e.id}: ${e.error}`).join(', ');
+          setError(`Created ${results.successful.length} task(s) successfully. Failed for ${results.failed.length} record(s): ${errorDetails}`);
+        } else {
+          // All successful - navigate back to tasks list
+          router.push("/dashboard/tasks");
+          return;
+        }
       } else {
-        router.push("/dashboard/tasks");
+        // Single task creation/update (existing logic)
+        const url = isEditMode ? `/api/tasks/${taskId}` : "/api/tasks";
+        const method = isEditMode ? "PUT" : "POST";
+
+        const response = await fetch(url, {
+          method: method,
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${document.cookie.replace(
+              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+              "$1"
+            )}`,
+          },
+          body: JSON.stringify(cleanPayload),
+        });
+
+        const responseText = await response.text();
+        let data: { message?: string; error?: string; errors?: string[]; task?: { id: string } } = {};
+        try {
+          data = responseText ? JSON.parse(responseText) : {};
+        } catch (_) { }
+
+        if (!response.ok) {
+          const msg =
+            data.message ||
+            data.error ||
+            (Array.isArray(data.errors) ? data.errors.join("; ") : null) ||
+            response.statusText ||
+            `Failed to ${isEditMode ? "update" : "create"} task`;
+          setError(msg);
+          setIsSubmitting(false);
+          return;
+        }
+
+        console.log(
+          `Task ${isEditMode ? "updated" : "created"} successfully:`,
+          data
+        );
+
+        const resultId = isEditMode ? taskId : data.task ? data.task.id : null;
+        if (resultId) {
+          router.push("/dashboard/tasks/view?id=" + resultId);
+        } else {
+          router.push("/dashboard/tasks");
+        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "An error occurred";
@@ -849,7 +1013,7 @@ export default function AddTask() {
   if (isSubmitting) {
     return (
       <LoadingScreen
-        message={isEditMode ? "Updating task..." : "Creating task..."}
+        message={isEditMode ? "Updating task..." : isBulkMode ? `Creating ${entityIdsArray.length} tasks...` : "Creating task..."}
       />
     );
   }
@@ -880,6 +1044,11 @@ export default function AddTask() {
         {/* Header with X button */}
         <div className="flex justify-between items-center border-b pb-4 mb-6">
           <div className="flex items-center">
+            {isBulkMode && (
+              <div className="mr-4 px-3 py-1 bg-blue-100 text-blue-800 rounded-md text-sm font-medium">
+                Creating tasks for {entityIdsArray.length} {relatedEntity?.replace('_', ' ')} record(s)
+              </div>
+            )}
             {/* <Image
               src="/checklist.svg"
               alt="Task"
@@ -1028,6 +1197,51 @@ export default function AddTask() {
                     nameLower.includes("assigned") ||
                     nameLower.includes("assignee");
 
+                  // Check if this field matches the current relatedEntity (for all entity types)
+                  // Match ONLY by lookup_type, not by label
+                  const isRelatedEntityField = (() => {
+                    if (!relatedEntity) return false;
+                    const fieldType = String(field.field_type || "").toLowerCase();
+                    const fieldLookupType = String(field.lookup_type || "").toLowerCase();
+                    const entity = relatedEntity.toLowerCase();
+                    
+                    // Check if field type is a lookup
+                    const isLookupField = fieldType === "lookup" || fieldType === "multiselect_lookup";
+                    if (!isLookupField) return false;
+                    
+                    // Map entity types to their lookup_type values
+                    const entityLookupTypeMap: Record<string, string[]> = {
+                      "job": ["jobs", "job"],
+                      "job_seeker": ["job-seekers", "jobseekers", "job_seeker"],
+                      "hiring_manager": ["hiring-managers", "hiringmanagers", "hiring_manager"],
+                      "lead": ["leads", "lead"],
+                      "placement": ["placements", "placement"],
+                      "organization": ["organizations", "organization"]
+                    };
+                    
+                    const expectedLookupTypes = entityLookupTypeMap[entity] || [];
+                    
+                    // Match ONLY by lookup_type
+                    return expectedLookupTypes.some(expected => fieldLookupType === expected);
+                  })();
+
+                  // In bulk mode, convert related entity lookup to multiselect_lookup
+                  let fieldToRender: any = field;
+                  if (isBulkMode && isRelatedEntityField) {
+                    // Convert single lookup to multiselect_lookup for bulk operations
+                    fieldToRender = {
+                      ...field,
+                      field_type: "multiselect_lookup"
+                    };
+                    console.log(`🔄 Bulk mode detected: Converting ${relatedEntity} field to multiselect_lookup`, {
+                      originalType: field.field_type,
+                      newType: fieldToRender.field_type,
+                      lookupType: field.lookup_type,
+                      entityIds: entityIdsArray,
+                      relatedEntity
+                    });
+                  }
+
                   const dynamicOwnerOptions =
                     isOwnerField &&
                       String(field.field_type || "").toLowerCase() === "select" &&
@@ -1045,12 +1259,62 @@ export default function AddTask() {
                       : null;
 
                   // Assigned To is rendered as type-to-match (autocomplete), not dropdown
-                  const fieldToRender: any =
-                    dynamicOwnerOptions && dynamicOwnerOptions.length > 0
-                      ? { ...field, options: dynamicOwnerOptions }
-                      : field;
+                  if (dynamicOwnerOptions && dynamicOwnerOptions.length > 0) {
+                    fieldToRender = { ...fieldToRender, options: dynamicOwnerOptions };
+                  }
 
-                  const fieldValue = customFieldValues[field.field_name] || "";
+                  // Get field value - will be array for multiselect in bulk mode, string for single select
+                  let fieldValue = customFieldValues[field.field_name];
+                  
+                  // Ensure proper format: array for multiselect, string for single select
+                  // Handle bulk mode for ALL related entity fields, not just hiring_manager
+                  if (isBulkMode && isRelatedEntityField) {
+                    // In bulk mode, ensure it's an array
+                    if (!Array.isArray(fieldValue)) {
+                      fieldValue = fieldValue ? [String(fieldValue)] : [];
+                    }
+                    // If empty and we have entity IDs, use them
+                    if (fieldValue.length === 0 && entityIdsArray.length > 0) {
+                      fieldValue = [...entityIdsArray]; // Create a copy
+                      // Update state if needed
+                      if (!customFieldValues[field.field_name] || 
+                          (Array.isArray(customFieldValues[field.field_name]) && 
+                           customFieldValues[field.field_name].length === 0)) {
+                        handleCustomFieldChange(field.field_name, fieldValue);
+                      }
+                    }
+                    console.log(`📋 Bulk mode - ${relatedEntity} field value:`, {
+                      fieldName: field.field_name,
+                      fieldValue,
+                      entityIdsArray,
+                      isArray: Array.isArray(fieldValue),
+                      relatedEntity
+                    });
+                  } else if (!isBulkMode && isRelatedEntityField) {
+                    // In single mode, ensure it's a string
+                    if (Array.isArray(fieldValue)) {
+                      fieldValue = fieldValue.length > 0 ? String(fieldValue[0]) : "";
+                    } else {
+                      fieldValue = fieldValue ? String(fieldValue) : "";
+                    }
+                    // If empty and we have entity ID, use it
+                    if (!fieldValue && (relatedEntityId || entityIdsArray.length > 0)) {
+                      fieldValue = relatedEntityId || entityIdsArray[0];
+                      if (!customFieldValues[field.field_name]) {
+                        handleCustomFieldChange(field.field_name, fieldValue);
+                      }
+                    }
+                    console.log(`📋 Single mode - ${relatedEntity} field value:`, {
+                      fieldName: field.field_name,
+                      fieldValue,
+                      relatedEntityId,
+                      entityIdsArray,
+                      relatedEntity
+                    });
+                  } else {
+                    // For other fields, use default behavior
+                    fieldValue = fieldValue || "";
+                  }
                   const assignedToValue = String(customFieldValues[field.field_name] ?? "").trim();
                   const assignedToMatches = isAssignedField && activeUsers.length > 0
                     ? activeUsers.filter(
@@ -1220,7 +1484,7 @@ export default function AddTask() {
                           </>
                         ) : (
                           <CustomFieldRenderer
-                            field={field}
+                            field={fieldToRender}
                             value={fieldValue}
                             allFields={customFields}
                             values={customFieldValues}
