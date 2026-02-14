@@ -18,6 +18,12 @@ import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
+import BulkActionsButton from "@/components/BulkActionsButton";
+import BulkOwnershipModal from "@/components/BulkOwnershipModal";
+import BulkStatusModal from "@/components/BulkStatusModal";
+import BulkTearsheetModal from "@/components/BulkTearsheetModal";
+import BulkNoteModal from "@/components/BulkNoteModal";
+import BulkTaskModal from "@/components/BulkTaskModal";
 
 interface HiringManager {
   id: string;
@@ -244,6 +250,14 @@ export default function HiringManagerList() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Individual row action modals state
+  const [showOwnershipModal, setShowOwnershipModal] = useState(false);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showTearsheetModal, setShowTearsheetModal] = useState(false);
+  const [showNoteModal, setShowNoteModal] = useState(false);
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [selectedHmId, setSelectedHmId] = useState<string | null>(null);
 
   // Favorites State
   const [favorites, setFavorites] = useState<HiringManagerFavorite[]>([]);
@@ -678,6 +692,76 @@ export default function HiringManagerList() {
     return Array.from(statuses).map((s) => ({ label: s, value: s }));
   }, [hiringManagers]);
 
+  // Find custom field definitions for individual row actions
+  const findFieldByLabel = (label: string) => {
+    return availableFields.find(f => {
+      const fieldLabel = (f.field_label || '').toLowerCase();
+      const fieldName = (f.field_name || '').toLowerCase();
+      const searchLabel = label.toLowerCase();
+      return fieldLabel === searchLabel || fieldName === searchLabel;
+    });
+  };
+
+  const ownerField = findFieldByLabel('Owner');
+  const statusField = findFieldByLabel('Status');
+
+  const handleIndividualActionSuccess = () => {
+    setShowOwnershipModal(false);
+    setShowStatusModal(false);
+    setShowTearsheetModal(false);
+    setShowNoteModal(false);
+    setShowTaskModal(false);
+    setSelectedHmId(null);
+    fetchHiringManagers();
+  };
+
+  // CSV Export function for selected records
+  const handleCSVExport = () => {
+    if (selectedHiringManagers.length === 0) return;
+
+    const selectedData = hiringManagers.filter((hm) =>
+      selectedHiringManagers.includes(hm.id)
+    );
+
+    // Get headers from currently displayed columns
+    const headers = ['ID', ...columnFields.map((key) => getColumnLabel(key))];
+
+    // Escape CSV values
+    const escapeCSV = (value: any): string => {
+      if (value === null || value === undefined) return '';
+      const str = String(value);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    // Create CSV rows
+    const csvRows = [
+      headers.map(escapeCSV).join(','),
+      ...selectedData.map((hm) => {
+        const row = [
+          `HM ${hm.id}`,
+          ...columnFields.map((key) => escapeCSV(getColumnValue(hm, key)))
+        ];
+        return row.join(',');
+      })
+    ];
+
+    const csvContent = csvRows.join('\n');
+    const BOM = '\uFEFF'; // UTF-8 BOM for Excel compatibility
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `hiring-managers-export-${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   // Apply per-column filtering and sorting (exclude archived in main overview)
   const filteredAndSortedHiringManagers = useMemo(() => {
     let result = hiringManagers.filter(
@@ -790,59 +874,6 @@ export default function HiringManagerList() {
     }
   };
 
-  const deleteSelectedHiringManagers = async () => {
-    if (selectedHiringManagers.length === 0) return;
-
-    const confirmMessage =
-      selectedHiringManagers.length === 1
-        ? "Are you sure you want to delete this hiring manager?"
-        : `Are you sure you want to delete these ${selectedHiringManagers.length} hiring managers?`;
-
-    if (!window.confirm(confirmMessage)) return;
-
-    setIsLoading(true);
-
-    try {
-      // Create promises for all delete operations
-      const deletePromises = selectedHiringManagers.map((id) =>
-        fetch(`/api/hiring-managers/${id}`, {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${document.cookie.replace(
-              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-              "$1"
-            )}`,
-          },
-        })
-      );
-
-      // Execute all delete operations
-      const results = await Promise.allSettled(deletePromises);
-
-      // Check for failures
-      const failures = results.filter((result) => result.status === "rejected");
-
-      if (failures.length > 0) {
-        throw new Error(`Failed to delete ${failures.length} hiring managers`);
-      }
-
-      // Refresh hiring managers after successful deletion
-      await fetchHiringManagers();
-
-      // Clear selection after deletion
-      setSelectedHiringManagers([]);
-      setSelectAll(false);
-    } catch (err) {
-      console.error("Error deleting hiring managers:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while deleting hiring managers"
-      );
-    } finally {
-      setIsLoading(false);
-    }
-  };
 
   const formatDate = (dateString: string) => {
     if (!dateString) return "";
@@ -885,10 +916,20 @@ export default function HiringManagerList() {
 
         <div className="hidden md:flex space-x-4">
           {selectedHiringManagers.length > 0 && (
-            <button onClick={deleteSelectedHiringManagers} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-              Delete Selected ({selectedHiringManagers.length})
-            </button>
+            <>
+              <BulkActionsButton
+                selectedCount={selectedHiringManagers.length}
+                entityType="hiring-manager"
+                entityIds={selectedHiringManagers}
+                availableFields={availableFields}
+                onSuccess={() => {
+                  fetchHiringManagers();
+                  setSelectedHiringManagers([]);
+                  setSelectAll(false);
+                }}
+                onCSVExport={handleCSVExport}
+              />
+            </>
           )}
           <div className="relative">
             <button onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2 bg-white">
@@ -924,7 +965,18 @@ export default function HiringManagerList() {
 
         {selectedHiringManagers.length > 0 && (
           <div className="w-full md:hidden">
-            <button onClick={deleteSelectedHiringManagers} className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center justify-center gap-2">Delete Selected ({selectedHiringManagers.length})</button>
+            <BulkActionsButton
+              selectedCount={selectedHiringManagers.length}
+              entityType="hiring-manager"
+              entityIds={selectedHiringManagers}
+              availableFields={availableFields}
+              onSuccess={() => {
+                fetchHiringManagers();
+                setSelectedHiringManagers([]);
+                setSelectAll(false);
+              }}
+              onCSVExport={handleCSVExport}
+            />
           </div>
         )}
         <div className="w-full md:hidden">
@@ -1090,11 +1142,39 @@ export default function HiringManagerList() {
                         label="Actions"
                         options={[
                           { label: "View", action: () => handleViewHiringManager(hm.id) },
-                          {
-                            label: "Delete",
+                          ...(ownerField ? [{
+                            label: "Change Ownership",
                             action: () => {
-                              // Navigate to view page with delete parameter to open delete modal
-                              router.push(`/dashboard/hiring-managers/view?id=${hm.id}&delete=true`);
+                              setSelectedHmId(hm.id);
+                              setShowOwnershipModal(true);
+                            },
+                          }] : []),
+                          ...(statusField ? [{
+                            label: "Change Status",
+                            action: () => {
+                              setSelectedHmId(hm.id);
+                              setShowStatusModal(true);
+                            },
+                          }] : []),
+                          {
+                            label: "Add Note",
+                            action: () => {
+                              setSelectedHmId(hm.id);
+                              setShowNoteModal(true);
+                            },
+                          },
+                          {
+                            label: "Add To TearSheet",
+                            action: () => {
+                              setSelectedHmId(hm.id);
+                              setShowTearsheetModal(true);
+                            },
+                          },
+                          {
+                            label: "Create Task",
+                            action: () => {
+                              setSelectedHmId(hm.id);
+                              setShowTaskModal(true);
                             },
                           },
                         ]}
@@ -1428,6 +1508,76 @@ export default function HiringManagerList() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Individual Row Action Modals */}
+      {showOwnershipModal && ownerField && selectedHmId && (
+        <BulkOwnershipModal
+          open={showOwnershipModal}
+          onClose={() => {
+            setShowOwnershipModal(false);
+            setSelectedHmId(null);
+          }}
+          entityType="hiring-manager"
+          entityIds={[selectedHmId]}
+          fieldLabel={ownerField.field_label || 'Owner'}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showStatusModal && statusField && selectedHmId && (
+        <BulkStatusModal
+          open={showStatusModal}
+          onClose={() => {
+            setShowStatusModal(false);
+            setSelectedHmId(null);
+          }}
+          entityType="hiring-manager"
+          entityIds={[selectedHmId]}
+          fieldLabel={statusField.field_label || 'Status'}
+          options={statusField.options || []}
+          availableFields={availableFields}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showTearsheetModal && selectedHmId && (
+        <BulkTearsheetModal
+          open={showTearsheetModal}
+          onClose={() => {
+            setShowTearsheetModal(false);
+            setSelectedHmId(null);
+          }}
+          entityType="hiring-manager"
+          entityIds={[selectedHmId]}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showNoteModal && selectedHmId && (
+        <BulkNoteModal
+          open={showNoteModal}
+          onClose={() => {
+            setShowNoteModal(false);
+            setSelectedHmId(null);
+          }}
+          entityType="hiring-manager"
+          entityIds={[selectedHmId]}
+          onSuccess={handleIndividualActionSuccess}
+        />
+      )}
+
+      {showTaskModal && selectedHmId && (
+        <BulkTaskModal
+          open={showTaskModal}
+          onClose={() => {
+            setShowTaskModal(false);
+            setSelectedHmId(null);
+          }}
+          entityType="hiring-manager"
+          entityIds={[selectedHmId]}
+          onSuccess={handleIndividualActionSuccess}
+        />
       )}
     </div>
   );

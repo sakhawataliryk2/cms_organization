@@ -65,22 +65,38 @@ export default function ApproveDeletePage() {
         return;
       }
 
-      const response = await fetch(`/api/leads/delete/${deleteRequestId}/approve`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      // Create an AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
-      const data = await response.json();
+      try {
+        const response = await fetch(`/api/leads/delete/${deleteRequestId}/approve`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          signal: controller.signal,
+        });
 
-      if (response.ok) {
-        setStatus("success");
-        setMessage(data.message || "Delete request approved successfully!");
-      } else {
-        setStatus("error");
-        setMessage(data.message || "Failed to approve delete request");
+        clearTimeout(timeoutId);
+        const data = await response.json();
+
+        if (response.ok) {
+          setStatus("success");
+          setMessage(data.message || "Delete request approved successfully!");
+        } else {
+          setStatus("error");
+          setMessage(data.message || "Failed to approve delete request");
+        }
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        if (fetchError.name === "AbortError") {
+          setStatus("error");
+          setMessage("Request timed out. Please check if the backend is running and try again.");
+        } else {
+          throw fetchError;
+        }
       }
     } catch (error) {
       setStatus("error");

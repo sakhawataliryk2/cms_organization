@@ -1530,10 +1530,8 @@ export default function HiringManagerView() {
         }
       );
 
-      console.log("HM field-management status:", response.status);
 
       const raw = await response.text();
-      console.log("HM field-management raw:", raw);
 
       let data: any = {};
       try {
@@ -1548,7 +1546,6 @@ export default function HiringManagerView() {
         data.hiringManagerFields ||
         [];
 
-      console.log("HM fields count:", fields.filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden));
 
       // Save fields for modal/catalog (visibility/order driven by catalog + localStorage)
       setAvailableFields(fields);
@@ -1765,7 +1762,6 @@ export default function HiringManagerView() {
     setEditingPanel(null);
   }, [modalOrganizationDetailsOrder, modalOrganizationDetailsVisible]);
 
-  console.log("Visible Details", visibleFields);
 
   // Handle edit panel click
   const handleEditPanel = (panelId: string) => {
@@ -1783,7 +1779,6 @@ export default function HiringManagerView() {
     setError(null);
 
     try {
-      console.log(`Fetching hiring manager data for ID: ${id}`);
       const response = await fetch(`/api/hiring-managers/${id}`, {
         headers: {
           Authorization: `Bearer ${document.cookie.replace(
@@ -1793,7 +1788,6 @@ export default function HiringManagerView() {
         },
       });
 
-      console.log(`API Response status: ${response.status}`);
 
       const responseText = await response.text();
       let data;
@@ -1813,7 +1807,6 @@ export default function HiringManagerView() {
         );
       }
 
-      console.log("Hiring manager data received:", data);
 
       if (!data.hiringManager) {
         throw new Error("No hiring manager data received from API");
@@ -1821,7 +1814,6 @@ export default function HiringManagerView() {
 
       // Format the hiring manager data for display
       const hm = data.hiringManager;
-      console.log("Hiring manager data:", hm);
       const formattedHiringManager = {
         id: hm.id || "Unknown ID",
         firstName: hm.first_name || "",
@@ -1859,7 +1851,6 @@ export default function HiringManagerView() {
         customFields: hm.custom_fields || {},
       };
 
-      console.log("Formatted hiring manager data:", formattedHiringManager);
       setHiringManager(formattedHiringManager);
 
       // Now fetch notes and history
@@ -2058,14 +2049,13 @@ export default function HiringManagerView() {
 
   // Search for references for About field - Global Search
   const searchAboutReferences = async (query: string) => {
-    if (!query || query.trim().length < 2) {
-      setAboutSuggestions([]);
-      setShowAboutDropdown(false);
-      return;
-    }
-
     setIsLoadingAboutSearch(true);
     setShowAboutDropdown(true);
+    
+    if (!query || query.trim().length < 2) {
+      setAboutSuggestions([]);
+      return;
+    }
 
     try {
       const searchTerm = query.trim();
@@ -3547,7 +3537,6 @@ export default function HiringManagerView() {
   };
 
   const handleActionSelected = (action: string) => {
-    console.log(`Action selected: ${action}`);
     if (action === "edit") {
       handleEdit();
     } else if (action === "delete" && hiringManagerId) {
@@ -5803,36 +5792,33 @@ export default function HiringManagerView() {
                       )}
                     </label>
                     <div className="relative" ref={aboutInputRef}>
-                      {/* Selected References Tags */}
-                      {noteForm.aboutReferences.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
-                          {noteForm.aboutReferences.map((ref, index) => (
-                            <span
-                              key={`${ref.type}-${ref.id}-${index}`}
-                              className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
+                      <div
+                        className={`min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:outline-none pr-8 ${
+                          noteFormErrors.about
+                            ? "border-red-500 focus-within:ring-red-500"
+                            : "border-gray-300 focus-within:ring-blue-500"
+                        }`}
+                      >
+                        {/* Selected References Tags - Inside the input container */}
+                        {noteForm.aboutReferences.map((ref, index) => (
+                          <span
+                            key={`${ref.type}-${ref.id}-${index}`}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
+                          >
+                            <FiUserCheck className="w-4 h-4" />
+                            {ref.display}
+                            <button
+                              type="button"
+                              onClick={() => removeAboutReference(index)}
+                              className="hover:text-blue-600 font-bold leading-none"
+                              title="Remove"
                             >
-                              <FiUserCheck className="w-4 h-4" />
-                              {ref.display}
-                              <button
-                                type="button"
-                                onClick={() => removeAboutReference(index)}
-                                className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
-                                title="Remove"
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
+                              ×
+                            </button>
+                          </span>
+                        ))}
 
-                      {/* Search Input for References */}
-                      <div className="relative">
-                        {noteForm.aboutReferences && noteForm.aboutReferences.length > 0 && (
-                          <label className="block text-xs font-medium text-gray-500 mb-1">
-                            Add Additional References
-                          </label>
-                        )}
+                        {/* Search Input for References - Same field to add more */}
                         <input
                           type="text"
                           value={aboutSearchQuery}
@@ -5840,24 +5826,23 @@ export default function HiringManagerView() {
                             const value = e.target.value;
                             setAboutSearchQuery(value);
                             searchAboutReferences(value);
+                            setShowAboutDropdown(true);
                           }}
                           onFocus={() => {
-                            if (aboutSearchQuery.trim().length >= 2) {
-                              setShowAboutDropdown(true);
+                            setShowAboutDropdown(true);
+                            if (!aboutSearchQuery.trim()) {
+                              searchAboutReferences("");
                             }
                           }}
                           placeholder={
                             noteForm.aboutReferences.length === 0
                               ? "Search and select records (e.g., Job, Lead, Placement, Organization, Hiring Manager)..."
-                              : "Add another reference..."
+                              : "Add more..."
                           }
-                          className={`w-full p-2 border rounded focus:outline-none focus:ring-2 pr-8 ${noteFormErrors.about
-                            ? "border-red-500 focus:ring-red-500"
-                            : "border-gray-300 focus:ring-blue-500"
-                            }`}
+                          className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
                         />
-                        <span className="absolute right-2 top-2 text-gray-400 text-sm">
-                          Q
+                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
+                          <FiSearch className="w-4 h-4" />
                         </span>
                       </div>
 
@@ -5886,7 +5871,7 @@ export default function HiringManagerView() {
                                 onClick={() => handleAboutReferenceSelect(suggestion)}
                                 className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
                               >
-                                <FiUserCheck className="w-4 h-4 text-gray-500 shrink-0" />
+                                <FiUserCheck className="w-4 h-4 text-gray-500 flex-shrink-0" />
                                 <div className="flex-1">
                                   <div className="text-sm font-medium text-gray-900">
                                     {suggestion.display}
@@ -5897,11 +5882,15 @@ export default function HiringManagerView() {
                                 </div>
                               </button>
                             ))
-                          ) : aboutSearchQuery.trim().length >= 2 ? (
+                          ) : aboutSearchQuery.trim().length > 0 ? (
                             <div className="p-3 text-center text-gray-500 text-sm">
                               No results found
                             </div>
-                          ) : null}
+                          ) : (
+                            <div className="p-3 text-center text-gray-500 text-sm">
+                              Type to search or select from list
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -5910,64 +5899,61 @@ export default function HiringManagerView() {
                   {/* Additional References Section - Global Search */}
 
 
-                  {/* Email Notification Section - Search and add (matches About/Reference design) */}
+                  {/* Email Notification Section - Search and add (matches MultiSelectLookupField design) */}
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Email Notification
                     </label>
                     <div className="relative" ref={emailInputRef}>
-                      {noteForm.emailNotification.length > 0 && (
-                        <div className="flex flex-wrap gap-2 mb-2 p-2 border border-gray-300 rounded bg-gray-50 min-h-[40px]">
-                          {noteForm.emailNotification.map((val) => (
+                      {isLoadingUsers ? (
+                        <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50 min-h-[42px]">
+                          Loading users...
+                        </div>
+                      ) : (
+                        <div className="min-h-[42px] flex flex-wrap items-center gap-2 p-2 border border-gray-300 rounded focus-within:ring-2 focus-within:outline-none focus-within:ring-blue-500 pr-8">
+                          {/* Selected Users Tags - Inside the input container */}
+                          {noteForm.emailNotification.map((val, index) => (
                             <span
                               key={val}
-                              className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
+                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
                             >
-                              <HiOutlineUser className="w-4 h-4 shrink-0" />
+                              <HiOutlineUser className="w-4 h-4 flex-shrink-0" />
                               {val}
                               <button
                                 type="button"
                                 onClick={() => removeEmailNotification(val)}
-                                className="ml-1 text-blue-600 hover:text-blue-800 font-bold"
+                                className="hover:text-blue-600 font-bold leading-none"
                                 title="Remove"
                               >
                                 ×
                               </button>
                             </span>
                           ))}
-                        </div>
-                      )}
-                      {noteForm.emailNotification.length > 0 && (
-                        <label className="block text-xs font-medium text-gray-500 mb-1">Add Additional Users</label>
-                      )}
-                      <div className="relative">
-                        {isLoadingUsers ? (
-                          <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
-                            Loading users...
-                          </div>
-                        ) : (
+
+                          {/* Search Input for Users - Same field to add more */}
                           <input
                             type="text"
                             value={emailSearchQuery}
                             onChange={(e) => {
-                              setEmailSearchQuery(e.target.value);
+                              const value = e.target.value;
+                              setEmailSearchQuery(value);
                               setShowEmailDropdown(true);
                             }}
                             onFocus={() => setShowEmailDropdown(true)}
                             placeholder={
                               noteForm.emailNotification.length === 0
                                 ? "Search and add users to notify..."
-                                : "Add another user..."
+                                : "Add more..."
                             }
-                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 pr-8"
+                            className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
                           />
-                        )}
-                        {!isLoadingUsers && (
                           <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
                             <FiSearch className="w-4 h-4" />
                           </span>
-                        )}
-                      </div>
+                        </div>
+                      )}
+
+                      {/* Suggestions Dropdown - same structure as About */}
                       {showEmailDropdown && !isLoadingUsers && (
                         <div
                           data-email-dropdown
@@ -5981,9 +5967,11 @@ export default function HiringManagerView() {
                                 onClick={() => handleEmailNotificationSelect(user)}
                                 className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
                               >
-                                <HiOutlineUser className="w-4 h-4 text-gray-500 shrink-0" />
+                                <HiOutlineUser className="w-4 h-4 text-gray-500 flex-shrink-0" />
                                 <div className="flex-1">
-                                  <div className="text-sm font-medium text-gray-900">{user.name || user.email}</div>
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {user.name || user.email}
+                                  </div>
                                   {user.email && user.name && (
                                     <div className="text-xs text-gray-500">{user.email}</div>
                                   )}

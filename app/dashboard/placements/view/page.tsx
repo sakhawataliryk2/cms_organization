@@ -2916,9 +2916,15 @@ export default function PlacementView() {
   const handleAddNote = async () => {
     if (!placementId) return;
     setValidationErrors({});
-    const errors: { action?: string; text?: string } = {};
+    const errors: { action?: string; text?: string; about?: string } = {};
+    if (!noteForm.text.trim()) {
+      errors.text = "Note text is required";
+    }
     if (!noteForm.action || noteForm.action.trim() === "") {
       errors.action = "Action is required";
+    }
+    if (!noteForm.aboutReferences || noteForm.aboutReferences.length === 0) {
+      errors.about = "At least one About/Reference is required";
     }
     if (!noteForm.text || noteForm.text.trim() === "") {
       errors.text = "Note text is required";
@@ -4304,10 +4310,23 @@ export default function PlacementView() {
                   </label>
                   <textarea
                     value={noteForm.text}
-                    onChange={(e) => setNoteForm((prev) => ({ ...prev, text: e.target.value }))}
+                    onChange={(e) => {
+                      setNoteForm((prev) => ({ ...prev, text: e.target.value }));
+                      // Clear error when user starts typing
+                      if (validationErrors.text) {
+                        setValidationErrors((prev) => {
+                          const newErrors = { ...prev };
+                          delete newErrors.text;
+                          return newErrors;
+                        });
+                      }
+                    }}
                     autoFocus
                     placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
-                    className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${validationErrors.text
+                      ? "border-red-500 focus:ring-red-500"
+                      : "border-gray-300 focus:ring-blue-500"
+                      }`}
                     rows={6}
                   />
                   {validationErrors.text && (
@@ -4521,7 +4540,7 @@ export default function PlacementView() {
                 <button
                   onClick={handleAddNote}
                   className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  disabled={!noteForm.text.trim() || !noteForm.action?.trim()}
+                  disabled={!noteForm.text.trim() || !noteForm.action?.trim() || noteForm.aboutReferences.length === 0}
                 >
                   SAVE
                 </button>

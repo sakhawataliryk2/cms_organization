@@ -24,22 +24,22 @@ import {
 } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
-import BulkActionsButton from "@/components/BulkActionsButton";
-import BulkOwnershipModal from "@/components/BulkOwnershipModal";
-import BulkStatusModal from "@/components/BulkStatusModal";
-import BulkTearsheetModal from "@/components/BulkTearsheetModal";
 
-interface Organization {
+interface Lead {
   id: string;
-  name: string;
-  website: string;
+  first_name: string;
+  last_name: string;
+  full_name?: string;
+  email: string;
+  phone: string;
   status: string;
-  contact_phone: string;
-  address: string;
+  title: string;
+  organization_name_from_org?: string;
+  organization_id?: string;
+  department: string;
+  owner: string;
   created_at: string;
-  created_by_name: string;
-  job_orders_count?: number;
-  placements_count?: number;
+  created_by_name?: string;
   customFields?: Record<string, any>;
   custom_fields?: Record<string, any>;
   archived_at?: string | null;
@@ -49,7 +49,7 @@ interface Organization {
 type ColumnSortState = "asc" | "desc" | null;
 type ColumnFilterState = string | null;
 
-type OrganizationFavorite = {
+type LeadFavorite = {
   id: string;
   name: string;
   searchTerm: string;
@@ -258,21 +258,25 @@ function SortableColumnHeader({
   );
 }
 
-export default function OrganizationList() {
+export default function ArchivedLeadsList() {
   const router = useRouter();
 
-  const FAVORITES_STORAGE_KEY = "organizationFavorites";
+  const FAVORITES_STORAGE_KEY = "leadArchivedFavorites";
 
   // =====================
-  // TABLE COLUMNS (Overview List) – driven by admin field-management only
+  // TABLE COLUMNS (Overview List) – driven by admin field-management + archive_reason
   // =====================
-  const ORG_BACKEND_COLUMN_KEYS = [
+  const LEAD_BACKEND_COLUMN_KEYS = [
     "name",
     "status",
-    "contact_phone",
-    "address",
-    "job_orders_count",
-    "placements_count",
+    "archive_reason",
+    "email",
+    "phone",
+    "title",
+    "organization",
+    "owner",
+    "created_at",
+    "created_by_name",
   ];
 
   const {
@@ -283,7 +287,7 @@ export default function OrganizationList() {
     saveHeaderConfig: saveColumnConfig,
     isSaving: isSavingColumns,
   } = useHeaderConfig({
-    entityType: "ORGANIZATION",
+    entityType: "LEAD",
     defaultFields: [], // populated from columnsCatalog when ready
     configType: "columns",
   });
@@ -291,7 +295,7 @@ export default function OrganizationList() {
   // Save column order to localStorage whenever it changes
   useEffect(() => {
     if (columnFields.length > 0) {
-      localStorage.setItem("organizationColumnOrder", JSON.stringify(columnFields));
+      localStorage.setItem("leadArchivedColumnOrder", JSON.stringify(columnFields));
     }
   }, [columnFields]);
 
@@ -301,7 +305,7 @@ export default function OrganizationList() {
   // Per-column filtering state
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
 
-  const [favorites, setFavorites] = useState<OrganizationFavorite[]>([]);
+  const [favorites, setFavorites] = useState<LeadFavorite[]>([]);
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
 
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
@@ -369,7 +373,7 @@ export default function OrganizationList() {
           "$1"
         );
 
-        const res = await fetch("/api/admin/field-management/organizations", {
+        const res = await fetch("/api/admin/field-management/leads", {
           method: "GET",
           headers: token ? { Authorization: `Bearer ${token}` } : undefined,
           credentials: "include",
@@ -388,7 +392,7 @@ export default function OrganizationList() {
           data.data?.fields ||
           data.customFields ||
           data.data?.customFields ||
-          data.organizationFields ||
+          data.leadFields ||
           data.data ||
           [];
 
@@ -430,20 +434,14 @@ export default function OrganizationList() {
     return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, [favoritesMenuOpen]);
 
-  const [organizations, setOrganizations] = useState<Organization[]>([]);
-  const [selectedOrganizations, setSelectedOrganizations] = useState<string[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [selectedLeads, setSelectedLeads] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-
-  // Individual row action modals state
-  const [showOwnershipModal, setShowOwnershipModal] = useState(false);
-  const [showStatusModal, setShowStatusModal] = useState(false);
-  const [showTearsheetModal, setShowTearsheetModal] = useState(false);
-  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
 
   // Columns Catalog
   const humanize = (s: string) =>
@@ -459,52 +457,45 @@ export default function OrganizationList() {
       .map((f: any) => {
         const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
         const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanize(name) : "");
-        const isBackendCol = name && ORG_BACKEND_COLUMN_KEYS.includes(name);
+        const isBackendCol = name && LEAD_BACKEND_COLUMN_KEYS.includes(name);
         let filterType: "text" | "select" | "number" = "text";
-        if (name === "status") filterType = "select";
-        else if (name === "job_orders_count" || name === "placements_count") filterType = "number";
+        if (name === "status" || name === "archive_reason") filterType = "select";
+        // Note: Leads don't have number columns like organizations, but keeping type for consistency
         return {
           key: isBackendCol ? name : `custom:${label || name}`,
           label: String(label || name),
           sortable: isBackendCol,
-          filterType,
+          filterType: filterType as "text" | "select" | "number",
           fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
           lookupType: (f as any)?.lookup_type ?? (f as any)?.lookupType ?? "",
         };
       });
 
-    // const customKeySet = new Set<string>();
-    // (organizations || []).forEach((org: any) => {
-    //   const cf = org?.customFields || org?.custom_fields || {};
-    //   Object.keys(cf).forEach((k) => customKeySet.add(k));
-    // });
-    // const alreadyHaveCustom = new Set(
-    //   fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
-    // );
-    // const fromData = Array.from(customKeySet)
-    //   .filter((k) => !alreadyHaveCustom.has(k))
-    //   .map((k) => ({
-    //     key: `custom:${k}`,
-    //     label: humanize(k),
-    //     sortable: false,
-    //     filterType: "text" as const,
-    //   }));
-
     const merged = [...fromApi];
+    if (!merged.some((x) => x.key === "archive_reason")) {
+      merged.push({
+        key: "archive_reason",
+        label: "Archive Reason",
+        sortable: true,
+        filterType: "select" as const,
+        fieldType: "",
+        lookupType: "",
+      });
+    }
     const seen = new Set<string>();
     return merged.filter((x) => {
       if (seen.has(x.key)) return false;
       seen.add(x.key);
       return true;
     });
-  }, [organizations, availableFields]);
+  }, [leads, availableFields]);
 
   // When catalog is ready, default columnFields to all catalog keys if empty (or validate saved)
   useEffect(() => {
     const catalogKeys = columnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("organizationColumnOrder");
+    const savedOrder = localStorage.getItem("leadArchivedColumnOrder");
     if (savedOrder) {
       try {
         const parsed = JSON.parse(savedOrder);
@@ -528,60 +519,71 @@ export default function OrganizationList() {
   const getColumnInfo = (key: string) =>
     columnsCatalog.find((c) => c.key === key);
 
-  const getColumnValue = (org: any, key: string) => {
+  const getColumnValue = (lead: any, key: string) => {
     if (key.startsWith("custom:")) {
       const rawKey = key.replace("custom:", "");
-      const cf = org?.customFields || org?.custom_fields || {};
+      const cf = lead?.customFields || lead?.custom_fields || {};
       const val = cf?.[rawKey];
       return val === undefined || val === null || val === ""
         ? "N/A"
         : String(val);
     }
 
+    const fullName =
+      lead.full_name ||
+      `${lead.last_name || ""}, ${lead.first_name || ""}`.trim();
+
     switch (key) {
       case "name":
-        return org.name || "N/A";
+        return fullName || "N/A";
       case "status":
-        return org.status || "N/A";
-      case "contact_phone":
-        return org.contact_phone || "N/A";
-      case "address":
-        return org.address || "N/A";
-      case "job_orders_count":
-        return org.job_orders_count || 0;
-      case "placements_count":
-        return org.placements_count || 0;
+        return lead.status || "N/A";
+      case "email":
+        return lead.email || "N/A";
+      case "phone":
+        return lead.phone || "N/A";
+      case "title":
+        return lead.title || "N/A";
+      case "organization":
+        return lead.organization_name_from_org || lead.organization_id || "N/A";
+      case "owner":
+        return lead.owner || "N/A";
+      case "created_at":
+        return lead.created_at ? new Date(lead.created_at).toLocaleDateString() : "N/A";
+      case "created_by_name":
+        return lead.created_by_name || "N/A";
+      case "archive_reason":
+        return lead.archive_reason || "N/A";
       default:
         return "N/A";
     }
   };
 
-  // Fetch organizations on component mount
+  // Fetch leads on component mount
   useEffect(() => {
-    fetchOrganizations();
+    fetchLeads();
   }, []);
 
-  const fetchOrganizations = async () => {
+  const fetchLeads = async () => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const response = await fetch("/api/organizations");
+      const response = await fetch("/api/leads");
 
       if (!response.ok) {
-        // console.log('response', response)
         const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to fetch organizations");
+        throw new Error(errorData.message || "Failed to fetch leads");
       }
 
       const data = await response.json();
-      setOrganizations(data.organizations || []);
+      setLeads(data.leads || []);
     } catch (err) {
-      console.error("Error fetching organizations:", err);
+      console.error("Error fetching leads:", err);
       setError(
         err instanceof Error
           ? err.message
-          : "An error occurred while fetching organizations"
+          : "An error occurred while fetching leads"
       );
     } finally {
       setIsLoading(false);
@@ -591,34 +593,22 @@ export default function OrganizationList() {
   // Get unique status values for filter dropdown
   const statusOptions = useMemo(() => {
     const statuses = new Set<string>();
-    organizations.forEach((org) => {
-      if (org.status) statuses.add(org.status);
+    leads.forEach((lead) => {
+      if (lead.status) statuses.add(lead.status);
     });
     return Array.from(statuses).map((s) => ({ label: s, value: s }));
-  }, [organizations]);
+  }, [leads]);
 
-  // Find custom field definitions for individual row actions
-  const findFieldByLabel = (label: string) => {
-    return availableFields.find(f => {
-      const fieldLabel = (f.field_label || '').toLowerCase();
-      const fieldName = (f.field_name || '').toLowerCase();
-      const searchLabel = label.toLowerCase();
-      return fieldLabel === searchLabel || fieldName === searchLabel;
-    });
-  };
+  // Archive reason options for filter (Deletion | Transfer)
+  const archiveReasonOptions = useMemo(
+    () => [
+      { label: "Deletion", value: "Deletion" },
+      { label: "Transfer", value: "Transfer" },
+    ],
+    []
+  );
 
-  const ownerField = findFieldByLabel('Owner');
-  const statusField = findFieldByLabel('Status');
-
-  const handleIndividualActionSuccess = () => {
-    setShowOwnershipModal(false);
-    setShowStatusModal(false);
-    setShowTearsheetModal(false);
-    setSelectedOrgId(null);
-    fetchOrganizations();
-  };
-
-  const applyFavorite = (fav: OrganizationFavorite) => {
+  const applyFavorite = (fav: LeadFavorite) => {
     const catalogKeys = new Set(columnsCatalog.map((c) => c.key));
     const validColumnFields = (fav.columnFields || []).filter((k) => catalogKeys.has(k));
 
@@ -644,7 +634,7 @@ export default function OrganizationList() {
     if (validColumnFields.length > 0) setColumnFields(validColumnFields);
   };
 
-  const persistFavorites = (next: OrganizationFavorite[]) => {
+  const persistFavorites = (next: LeadFavorite[]) => {
     setFavorites(next);
     localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(next));
   };
@@ -663,7 +653,7 @@ export default function OrganizationList() {
     }
 
     const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const next: OrganizationFavorite = {
+    const next: LeadFavorite = {
       id,
       name: trimmed,
       searchTerm,
@@ -686,21 +676,27 @@ export default function OrganizationList() {
     setSelectedFavoriteId("");
   };
 
-  // Apply per-column filtering and sorting (exclude archived in main overview)
-  const filteredAndSortedOrganizations = useMemo(() => {
-    let result = organizations.filter(
-      (org) => org.status !== "Archived" && !org.archived_at
+  // Apply per-column filtering and sorting (only archived records)
+  const filteredAndSortedLeads = useMemo(() => {
+    let result = leads.filter(
+      (lead) => lead.status === "Archived" || !!lead.archived_at
     );
 
     // Apply global search
     if (searchTerm.trim() !== "") {
       const term = searchTerm.toLowerCase();
-      result = result.filter((org) =>
-        (org.name || "").toLowerCase().includes(term) ||
-        String(org.id || "").toLowerCase().includes(term) ||
-        (org.status || "").toLowerCase().includes(term) ||
-        (org.contact_phone || "").toLowerCase().includes(term) ||
-        (org.address || "").toLowerCase().includes(term)
+      result = result.filter((lead) =>
+        (lead.first_name || "").toLowerCase().includes(term) ||
+        (lead.last_name || "").toLowerCase().includes(term) ||
+        (lead.full_name || "").toLowerCase().includes(term) ||
+        String(lead.id || "").toLowerCase().includes(term) ||
+        (lead.email || "").toLowerCase().includes(term) ||
+        (lead.phone || "").toLowerCase().includes(term) ||
+        (lead.status || "").toLowerCase().includes(term) ||
+        (lead.title || "").toLowerCase().includes(term) ||
+        (lead.organization_name_from_org || "").toLowerCase().includes(term) ||
+        (lead.owner || "").toLowerCase().includes(term) ||
+        (lead.archive_reason || "").toLowerCase().includes(term)
       );
     }
 
@@ -708,14 +704,14 @@ export default function OrganizationList() {
     Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
       if (!filterValue || filterValue.trim() === "") return;
 
-      result = result.filter((org) => {
-        const value = getColumnValue(org, columnKey);
+      result = result.filter((lead) => {
+        const value = getColumnValue(lead, columnKey);
         const valueStr = String(value).toLowerCase();
         const filterStr = String(filterValue).toLowerCase();
 
         // For number columns, do exact match
         const columnInfo = getColumnInfo(columnKey);
-        if (columnInfo?.filterType === "number") {
+        if (columnInfo && (columnInfo.filterType as string) === "number") {
           return String(value) === String(filterValue);
         }
 
@@ -732,6 +728,13 @@ export default function OrganizationList() {
       result.sort((a, b) => {
         const aValue = getColumnValue(a, sortKey);
         const bValue = getColumnValue(b, sortKey);
+
+        // Handle dates properly
+        if (sortKey === "created_at") {
+          const aDate = new Date(a.created_at).getTime();
+          const bDate = new Date(b.created_at).getTime();
+          return sortDir === "asc" ? aDate - bDate : bDate - aDate;
+        }
 
         // Handle numeric values
         const aNum = typeof aValue === "number" ? aValue : Number(aValue);
@@ -752,52 +755,48 @@ export default function OrganizationList() {
     }
 
     return result;
-  }, [organizations, columnFilters, columnSorts, searchTerm]);
+  }, [leads, columnFilters, columnSorts, searchTerm]);
 
-  const handleViewArchived = () => {
-    router.push("/dashboard/organizations/archived");
+  const handleBackToLeads = () => {
+    router.push("/dashboard/leads");
   };
 
-  const handleViewOrganization = (id: string) => {
-    router.push(`/dashboard/organizations/view?id=${id}`);
-  };
-
-  const handleAddOrganization = () => {
-    router.push("/dashboard/organizations/add");
+  const handleViewLead = (id: string) => {
+    router.push(`/dashboard/leads/view?id=${id}`);
   };
 
   const handleSelectAll = () => {
     if (selectAll) {
-      setSelectedOrganizations([]);
+      setSelectedLeads([]);
     } else {
-      setSelectedOrganizations(filteredAndSortedOrganizations.map((org) => org.id));
+      setSelectedLeads(filteredAndSortedLeads.map((lead) => lead.id));
     }
     setSelectAll(!selectAll);
   };
 
-  const handleSelectOrganization = (id: string, e: React.MouseEvent) => {
+  const handleSelectLead = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
 
-    if (selectedOrganizations.includes(id)) {
-      setSelectedOrganizations(selectedOrganizations.filter((orgId) => orgId !== id));
+    if (selectedLeads.includes(id)) {
+      setSelectedLeads(selectedLeads.filter((leadId) => leadId !== id));
       if (selectAll) setSelectAll(false);
     } else {
-      setSelectedOrganizations([...selectedOrganizations, id]);
+      setSelectedLeads([...selectedLeads, id]);
       if (
-        [...selectedOrganizations, id].length === filteredAndSortedOrganizations.length
+        [...selectedLeads, id].length === filteredAndSortedLeads.length
       ) {
         setSelectAll(true);
       }
     }
   };
 
-  const deleteSelectedOrganizations = async () => {
-    if (selectedOrganizations.length === 0) return;
+  const deleteSelectedLeads = async () => {
+    if (selectedLeads.length === 0) return;
 
     const confirmMessage =
-      selectedOrganizations.length === 1
-        ? "Are you sure you want to delete this organization?"
-        : `Are you sure you want to delete these ${selectedOrganizations.length} organizations?`;
+      selectedLeads.length === 1
+        ? "Are you sure you want to delete this lead?"
+        : `Are you sure you want to delete these ${selectedLeads.length} leads?`;
 
     if (!window.confirm(confirmMessage)) return;
 
@@ -805,8 +804,8 @@ export default function OrganizationList() {
     setDeleteError(null);
 
     try {
-      const deletePromises = selectedOrganizations.map((id) =>
-        fetch(`/api/organizations/${id}`, {
+      const deletePromises = selectedLeads.map((id) =>
+        fetch(`/api/leads/${id}`, {
           method: "DELETE",
         })
       );
@@ -815,80 +814,31 @@ export default function OrganizationList() {
       const failures = results.filter((result) => result.status === "rejected");
 
       if (failures.length > 0) {
-        throw new Error(`Failed to delete ${failures.length} organizations`);
+        throw new Error(`Failed to delete ${failures.length} leads`);
       }
 
-      await fetchOrganizations();
-      setSelectedOrganizations([]);
+      await fetchLeads();
+      setSelectedLeads([]);
       setSelectAll(false);
     } catch (err) {
-      console.error("Error deleting organizations:", err);
+      console.error("Error deleting leads:", err);
       setDeleteError(
         err instanceof Error
           ? err.message
-          : "An error occurred while deleting organizations"
+          : "An error occurred while deleting leads"
       );
     } finally {
       setIsDeleting(false);
     }
   };
 
-  // CSV Export function for selected records
-  const handleCSVExport = () => {
-    if (selectedOrganizations.length === 0) return;
-
-    const selectedData = organizations.filter((org) =>
-      selectedOrganizations.includes(org.id)
-    );
-
-    // Get headers from currently displayed columns
-    const headers = ['ID', ...columnFields.map((key) => getColumnLabel(key))];
-
-    // Escape CSV values
-    const escapeCSV = (value: any): string => {
-      if (value === null || value === undefined) return '';
-      const str = String(value);
-      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    };
-
-    // Create CSV rows
-    const csvRows = [
-      headers.map(escapeCSV).join(','),
-      ...selectedData.map((org) => {
-        const row = [
-          `O ${org.id}`,
-          ...columnFields.map((key) => escapeCSV(getColumnValue(org, key)))
-        ];
-        return row.join(',');
-      })
-    ];
-
-    const csvContent = csvRows.join('\n');
-    const BOM = '\uFEFF'; // UTF-8 BOM for Excel compatibility
-    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `organizations-export-${new Date().toISOString().slice(0, 10)}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
   if (isLoading) {
-    return <LoadingScreen message="Loading organizations..." />;
+    return <LoadingScreen message="Loading archived leads..." />;
   }
 
   if (isDeleting) {
-    return <LoadingScreen message="Deleting organizations..." />;
+    return <LoadingScreen message="Deleting leads..." />;
   }
-
-  // console.log('filteredAndSortedOrganizations', filteredAndSortedOrganizations)
 
   return (
     <div className="bg-white rounded-lg shadow">
@@ -896,25 +846,13 @@ export default function OrganizationList() {
       <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center">
         {/* Row 1: Title + Add (mobile) / Title only (desktop) */}
         <div className="flex justify-between items-center gap-4">
-          <h1 className="text-xl font-bold">Organizations</h1>
-          {/* Add Organization - visible on mobile only; desktop version below */}
+          <h1 className="text-xl font-bold">Archived Leads</h1>
+          {/* Back to Leads - visible on mobile only; desktop version below */}
           <button
-            onClick={handleAddOrganization}
-            className="md:hidden px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center shrink-0"
+            onClick={handleBackToLeads}
+            className="md:hidden px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center shrink-0 bg-white"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 mr-1"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
-                clipRule="evenodd"
-              />
-            </svg>
-            Add Organization
+            Back to Leads
           </button>
         </div>
 
@@ -989,39 +927,25 @@ export default function OrganizationList() {
             )}
           </div>
 
-          {selectedOrganizations.length > 0 && (
-            <>
-              <BulkActionsButton
-                selectedCount={selectedOrganizations.length}
-                entityType="organization"
-                entityIds={selectedOrganizations}
-                availableFields={availableFields}
-                onSuccess={() => {
-                  fetchOrganizations();
-                  setSelectedOrganizations([]);
-                  setSelectAll(false);
-                }}
-                onCSVExport={handleCSVExport}
-              />
-              <button
-                onClick={deleteSelectedOrganizations}
-                className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center"
+          {selectedLeads.length > 0 && (
+            <button
+              onClick={deleteSelectedLeads}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center"
+            >
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5 mr-1"
+                viewBox="0 0 20 20"
+                fill="currentColor"
               >
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  className="h-5 w-5 mr-1"
-                  viewBox="0 0 20 20"
-                  fill="currentColor"
-                >
-                  <path
-                    fillRule="evenodd"
-                    d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
-                    clipRule="evenodd"
-                  />
-                </svg>
-                Delete Selected ({selectedOrganizations.length})
-              </button>
-            </>
+                <path
+                  fillRule="evenodd"
+                  d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z"
+                  clipRule="evenodd"
+                />
+              </svg>
+              Delete Selected ({selectedLeads.length})
+            </button>
           )}
 
           <button
@@ -1031,28 +955,10 @@ export default function OrganizationList() {
             Columns
           </button>
           <button
-            onClick={handleViewArchived}
+            onClick={handleBackToLeads}
             className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
           >
-            Archived
-          </button>
-          <button
-            onClick={handleAddOrganization}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-5 w-5 mr-1"
-              viewBox="0 0 20 20"
-              fill="currentColor"
-            >
-              <path
-                fillRule="evenodd"
-                d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z"
-                clipRule="evenodd"
-              />
-            </svg>
-            Add Organization
+            Back to Leads
           </button>
         </div>
 
@@ -1120,29 +1026,17 @@ export default function OrganizationList() {
           </div>
         </div>
 
-        {/* Mobile: Bulk Actions and Delete Selected - full width (when any selected) */}
-        {selectedOrganizations.length > 0 && (
-          <div className="w-full md:hidden space-y-2">
-            <BulkActionsButton
-              selectedCount={selectedOrganizations.length}
-              entityType="organization"
-              entityIds={selectedOrganizations}
-              availableFields={availableFields}
-              onSuccess={() => {
-                fetchOrganizations();
-                setSelectedOrganizations([]);
-                setSelectAll(false);
-              }}
-              onCSVExport={handleCSVExport}
-            />
+        {/* Mobile: Delete Selected - full width (when any selected) */}
+        {selectedLeads.length > 0 && (
+          <div className="w-full md:hidden">
             <button
-              onClick={deleteSelectedOrganizations}
-              className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center justify-center gap-2"
+              onClick={deleteSelectedLeads}
+              className="w-full px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center justify-center gap-2"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                 <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
               </svg>
-              Delete Selected ({selectedOrganizations.length})
+              Delete Selected ({selectedLeads.length})
             </button>
           </div>
         )}
@@ -1156,13 +1050,13 @@ export default function OrganizationList() {
             Columns
           </button>
         </div>
-        {/* Mobile: Archived - full width */}
+        {/* Mobile: Back to Leads - full width */}
         <div className="w-full md:hidden">
           <button
-            onClick={handleViewArchived}
+            onClick={handleBackToLeads}
             className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center"
           >
-            Archived
+            Back to Leads
           </button>
         </div>
       </div>
@@ -1187,7 +1081,7 @@ export default function OrganizationList() {
           <div className="relative flex-1">
             <input
               type="text"
-              placeholder="Search organizations..."
+              placeholder="Search archived leads..."
               className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -1266,7 +1160,11 @@ export default function OrganizationList() {
                           onFilterChange={(value) => handleColumnFilter(key, value)}
                           filterType={columnInfo.filterType}
                           filterOptions={
-                            key === "status" ? statusOptions : undefined
+                            key === "status"
+                              ? statusOptions
+                              : key === "archive_reason"
+                                ? archiveReasonOptions
+                                : undefined
                           }
                         />
                       );
@@ -1276,12 +1174,12 @@ export default function OrganizationList() {
               </thead>
 
               <tbody className="bg-white divide-y divide-gray-200">
-                {filteredAndSortedOrganizations.length > 0 ? (
-                  filteredAndSortedOrganizations.map((org) => (
+                {filteredAndSortedLeads.length > 0 ? (
+                  filteredAndSortedLeads.map((lead) => (
                     <tr
-                      key={org.id}
+                      key={lead.id}
                       className="hover:bg-gray-50 cursor-pointer"
-                      onClick={() => handleViewOrganization(org.id)}
+                      onClick={() => handleViewLead(lead.id)}
                     >
                       {/* Fixed checkbox */}
                       <td
@@ -1291,9 +1189,9 @@ export default function OrganizationList() {
                         <input
                           type="checkbox"
                           className="h-4 w-4 text-blue-600 border-gray-300 rounded"
-                          checked={selectedOrganizations.includes(org.id)}
+                          checked={selectedLeads.includes(lead.id)}
                           onChange={() => { }}
-                          onClick={(e) => handleSelectOrganization(org.id, e)}
+                          onClick={(e) => handleSelectLead(lead.id, e)}
                         />
                       </td>
 
@@ -1305,35 +1203,52 @@ export default function OrganizationList() {
                         <ActionDropdown
                           label="Actions"
                           options={[
-                            { label: "View", action: () => handleViewOrganization(org.id) },
-                            ...(ownerField ? [{
-                              label: "Change Ownership",
-                              action: () => {
-                                setSelectedOrgId(org.id);
-                                setShowOwnershipModal(true);
-                              },
-                            }] : []),
-                            ...(statusField ? [{
-                              label: "Change Status",
-                              action: () => {
-                                setSelectedOrgId(org.id);
-                                setShowStatusModal(true);
-                              },
-                            }] : []),
+                            { label: "View", action: () => handleViewLead(lead.id) },
                             {
-                              label: "Add To TearSheet",
-                              action: () => {
-                                setSelectedOrgId(org.id);
-                                setShowTearsheetModal(true);
+                              label: "Delete",
+                              action: async () => {
+                                if (
+                                  !window.confirm(
+                                    "Are you sure you want to delete this lead?"
+                                  )
+                                )
+                                  return;
+                                setIsDeleting(true);
+                                try {
+                                  const response = await fetch(
+                                    `/api/leads/${lead.id}`,
+                                    { method: "DELETE" }
+                                  );
+                                  if (!response.ok)
+                                    throw new Error("Failed to delete lead");
+                                  await fetchLeads();
+                                } catch (err) {
+                                  setDeleteError(
+                                    err instanceof Error
+                                      ? err.message
+                                      : "An error occurred"
+                                  );
+                                } finally {
+                                  setIsDeleting(false);
+                                }
                               },
                             },
                           ]}
                         />
                       </td>
 
-                      <td className="px-6 py-4 text-black whitespace-nowrap">O {org?.id}</td>
+                      <td className="px-6 py-4 text-black whitespace-nowrap">L {lead?.id}</td>
                       {columnFields.map((key) => {
                         const colInfo = getColumnInfo(key);
+                        const val = getColumnValue(lead, key);
+                        const isArchiveReason = getColumnLabel(key).toLowerCase() === "archive reason";
+                        const isStatusCol = getColumnLabel(key).toLowerCase() === "status";
+                        const statusVariant =
+                          isArchiveReason
+                            ? ((val || "").toLowerCase() === "deletion" ? "deletion" : "blue")
+                            : isStatusCol
+                              ? "gray"
+                              : undefined;
                         const fieldInfo = colInfo
                           ? {
                               key: colInfo.key,
@@ -1349,12 +1264,13 @@ export default function OrganizationList() {
                             className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
                           >
                             <FieldValueRenderer
-                              value={getColumnValue(org, key)}
+                              value={val}
                               fieldInfo={fieldInfo}
                               emptyPlaceholder="N/A"
                               clickable
                               stopPropagation
-                              className=""
+                              statusVariant={statusVariant}
+                              forceRenderAsStatus={isArchiveReason}
                             />
                           </td>
                         );
@@ -1368,8 +1284,8 @@ export default function OrganizationList() {
                       className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                     >
                       {searchTerm
-                        ? "No organizations found matching your search."
-                        : 'No organizations found. Click "Add Organization" to create one.'}
+                        ? "No archived leads match your search."
+                        : "No archived leads found."}
                     </td>
                   </tr>
                 )}
@@ -1393,16 +1309,16 @@ export default function OrganizationList() {
               <p className="text-sm text-gray-700">
                 Showing <span className="font-medium">1</span> to{" "}
                 <span className="font-medium">
-                  {filteredAndSortedOrganizations.length}
+                  {filteredAndSortedLeads.length}
                 </span>{" "}
                 of{" "}
                 <span className="font-medium">
-                  {filteredAndSortedOrganizations.length}
+                  {filteredAndSortedLeads.length}
                 </span>{" "}
                 results
               </p>
             </div>
-            {filteredAndSortedOrganizations.length > 0 && (
+            {filteredAndSortedLeads.length > 0 && (
               <div>
                 <nav
                   className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px"
@@ -1613,7 +1529,7 @@ export default function OrganizationList() {
                     setFavoriteName(e.target.value);
                     if (e.target.value.trim()) setFavoriteNameError(null);
                   }}
-                  placeholder="e.g. Active Organizations"
+                  placeholder="e.g. Archived Leads"
                   className={`w-full p-2 border rounded-md focus:ring-2 focus:ring-blue-500 outline-none transition-all ${favoriteNameError ? "border-red-300 bg-red-50" : "border-gray-300"
                     }`}
                   autoFocus
@@ -1657,50 +1573,6 @@ export default function OrganizationList() {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Individual Row Action Modals */}
-      {showOwnershipModal && ownerField && selectedOrgId && (
-        <BulkOwnershipModal
-          open={showOwnershipModal}
-          onClose={() => {
-            setShowOwnershipModal(false);
-            setSelectedOrgId(null);
-          }}
-          entityType="organization"
-          entityIds={[selectedOrgId]}
-          fieldLabel={ownerField.field_label || 'Owner'}
-          onSuccess={handleIndividualActionSuccess}
-        />
-      )}
-
-      {showStatusModal && statusField && selectedOrgId && (
-        <BulkStatusModal
-          open={showStatusModal}
-          onClose={() => {
-            setShowStatusModal(false);
-            setSelectedOrgId(null);
-          }}
-          entityType="organization"
-          entityIds={[selectedOrgId]}
-          fieldLabel={statusField.field_label || 'Status'}
-          options={statusField.options || []}
-          availableFields={availableFields}
-          onSuccess={handleIndividualActionSuccess}
-        />
-      )}
-
-      {showTearsheetModal && selectedOrgId && (
-        <BulkTearsheetModal
-          open={showTearsheetModal}
-          onClose={() => {
-            setShowTearsheetModal(false);
-            setSelectedOrgId(null);
-          }}
-          entityType="organization"
-          entityIds={[selectedOrgId]}
-          onSuccess={handleIndividualActionSuccess}
-        />
       )}
     </div>
   );

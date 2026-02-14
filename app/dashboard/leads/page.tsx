@@ -34,6 +34,8 @@ interface Lead {
   owner: string;
   created_at: string;
   created_by_name?: string;
+  archived_at?: string | null;
+  archive_reason?: string | null;
   customFields?: Record<string, any>;
   custom_fields?: Record<string, any>;
 }
@@ -598,7 +600,8 @@ export default function LeadList() {
   };
 
   const filteredAndSortedLeads = useMemo(() => {
-    let result = [...leads];
+    // Exclude archived leads from main list
+    let result = leads.filter((lead) => lead.status !== "Archived" && !lead.archived_at);
 
     // Apply global search
     if (searchTerm.trim() !== "") {
@@ -727,6 +730,10 @@ export default function LeadList() {
 
   const handleViewLead = (id: string) => {
     router.push(`/dashboard/leads/view?id=${id}`);
+  };
+
+  const handleViewArchived = () => {
+    router.push("/dashboard/leads/archived");
   };
 
   const handleAddLead = () => {
@@ -937,6 +944,13 @@ export default function LeadList() {
           </button>
 
           <button
+            onClick={handleViewArchived}
+            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+          >
+            Archived
+          </button>
+
+          <button
             onClick={handleAddLead}
             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
           >
@@ -1042,6 +1056,16 @@ export default function LeadList() {
             className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center"
           >
             Columns
+          </button>
+        </div>
+
+        {/* Mobile: Archived - full width */}
+        <div className="w-full md:hidden">
+          <button
+            onClick={handleViewArchived}
+            className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center"
+          >
+            Archived
           </button>
         </div>
       </div>

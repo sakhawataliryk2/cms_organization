@@ -61,7 +61,7 @@ const ORG_PANEL_TITLES: Record<string, string> = {
   contactInfo: "Organization Contact Info:",
   about: "About:",
   recentNotes: "Recent Notes:",
-  websiteJobs: "Website Jobs:",
+  websiteJobs: "Open Jobs from Website:",
   ourJobs: "Our Jobs:",
   openTasks: "Open Tasks:",
 };
@@ -517,6 +517,7 @@ export default function OrganizationView() {
 
   // Validation state
   const [validationErrors, setValidationErrors] = useState<{
+    text?: string;
     action?: string;
     about?: string;
   }>({});
@@ -587,6 +588,15 @@ export default function OrganizationView() {
   const [jobs, setJobs] = useState<Array<any>>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
   const [jobsError, setJobsError] = useState<string | null>(null);
+
+  // Website metadata state
+  const [websiteMetadata, setWebsiteMetadata] = useState<{
+    title: string;
+    faviconUrl: string;
+    domain: string;
+    url: string;
+  } | null>(null);
+  const [isLoadingWebsiteMetadata, setIsLoadingWebsiteMetadata] = useState(false);
 
   const [placements, setPlacements] = useState<Array<any>>([]);
   const [isLoadingPlacements, setIsLoadingPlacements] = useState(false);
@@ -1680,6 +1690,13 @@ export default function OrganizationView() {
 
       setOrganization(formattedOrg);
 
+      // Fetch website metadata if website URL exists
+      if (formattedOrg.website && formattedOrg.website !== "https://example.com") {
+        fetchWebsiteMetadata(formattedOrg.website);
+      } else {
+        setWebsiteMetadata(null);
+      }
+
       // After loading organization data, fetch notes, history, documents, hiring managers, and tasks
       fetchNotes(id);
       fetchHistory(id);
@@ -1698,6 +1715,54 @@ export default function OrganizationView() {
       setIsLoading(false);
     }
   };
+  // Fetch website metadata (favicon and title)
+  const fetchWebsiteMetadata = async (url: string) => {
+    if (!url || url === "https://example.com") {
+      setWebsiteMetadata(null);
+      return;
+    }
+
+    setIsLoadingWebsiteMetadata(true);
+    try {
+      const response = await fetch(`/api/website-metadata?url=${encodeURIComponent(url)}`);
+      if (response.ok) {
+        const data = await response.json();
+        setWebsiteMetadata(data);
+      } else {
+        // Fallback: extract domain and use Google favicon
+        try {
+          const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+          const domain = urlObj.hostname.replace(/^www\./, '');
+          setWebsiteMetadata({
+            domain,
+            title: domain,
+            faviconUrl: `https://www.google.com/s2/favicons?domain=${domain}&sz=64`,
+            url: url.startsWith('http') ? url : `https://${url}`,
+          });
+        } catch {
+          setWebsiteMetadata(null);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching website metadata:', error);
+      // Fallback: extract domain and use Google favicon
+      try {
+        const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+        const domain = urlObj.hostname.replace(/^www\./, '');
+        setWebsiteMetadata({
+          domain,
+          title: domain,
+          faviconUrl: `https://www.google.com/s2/favicons?domain=${domain}&sz=64`,
+          url: url.startsWith('http') ? url : `https://${url}`,
+        });
+      } catch {
+        setWebsiteMetadata(null);
+      }
+    } finally {
+      setIsLoadingWebsiteMetadata(false);
+    }
+  };
+
   const norm = (s: string) =>
     (s || "").toLowerCase().replace(/,/g, " ").replace(/\s+/g, " ").trim();
 
@@ -3078,11 +3143,69 @@ export default function OrganizationView() {
     }
     if (panelId === "websiteJobs") {
       const openJobs = jobs.filter((j: any) => (j.status || "").toLowerCase() === "open");
+      const websiteUrl = organization?.website;
+      const hasValidWebsite = websiteUrl && websiteUrl !== "https://example.com";
+      
       return (
         <SortablePanel key={panelId} id={panelId}>
           <PanelWithHeader title="Open Jobs from Website:">
             <div className="border border-gray-200 rounded">
-              {isLoadingJobs ? (
+              {/* Website URL Display */}
+              {hasValidWebsite && (
+                <div className="p-4 border-b border-gray-200 bg-gradient-to-r from-blue-50 to-gray-50">
+                  <div className="flex items-center gap-3">
+                    {isLoadingWebsiteMetadata ? (
+                      <div className="w-10 h-10 animate-spin rounded-full border-2 border-gray-300 border-t-blue-500 flex-shrink-0" />
+                    ) : websiteMetadata?.faviconUrl ? (
+                      <div className="w-12 h-12 flex-shrink-0 flex items-center justify-center bg-white rounded-full p-2 bg-white border border-gray-200 p-0.5">
+                        <img
+                          src={websiteMetadata.faviconUrl}
+                          alt={`${websiteMetadata.domain} favicon`}
+                          className="w-full h-full object-contain rounded"
+                          onError={(e) => {
+                            // Fallback to a default icon if favicon fails to load
+                            (e.target as HTMLImageElement).style.display = 'none';
+                          }}
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-6 h-6 flex-shrink-0 flex items-center justify-center bg-white rounded border border-gray-200">
+                        <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" />
+                        </svg>
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      {websiteMetadata?.title ? (
+                        <div 
+                          className="font-semibold text-gray-900 truncate mb-0.5" 
+                          title={websiteMetadata.title}
+                        >
+                          {websiteMetadata.title}
+                        </div>
+                      ) : (
+                        <div className="font-semibold text-gray-900 truncate mb-0.5">
+                          {websiteMetadata?.domain || 'Website'}
+                        </div>
+                      )}
+                      <a
+                        href={websiteMetadata?.url || websiteUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:text-blue-800 hover:underline truncate block flex items-center gap-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span>{websiteMetadata?.domain || websiteUrl}</span>
+                        <svg className="w-3 h-3 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              )}
+              
+              {/* {isLoadingJobs ? (
                 <div className="flex justify-center py-4">
                   <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500" />
                 </div>
@@ -3113,7 +3236,7 @@ export default function OrganizationView() {
                 <div className="p-2">
                   <p className="text-gray-500 italic">No open jobs found</p>
                 </div>
-              )}
+              )} */}
             </div>
           </PanelWithHeader>
         </SortablePanel>
@@ -4018,7 +4141,10 @@ export default function OrganizationView() {
     setValidationErrors({});
 
     // Validate required fields
-    const errors: { action?: string; about?: string } = {};
+    const errors: { text?: string; action?: string; about?: string } = {};
+    if (!noteForm.text.trim()) {
+      errors.text = "Note text is required";
+    }
     if (!noteForm.action || noteForm.action.trim() === "") {
       errors.action = "Action is required";
     }
@@ -6301,7 +6427,7 @@ export default function OrganizationView() {
             </div>
             <div className="p-6">
               <div className="space-y-4">
-                {/* Note Text Area */}
+                {/* Note Text Area - Required */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Note Text {" "}
@@ -6313,14 +6439,28 @@ export default function OrganizationView() {
                   </label>
                   <textarea
                     value={noteForm.text}
-                    onChange={(e) =>
-                      setNoteForm((prev) => ({ ...prev, text: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      setNoteForm((prev) => ({ ...prev, text: e.target.value }));
+                      // Clear error when user starts typing
+                      if (validationErrors.text) {
+                        setValidationErrors((prev) => {
+                          const newErrors = { ...prev };
+                          delete newErrors.text;
+                          return newErrors;
+                        });
+                      }
+                    }}
                     autoFocus
                     placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
-                    className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${validationErrors.text
+                      ? "border-red-500 focus:ring-red-500"
+                      : "border-gray-300 focus:ring-blue-500"
+                      }`}
                     rows={6}
                   />
+                  {validationErrors.text && (
+                    <p className="mt-1 text-sm text-red-500">{validationErrors.text}</p>
+                  )}
                 </div>
 
                 {/* Action Dropdown - Required */}
@@ -6651,6 +6791,7 @@ export default function OrganizationView() {
                 <button
                   onClick={handleAddNote}
                   className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                  disabled={!noteForm.text.trim() || !noteForm.action || noteForm.aboutReferences.length === 0}
                 >
                   SAVE
                 </button>
