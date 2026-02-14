@@ -316,6 +316,7 @@ export default function LeadView() {
 
   // Validation state
   const [validationErrors, setValidationErrors] = useState<{
+    text?: string;
     action?: string;
     about?: string;
   }>({});
@@ -2627,7 +2628,10 @@ export default function LeadView() {
     setValidationErrors({});
 
     // Validate required fields
-    const errors: { action?: string; about?: string } = {};
+    const errors: { text?: string; action?: string; about?: string } = {};
+    if (!noteForm.text.trim()) {
+      errors.text = "Note text is required";
+    }
     if (!noteForm.action || noteForm.action.trim() === "") {
       errors.action = "Action is required";
     }
@@ -2804,17 +2808,56 @@ export default function LeadView() {
   };
 
   // Render notes tab content
-  const renderNotesTab = () => (
-    <div className="bg-white p-4 rounded shadow-sm">
-      <div className="flex justify-between items-center mb-4">
-        <h2 className="text-lg font-semibold">Lead Notes</h2>
-        <button
-          onClick={() => setShowAddNote(true)}
-          className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
-        >
-          Add Note
-        </button>
-      </div>
+  const renderNotesTab = () => {
+    const parseAboutReferences = (refs: any) => {
+      if (!refs) return [];
+      if (typeof refs === "string") {
+        try {
+          return JSON.parse(refs);
+        } catch {
+          return [];
+        }
+      }
+      if (Array.isArray(refs)) return refs;
+      return [];
+    };
+
+    const navigateToReference = (ref: any) => {
+      if (!ref || !ref.id) return;
+
+      const refType = typeof ref === "string" ? null : (ref.type || "").toLowerCase().replace(/\s+/g, "");
+      const refId = typeof ref === "string" ? null : ref.id;
+
+      if (!refId) return;
+
+      // Map reference types to routes (normalized - spaces removed, lowercase)
+      const routeMap: Record<string, string> = {
+        organization: `/dashboard/organizations/view?id=${refId}`,
+        job: `/dashboard/jobs/view?id=${refId}`,
+        jobseeker: `/dashboard/job-seekers/view?id=${refId}`,
+        lead: `/dashboard/leads/view?id=${refId}`,
+        task: `/dashboard/tasks/view?id=${refId}`,
+        placement: `/dashboard/placements/view?id=${refId}`,
+        hiringmanager: `/dashboard/hiring-managers/view?id=${refId}`,
+      };
+
+      const route = routeMap[refType];
+      if (route) {
+        router.push(route);
+      }
+    };
+
+    return (
+      <div className="bg-white p-4 rounded shadow-sm">
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-lg font-semibold">Lead Notes</h2>
+          <button
+            onClick={() => setShowAddNote(true)}
+            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+          >
+            Add Note
+          </button>
+        </div>
 
       {/* Add Note Modal */}
       {showAddNote && (
@@ -2846,14 +2889,28 @@ export default function LeadView() {
                   </label>
                   <textarea
                     value={noteForm.text}
-                    onChange={(e) =>
-                      setNoteForm((prev) => ({ ...prev, text: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      setNoteForm((prev) => ({ ...prev, text: e.target.value }));
+                      // Clear error when user starts typing
+                      if (validationErrors.text) {
+                        setValidationErrors((prev) => {
+                          const newErrors = { ...prev };
+                          delete newErrors.text;
+                          return newErrors;
+                        });
+                      }
+                    }}
                     autoFocus
                     placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
-                    className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${validationErrors.text
+                      ? "border-red-500 focus:ring-red-500"
+                      : "border-gray-300 focus:ring-blue-500"
+                      }`}
                     rows={6}
                   />
+                  {validationErrors.text && (
+                    <p className="mt-1 text-sm text-red-500">{validationErrors.text}</p>
+                  )}
                 </div>
 
                 {/* Action Dropdown - Required */}
@@ -3208,6 +3265,8 @@ export default function LeadView() {
         <div className="space-y-4">
           {sortedFilteredNotes.map((note) => {
             const actionLabel = note.note_type || (note as any).action || "General Note";
+            const aboutRefs = parseAboutReferences((note as any).about_references ?? (note as any).aboutReferences);
+
             return (
               <div id={`note-${note.id}`} key={note.id} className="p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 transition-colors">
                 <div className="border-b border-gray-200 pb-3 mb-3">
@@ -3254,6 +3313,56 @@ export default function LeadView() {
                     </div>
                   </div>
                 </div>
+
+                {aboutRefs.length > 0 && (
+                  <div className="mb-3 pb-3 border-b border-gray-100">
+                    <div className="flex items-start gap-2">
+                      <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide min-w-[80px]">
+                        References:
+                      </span>
+                      <div className="flex flex-wrap gap-2 flex-1">
+                        {aboutRefs.map((ref: any, idx: number) => {
+                          const displayText =
+                            typeof ref === "string"
+                              ? ref
+                              : ref.display || ref.value || `${ref.type} #${ref.id}`;
+                          const refType = typeof ref === "string" ? null : (ref.type || "").toLowerCase().replace(/\s+/g, "");
+                          const refId = typeof ref === "string" ? null : ref.id;
+                          const isClickable = refId && refType;
+
+                          return (
+                            <button
+                              key={idx}
+                              onClick={() => navigateToReference(ref)}
+                              disabled={!isClickable}
+                              className={`inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded border transition-all ${isClickable
+                                ? "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-300 cursor-pointer"
+                                : "bg-gray-100 text-gray-700 border-gray-200 cursor-default"
+                                }`}
+                              title={isClickable ? `View ${refType}` : "Reference not available"}
+                            >
+                              <svg
+                                className="w-3 h-3"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                  strokeWidth={2}
+                                  d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"
+                                />
+                              </svg>
+                              {displayText}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="mt-2">
                   <p className="text-gray-700 whitespace-pre-wrap leading-relaxed">{note.text}</p>
                 </div>
@@ -3266,8 +3375,9 @@ export default function LeadView() {
           {(noteActionFilter || noteAuthorFilter) ? "No notes match your filters." : "No notes have been added yet."}
         </p>
       )}
-    </div>
-  );
+      </div>
+    );
+  };
 
   // Render history tab content
   const renderHistoryTab = () => (

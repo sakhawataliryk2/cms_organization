@@ -1127,6 +1127,7 @@ export default function JobView() {
 
   // Validation state
   const [validationErrors, setValidationErrors] = useState<{
+    text?: string;
     action?: string;
     about?: string;
   }>({});
@@ -3121,7 +3122,10 @@ export default function JobView() {
     setValidationErrors({});
 
     // Validate required fields
-    const errors: { action?: string; about?: string } = {};
+    const errors: { text?: string; action?: string; about?: string } = {};
+    if (!noteForm.text.trim()) {
+      errors.text = "Note text is required";
+    }
     if (!noteForm.action || noteForm.action.trim() === "") {
       errors.action = "Action is required";
     }
@@ -6144,14 +6148,28 @@ export default function JobView() {
                   </label>
                   <textarea
                     value={noteForm.text}
-                    onChange={(e) =>
-                      setNoteForm((prev) => ({ ...prev, text: e.target.value }))
-                    }
+                    onChange={(e) => {
+                      setNoteForm((prev) => ({ ...prev, text: e.target.value }));
+                      // Clear error when user starts typing
+                      if (validationErrors.text) {
+                        setValidationErrors((prev) => {
+                          const newErrors = { ...prev };
+                          delete newErrors.text;
+                          return newErrors;
+                        });
+                      }
+                    }}
                     autoFocus
                     placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
-                    className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${validationErrors.text
+                      ? "border-red-500 focus:ring-red-500"
+                      : "border-gray-300 focus:ring-blue-500"
+                      }`}
                     rows={6}
                   />
+                  {validationErrors.text && (
+                    <p className="mt-1 text-sm text-red-500">{validationErrors.text}</p>
+                  )}
                 </div>
 
                 {/* Action Dropdown */}
@@ -6412,7 +6430,7 @@ export default function JobView() {
                 <button
                   onClick={() => handleAddNote()}
                   className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  disabled={!noteForm.text.trim() || !noteForm.action}
+                  disabled={!noteForm.text.trim() || !noteForm.action || noteForm.aboutReferences.length === 0}
                   title="Save Note"
                 >
                   SAVE
@@ -6420,7 +6438,7 @@ export default function JobView() {
                 <button
                   onClick={() => handleAddNote("appointment")}
                   className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  disabled={!noteForm.text.trim() || !noteForm.action}
+                  disabled={!noteForm.text.trim() || !noteForm.action || noteForm.aboutReferences.length === 0}
                   title="Save Note and open Appointment Scheduler"
                 >
                   SAVE & Schedule Appointment
@@ -6428,7 +6446,7 @@ export default function JobView() {
                 <button
                   onClick={() => handleAddNote("task")}
                   className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
-                  disabled={!noteForm.text.trim() || !noteForm.action}
+                  disabled={!noteForm.text.trim() || !noteForm.action || noteForm.aboutReferences.length === 0}
                   title="Save Note and open Task Scheduler"
                 >
                   SAVE & Add Task

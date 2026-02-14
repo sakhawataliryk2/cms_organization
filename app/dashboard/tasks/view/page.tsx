@@ -385,6 +385,7 @@ export default function TaskView() {
     }, [notes, noteActionFilter, noteAuthorFilter, noteSortKey, noteSortDir]);
 
     // Add Note form state - matching jobs view structure
+    const [validationErrors, setValidationErrors] = useState<{ text?: string }>({});
     const [noteForm, setNoteForm] = useState<NoteFormState>({
         text: '',
         action: '',
@@ -1095,7 +1096,14 @@ export default function TaskView() {
 
     // Handle adding a new note
     const handleAddNote = async () => {
-        if (!noteForm.text.trim() || !taskId) return;
+        if (!taskId) return;
+
+        // Validate Note Text
+        if (!noteForm.text.trim()) {
+            setValidationErrors({ text: "Note text is required" });
+            return;
+        }
+        setValidationErrors({});
 
         try {
             const response = await fetch(`/api/tasks/${taskId}/notes`, {
@@ -2572,12 +2580,24 @@ export default function TaskView() {
                                     </label>
                                     <textarea
                                         value={noteForm.text}
-                                        onChange={(e) => setNoteForm(prev => ({ ...prev, text: e.target.value }))}
+                                        onChange={(e) => {
+                                            setNoteForm(prev => ({ ...prev, text: e.target.value }));
+                                            // Clear error when user starts typing
+                                            if (validationErrors.text) {
+                                                setValidationErrors({});
+                                            }
+                                        }}
                                         autoFocus
                                         placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
-                                        className="w-full p-3 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${validationErrors.text
+                                          ? "border-red-500 focus:ring-red-500"
+                                          : "border-gray-300 focus:ring-blue-500"
+                                          }`}
                                         rows={6}
                                     />
+                                    {validationErrors.text && (
+                                        <p className="mt-1 text-sm text-red-500">{validationErrors.text}</p>
+                                    )}
                                 </div>
                             </div>
 
