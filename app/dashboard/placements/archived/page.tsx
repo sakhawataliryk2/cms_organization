@@ -18,7 +18,6 @@ import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
-import RecordNameResolver from "@/components/RecordNameResolver";
 import BulkActionsButton from "@/components/BulkActionsButton";
 import BulkOwnershipModal from "@/components/BulkOwnershipModal";
 import BulkStatusModal from "@/components/BulkStatusModal";
@@ -37,7 +36,7 @@ type PlacementFavorite = {
   createdAt: number;
 };
 
-const FAVORITES_STORAGE_KEY = "placementsFavorites";
+const FAVORITES_STORAGE_KEY = "placementsArchivedFavorites";
 
 interface Placement {
   id: string;
@@ -403,6 +402,7 @@ export default function PlacementList() {
     "job",
     "placement_type",
     "status",
+    "archive_reason",
     "start_date",
     "end_date",
     "salary",
@@ -435,6 +435,9 @@ export default function PlacementList() {
           filterType = "select";
           filterOptions = placementTypeOptions;
         }
+        if (name === "archive_reason") {
+          filterType = "select";
+        }
         return {
           key: isBackendCol ? name : `custom:${label || name}`,
           label: String(label || name),
@@ -446,7 +449,25 @@ export default function PlacementList() {
           multiSelectLookupType: (f as any)?.multi_select_lookup_type ?? (f as any)?.multiSelectLookupType ?? "",
         };
       });
-    return fromApi;
+    const merged = [...fromApi];
+    if (!merged.some((x) => x.key === "archive_reason")) {
+      merged.push({
+        key: "archive_reason",
+        label: "Archive Reason",
+        sortable: true,
+        filterType: "select" as const,
+        filterOptions: undefined,
+        fieldType: "",
+        lookupType: "",
+        multiSelectLookupType: "",
+      });
+    }
+    const seen = new Set<string>();
+    return merged.filter((x) => {
+      if (seen.has(x.key)) return false;
+      seen.add(x.key);
+      return true;
+    });
   }, [availableFields]);
 
   const getColumnLabel = (key: string) =>
@@ -485,6 +506,8 @@ export default function PlacementList() {
         return p.created_at ? formatDate(p.created_at) : "-";
       case "created_by":
         return p.created_by_name || "Unknown";
+      case "archive_reason":
+        return p.archive_reason || "—";
       default:
         return "—";
     }
@@ -507,7 +530,7 @@ export default function PlacementList() {
     const catalogKeys = placementColumnsCatalog.map((c) => c.key);
     if (catalogKeys.length === 0) return;
     const catalogSet = new Set(catalogKeys);
-    const savedOrder = localStorage.getItem("placementsColumnOrder");
+    const savedOrder = localStorage.getItem("placementsArchivedColumnOrder");
     if (savedOrder) {
       try {
         const parsed = JSON.parse(savedOrder);
@@ -570,7 +593,7 @@ export default function PlacementList() {
   // Save column order to localStorage whenever it changes
   useEffect(() => {
     if (columnFields.length > 0) {
-      localStorage.setItem("placementsColumnOrder", JSON.stringify(columnFields));
+      localStorage.setItem("placementsArchivedColumnOrder", JSON.stringify(columnFields));
     }
   }, [columnFields]);
 
@@ -594,6 +617,15 @@ export default function PlacementList() {
     }
     return Array.from(types).map((t) => ({ label: t, value: t }));
   }, [placements]);
+
+  const archiveReasonOptions = useMemo(
+    () => [
+      { label: "Deletion", value: "Deletion" },
+      { label: "Transfer", value: "Transfer" },
+    ],
+    []
+  );
+
   useEffect(() => {
     const fetchAvailableFields = async () => {
       setIsLoadingFields(true);
@@ -653,8 +685,8 @@ export default function PlacementList() {
   };
 
   const filteredAndSortedPlacements = useMemo(() => {
-    // Exclude archived placements from main list
-    let result = placements.filter((p) => p.status !== "Archived" && !p.archived_at);
+    // Show only archived placements on this page
+    let result = placements.filter((p) => p.status === "Archived" || !!p.archived_at);
 
     // Apply global search
     if (searchTerm.trim() !== "") {
@@ -671,7 +703,8 @@ export default function PlacementList() {
           (placement.job_title || placement.job_name || "").toLowerCase().includes(term) ||
           (placement.status || "").toLowerCase().includes(term) ||
           (placement.owner || placement.owner_name || "").toLowerCase().includes(term) ||
-          (placement.salary || "").toLowerCase().includes(term);
+          (placement.salary || "").toLowerCase().includes(term) ||
+          (placement.archive_reason || "").toLowerCase().includes(term);
 
         // Dates
         const dateMatch =
@@ -981,8 +1014,8 @@ export default function PlacementList() {
     router.push("/dashboard/placements/add");
   };
 
-  const handleViewArchived = () => {
-    router.push("/dashboard/placements/archived");
+  const handleBackToPlacements = () => {
+    router.push("/dashboard/placements");
   };
 
   const handleSelectAll = () => {
@@ -1062,14 +1095,14 @@ export default function PlacementList() {
 
 
   if (isLoading) {
-    return <LoadingScreen message="Loading placements..." />;
+    return <LoadingScreen message="Loading archived placements..." />;
   }
 
   return (
     <div className="bg-white rounded-lg shadow">
       {/* Header */}
       <div className="flex justify-between items-center p-4 border-b border-gray-200">
-        <h1 className="text-xl font-bold">Placements</h1>
+        <h1 className="text-xl font-bold">Archived Placements</h1>
 
         <div className="flex space-x-4">
           {selectedPlacements.length > 0 && (
@@ -1154,17 +1187,10 @@ export default function PlacementList() {
           </button>
 
           <button
-            onClick={handleViewArchived}
+            onClick={handleBackToPlacements}
             className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
           >
-            Archived
-          </button>
-
-          <button
-            onClick={handleAddPlacement}
-            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
-          >
-            Add Placement
+            Back to Placements
           </button>
         </div>
       </div>
@@ -1183,7 +1209,7 @@ export default function PlacementList() {
           <div className="relative flex-1">
             <input
               type="text"
-              placeholder="Search placements..."
+              placeholder="Search archived placements..."
               className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -1262,7 +1288,15 @@ export default function PlacementList() {
                         onSort={() => handleColumnSort(key)}
                         onFilterChange={(value) => handleColumnFilter(key, value)}
                         filterType={columnInfo.filterType}
-                        filterOptions={key === "status" ? statusOptions : undefined}
+                        filterOptions={
+                          key === "status"
+                            ? statusOptions
+                            : key === "archive_reason"
+                              ? archiveReasonOptions
+                              : key === "placement_type"
+                                ? placementTypeOptions
+                                : undefined
+                        }
                       />
                     );
                   })}
@@ -1371,6 +1405,7 @@ export default function PlacementList() {
                         <td
                           key={key}
                           className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                        // onClick={(e) => e.stopPropagation()}
                         >
                           <FieldValueRenderer
                             value={getColumnValue(placement, key)}
@@ -1391,8 +1426,8 @@ export default function PlacementList() {
                     className="px-6 py-4 text-center text-gray-500"
                   >
                     {searchTerm
-                      ? "No placements found matching your search."
-                      : "No placements found."}
+                      ? "No archived placements match your search."
+                      : "No archived placements found."}
                   </td>
                 </tr>
               )}

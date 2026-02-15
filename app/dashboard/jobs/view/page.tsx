@@ -48,6 +48,7 @@ import {
 import DocumentViewer from "@/components/DocumentViewer";
 import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFilters";
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
+import CountdownTimer from "@/components/CountdownTimer";
 import { sendCalendarInvite, type CalendarEvent } from "@/lib/office365";
 import { toast } from "sonner";
 import RecordNameResolver from '@/components/RecordNameResolver';
@@ -491,6 +492,7 @@ export default function JobView() {
   const [job, setJob] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  console.log("Job", job)
 
   // Pinned record (bookmarks bar) state
   const [isRecordPinned, setIsRecordPinned] = useState(false);
@@ -3009,9 +3011,9 @@ export default function JobView() {
         location: data.job.remote_option || "On-site",
         applicants: 0,
         customFields: customFieldsObj, // Use our properly parsed object
+        archived_at: data.job.archived_at
       };
-
-      console.log("Formatted job data:", formattedJob);
+      
       setJob(formattedJob);
 
       // Now fetch notes, history, documents, and tasks
@@ -4941,17 +4943,16 @@ export default function JobView() {
       <div className="bg-gray-400 p-2 flex items-center">
         <div className="flex items-center">
           <div className="bg-blue-200 border border-blue-300 p-1 mr-2">
-            {/* <Image
-                            src="/file.svg"
-                            alt="Job"
-                            width={24}
-                            height={24}
-                        /> */}
             <FiBriefcase size={24} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
             {formatRecordId(job.id, "job")} {job.title}
           </h1>
+          {job.archived_at && (
+            <div className="ml-3">
+              <CountdownTimer archivedAt={job.archived_at} />
+            </div>
+          )}
         </div>
       </div>
 

@@ -41,6 +41,8 @@ interface Task {
   created_by_name?: string;
   assigned_to_name?: string;
   created_at: string;
+  archived_at?: string | null;
+  archive_reason?: string | null;
   customFields?: Record<string, any>;
   custom_fields?: Record<string, any>;
 }
@@ -717,7 +719,8 @@ export default function TaskList() {
   };
 
   const filteredAndSortedTasks = useMemo(() => {
-    let result = [...tasks];
+    // Exclude archived tasks from main list
+    let result = tasks.filter((t) => t.status !== "Archived" && !t.archived_at);
 
     // Apply global search
     if (searchTerm.trim() !== "") {
@@ -813,6 +816,10 @@ export default function TaskList() {
 
   const handleAddTask = () => {
     router.push('/dashboard/tasks/add');
+  };
+
+  const handleViewArchived = () => {
+    router.push("/dashboard/tasks/archived");
   };
 
 
@@ -1025,6 +1032,12 @@ export default function TaskList() {
             className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
           >
             Columns
+          </button>
+          <button
+            onClick={handleViewArchived}
+            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+          >
+            Archived
           </button>
           <button
             onClick={handleAddTask}

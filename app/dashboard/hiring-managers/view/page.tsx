@@ -51,6 +51,7 @@ import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFil
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import { toast } from "sonner";
 import AddTearsheetModal from "@/components/AddTearsheetModal";
+import CountdownTimer from '@/components/CountdownTimer';
 
 // Default header fields for Hiring Managers module - defined outside component to ensure stable reference
 const HIRING_MANAGER_DEFAULT_HEADER_FIELDS = ["phone", "email"];
@@ -1849,6 +1850,7 @@ export default function HiringManagerView() {
             : "Unknown",
         address: hm.address || "No address provided",
         customFields: hm.custom_fields || {},
+        archived_at: hm.archived_at
       };
 
       setHiringManager(formattedHiringManager);
@@ -4464,17 +4466,18 @@ export default function HiringManagerView() {
       <div className="bg-gray-400 p-2 flex items-center">
         <div className="flex items-center">
           <div className="bg-blue-200 border border-blue-300 p-1 mr-2">
-            {/* <Image
-                            src="/file.svg"
-                            alt="Hiring Manager"
-                            width={24}
-                            height={24}
-                        /> */}
             <FiUserCheck size={20} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
             HM {hiringManager.id} {hiringManager.fullName}
           </h1>
+          {
+            hiringManager.archived_at && (
+              <div className="ml-3">
+                <CountdownTimer archivedAt={hiringManager.archived_at} />
+              </div>
+            )
+          }
         </div>
       </div>
 

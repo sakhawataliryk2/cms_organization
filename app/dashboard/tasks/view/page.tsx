@@ -7,12 +7,14 @@ import Image from 'next/image';
 import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
-import { FiCheckSquare } from 'react-icons/fi';
+import { FiCheckSquare, FiSearch, FiUserCheck } from 'react-icons/fi';
+import { HiOutlineUser } from 'react-icons/hi';
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import RecordNameResolver from '@/components/RecordNameResolver';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
+import CountdownTimer from '@/components/CountdownTimer';
 import {
     buildPinnedKey,
     isPinnedRecord,
@@ -287,7 +289,7 @@ interface NoteFormState {
   text: string;
   action?: string;
   about: string;
-  aboutReferences?: Array<{
+  aboutReferences: Array<{
     id: string;
     type: string;
     display: string;
@@ -297,7 +299,7 @@ interface NoteFormState {
   replaceGeneralContactComments: boolean;
   additionalReferences: string;
   scheduleNextAction: string;
-  emailNotification: string;
+  emailNotification: string[];
 }
 
 export default function TaskView() {
@@ -384,21 +386,35 @@ export default function TaskView() {
         return out;
     }, [notes, noteActionFilter, noteAuthorFilter, noteSortKey, noteSortDir]);
 
-    // Add Note form state - matching jobs view structure
-    const [validationErrors, setValidationErrors] = useState<{ text?: string }>({});
+    // Add Note form state - matching Hiring Manager (Action, About Reference, Email Notification)
+    const [validationErrors, setValidationErrors] = useState<{ text?: string; action?: string; about?: string }>({});
     const [noteForm, setNoteForm] = useState<NoteFormState>({
         text: '',
         action: '',
-        about: task ? `${task.id} ${task.title}` : '',
+        about: '',
         aboutReferences: [],
         copyNote: 'No',
         replaceGeneralContactComments: false,
         additionalReferences: '',
         scheduleNextAction: 'None',
-        emailNotification: 'Internal User'
+        emailNotification: []
     });
     const [users, setUsers] = useState<any[]>([]);
     const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+
+    // Action fields (Field500 from Admin field-management/tasks)
+    const [actionFields, setActionFields] = useState<any[]>([]);
+    const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
+    // About reference search
+    const [aboutSearchQuery, setAboutSearchQuery] = useState('');
+    const [aboutSuggestions, setAboutSuggestions] = useState<any[]>([]);
+    const [showAboutDropdown, setShowAboutDropdown] = useState(false);
+    const [isLoadingAboutSearch, setIsLoadingAboutSearch] = useState(false);
+    const aboutInputRef = useRef<HTMLInputElement>(null);
+    // Email notification
+    const [emailSearchQuery, setEmailSearchQuery] = useState('');
+    const [showEmailDropdown, setShowEmailDropdown] = useState(false);
+    const emailInputRef = useRef<HTMLDivElement>(null);
 
     const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
 
@@ -560,12 +576,105 @@ export default function TaskView() {
         }
     }, [taskId]);
 
-    // Update note form about field when task is loaded
+    // Fetch action fields (Field500 from Admin field-management/tasks) - same logic as Hiring Manager
     useEffect(() => {
-        if (task) {
-            setNoteForm(prev => ({ ...prev, about: `${task.id} ${task.title}` }));
+        const fetchActionFields = async () => {
+            setIsLoadingActionFields(true);
+            try {
+                const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, '$1');
+                const response = await fetch('/api/admin/field-management/tasks', {
+                    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+                });
+                if (response.ok) {
+                    const raw = await response.text();
+                    let data: any = {};
+                    try { data = JSON.parse(raw); } catch { }
+                    const fields = data.customFields || data.fields || data.data?.fields || data.taskFields || [];
+                    const fieldNamesToCheck = ['field_500', 'actions', 'action'];
+                    const field500 = (fields as any[]).find(
+                        (f: any) =>
+                            fieldNamesToCheck.includes(String(f.field_name || '').toLowerCase()) ||
+                            fieldNamesToCheck.includes(String(f.field_label || '').toLowerCase())
+                    );
+                    if (field500 && field500.options) {
+                        let options = field500.options;
+                        if (typeof options === 'string') {
+                            try { options = JSON.parse(options); } catch { }
+                        }
+                        if (Array.isArray(options)) {
+                            setActionFields(options.map((opt: any) => ({
+                                id: opt.value || opt,
+                                field_label: opt.label || opt.value || opt,
+                                field_name: opt.value || opt,
+                            })));
+                        } else if (typeof options === 'object' && options !== null) {
+                            setActionFields(Object.entries(options).map(([key, value]) => ({
+                                id: key,
+                                field_label: String(value),
+                                field_name: key,
+                            })));
+                        } else setActionFields([]);
+                    } else {
+                        setActionFields([
+                            { id: 'Outbound Call', field_label: 'Outbound Call', field_name: 'Outbound Call' },
+                            { id: 'Inbound Call', field_label: 'Inbound Call', field_name: 'Inbound Call' },
+                            { id: 'Left Message', field_label: 'Left Message', field_name: 'Left Message' },
+                            { id: 'Email', field_label: 'Email', field_name: 'Email' },
+                            { id: 'Appointment', field_label: 'Appointment', field_name: 'Appointment' },
+                            { id: 'Client Visit', field_label: 'Client Visit', field_name: 'Client Visit' },
+                        ]);
+                    }
+                } else {
+                    setActionFields([
+                        { id: 'Outbound Call', field_label: 'Outbound Call', field_name: 'Outbound Call' },
+                        { id: 'Inbound Call', field_label: 'Inbound Call', field_name: 'Inbound Call' },
+                        { id: 'Left Message', field_label: 'Left Message', field_name: 'Left Message' },
+                        { id: 'Email', field_label: 'Email', field_name: 'Email' },
+                        { id: 'Appointment', field_label: 'Appointment', field_name: 'Appointment' },
+                        { id: 'Client Visit', field_label: 'Client Visit', field_name: 'Client Visit' },
+                    ]);
+                }
+            } catch (err) {
+                console.error('Error fetching action fields:', err);
+                setActionFields([
+                    { id: 'Outbound Call', field_label: 'Outbound Call', field_name: 'Outbound Call' },
+                    { id: 'Inbound Call', field_label: 'Inbound Call', field_name: 'Inbound Call' },
+                    { id: 'Left Message', field_label: 'Left Message', field_name: 'Left Message' },
+                    { id: 'Email', field_label: 'Email', field_name: 'Email' },
+                    { id: 'Appointment', field_label: 'Appointment', field_name: 'Appointment' },
+                    { id: 'Client Visit', field_label: 'Client Visit', field_name: 'Client Visit' },
+                ]);
+            } finally {
+                setIsLoadingActionFields(false);
+            }
+        };
+        fetchActionFields();
+    }, []);
+
+    // When Add Note modal opens, set default About reference to current task
+    useEffect(() => {
+        if (showAddNote && task && taskId) {
+            const defaultRef = [{
+                id: String(task.id),
+                type: 'Task',
+                display: `${formatRecordId(Number(task.id), 'task')} ${task.title || 'Untitled'}`,
+                value: formatRecordId(Number(task.id), 'task'),
+            }];
+            setNoteForm(prev => ({
+                ...prev,
+                about: defaultRef.map(r => r.display).join(', '),
+                aboutReferences: defaultRef,
+                text: '',
+                action: '',
+                emailNotification: [],
+            }));
+            setAboutSearchQuery('');
+            setEmailSearchQuery('');
+            setShowAboutDropdown(false);
+            setShowEmailDropdown(false);
+            setValidationErrors({});
         }
-    }, [task]);
+    }, [showAddNote, task?.id, taskId]);
 
     // Fetch users for email notification
     useEffect(() => {
@@ -573,6 +682,17 @@ export default function TaskView() {
             fetchUsers();
         }
     }, [showAddNote]);
+
+    // Close About and Email dropdowns when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            const target = e.target as Node;
+            if (aboutInputRef.current && !aboutInputRef.current.contains(target)) setShowAboutDropdown(false);
+            if (emailInputRef.current && !emailInputRef.current.contains(target)) setShowEmailDropdown(false);
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     // Function to fetch task data with better error handling
     const fetchTask = async (id: string) => {
@@ -664,7 +784,9 @@ export default function TaskView() {
                 createdBy: data.task.created_by_name || 'Unknown',
                 completedAt: data.task.completed_at ? new Date(data.task.completed_at).toLocaleDateString() : null,
                 completedBy: data.task.completed_by_name || null,
-                customFields: customFieldsObj // Use our properly parsed object
+                customFields: customFieldsObj, // Use our properly parsed object
+                archivedAt: data.task.archived_at || "",
+                archiveReason: data.task.archive_reason || "",
             };
 
             console.log('Formatted task data:', formattedTask);
@@ -1017,7 +1139,7 @@ export default function TaskView() {
         return displayValue;
     };
 
-    // Fetch users for email notification dropdown
+    // Fetch users for email notification dropdown (internal users only - same as Hiring Manager)
     const fetchUsers = async () => {
         setIsLoadingUsers(true);
         try {
@@ -1028,13 +1150,136 @@ export default function TaskView() {
             });
             if (response.ok) {
                 const data = await response.json();
-                setUsers(data.users || []);
+                const internalUsers = (data.users || []).filter(
+                    (u: any) =>
+                        u.user_type === 'internal' ||
+                        u.role === 'admin' ||
+                        u.role === 'user' ||
+                        (!u.user_type && u.email)
+                );
+                setUsers(internalUsers);
             }
         } catch (err) {
             console.error('Error fetching users:', err);
         } finally {
             setIsLoadingUsers(false);
         }
+    };
+
+    // Search for About/Reference - global search (same logic as Hiring Manager)
+    const searchAboutReferences = async (query: string) => {
+        setIsLoadingAboutSearch(true);
+        setShowAboutDropdown(true);
+        if (!query || query.trim().length < 2) {
+            setAboutSuggestions([]);
+            setIsLoadingAboutSearch(false);
+            return;
+        }
+        try {
+            const searchTerm = query.trim();
+            const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, '$1');
+            const headers = { Authorization: `Bearer ${token}` };
+            const [jobsRes, orgsRes, jobSeekersRes, leadsRes, tasksRes, placementsRes, hiringManagersRes] = await Promise.allSettled([
+                fetch('/api/jobs', { headers }),
+                fetch('/api/organizations', { headers }),
+                fetch('/api/job-seekers', { headers }),
+                fetch('/api/leads', { headers }),
+                fetch('/api/tasks', { headers }),
+                fetch('/api/placements', { headers }),
+                fetch('/api/hiring-managers', { headers }),
+            ]);
+            const suggestions: any[] = [];
+            if (jobsRes.status === 'fulfilled' && jobsRes.value.ok) {
+                const data = await jobsRes.value.json();
+                (data.jobs || []).filter((j: any) => (j.job_title || '').toLowerCase().includes(searchTerm.toLowerCase()) || String(j.id).includes(searchTerm)).forEach((job: any) => {
+                    suggestions.push({ id: job.id, type: 'Job', display: `${formatRecordId(job.id, 'job')} ${job.job_title || 'Untitled'}`, value: formatRecordId(job.id, 'job') });
+                });
+            }
+            if (orgsRes.status === 'fulfilled' && orgsRes.value.ok) {
+                const data = await orgsRes.value.json();
+                (data.organizations || []).filter((o: any) => (o.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || String(o.id).includes(searchTerm)).forEach((org: any) => {
+                    suggestions.push({ id: org.id, type: 'Organization', display: `${formatRecordId(org.id, 'organization')} ${org.name || 'Unnamed'}`, value: formatRecordId(org.id, 'organization') });
+                });
+            }
+            if (jobSeekersRes.status === 'fulfilled' && jobSeekersRes.value.ok) {
+                const data = await jobSeekersRes.value.json();
+                (data.jobSeekers || []).filter((js: any) => `${(js.first_name || '')} ${(js.last_name || '')}`.toLowerCase().includes(searchTerm.toLowerCase()) || String(js.id).includes(searchTerm)).forEach((js: any) => {
+                    const name = `${(js.first_name || '')} ${(js.last_name || '')}`.trim() || 'Unnamed';
+                    suggestions.push({ id: js.id, type: 'Job Seeker', display: `${formatRecordId(js.id, 'jobSeeker')} ${name}`, value: formatRecordId(js.id, 'jobSeeker') });
+                });
+            }
+            if (leadsRes.status === 'fulfilled' && leadsRes.value.ok) {
+                const data = await leadsRes.value.json();
+                (data.leads || []).filter((l: any) => (l.name || '').toLowerCase().includes(searchTerm.toLowerCase()) || String(l.id).includes(searchTerm)).forEach((lead: any) => {
+                    suggestions.push({ id: lead.id, type: 'Lead', display: `${formatRecordId(lead.id, 'lead')} ${lead.name || 'Unnamed'}`, value: formatRecordId(lead.id, 'lead') });
+                });
+            }
+            if (tasksRes.status === 'fulfilled' && tasksRes.value.ok) {
+                const data = await tasksRes.value.json();
+                (data.tasks || []).filter((t: any) => (t.title || '').toLowerCase().includes(searchTerm.toLowerCase()) || String(t.id).includes(searchTerm)).forEach((t: any) => {
+                    suggestions.push({ id: t.id, type: 'Task', display: `${formatRecordId(t.id, 'task')} ${t.title || 'Untitled'}`, value: formatRecordId(t.id, 'task') });
+                });
+            }
+            if (placementsRes.status === 'fulfilled' && placementsRes.value.ok) {
+                const data = await placementsRes.value.json();
+                (data.placements || []).filter((p: any) => String(p.id).includes(searchTerm)).forEach((p: any) => {
+                    suggestions.push({ id: p.id, type: 'Placement', display: `${formatRecordId(p.id, 'placement')} Placement`, value: formatRecordId(p.id, 'placement') });
+                });
+            }
+            if (hiringManagersRes.status === 'fulfilled' && hiringManagersRes.value.ok) {
+                const data = await hiringManagersRes.value.json();
+                (data.hiringManagers || []).filter((hm: any) => {
+                    const name = `${(hm.first_name || '')} ${(hm.last_name || '')}`.trim() || hm.full_name || '';
+                    return name.toLowerCase().includes(searchTerm.toLowerCase()) || String(hm.id).includes(searchTerm);
+                }).forEach((hm: any) => {
+                    const name = `${(hm.first_name || '')} ${(hm.last_name || '')}`.trim() || hm.full_name || 'Unnamed';
+                    suggestions.push({ id: hm.id, type: 'Hiring Manager', display: `${formatRecordId(hm.id, 'hiringManager')} ${name}`, value: formatRecordId(hm.id, 'hiringManager') });
+                });
+            }
+            const selectedIds = (noteForm.aboutReferences || []).map((r: any) => r.id);
+            const filtered = suggestions.filter((s: any) => !selectedIds.includes(s.id));
+            setAboutSuggestions(filtered.slice(0, 10));
+        } catch (err) {
+            console.error('Error searching about references:', err);
+            setAboutSuggestions([]);
+        } finally {
+            setIsLoadingAboutSearch(false);
+        }
+    };
+
+    const handleAboutReferenceSelect = (reference: any) => {
+        setNoteForm(prev => {
+            const newRefs = [...(prev.aboutReferences || []), reference];
+            return { ...prev, aboutReferences: newRefs, about: newRefs.map(r => r.display).join(', ') };
+        });
+        setAboutSearchQuery('');
+        setShowAboutDropdown(false);
+        setAboutSuggestions([]);
+    };
+
+    const removeAboutReference = (index: number) => {
+        setNoteForm(prev => {
+            const newRefs = prev.aboutReferences.filter((_, i) => i !== index);
+            return { ...prev, aboutReferences: newRefs, about: newRefs.length ? newRefs.map(r => r.display).join(', ') : '' };
+        });
+    };
+
+    const emailNotificationSuggestions = useMemo(() => {
+        if (!emailSearchQuery.trim()) return users.slice(0, 10);
+        const q = emailSearchQuery.toLowerCase();
+        return users.filter((u: any) => (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q)).slice(0, 10);
+    }, [users, emailSearchQuery]);
+
+    const handleEmailNotificationSelect = (user: any) => {
+        const label = user.name || user.email || '';
+        if (!label || noteForm.emailNotification.includes(label)) return;
+        setNoteForm(prev => ({ ...prev, emailNotification: [...prev.emailNotification, label] }));
+        setEmailSearchQuery('');
+        setShowEmailDropdown(false);
+    };
+
+    const removeEmailNotification = (val: string) => {
+        setNoteForm(prev => ({ ...prev, emailNotification: prev.emailNotification.filter(v => v !== val) }));
     };
 
     // Fetch notes for the task
@@ -1094,18 +1339,22 @@ export default function TaskView() {
         }
     };
 
-    // Handle adding a new note
+    // Handle adding a new note (validation and payload match Hiring Manager)
     const handleAddNote = async () => {
         if (!taskId) return;
 
-        // Validate Note Text
-        if (!noteForm.text.trim()) {
-            setValidationErrors({ text: "Note text is required" });
+        const errors: { text?: string; action?: string; about?: string } = {};
+        if (!noteForm.text.trim()) errors.text = 'Note text is required';
+        if (!noteForm.action || !String(noteForm.action).trim()) errors.action = 'Action is required';
+        if (!noteForm.aboutReferences || noteForm.aboutReferences.length === 0) errors.about = 'At least one About/Reference is required';
+        if (Object.keys(errors).length > 0) {
+            setValidationErrors(errors);
             return;
         }
         setValidationErrors({});
 
         try {
+            const aboutData = noteForm.aboutReferences.map(ref => ({ id: ref.id, type: ref.type, display: ref.display, value: ref.value }));
             const response = await fetch(`/api/tasks/${taskId}/notes`, {
                 method: 'POST',
                 headers: {
@@ -1114,38 +1363,39 @@ export default function TaskView() {
                 },
                 body: JSON.stringify({
                     text: noteForm.text,
+                    action: noteForm.action,
+                    about_references: aboutData,
                     copy_note: noteForm.copyNote === 'Yes',
                     replace_general_contact_comments: noteForm.replaceGeneralContactComments,
                     additional_references: noteForm.additionalReferences,
                     schedule_next_action: noteForm.scheduleNextAction,
-                    email_notification: noteForm.emailNotification
+                    email_notification: Array.isArray(noteForm.emailNotification) ? noteForm.emailNotification : (noteForm.emailNotification ? [noteForm.emailNotification] : []),
                 })
             });
 
             if (!response.ok) {
-                throw new Error('Failed to add note');
+                const errorData = await response.json().catch(() => ({}));
+                if (errorData.errors) setValidationErrors(errorData.errors);
+                else throw new Error(errorData.message || 'Failed to add note');
+                return;
             }
 
             const data = await response.json();
-
-            // Add the new note to the list
             setNotes([data.note, ...notes]);
-
-            // Clear the form
+            const defaultRef = task && taskId ? [{ id: String(task.id), type: 'Task', display: `${formatRecordId(Number(task.id), 'task')} ${task.title || 'Untitled'}`, value: formatRecordId(Number(task.id), 'task') }] : [];
             setNoteForm({
                 text: '',
-                about: task ? `${task.id} ${task.title}` : '',
+                action: '',
+                about: defaultRef.map(r => r.display).join(', '),
+                aboutReferences: defaultRef,
                 copyNote: 'No',
                 replaceGeneralContactComments: false,
                 additionalReferences: '',
                 scheduleNextAction: 'None',
-                emailNotification: 'Internal User'
+                emailNotification: [],
             });
             setShowAddNote(false);
-
             toast.success('Note added successfully');
-
-            // Refresh history
             fetchNotes(taskId);
             fetchHistory(taskId);
         } catch (err) {
@@ -1154,18 +1404,21 @@ export default function TaskView() {
         }
     };
 
-    // Close add note modal
     const handleCloseAddNoteModal = () => {
         setShowAddNote(false);
+        const defaultRef = task && taskId ? [{ id: String(task.id), type: 'Task', display: `${formatRecordId(Number(task.id), 'task')} ${task.title || 'Untitled'}`, value: formatRecordId(Number(task.id), 'task') }] : [];
         setNoteForm({
             text: '',
-            about: task ? `${task.id} ${task.title}` : '',
+            action: '',
+            about: defaultRef.map(r => r.display).join(', '),
+            aboutReferences: defaultRef,
             copyNote: 'No',
             replaceGeneralContactComments: false,
             additionalReferences: '',
             scheduleNextAction: 'None',
-            emailNotification: 'Internal User'
+            emailNotification: [],
         });
+        setValidationErrors({});
     };
 
     const handleGoBack = () => {
@@ -2379,6 +2632,11 @@ export default function TaskView() {
                     <h1 className="text-xl font-semibold text-gray-700">
                         {formatRecordId(task.id, 'task')} {task.title}
                     </h1>
+                    {task.archivedAt && (
+                        <div className="ml-3">
+                            <CountdownTimer archivedAt={task.archivedAt} />
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -2550,7 +2808,7 @@ export default function TaskView() {
                 entityId={taskId || ""}
             />
 
-            {/* Add Note Modal - Jobs-style layout (Note Text only; backend supports text only) */}
+            {/* Add Note Modal - same layout and functionality as Hiring Manager (Action, About Reference, Email Notification) */}
             {showAddNote && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
                     <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
@@ -2559,60 +2817,147 @@ export default function TaskView() {
                                 <Image src="/file.svg" alt="Note" width={20} height={20} />
                                 <h2 className="text-lg font-semibold">Add Note</h2>
                             </div>
-                            <button
-                                onClick={handleCloseAddNoteModal}
-                                className="p-1 rounded hover:bg-gray-200"
-                            >
+                            <button onClick={handleCloseAddNoteModal} className="p-1 rounded hover:bg-gray-200">
                                 <span className="text-2xl font-bold">×</span>
                             </button>
                         </div>
                         <div className="p-6">
                             <div className="space-y-4">
-                                {/* Note Text Area - Required */}
+                                {/* Note Text - Required */}
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Note Text{" "}
-                                        {noteForm.text.length > 0 ? (
-                                            <span className="text-green-500">✓</span>
-                                        ) : (
-                                            <span className="text-red-500">*</span>
-                                        )}
+                                        Note Text {noteForm.text.length > 0 ? <span className="text-green-500">✓</span> : <span className="text-red-500">*</span>}
                                     </label>
                                     <textarea
                                         value={noteForm.text}
+                                        autoFocus
                                         onChange={(e) => {
                                             setNoteForm(prev => ({ ...prev, text: e.target.value }));
-                                            // Clear error when user starts typing
-                                            if (validationErrors.text) {
-                                                setValidationErrors({});
-                                            }
+                                            if (validationErrors.text) setValidationErrors(prev => ({ ...prev, text: undefined }));
                                         }}
-                                        autoFocus
                                         placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
-                                        className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${validationErrors.text
-                                          ? "border-red-500 focus:ring-red-500"
-                                          : "border-gray-300 focus:ring-blue-500"
-                                          }`}
+                                        className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${validationErrors.text ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-blue-500"}`}
                                         rows={6}
                                     />
-                                    {validationErrors.text && (
-                                        <p className="mt-1 text-sm text-red-500">{validationErrors.text}</p>
+                                    {validationErrors.text && <p className="mt-1 text-sm text-red-500">{validationErrors.text}</p>}
+                                </div>
+
+                                {/* Action - Required (Field500) */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Action {noteForm.action ? <span className="text-green-500">✓</span> : <span className="text-red-500">*</span>}
+                                    </label>
+                                    {isLoadingActionFields ? (
+                                        <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">Loading actions...</div>
+                                    ) : (
+                                        <select
+                                            value={noteForm.action}
+                                            onChange={(e) => {
+                                                setNoteForm(prev => ({ ...prev, action: e.target.value }));
+                                                if (validationErrors.action) setValidationErrors(prev => ({ ...prev, action: undefined }));
+                                            }}
+                                            className={`w-full p-2 border rounded focus:outline-none focus:ring-2 ${validationErrors.action ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-blue-500"}`}
+                                        >
+                                            <option value="">Select an action...</option>
+                                            {actionFields.map((action) => (
+                                                <option key={action.id} value={action.field_name || action.id}>{action.field_label || action.field_name || action.id}</option>
+                                            ))}
+                                        </select>
                                     )}
+                                    {validationErrors.action && <p className="mt-1 text-sm text-red-500">{validationErrors.action}</p>}
+                                </div>
+
+                                {/* About / Reference - Required */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        About / Reference {(noteForm.aboutReferences && noteForm.aboutReferences.length > 0) ? <span className="text-green-500">✓</span> : <span className="text-red-500">*</span>}
+                                    </label>
+                                    <div className="relative" ref={aboutInputRef}>
+                                        <div className={`min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:outline-none pr-8 ${validationErrors.about ? "border-red-500 focus-within:ring-red-500" : "border-gray-300 focus-within:ring-blue-500"}`}>
+                                            {(noteForm.aboutReferences || []).map((ref, index) => (
+                                                <span key={`${ref.type}-${ref.id}-${index}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm">
+                                                    <FiUserCheck className="w-4 h-4" />
+                                                    {ref.display}
+                                                    <button type="button" onClick={() => removeAboutReference(index)} className="hover:text-blue-600 font-bold leading-none" title="Remove">×</button>
+                                                </span>
+                                            ))}
+                                            <input
+                                                type="text"
+                                                value={aboutSearchQuery}
+                                                onChange={(e) => { setAboutSearchQuery(e.target.value); searchAboutReferences(e.target.value); setShowAboutDropdown(true); }}
+                                                onFocus={() => { setShowAboutDropdown(true); if (!aboutSearchQuery.trim()) searchAboutReferences(""); }}
+                                                placeholder={noteForm.aboutReferences.length === 0 ? "Search and select records (e.g., Job, Lead, Placement, Organization, Hiring Manager, Task)..." : "Add more..."}
+                                                className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
+                                            />
+                                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none"><FiSearch className="w-4 h-4" /></span>
+                                        </div>
+                                        {validationErrors.about && <p className="mt-1 text-sm text-red-500">{validationErrors.about}</p>}
+                                        {showAboutDropdown && (
+                                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
+                                                {isLoadingAboutSearch ? <div className="p-3 text-center text-gray-500 text-sm">Searching...</div> : aboutSuggestions.length > 0 ? (
+                                                    aboutSuggestions.map((suggestion, idx) => (
+                                                        <button key={`${suggestion.type}-${suggestion.id}-${idx}`} type="button" onClick={() => handleAboutReferenceSelect(suggestion)} className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2">
+                                                            <FiUserCheck className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                                            <div className="flex-1">
+                                                                <div className="text-sm font-medium text-gray-900">{suggestion.display}</div>
+                                                                <div className="text-xs text-gray-500">{suggestion.type}</div>
+                                                            </div>
+                                                        </button>
+                                                    ))
+                                                ) : aboutSearchQuery.trim().length > 0 ? <div className="p-3 text-center text-gray-500 text-sm">No results found</div> : <div className="p-3 text-center text-gray-500 text-sm">Type to search or select from list</div>}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Email Notification */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Email Notification</label>
+                                    <div className="relative" ref={emailInputRef}>
+                                        {isLoadingUsers ? <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50 min-h-[42px]">Loading users...</div> : (
+                                            <div className="min-h-[42px] flex flex-wrap items-center gap-2 p-2 border border-gray-300 rounded focus-within:ring-2 focus-within:outline-none focus-within:ring-blue-500 pr-8">
+                                                {(noteForm.emailNotification || []).map((val, index) => (
+                                                    <span key={val} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm">
+                                                        <HiOutlineUser className="w-4 h-4 flex-shrink-0" />
+                                                        {val}
+                                                        <button type="button" onClick={() => removeEmailNotification(val)} className="hover:text-blue-600 font-bold leading-none" title="Remove">×</button>
+                                                    </span>
+                                                ))}
+                                                <input
+                                                    type="text"
+                                                    value={emailSearchQuery}
+                                                    onChange={(e) => { setEmailSearchQuery(e.target.value); setShowEmailDropdown(true); }}
+                                                    onFocus={() => setShowEmailDropdown(true)}
+                                                    placeholder={noteForm.emailNotification.length === 0 ? "Search and add users to notify..." : "Add more..."}
+                                                    className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
+                                                />
+                                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none"><FiSearch className="w-4 h-4" /></span>
+                                            </div>
+                                        )}
+                                        {showEmailDropdown && !isLoadingUsers && (
+                                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
+                                                {emailNotificationSuggestions.length > 0 ? emailNotificationSuggestions.map((user, idx) => (
+                                                    <button key={user.id ?? idx} type="button" onClick={() => handleEmailNotificationSelect(user)} className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2">
+                                                        <HiOutlineUser className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                                        <div className="flex-1">
+                                                            <div className="text-sm font-medium text-gray-900">{user.name || user.email}</div>
+                                                            {user.email && user.name && <div className="text-xs text-gray-500">{user.email}</div>}
+                                                        </div>
+                                                    </button>
+                                                )) : <div className="p-3 text-center text-gray-500 text-sm">{emailSearchQuery.trim().length >= 1 ? "No matching users found" : "Type to search internal users"}</div>}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <p className="mt-1 text-xs text-gray-500">Only internal system users are available for notification</p>
                                 </div>
                             </div>
 
-                            {/* Form Actions */}
                             <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
-                                <button
-                                    onClick={handleCloseAddNoteModal}
-                                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium"
-                                >
-                                    CANCEL
-                                </button>
+                                <button onClick={handleCloseAddNoteModal} className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium">CANCEL</button>
                                 <button
                                     onClick={handleAddNote}
                                     className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
-                                    disabled={!noteForm.text.trim()}
+                                    disabled={!noteForm.text.trim() || !noteForm.action || (noteForm.aboutReferences || []).length === 0}
                                 >
                                     SAVE
                                 </button>

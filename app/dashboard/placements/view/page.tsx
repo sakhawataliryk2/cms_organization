@@ -14,6 +14,7 @@ import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
 import { formatRecordId } from "@/lib/recordIdFormatter";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import CountdownTimer from "@/components/CountdownTimer";
 import {
   buildPinnedKey,
   isPinnedRecord,
@@ -1187,8 +1188,6 @@ export default function PlacementView() {
         },
       });
 
-      console.log(`API Response status: ${response.status} ${response.statusText}`);
-
       if (!response.ok) {
         let errorMessage = `Failed to fetch placement: ${response.status} ${response.statusText}`;
         try {
@@ -1243,7 +1242,8 @@ export default function PlacementView() {
         createdBy: data.placement.createdByName || data.placement.created_by_name || 'Unknown',
         placement_type: data.placement.placement_type || 'Contract',
         placementType: data.placement.placement_type || 'Contract',
-        customFields: customFieldsObj,
+        customFields: customFieldsObj,  
+        archived_at: data.placement.archivedAt || "",
       };
 
       console.log("Formatted placement:", formattedPlacement);
@@ -3675,7 +3675,6 @@ export default function PlacementView() {
           const fieldValue = placement.customFields?.[fieldLabel] ?? "-";
           const lookupType = (field as any)?.lookup_type ?? (field as any)?.lookupType ?? (fieldLabel.toLowerCase() === "candidate" || fieldLabel.toLowerCase() === "job seeker" ? "jobSeeker" : fieldLabel.toLowerCase() === "job" ? "job" : fieldLabel.toLowerCase() === "organization" ? "organization" : "");
           const fieldInfo = { key, label: fieldLabel, fieldType: (field as any)?.field_type ?? (field as any)?.fieldType, lookupType, multiSelectLookupType: (field as any)?.multi_select_lookup_type ?? (field as any)?.multiSelectLookupType };
-          console.log("fieldInfo", fieldInfo);
           return (
             <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
               <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
@@ -4064,6 +4063,13 @@ export default function PlacementView() {
           <h1 className="text-xl font-semibold text-gray-700">
             P {placement.id} {placement.jobSeekerName} - {placement.jobTitle}
           </h1>
+          {
+            placement.archived_at && (
+              <div className="ml-3">
+                <CountdownTimer archivedAt={placement.archived_at} />
+              </div>
+            )
+          }
         </div>
 
       </div>

@@ -24,7 +24,7 @@ export default function ApproveDeletePage() {
           return;
         }
 
-        const response = await fetch(`/api/organizations/delete/${deleteRequestId}`, {
+        const response = await fetch(`/api/organizations/delete/${deleteRequestId}/approve`, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",
