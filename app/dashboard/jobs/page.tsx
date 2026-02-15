@@ -37,6 +37,8 @@ interface Job {
   created_by_name: string;
   customFields?: Record<string, any>;
   custom_fields?: Record<string, any>;
+  archived_at?: string | null;
+  archive_reason?: string | null;
 }
 
 type ColumnSortState = "asc" | "desc" | null;
@@ -608,7 +610,8 @@ export default function JobList() {
   }, [jobs]);
 
   const filteredAndSortedJobs = useMemo(() => {
-    let result = [...jobs];
+    // Exclude archived jobs from main listing (same as Organization)
+    let result = jobs.filter((job) => job.status !== "Archived" && !job.archived_at);
 
     // Apply global search
     if (searchTerm.trim() !== "") {
@@ -721,6 +724,10 @@ export default function JobList() {
 
   const handleAddJob = () => {
     router.push("/dashboard/jobs/add");
+  };
+
+  const handleViewArchived = () => {
+    router.push("/dashboard/jobs/archived");
   };
 
   const handleSelectAll = () => {
@@ -985,6 +992,9 @@ export default function JobList() {
             />
           )}
           <button onClick={() => setShowColumnModal(true)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">Columns</button>
+          <button onClick={handleViewArchived} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">
+            Archived
+          </button>
           <button onClick={handleAddJob} className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" /></svg>
             Add Job
@@ -1035,6 +1045,11 @@ export default function JobList() {
         )}
         <div className="w-full md:hidden">
           <button onClick={() => setShowColumnModal(true)} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center">Columns</button>
+        </div>
+        <div className="w-full md:hidden">
+          <button onClick={handleViewArchived} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center">
+            Archived
+          </button>
         </div>
       </div>
 

@@ -11,6 +11,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import { HiOutlineOfficeBuilding, HiOutlineUser } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import CountdownTimer from "@/components/CountdownTimer";
 import {
   DndContext,
   DragOverlay,
@@ -415,6 +416,8 @@ export default function OrganizationView() {
   const organizationId = searchParams.get("id");
 
   const [organization, setOrganization] = useState<any>(null);
+  // console.log("Organi")
+      console.log("Organization",organization)
   const [originalData, setOriginalData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1003,7 +1006,7 @@ export default function OrganizationView() {
     }
   }, [organization]);
 
-  // Fetch action fields - populate with all non-hidden field labels from organizations module
+  // Fetch action fields - Field500 / Admin Center field mapping (same logic as Hiring Manager)
   useEffect(() => {
     const fetchActionFields = async () => {
       setIsLoadingActionFields(true);
@@ -1024,24 +1027,47 @@ export default function OrganizationView() {
             data = JSON.parse(raw);
           } catch { }
 
-          const fields = data.customFields || data.fields || data.data?.fields || data.organizationFields || [];
+          const fields =
+            data.customFields ||
+            data.fields ||
+            data.data?.fields ||
+            data.organizationFields ||
+            [];
 
-          // Filter out hidden fields and get all non-hidden field labels
-          const nonHiddenFields = (fields as any[]).filter(
-            (f: any) => !f.is_hidden && f.field_label
+          const fieldNamesToCheck = ["field_500", "actions", "action"];
+          const field500 = (fields as any[]).find(
+            (f: any) =>
+              fieldNamesToCheck.includes(String(f.field_name || "").toLowerCase()) ||
+              fieldNamesToCheck.includes(String(f.field_label || "").toLowerCase())
           );
 
-          if (nonHiddenFields.length > 0) {
-            // Populate action list with all non-hidden field labels
-            setActionFields(
-              nonHiddenFields.map((field: any) => ({
-                id: field.id || field.field_name || field.field_label,
-                field_label: field.field_label,
-                field_name: field.field_name || field.field_label,
-              }))
-            );
+          if (field500 && field500.options) {
+            let options = field500.options;
+            if (typeof options === "string") {
+              try {
+                options = JSON.parse(options);
+              } catch { }
+            }
+            if (Array.isArray(options)) {
+              setActionFields(
+                options.map((opt: any) => ({
+                  id: opt.value || opt,
+                  field_label: opt.label || opt.value || opt,
+                  field_name: opt.value || opt,
+                }))
+              );
+            } else if (typeof options === "object" && options !== null) {
+              setActionFields(
+                Object.entries(options).map(([key, value]) => ({
+                  id: key,
+                  field_label: String(value),
+                  field_name: key,
+                }))
+              );
+            } else {
+              setActionFields([]);
+            }
           } else {
-            // Fallback to default actions if no fields found
             setActionFields([
               { id: "Outbound Call", field_label: "Outbound Call", field_name: "Outbound Call" },
               { id: "Inbound Call", field_label: "Inbound Call", field_name: "Inbound Call" },
@@ -1052,7 +1078,6 @@ export default function OrganizationView() {
             ]);
           }
         } else {
-          // Fallback to default actions if API call fails
           setActionFields([
             { id: "Outbound Call", field_label: "Outbound Call", field_name: "Outbound Call" },
             { id: "Inbound Call", field_label: "Inbound Call", field_name: "Inbound Call" },
@@ -1064,7 +1089,6 @@ export default function OrganizationView() {
         }
       } catch (err) {
         console.error("Error fetching action fields:", err);
-        // Fallback to default actions
         setActionFields([
           { id: "Outbound Call", field_label: "Outbound Call", field_name: "Outbound Call" },
           { id: "Inbound Call", field_label: "Inbound Call", field_name: "Inbound Call" },
@@ -1154,10 +1178,10 @@ export default function OrganizationView() {
         const data = await jobsRes.value.json();
         const jobs = searchTerm
           ? (data.jobs || []).filter(
-              (job: any) =>
-                job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                job.id?.toString().includes(searchTerm)
-            )
+            (job: any) =>
+              job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              job.id?.toString().includes(searchTerm)
+          )
           : (data.jobs || []);
         jobs.forEach((job: any) => {
           suggestions.push({
@@ -1175,10 +1199,10 @@ export default function OrganizationView() {
         const data = await orgsRes.value.json();
         const orgs = searchTerm
           ? (data.organizations || []).filter(
-              (org: any) =>
-                org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                org.id?.toString().includes(searchTerm)
-            )
+            (org: any) =>
+              org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              org.id?.toString().includes(searchTerm)
+          )
           : (data.organizations || []);
         orgs.forEach((org: any) => {
           suggestions.push({
@@ -1196,13 +1220,13 @@ export default function OrganizationView() {
         const data = await jobSeekersRes.value.json();
         const seekers = searchTerm
           ? (data.jobSeekers || []).filter(
-              (seeker: any) =>
-                seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                seeker.id?.toString().includes(searchTerm)
-            )
+            (seeker: any) =>
+              seeker.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              seeker.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              seeker.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              seeker.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              seeker.id?.toString().includes(searchTerm)
+          )
           : (data.jobSeekers || []);
         seekers.forEach((seeker: any) => {
           const name =
@@ -1223,12 +1247,12 @@ export default function OrganizationView() {
         const data = await leadsRes.value.json();
         const leads = searchTerm
           ? (data.leads || []).filter(
-              (lead: any) =>
-                lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                lead.id?.toString().includes(searchTerm)
-            )
+            (lead: any) =>
+              lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              lead.id?.toString().includes(searchTerm)
+          )
           : (data.leads || []);
         leads.forEach((lead: any) => {
           suggestions.push({
@@ -1246,10 +1270,10 @@ export default function OrganizationView() {
         const data = await tasksRes.value.json();
         const tasks = searchTerm
           ? (data.tasks || []).filter(
-              (task: any) =>
-                task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                task.id?.toString().includes(searchTerm)
-            )
+            (task: any) =>
+              task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              task.id?.toString().includes(searchTerm)
+          )
           : (data.tasks || []);
         tasks.forEach((task: any) => {
           suggestions.push({
@@ -1266,11 +1290,11 @@ export default function OrganizationView() {
         const data = await placementsRes.value.json();
         const placements = searchTerm
           ? (data.placements || []).filter(
-              (placement: any) =>
-                placement.jobTitle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                placement.jobSeekerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                placement.id?.toString().includes(searchTerm)
-            )
+            (placement: any) =>
+              placement.jobTitle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              placement.jobSeekerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              placement.id?.toString().includes(searchTerm)
+          )
           : (data.placements || []);
         placements.forEach((placement: any) => {
           suggestions.push({
@@ -1288,13 +1312,13 @@ export default function OrganizationView() {
         const data = await hiringManagersRes.value.json();
         const hms = searchTerm
           ? (data.hiringManagers || []).filter(
-              (hm: any) =>
-                hm.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                hm.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                hm.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                hm.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                hm.id?.toString().includes(searchTerm)
-            )
+            (hm: any) =>
+              hm.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              hm.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              hm.last_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              hm.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              hm.id?.toString().includes(searchTerm)
+          )
           : (data.hiringManagers || []);
         hms.forEach((hm: any) => {
           const name =
@@ -1687,6 +1711,7 @@ export default function OrganizationView() {
         about: data.organization.overview || "No description provided",
         customFields: customFieldsObj,
       };
+
 
       setOrganization(formattedOrg);
 
@@ -3145,7 +3170,7 @@ export default function OrganizationView() {
       const openJobs = jobs.filter((j: any) => (j.status || "").toLowerCase() === "open");
       const websiteUrl = organization?.website;
       const hasValidWebsite = websiteUrl && websiteUrl !== "https://example.com";
-      
+
       return (
         <SortablePanel key={panelId} id={panelId}>
           <PanelWithHeader title="Open Jobs from Website:">
@@ -3177,8 +3202,8 @@ export default function OrganizationView() {
                     )}
                     <div className="flex-1 min-w-0">
                       {websiteMetadata?.title ? (
-                        <div 
-                          className="font-semibold text-gray-900 truncate mb-0.5" 
+                        <div
+                          className="font-semibold text-gray-900 truncate mb-0.5"
                           title={websiteMetadata.title}
                         >
                           {websiteMetadata.title}
@@ -3204,7 +3229,7 @@ export default function OrganizationView() {
                   </div>
                 </div>
               )}
-              
+
               {/* {isLoadingJobs ? (
                 <div className="flex justify-center py-4">
                   <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500" />
@@ -4514,7 +4539,7 @@ export default function OrganizationView() {
     }
   };
 
-  const isArchived = organization?.status === "Archived" || !!organization?.archived_at;
+  const isArchived = !!organization?.archived_at;
 
   // Update the actionOptions to remove the edit option since we'll handle it in Modify tab
   const getDeleteLabel = () => {
@@ -5100,36 +5125,24 @@ export default function OrganizationView() {
       </div>
     );
   }
-
+console.log("Archived_at", organization.archived_at)
   return (
     <div className="bg-gray-200 min-h-screen p-2">
       {/* Header with company name and buttons */}
       <div className="bg-gray-400 p-2 flex items-center">
         <div className="flex items-center">
           <div className="bg-blue-200 border border-blue-300 p-1 mr-2">
-            {/* <Image
-              src="/window.svg"
-              alt="Organization"
-              width={24}
-              height={24}
-            /> */}
             <HiOutlineOfficeBuilding size={24} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
             {formatRecordId(organization.id, "organization")}{" "}
             {organization.name}
-            {(organization.status === "Archived" || organization.archived_at) && (
-              <span className="ml-2 inline-flex flex-wrap items-center gap-2">
-                <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 border border-amber-300">
-                  Archived
-                </span>
-                {getArchivedTimeLeft(organization.archived_at) && (
-                  <span className="text-sm text-amber-700 font-normal">
-                    ({getArchivedTimeLeft(organization.archived_at)})
-                  </span>
-                )}
-              </span>
-            )}
+            {organization.archived_at && (
+              <div className="ml-3">
+                {/* <span>Archived at</span> */}
+                <CountdownTimer archivedAt={organization.archived_at} />
+              </div>
+            )} 
           </h1>
         </div>
       </div>
@@ -6528,11 +6541,10 @@ export default function OrganizationView() {
                   </label>
                   <div className="relative" ref={aboutInputRef}>
                     <div
-                      className={`min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:outline-none pr-8 ${
-                        validationErrors.about
+                      className={`min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:outline-none pr-8 ${validationErrors.about
                           ? "border-red-500 focus-within:ring-red-500"
                           : "border-gray-300 focus-within:ring-blue-500"
-                      }`}
+                        }`}
                     >
                       {/* Selected References Tags - Inside the input container */}
                       {noteForm.aboutReferences.map((ref, index) => (
@@ -7362,7 +7374,7 @@ export default function OrganizationView() {
                       id={headerFieldsDragActiveId}
                       label={getHeaderFieldLabel(headerFieldsDragActiveId)}
                       checked={headerFields.includes(headerFieldsDragActiveId)}
-                      onToggle={() => {}}
+                      onToggle={() => { }}
                       isOverlay
                     />
                   ) : null}
