@@ -20,14 +20,52 @@ export async function POST(
       );
     }
 
+    // Read multipart form data from the browser
     const formData = await request.formData();
+    const file = formData.get("file") as File | null;
+    const document_name = formData.get("document_name") as string | null;
+    const document_type =
+      (formData.get("document_type") as string | null) ?? "General";
+
+    if (!file) {
+      return NextResponse.json(
+        { success: false, message: "File is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!document_name || !document_name.trim()) {
+      return NextResponse.json(
+        { success: false, message: "Document name is required" },
+        { status: 400 }
+      );
+    }
+
+    // Convert file to base64 so backend can avoid multer/busboy
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const base64Data = buffer.toString("base64");
+
+    const payload = {
+      document_name,
+      document_type,
+      file: {
+        name: file.name,
+        type: file.type || "application/octet-stream",
+        data: base64Data,
+      },
+    };
+
     const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
     const uploadUrl = `${apiUrl}/api/jobs/${id}/documents/upload`;
 
     const response = await fetch(uploadUrl, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}` },
-      body: formData,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
     });
 
     let data: { success?: boolean; message?: string; document?: unknown };
