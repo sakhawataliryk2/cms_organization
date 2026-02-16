@@ -188,7 +188,7 @@ function SortableColumnHeader({
       {showFilter && filterPosition && typeof document !== "undefined" && createPortal(
         <div
           ref={filterRef}
-          className="bg-white border border-gray-300 shadow-lg rounded p-2 z-[100] min-w-[150px]"
+          className="bg-white border border-gray-300 shadow-lg rounded p-2 z-100 min-w-[150px]"
           style={{ position: "fixed", top: filterPosition.top, left: filterPosition.left, width: filterPosition.width }}
           onClick={(e) => e.stopPropagation()}
         >

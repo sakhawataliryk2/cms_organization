@@ -9,6 +9,8 @@ import CustomFieldRenderer, {
 } from "@/components/CustomFieldRenderer";
 import LookupField from "@/components/LookupField";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
+import JobSummaryCard from "../JobSummaryCard";
+import Link from "next/link";
 
 // Map admin field labels to placement backend columns (all fields driven by admin; no hardcoded standard fields)
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
@@ -26,16 +28,24 @@ const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
   "Email Notification": "internal_email_notification",
 };
 
+const PLACEMENT_SEGMENT = "contract" as const;
+/** Job type must include this to match this form. */
+const EXPECTED_JOB_TYPE = "contract";
+
 export default function AddPlacement() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const placementId = searchParams.get("id");
+  const jobIdFromUrl = searchParams.get("jobId");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(!!placementId);
   const [error, setError] = useState<string | null>(null);
   const [isEditMode, setIsEditMode] = useState(!!placementId);
   const hasFetchedRef = useRef(false);
+  const [selectedJob, setSelectedJob] = useState<any>(null);
+  const [jobTypeMismatch, setJobTypeMismatch] = useState(false);
+  const [jobFetchError, setJobFetchError] = useState<string | null>(null);
 
   const {
     customFields,
@@ -70,6 +80,56 @@ export default function AddPlacement() {
   const jobField = fieldByColumn.job_id;
   const candidateField = fieldByColumn.job_seeker_id;
   const organizationField = fieldByColumn.organization_id;
+
+  // Fetch job by jobId when coming from job-first flow (validate type and prefill)
+  useEffect(() => {
+    if (!jobIdFromUrl || placementId) return;
+    let cancelled = false;
+    const run = async () => {
+      setJobFetchError(null);
+      setJobTypeMismatch(false);
+      setSelectedJob(null);
+      setIsLoading(true);
+      try {
+        const res = await fetch(`/api/jobs/${jobIdFromUrl}`);
+        if (cancelled) return;
+        if (!res.ok) {
+          setJobFetchError("Could not load job details. Please try again or choose another job.");
+          return;
+        }
+        const data = await res.json();
+        const job = data.job;
+        const jobType = String(job?.job_type ?? job?.jobType ?? "").toLowerCase();
+        const matches = jobType.includes(EXPECTED_JOB_TYPE) || jobType === "";
+        if (!matches) {
+          setJobTypeMismatch(true);
+          return;
+        }
+        setSelectedJob(job);
+      } catch {
+        if (!cancelled) setJobFetchError("Could not load job details. Please try again.");
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [jobIdFromUrl, placementId]);
+
+  // Prefill Job (and org) when selectedJob is set from job-first flow
+  useEffect(() => {
+    if (!jobField || !selectedJob) return;
+    const id = selectedJob.id ?? selectedJob.Id;
+    if (id != null) {
+      handleCustomFieldChange(jobField.field_name, String(id));
+    }
+    if (organizationField) {
+      const orgId = selectedJob.organization_id ?? selectedJob.organizationId ?? selectedJob.organization?.id;
+      if (orgId != null) {
+        handleCustomFieldChange(organizationField.field_name, String(orgId));
+      }
+    }
+  }, [selectedJob, jobField, organizationField, handleCustomFieldChange]);
 
   // Fetch job seekers and jobs on mount (for Job/Candidate dropdown options)
   useEffect(() => {
@@ -363,6 +423,7 @@ export default function AddPlacement() {
   };
 
   const handleGoBack = () => router.back();
+  const backToJobSelection = () => router.push("/dashboard/placements/add");
 
   // Get organization ID value for LookupField
   const organizationIdValue = organizationField ? (customFieldValues[organizationField.field_name] ?? "") : "";
@@ -376,8 +437,45 @@ export default function AddPlacement() {
     return j != null && String(j).trim() !== "" && c != null && String(c).trim() !== "";
   }, [jobField, candidateField, customFieldValues, validateCustomFields]);
 
-  if (isLoading) {
-    return <LoadingScreen message="Loading placement data..." />;
+  if (isLoading && (placementId || (jobIdFromUrl && !selectedJob && !jobTypeMismatch && !jobFetchError))) {
+    return <LoadingScreen message={placementId ? "Loading placement data..." : "Loading job details..."} />;
+  }
+
+  if (jobTypeMismatch) {
+    return (
+      <div className="mx-auto py-4 px-4 sm:py-8 sm:px-6">
+        <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+          <div className="border-b pb-4 mb-6 flex justify-between items-center">
+            <h1 className="text-xl font-bold">Add Placement Contract</h1>
+            <button onClick={handleGoBack} className="text-gray-500 hover:text-gray-700 text-2xl font-bold">X</button>
+          </div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800 mb-4">
+            <p className="font-medium">This job&apos;s type doesn&apos;t match a Contract placement.</p>
+            <p className="text-sm mt-1">Please choose another job or contact your administrator to update the job type.</p>
+          </div>
+          <Link href="/dashboard/placements/add" className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+            Back to Job Selection
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (jobFetchError && jobIdFromUrl && !selectedJob) {
+    return (
+      <div className="mx-auto py-4 px-4 sm:py-8 sm:px-6">
+        <div className="bg-white rounded-lg shadow p-4 sm:p-6">
+          <div className="border-b pb-4 mb-6 flex justify-between items-center">
+            <h1 className="text-xl font-bold">Add Placement Contract</h1>
+            <button onClick={handleGoBack} className="text-gray-500 hover:text-gray-700 text-2xl font-bold">X</button>
+          </div>
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 mb-4">{jobFetchError}</div>
+          <Link href="/dashboard/placements/add" className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+            Back to Job Selection
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   if (isSubmitting) {
@@ -391,15 +489,31 @@ export default function AddPlacement() {
   return (
     <div className="mx-auto py-4 px-4 sm:py-8 sm:px-6">
       <div className="bg-white rounded-lg shadow p-4 sm:p-6 relative">
-        <div className="flex justify-between items-center border-b pb-4 mb-6">
+        <div className="flex justify-between items-center border-b pb-4 mb-6 flex-wrap gap-2">
           <div className="flex items-center">
             <Image src="/window.svg" alt="Placement" width={24} height={24} className="mr-2" />
             <h1 className="text-xl font-bold">{isEditMode ? "Edit" : "Add"} Placement Contract</h1>
           </div>
-          <button onClick={handleGoBack} className="text-gray-500 hover:text-gray-700">
-            <span className="text-2xl font-bold">X</span>
-          </button>
+          <div className="flex items-center gap-2">
+            {jobIdFromUrl && !isEditMode && (
+              <Link
+                href="/dashboard/placements/add"
+                className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+              >
+                Back to Job Selection
+              </Link>
+            )}
+            <button onClick={handleGoBack} className="text-gray-500 hover:text-gray-700">
+              <span className="text-2xl font-bold">X</span>
+            </button>
+          </div>
         </div>
+
+        {selectedJob && !isEditMode && (
+          <div className="mb-4">
+            <JobSummaryCard job={selectedJob} />
+          </div>
+        )}
 
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 mb-4 rounded">

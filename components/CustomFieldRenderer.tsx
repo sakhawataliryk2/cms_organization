@@ -1511,6 +1511,27 @@ export default function CustomFieldRenderer({
   }
 }
 
+// Session cache for placement (and other) field-management responses to avoid repeated API calls
+const fieldManagementCache: Record<
+  string,
+  { fields: CustomFieldDefinition[]; cachedAt: number }
+> = {};
+const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function getCachedFields(entityType: string): CustomFieldDefinition[] | null {
+  const entry = fieldManagementCache[entityType];
+  if (!entry) return null;
+  if (Date.now() - entry.cachedAt > CACHE_TTL_MS) {
+    delete fieldManagementCache[entityType];
+    return null;
+  }
+  return entry.fields;
+}
+
+function setCachedFields(entityType: string, fields: CustomFieldDefinition[]) {
+  fieldManagementCache[entityType] = { fields, cachedAt: Date.now() };
+}
+
 export function useCustomFields(entityType: string) {
   const [customFields, setCustomFields] = React.useState<
     CustomFieldDefinition[]
@@ -1521,6 +1542,37 @@ export function useCustomFields(entityType: string) {
   const [isLoading, setIsLoading] = React.useState(true);
 
   const fetchCustomFields = React.useCallback(async () => {
+    const cached = getCachedFields(entityType);
+    if (cached && cached.length >= 0) {
+      setCustomFields(cached);
+      setCustomFieldValues((prev) => {
+        const next: Record<string, any> = {};
+        cached.forEach((field: CustomFieldDefinition) => {
+          if (prev[field.field_name] !== undefined) {
+            next[field.field_name] = prev[field.field_name];
+            return;
+          }
+          next[field.field_name] = field.default_value || "";
+        });
+        return next;
+      });
+      setIsLoading(false);
+      // Refresh in background (non-blocking)
+      fetch(`/api/admin/field-management/${entityType}`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.customFields?.length) {
+            const sortedFields = (data.customFields || []).sort(
+              (a: CustomFieldDefinition, b: CustomFieldDefinition) =>
+                a.sort_order - b.sort_order
+            );
+            setCachedFields(entityType, sortedFields);
+            setCustomFields(sortedFields);
+          }
+        })
+        .catch(() => {});
+      return;
+    }
     try {
       setIsLoading(true);
       const response = await fetch(`/api/admin/field-management/${entityType}`);
@@ -1531,6 +1583,7 @@ export function useCustomFields(entityType: string) {
           (a: CustomFieldDefinition, b: CustomFieldDefinition) =>
             a.sort_order - b.sort_order
         );
+        setCachedFields(entityType, sortedFields);
         setCustomFields(sortedFields);
 
         // Initialize custom field values
