@@ -18,6 +18,7 @@ import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
+import CountdownTimer from "@/components/CountdownTimer";
 import BulkActionsButton from "@/components/BulkActionsButton";
 import BulkOwnershipModal from "@/components/BulkOwnershipModal";
 import BulkStatusModal from "@/components/BulkStatusModal";
@@ -1389,8 +1390,11 @@ export default function PlacementList() {
 
                     {/* Fixed ID */}
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        P {placement.id}
+                      <div className="flex flex-col gap-1">
+                        <span className="text-sm font-medium text-gray-900">P {placement.id}</span>
+                        {placement.archived_at && (
+                          <CountdownTimer archivedAt={placement.archived_at} />
+                        )}
                       </div>
                     </td>
 

@@ -19,6 +19,7 @@ import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import { toast } from "sonner";
 import AddTearsheetModal from "@/components/AddTearsheetModal";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
+import CountdownTimer from "@/components/CountdownTimer";
 import {
   DndContext,
   closestCorners,
@@ -1504,6 +1505,7 @@ export default function LeadView() {
           : "Never contacted",
         createdBy: data.lead.created_by_name || "Unknown",
         customFields: data.lead.custom_fields || {},
+        archived_at: data.lead.archived_at || null,
       };
 
       console.log("Formatted lead:", formattedLead);
@@ -2041,19 +2043,20 @@ export default function LeadView() {
     }
   };
 
-  // Fetch action fields on mount
+  // Fetch action fields on mount (Field500 / Admin Center → Field Management → Leads)
   useEffect(() => {
     const fetchActionFields = async () => {
       setIsLoadingActionFields(true);
       try {
-        const response = await fetch("/api/organizations/fields", {
-          headers: {
-            Authorization: `Bearer ${document.cookie.replace(
-              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-              "$1"
-            )}`,
-          },
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        );
+
+        const response = await fetch("/api/admin/field-management/leads", {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         });
+
         if (response.ok) {
           const raw = await response.text();
           let data: any = {};
@@ -2061,12 +2064,19 @@ export default function LeadView() {
             data = JSON.parse(raw);
           } catch { }
 
-          const fields = data.customFields || data.fields || data.data?.fields || data.organizationFields || [];
+          const fields =
+            data.customFields ||
+            data.fields ||
+            data.data?.fields ||
+            data.leadFields ||
+            data.data?.data?.fields ||
+            [];
+
           const fieldNamesToCheck = ['field_500', 'actions', 'action'];
 
           const field500 = (fields as any[]).find((f: any) =>
-            fieldNamesToCheck.includes(f.field_name?.toLowerCase()) ||
-            fieldNamesToCheck.includes(f.field_label?.toLowerCase())
+            fieldNamesToCheck.includes(String(f.field_name || "").toLowerCase()) ||
+            fieldNamesToCheck.includes(String(f.field_label || "").toLowerCase())
           );
 
           if (field500 && field500.options) {
@@ -2077,12 +2087,14 @@ export default function LeadView() {
               } catch { }
             }
             if (Array.isArray(options)) {
-              setActionFields(options.map((opt: any) => ({
-                id: opt.value || opt,
-                field_label: opt.label || opt.value || opt,
-                field_name: opt.value || opt,
-              })));
-            } else if (typeof options === "object") {
+              setActionFields(
+                options.map((opt: any) => ({
+                  id: opt.value || opt,
+                  field_label: opt.label || opt.value || opt,
+                  field_name: opt.value || opt,
+                }))
+              );
+            } else if (typeof options === "object" && options !== null) {
               setActionFields(
                 Object.entries(options).map(([key, value]) => ({
                   id: key,
@@ -2090,8 +2102,11 @@ export default function LeadView() {
                   field_name: key,
                 }))
               );
+            } else {
+              setActionFields([]);
             }
           } else {
+            // Fallback default actions when Field500 is not configured
             setActionFields([
               { id: "Outbound Call", field_label: "Outbound Call", field_name: "Outbound Call" },
               { id: "Inbound Call", field_label: "Inbound Call", field_name: "Inbound Call" },
@@ -2101,6 +2116,16 @@ export default function LeadView() {
               { id: "Client Visit", field_label: "Client Visit", field_name: "Client Visit" },
             ]);
           }
+        } else {
+          // Non-OK response: use fallback defaults
+          setActionFields([
+            { id: "Outbound Call", field_label: "Outbound Call", field_name: "Outbound Call" },
+            { id: "Inbound Call", field_label: "Inbound Call", field_name: "Inbound Call" },
+            { id: "Left Message", field_label: "Left Message", field_name: "Left Message" },
+            { id: "Email", field_label: "Email", field_name: "Email" },
+            { id: "Appointment", field_label: "Appointment", field_name: "Appointment" },
+            { id: "Client Visit", field_label: "Client Visit", field_name: "Client Visit" },
+          ]);
         }
       } catch (err) {
         console.error("Error fetching action fields:", err);
@@ -3434,6 +3459,7 @@ export default function LeadView() {
                       for (const key in details.after) {
                         // Skip internal fields that might not be relevant to users
                         if (key === "updated_at") continue;
+                        if (key.startsWith("_relationship_")) continue;
 
                         const beforeVal = details.before[key];
                         const afterVal = details.after[key];
@@ -3452,10 +3478,13 @@ export default function LeadView() {
                               const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
 
                               allKeys.forEach(cfKey => {
+                                // Skip internal relationship ID fields (redundant with user-facing Job/Contact/Candidate)
+                                if (cfKey.startsWith("_relationship_")) return;
+
                                 const beforeCfVal = beforeObj[cfKey];
                                 const afterCfVal = afterObj[cfKey];
 
-                                if (beforeCfVal !== afterCfVal) {
+                                if (JSON.stringify(beforeCfVal) !== JSON.stringify(afterCfVal)) {
                                   changes.push(
                                     <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
                                       <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
@@ -3593,8 +3622,13 @@ export default function LeadView() {
             /> */}
             <FiTarget size={20} />
           </div>
-          <h1 className="text-xl font-semibold text-gray-700">
+          <h1 className="text-xl font-semibold text-gray-700 flex flex-wrap items-center gap-x-3 gap-y-1">
             L {lead.id} {lead.fullName}
+            {lead.archived_at && (
+              <div className="ml-3">
+                <CountdownTimer archivedAt={lead.archived_at} />
+              </div>
+            )}
           </h1>
         </div>
       </div>

@@ -4062,14 +4062,12 @@ export default function PlacementView() {
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
             P {placement.id} {placement.jobSeekerName} - {placement.jobTitle}
-          </h1>
-          {
-            placement.archived_at && (
+            {placement.archived_at && (
               <div className="ml-3">
                 <CountdownTimer archivedAt={placement.archived_at} />
               </div>
-            )
-          }
+            )}
+          </h1>
         </div>
 
       </div>

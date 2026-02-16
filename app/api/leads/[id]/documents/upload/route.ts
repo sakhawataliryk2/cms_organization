@@ -32,12 +32,14 @@ export async function POST(
     try {
       data = await response.json();
     } catch {
+      const text = await response.text();
       return NextResponse.json(
         {
           success: false,
-          message: response.status === 404
-            ? "Documents upload endpoint not found. Ensure the backend is running and has the upload route registered."
-            : "Invalid response from server",
+          message:
+            response.status === 404
+              ? "Documents upload endpoint not found. Ensure the backend is running and has the upload route registered."
+              : text || "Invalid response from server",
         },
         { status: response.status >= 400 ? response.status : 500 }
       );

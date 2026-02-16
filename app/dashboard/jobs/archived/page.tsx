@@ -18,6 +18,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
+import CountdownTimer from "@/components/CountdownTimer";
 
 interface Job {
   id: string;
@@ -893,7 +894,12 @@ export default function ArchivedJobsList() {
                     </td>
 
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">J {job.id}</div>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-sm font-medium text-gray-900">J {job.id}</span>
+                        {job.archived_at && (
+                          <CountdownTimer archivedAt={job.archived_at} />
+                        )}
+                      </div>
                     </td>
 
                     {columnFields.map((key) => {

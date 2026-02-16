@@ -17,6 +17,7 @@ import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import OnboardingTab from "./onboarding/OnboardingTab";
 import RecordNameResolver from '@/components/RecordNameResolver';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
+import CountdownTimer from '@/components/CountdownTimer';
 import {
   buildPinnedKey,
   isPinnedRecord,
@@ -2637,6 +2638,7 @@ Best regards`;
         resume: resume,
         resumeText: jobSeekerData.resume_text || "",
         customFields: customFieldsObj,
+        archived_at: jobSeekerData.archived_at || null,
       };
 
       console.log("Formatted job seeker data:", formattedJobSeeker);
@@ -4404,8 +4406,13 @@ Best regards`;
           <div className="bg-blue-200 border border-blue-300 p-1 mr-2 shrink-0">
             <FiUsers size={20} />
           </div>
-          <h1 className="text-base sm:text-xl font-semibold text-gray-700 truncate min-w-0">
+          <h1 className="text-base sm:text-xl font-semibold text-gray-700 truncate min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1">
             {formatRecordId(jobSeeker.id, "jobSeeker")} {jobSeeker.fullName}
+            {jobSeeker.archived_at && (
+              <div className="shrink-0">
+                <CountdownTimer archivedAt={jobSeeker.archived_at} />
+              </div>
+            )}
           </h1>
         </div>
       </div>

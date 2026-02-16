@@ -15,9 +15,12 @@ export async function GET(request: NextRequest) {
             );
         }
 
-        // Make a request to your backend API
+        // Make a request to your backend API (forward query params for archived filter - like jobs)
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
-        const response = await fetch(`${apiUrl}/api/job-seekers`, {
+        const { searchParams } = new URL(request.url);
+        const queryString = searchParams.toString();
+        const url = `${apiUrl}/api/job-seekers${queryString ? `?${queryString}` : ''}`;
+        const response = await fetch(url, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',

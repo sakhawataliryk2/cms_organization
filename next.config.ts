@@ -2,6 +2,12 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
+  experimental: {
+    serverActions: {
+      // Allow document uploads up to 10MB (must match backend multer limit)
+      bodySizeLimit: "10mb",
+    },
+  },
   async redirects() {
     return [
       {

@@ -8,6 +8,7 @@ import LoadingScreen from '@/components/LoadingScreen';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
+import CountdownTimer from "@/components/CountdownTimer";
 import {
   SortableContext,
   useSortable,
@@ -796,7 +797,6 @@ export default function ArchivedHiringManagersList() {
   };
 
   const handleSelectHiringManager = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation(); // Prevent row click event
 
     if (selectedHiringManagers.includes(id)) {
       setSelectedHiringManagers(
@@ -1159,8 +1159,11 @@ export default function ArchivedHiringManagersList() {
 
                     {/* Fixed ID */}
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        HM {hm.id}
+                      <div className="flex flex-col gap-1">
+                        <span className="text-sm font-medium text-gray-900">HM {hm.id}</span>
+                        {hm.archived_at && (
+                          <CountdownTimer archivedAt={hm.archived_at} />
+                        )}
                       </div>
                     </td>
 
@@ -1175,7 +1178,6 @@ export default function ArchivedHiringManagersList() {
                           <td
                             key={key}
                             className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                            onClick={(e) => e.stopPropagation()}
                           >
                             <FieldValueRenderer
                               value={getColumnValue(hm, key)}
