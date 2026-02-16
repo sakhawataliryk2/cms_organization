@@ -24,6 +24,7 @@ import {
 } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
+import CountdownTimer from "@/components/CountdownTimer";
 
 interface Lead {
   id: string;
@@ -1237,7 +1238,14 @@ export default function ArchivedLeadsList() {
                         />
                       </td>
 
-                      <td className="px-6 py-4 text-black whitespace-nowrap">L {lead?.id}</td>
+                      <td className="px-6 py-4 text-black whitespace-nowrap">
+                        <div className="flex flex-col gap-1">
+                          <span>L {lead?.id}</span>
+                          {lead.archived_at && (
+                            <CountdownTimer archivedAt={lead.archived_at} />
+                          )}
+                        </div>
+                      </td>
                       {columnFields.map((key) => {
                         const colInfo = getColumnInfo(key);
                         const val = getColumnValue(lead, key);

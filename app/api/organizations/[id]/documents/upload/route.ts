@@ -8,7 +8,6 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    console.log("Uploading")
     const { id } = await params;
 
     // Get the token from cookies
@@ -36,7 +35,22 @@ export async function POST(
       body: formData,
     });
 
-    const data = await response.json();
+    let data: { success?: boolean; message?: string; document?: unknown };
+    try {
+      data = await response.json();
+    } catch {
+      const text = await response.text();
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            response.status === 404
+              ? "Documents upload endpoint not found. Ensure the backend is running and has the upload route registered."
+              : text || "Invalid response from server",
+        },
+        { status: response.status >= 400 ? response.status : 500 }
+      );
+    }
 
     if (!response.ok) {
       return NextResponse.json(
@@ -51,8 +65,10 @@ export async function POST(
     return NextResponse.json(data);
   } catch (error) {
     console.error("Error uploading document:", error);
+    const message =
+      error instanceof Error ? error.message : "Internal server error";
     return NextResponse.json(
-      { success: false, message: "Internal server error" },
+      { success: false, message: "Upload failed. " + message },
       { status: 500 }
     );
   }

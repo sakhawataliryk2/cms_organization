@@ -37,6 +37,8 @@ interface JobSeeker {
   created_by_name: string;
   customFields?: Record<string, any>;
   custom_fields?: Record<string, any>;
+  archived_at?: string | null;
+  archive_reason?: string | null;
 }
 
 type ColumnSortState = "asc" | "desc" | null;
@@ -645,7 +647,8 @@ export default function JobSeekerList() {
   };
 
   const filteredAndSortedJobSeekers = useMemo(() => {
-    let result = [...jobSeekers];
+    // Exclude archived job seekers from main listing (same as jobs)
+    let result = jobSeekers.filter((js) => js.status !== "Archived" && !js.archived_at);
 
     // Apply global search
     if (searchTerm.trim() !== "") {

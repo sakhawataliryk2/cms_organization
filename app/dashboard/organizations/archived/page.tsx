@@ -24,6 +24,7 @@ import {
 } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
+import CountdownTimer from "@/components/CountdownTimer";
 
 interface Organization {
   id: string;
@@ -1228,7 +1229,14 @@ export default function ArchivedOrganizationsList() {
                         />
                       </td>
 
-                      <td className="px-6 py-4 text-black whitespace-nowrap">O {org?.id}</td>
+                      <td className="px-6 py-4 text-black whitespace-nowrap">
+                        <div className="flex flex-col gap-1">
+                          <span>O {org?.id}</span>
+                          {org.archived_at && (
+                            <CountdownTimer archivedAt={org.archived_at} />
+                          )}
+                        </div>
+                      </td>
                       {columnFields.map((key) => {
                         const colInfo = getColumnInfo(key);
                         const val = getColumnValue(org, key);

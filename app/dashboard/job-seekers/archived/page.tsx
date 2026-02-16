@@ -8,6 +8,7 @@ import LoadingScreen from '@/components/LoadingScreen';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
+import CountdownTimer from "@/components/CountdownTimer";
 import {
   SortableContext,
   useSortable,
@@ -458,6 +459,7 @@ export default function ArchivedJobSeekersList() {
         const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
         const fieldType = (f as any)?.field_type;
         const lookupType = (f as any)?.lookup_type || "";
+        const multiSelectLookupType = (f as any)?.multi_select_lookup_type ?? (f as any)?.multiSelectLookupType ?? "";
         const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanize(name) : "");
         const isBackendCol = name && JS_BACKEND_COLUMN_KEYS.includes(name);
         let filterType: "text" | "select" | "number" = "text";
@@ -465,7 +467,7 @@ export default function ArchivedJobSeekersList() {
         return {
           fieldType,
           lookupType,
-          multiSelectLookupType: (f as any)?.multi_select_lookup_type ?? (f as any)?.multiSelectLookupType ?? "",
+          multiSelectLookupType,
           key: isBackendCol ? name : `custom:${label || name}`,
           label: String(label || name),
           sortable: isBackendCol,
@@ -704,7 +706,7 @@ export default function ArchivedJobSeekersList() {
 
   // Apply per-column filtering and sorting (API returns only archived)
   const filteredAndSortedJobSeekers = useMemo(() => {
-    let result = [...jobSeekers];
+    let result = jobSeekers.filter((js) => js.status === "Archived" || !!js.archived_at);
 
     // Apply filters
     Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
@@ -1130,34 +1132,33 @@ export default function ArchivedJobSeekersList() {
                       />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">
-                        JS {js.id}
+                      <div className="flex flex-col gap-1">
+                        <span className="text-sm font-medium text-gray-900">JS {js.id}</span>
+                        {js.archived_at && (
+                          <CountdownTimer archivedAt={js.archived_at} />
+                        )}
                       </div>
                     </td>
                     {columnFields.map((key) => {
-                        const colInfo = getColumnInfo(key) as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
-                        const fieldInfo = colInfo
-                          ? { key: colInfo.key, label: colInfo.label, fieldType: colInfo.fieldType, lookupType: colInfo.lookupType, multiSelectLookupType: colInfo.multiSelectLookupType }
-                          : { key, label: getColumnLabel(key) };
-                        const isArchiveReason = getColumnLabel(key).toLowerCase() === "archive reason";
-                        return (
-                          <td
-                            key={key}
-                            className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <FieldValueRenderer
-                              value={getColumnValue(js, key)}
-                              fieldInfo={fieldInfo}
-                              emptyPlaceholder="—"
-                              clickable
-                              stopPropagation
-                              forceRenderAsStatus={isArchiveReason}
-                              statusVariant={isArchiveReason && String(getColumnValue(js, key) || "").toLowerCase() === "deletion" ? "deletion" : "blue"}
-                            />
-                          </td>
-                        );
-                      })}
+                      const colInfo = getColumnInfo(key) as { key: string; label: string; fieldType?: string; lookupType?: string; multiSelectLookupType?: string } | undefined;
+                      const fieldInfo = colInfo
+                        ? { key: colInfo.key, label: colInfo.label, fieldType: colInfo.fieldType, lookupType: colInfo.lookupType, multiSelectLookupType: colInfo.multiSelectLookupType }
+                        : { key, label: getColumnLabel(key) };
+                      const isArchiveReason = getColumnLabel(key).toLowerCase() === "archive reason";
+                      return (
+                        <td key={key} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                          <FieldValueRenderer
+                            value={getColumnValue(js, key)}
+                            fieldInfo={fieldInfo}
+                            emptyPlaceholder="—"
+                            clickable
+                            stopPropagation
+                            forceRenderAsStatus={isArchiveReason}
+                            statusVariant={isArchiveReason && String(getColumnValue(js, key) || "").toLowerCase() === "deletion" ? "deletion" : "blue"}
+                          />
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))
               ) : (

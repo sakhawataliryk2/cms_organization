@@ -1686,7 +1686,7 @@ export default function OrganizationView() {
         nicknames: data.organization.nicknames || "",
         parentOrganization: data.organization.parent_organization_name || data.organization.parent_organization || "",
         status: data.organization.status || "Active",
-        archived_at: data.organization.archived_at ?? null,
+        archived_at: data.organization.archived_at ?? data.organization.archivedAt ?? null,
         contractOnFile: data.organization.contract_on_file || "No",
         dateContractSigned: data.organization.date_contract_signed || "",
         yearFounded: data.organization.year_founded || "",

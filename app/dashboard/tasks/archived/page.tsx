@@ -17,6 +17,7 @@ import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
+import CountdownTimer from "@/components/CountdownTimer";
 
 interface Task {
   id: string;
@@ -1082,7 +1083,12 @@ export default function ArchivedTasksList() {
                       />
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-medium text-gray-900">T {task.id}</div>
+                      <div className="flex flex-col gap-1">
+                        <span className="text-sm font-medium text-gray-900">T {task.id}</span>
+                        {task.archived_at && (
+                          <CountdownTimer archivedAt={task.archived_at} />
+                        )}
+                      </div>
                     </td>
                     {columnFields.map((key) => {
                       const colInfo = getColumnInfo(key) as
