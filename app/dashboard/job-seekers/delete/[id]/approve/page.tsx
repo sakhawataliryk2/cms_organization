@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { getCookie } from "cookies-next";
 
-const APPROVE_REQUEST_TIMEOUT_MS = 25000;
+// Allow more time for the backend to process the delete approval
+const APPROVE_REQUEST_TIMEOUT_MS = 120000;
 
 export default function ApproveJobSeekerDeletePage() {
   const params = useParams();
