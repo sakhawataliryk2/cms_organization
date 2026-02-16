@@ -40,7 +40,7 @@ export default function ApproveDeletePage() {
             setStatus("review");
           } else {
             setStatus("error");
-            setMessage(`This request is already ${data.deleteRequest.status}.`);
+            setMessage(data.message || `This request is already ${data.deleteRequest.status}.`);
           }
         } else {
           setStatus("error");

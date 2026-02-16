@@ -2897,7 +2897,7 @@ export default function TaskView() {
                                                 {isLoadingAboutSearch ? <div className="p-3 text-center text-gray-500 text-sm">Searching...</div> : aboutSuggestions.length > 0 ? (
                                                     aboutSuggestions.map((suggestion, idx) => (
                                                         <button key={`${suggestion.type}-${suggestion.id}-${idx}`} type="button" onClick={() => handleAboutReferenceSelect(suggestion)} className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2">
-                                                            <FiUserCheck className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                                            <FiUserCheck className="w-4 h-4 text-gray-500 shrink-0" />
                                                             <div className="flex-1">
                                                                 <div className="text-sm font-medium text-gray-900">{suggestion.display}</div>
                                                                 <div className="text-xs text-gray-500">{suggestion.type}</div>
@@ -2918,7 +2918,7 @@ export default function TaskView() {
                                             <div className="min-h-[42px] flex flex-wrap items-center gap-2 p-2 border border-gray-300 rounded focus-within:ring-2 focus-within:outline-none focus-within:ring-blue-500 pr-8">
                                                 {(noteForm.emailNotification || []).map((val, index) => (
                                                     <span key={val} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm">
-                                                        <HiOutlineUser className="w-4 h-4 flex-shrink-0" />
+                                                        <HiOutlineUser className="w-4 h-4 shrink-0" />
                                                         {val}
                                                         <button type="button" onClick={() => removeEmailNotification(val)} className="hover:text-blue-600 font-bold leading-none" title="Remove">×</button>
                                                     </span>
@@ -2938,7 +2938,7 @@ export default function TaskView() {
                                             <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
                                                 {emailNotificationSuggestions.length > 0 ? emailNotificationSuggestions.map((user, idx) => (
                                                     <button key={user.id ?? idx} type="button" onClick={() => handleEmailNotificationSelect(user)} className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2">
-                                                        <HiOutlineUser className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                                        <HiOutlineUser className="w-4 h-4 text-gray-500 shrink-0" />
                                                         <div className="flex-1">
                                                             <div className="text-sm font-medium text-gray-900">{user.name || user.email}</div>
                                                             {user.email && user.name && <div className="text-xs text-gray-500">{user.email}</div>}

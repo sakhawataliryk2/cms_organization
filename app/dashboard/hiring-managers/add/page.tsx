@@ -251,7 +251,7 @@ export default function AddHiringManager() {
         nickname: hm.nickname || "",
         title: hm.title || "",
         organizationId:
-          hm.organization_name || hm.organization_id?.toString() || "",
+          hm.organization_id?.toString() || hm.organization_name || "",
         department: hm.department || "Accounting",
         reportsTo: hm.reports_to || "",
         owner: hm.owner || "",
@@ -331,10 +331,10 @@ export default function AddHiringManager() {
           "Title": hm.title || "",
           "Job Title": hm.title || "",
           "Position": hm.title || "",
-          // Organization variations
-          "Organization": hm.organization_name || "",
-          "Organization Name": hm.organization_name || "",
-          "Company": hm.organization_name || "",
+          // Organization variations: store ID when available so links/API use ID; name is for display only
+          "Organization": hm.organization_id?.toString() || hm.organization_name || "",
+          "Organization Name": hm.organization_id?.toString() || hm.organization_name || "",
+          "Company": hm.organization_id?.toString() || hm.organization_name || "",
           // Department variations
           "Department": hm.department || "",
           "Dept": hm.department || "",
@@ -537,15 +537,14 @@ export default function AddHiringManager() {
       const fieldLabel = field.field_label.toLowerCase();
       const currentValue = customFieldValues[field.field_name];
 
-      // Organization Name fields (URL case: only when empty or still showing ID)
+      // Organization fields (URL case): store the organization ID, not the name, so links and API use ID
       if (
         (fieldLabel.includes("organization") || fieldLabel.includes("company")) &&
         !fieldLabel.includes("phone") &&
-        !fieldLabel.includes("address") &&
-        organizationName
+        !fieldLabel.includes("address")
       ) {
-        if (!currentValue || currentValue === organizationIdFromUrl || currentValue === String(organizationIdFromUrl)) {
-          updates[field.field_name] = organizationName;
+        if (!currentValue || currentValue === organizationIdFromUrl || currentValue === String(organizationIdFromUrl) || currentValue === organizationName) {
+          updates[field.field_name] = organizationIdFromUrl;
         }
       }
 

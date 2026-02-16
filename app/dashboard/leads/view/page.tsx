@@ -3055,7 +3055,7 @@ export default function LeadView() {
                               onClick={() => handleAboutReferenceSelect(suggestion)}
                               className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
                             >
-                              <HiOutlineOfficeBuilding className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                              <HiOutlineOfficeBuilding className="w-4 h-4 text-gray-500 shrink-0" />
                               <div className="flex-1">
                                 <div className="text-sm font-medium text-gray-900">
                                   {suggestion.display}
@@ -3098,7 +3098,7 @@ export default function LeadView() {
                             key={val}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
                           >
-                            <HiOutlineUser className="w-4 h-4 flex-shrink-0" />
+                            <HiOutlineUser className="w-4 h-4 shrink-0" />
                             {val}
                             <button
                               type="button"
@@ -3148,7 +3148,7 @@ export default function LeadView() {
                               onClick={() => handleEmailNotificationSelect(user)}
                               className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
                             >
-                              <HiOutlineUser className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                              <HiOutlineUser className="w-4 h-4 text-gray-500 shrink-0" />
                               <div className="flex-1">
                                 <div className="text-sm font-medium text-gray-900">
                                   {user.name || user.email}
