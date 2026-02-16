@@ -118,40 +118,12 @@ export default function FieldValueRenderer({
   // Lookup fields
   const isLookup = fieldType === "lookup" || fieldType === "multiselect_lookup";
   if (isLookup) {
-    // Special case: auto-resolve Owner lookup from cookies when value is empty
-    let idToUse = raw;
-    const isOwnerLabel = label === "owner";
-
-    if (isOwnerLabel && !idToUse && typeof window !== "undefined") {
-      try {
-        const cookieString = document.cookie || "";
-        const cookieMap: Record<string, string> = {};
-
-        cookieString.split(";").forEach((part) => {
-          const [k, v] = part.split("=").map((s) => s.trim());
-          if (!k) return;
-          cookieMap[decodeURIComponent(k)] = decodeURIComponent(v ?? "");
-        });
-
-        // Try common cookie keys for the current owner/user
-        idToUse =
-          cookieMap["owner_id"] ||
-          cookieMap["ownerId"] ||
-          cookieMap["user_id"] ||
-          cookieMap["userId"] ||
-          "";
-      } catch {
-        // If anything goes wrong while reading cookies, just fall back to original value
-        idToUse = raw;
-      }
-    }
-
     const lookupType = fieldInfo?.lookupType || fieldInfo?.multiSelectLookupType;
     const fallback = lookupFallback != null && lookupFallback !== "" ? lookupFallback : str;
     return (
       <span onClick={handleClick} className={className}>
         <RecordNameResolver
-          id={idToUse || null}
+          id={raw || null}
           type={lookupType || ""}
           clickable
           fallback={fallback}
