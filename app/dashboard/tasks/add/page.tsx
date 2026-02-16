@@ -34,7 +34,6 @@ interface User {
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
   "Task Title": "title", Title: "title",
   "Description": "description", "Task Description": "description", Details: "description",
-  "Owner": "owner",
   "Status": "status", "Current Status": "status", "Task Status": "status",
   "Priority": "priority", "Task Priority": "priority",
   "Assigned To": "assigned_to", Assigned: "assigned_to", Assignee: "assigned_to",
@@ -98,13 +97,6 @@ export default function AddTask() {
   const [assignedToDropdownOpen, setAssignedToDropdownOpen] = useState(false);
   const assignedToDropdownRef = useRef<HTMLDivElement>(null);
   
-  // Tearsheet selection state
-  const [selectedTearsheetIds, setSelectedTearsheetIds] = useState<string[]>([]);
-  const [availableTearsheets, setAvailableTearsheets] = useState<any[]>([]);
-  const [isLoadingTearsheets, setIsLoadingTearsheets] = useState(false);
-  const [tearsheetSearchQuery, setTearsheetSearchQuery] = useState("");
-  const [showTearsheetDropdown, setShowTearsheetDropdown] = useState(false);
-  const tearsheetDropdownRef = useRef<HTMLDivElement>(null);
   // Helper function to convert reminder string (e.g., "5 minutes", "1 hour") to minutes
   const parseReminderToMinutes = (reminderValue: string | number | null | undefined): number | null => {
     if (!reminderValue) return null;
@@ -144,54 +136,10 @@ export default function AddTask() {
       if (assignedToDropdownRef.current && !assignedToDropdownRef.current.contains(e.target as Node)) {
         setAssignedToDropdownOpen(false);
       }
-      if (tearsheetDropdownRef.current && !tearsheetDropdownRef.current.contains(e.target as Node)) {
-        setShowTearsheetDropdown(false);
-      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  // Fetch available tearsheets
-  useEffect(() => {
-    const fetchTearsheets = async () => {
-      setIsLoadingTearsheets(true);
-      try {
-        const token = document.cookie.replace(
-          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-          "$1"
-        );
-        const response = await fetch("/api/tearsheets", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setAvailableTearsheets(data.tearsheets || []);
-        }
-      } catch (error) {
-        console.error("Error fetching tearsheets:", error);
-      } finally {
-        setIsLoadingTearsheets(false);
-      }
-    };
-    fetchTearsheets();
-  }, []);
-
-  const filteredTearsheets = tearsheetSearchQuery.trim() === ""
-    ? availableTearsheets
-    : availableTearsheets.filter((ts: any) =>
-        ts.name?.toLowerCase().includes(tearsheetSearchQuery.toLowerCase())
-      );
-
-  const handleTearsheetToggle = (tearsheetId: string) => {
-    setSelectedTearsheetIds((prev) => {
-      if (prev.includes(tearsheetId)) {
-        return prev.filter((id) => id !== tearsheetId);
-      } else {
-        return [...prev, tearsheetId];
-      }
-    });
-  };
 
   // Use the custom fields hook
   const {
@@ -260,35 +208,6 @@ export default function AddTask() {
       });
     }
   }, [activeUsers, currentUser?.id, currentUser?.name]);
-
-  // Auto-populate Owner field for new tasks
-  useEffect(() => {
-    if (isEditMode) return;
-    if (!currentUser?.name) return;
-    if (!customFields || customFields.length === 0) return;
-
-    const ownerField = customFields.find(
-      (f: any) => {
-        const label = String(f.field_label || "").toLowerCase();
-        const name = String(f.field_name || "").toLowerCase();
-        const key = String(f.field_key || "").toLowerCase();
-        return label === "owner" || name === "owner" || name === "field_17" || name === "field17" || key === "owner";
-      }
-    );
-
-    if (!ownerField?.field_name) return;
-
-    setCustomFieldValues((prev) => {
-      const existing = prev?.[ownerField.field_name];
-      if (existing !== undefined && existing !== null && String(existing).trim() !== "") {
-        return prev;
-      }
-      return {
-        ...prev,
-        [ownerField.field_name]: currentUser.name,
-      };
-    });
-  }, [isEditMode, currentUser, customFields, setCustomFieldValues]);
 
   // Prefill Organization from URL when opened from organization (relatedEntity=organization&relatedEntityId=...)
   useEffect(() => {
@@ -503,8 +422,6 @@ export default function AddTask() {
           "Assigned To": task.assigned_to_name || task.assigned_to || "",
           "Assigned": task.assigned_to_name || task.assigned_to || "",
           "Assignee": task.assigned_to_name || task.assigned_to || "",
-          // Owner variations (for edit form and autopopulate consistency)
-          "Owner": task.owner || task.owner_name || "",
           // Due Date variations
           "Due Date": task.due_date ? task.due_date.split("T")[0] : "",
           "Due": task.due_date ? task.due_date.split("T")[0] : "",
@@ -813,7 +730,6 @@ export default function AddTask() {
       const cleanPayload: Record<string, any> = {};
       if (apiData.title !== undefined) cleanPayload.title = apiData.title ?? "";
       if (apiData.description !== undefined) cleanPayload.description = apiData.description ?? "";
-      if (apiData.owner !== undefined) cleanPayload.owner = apiData.owner ?? "";
       if (apiData.status !== undefined) cleanPayload.status = apiData.status ?? "Open";
       if (apiData.priority !== undefined) cleanPayload.priority = apiData.priority ?? "";
       if (apiData.assigned_to !== undefined) cleanPayload.assigned_to = apiData.assigned_to ?? null;
@@ -970,27 +886,6 @@ export default function AddTask() {
 
             if (response.ok) {
               results.successful.push(entityId);
-              // Associate task with tearsheets if selected
-              const createdTaskId = data.task?.id;
-              if (createdTaskId && selectedTearsheetIds.length > 0) {
-                for (const tearsheetId of selectedTearsheetIds) {
-                  try {
-                    await fetch(`/api/tearsheets/${tearsheetId}/associate`, {
-                      method: "POST",
-                      headers: {
-                        "Content-Type": "application/json",
-                        Authorization: `Bearer ${document.cookie.replace(
-                          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-                          "$1"
-                        )}`,
-                      },
-                      body: JSON.stringify({ task_id: parseInt(createdTaskId) }),
-                    });
-                  } catch (err) {
-                    console.error(`Failed to associate task ${createdTaskId} with tearsheet ${tearsheetId}:`, err);
-                  }
-                }
-              }
             } else {
               const msg =
                 data.message ||
@@ -1060,27 +955,6 @@ export default function AddTask() {
         );
 
         const resultId = isEditMode ? taskId : data.task ? data.task.id : null;
-        
-        // Associate task with tearsheets if selected (only for new tasks)
-        if (!isEditMode && resultId && selectedTearsheetIds.length > 0) {
-          for (const tearsheetId of selectedTearsheetIds) {
-            try {
-              await fetch(`/api/tearsheets/${tearsheetId}/associate`, {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${document.cookie.replace(
-                    /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-                    "$1"
-                  )}`,
-                },
-                body: JSON.stringify({ task_id: parseInt(resultId) }),
-              });
-            } catch (err) {
-              console.error(`Failed to associate task ${resultId} with tearsheet ${tearsheetId}:`, err);
-            }
-          }
-        }
         
         if (resultId) {
           router.push("/dashboard/tasks/view?id=" + resultId);
@@ -1269,82 +1143,12 @@ export default function AddTask() {
                                 </div>
                             ))} */}
 
-            {/* Tearsheet Selection Section */}
-            <div className="flex items-start gap-2 border-t pt-4 mt-4">
-              <label className="w-48 font-medium pt-2">Link to Tearsheets:</label>
-              <div className="flex-1 relative" ref={tearsheetDropdownRef}>
-                <input
-                  type="text"
-                  value={tearsheetSearchQuery}
-                  onChange={(e) => {
-                    setTearsheetSearchQuery(e.target.value);
-                    setShowTearsheetDropdown(true);
-                  }}
-                  onFocus={() => setShowTearsheetDropdown(true)}
-                  placeholder="Search tearsheets..."
-                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-                  autoComplete="off"
-                />
-                {showTearsheetDropdown && filteredTearsheets.length > 0 && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 max-h-48 overflow-auto">
-                    {filteredTearsheets.map((ts: any) => (
-                      <div
-                        key={ts.id}
-                        className="px-4 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
-                        onClick={() => {
-                          handleTearsheetToggle(String(ts.id));
-                          setTearsheetSearchQuery("");
-                          setShowTearsheetDropdown(false);
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedTearsheetIds.includes(String(ts.id))}
-                          onChange={() => {}}
-                          className="w-4 h-4"
-                        />
-                        <span>{ts.name || `TE ${ts.id}`}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {selectedTearsheetIds.length > 0 && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {selectedTearsheetIds.map((id) => {
-                      const ts = availableTearsheets.find((t) => String(t.id) === id);
-                      return (
-                        <span
-                          key={id}
-                          className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-800 rounded text-sm"
-                        >
-                          {ts?.name || `TE ${id}`}
-                          <button
-                            type="button"
-                            onClick={() => handleTearsheetToggle(id)}
-                            className="hover:text-blue-600"
-                          >
-                            ×
-                          </button>
-                        </span>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            </div>
-
             {/* Custom Fields Section */}
             {customFields.length > 0 && (
               <>
                 {customFields.map((field) => {
                   // Don't render hidden fields at all (neither label nor input)
                   if (field.is_hidden) return null;
-
-                  const isOwnerField =
-                    String(field.field_label || "").toLowerCase() === "owner" ||
-                    String(field.field_name || "").toLowerCase() === "field_17" ||
-                    String(field.field_name || "").toLowerCase() === "field17" ||
-                    String(field.field_name || "").toLowerCase() === "owner";
 
                   const labelLower = String(field.field_label || "").toLowerCase();
                   const nameLower = String(field.field_name || "").toLowerCase();
@@ -1400,27 +1204,6 @@ export default function AddTask() {
                       entityIds: entityIdsArray,
                       relatedEntity
                     });
-                  }
-
-                  const dynamicOwnerOptions =
-                    isOwnerField &&
-                      String(field.field_type || "").toLowerCase() === "select" &&
-                      activeUsers.length > 0
-                      ? Array.from(
-                        new Set(
-                          [
-                            ...activeUsers
-                              .map((u) => String(u.name || "").trim())
-                              .filter(Boolean),
-                            String(currentUser?.name || "").trim(),
-                          ].filter(Boolean)
-                        )
-                      )
-                      : null;
-
-                  // Assigned To is rendered as type-to-match (autocomplete), not dropdown
-                  if (dynamicOwnerOptions && dynamicOwnerOptions.length > 0) {
-                    fieldToRender = { ...fieldToRender, options: dynamicOwnerOptions };
                   }
 
                   // Get field value - will be array for multiselect in bulk mode, string for single select
