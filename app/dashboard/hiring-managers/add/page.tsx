@@ -6,8 +6,9 @@ import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
 import CustomFieldRenderer, {
   useCustomFields,
+  isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
-import AddressGroupRenderer, { getAddressFields } from "@/components/AddressGroupRenderer";
+import AddressGroupRenderer, { getAddressFields, isAddressGroupValid } from "@/components/AddressGroupRenderer";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 
 interface CustomFieldDefinition {
@@ -1261,57 +1262,24 @@ export default function AddHiringManager() {
                   addressFields.length > 0 &&
                   field.id === addressAnchorId
                 ) {
-                  // Check if all required address fields are satisfied
-                  const allAddressFieldsValid = () => {
-                    const requiredFields = addressFields.filter((f) => f.is_required);
-                    if (requiredFields.length === 0) return true; // No required fields, consider valid
-
-                    return requiredFields.every((f) => {
-                      const val = customFieldValues[f.field_name];
-
-                      // For select fields, check if a valid option is selected
-                      if (f.field_type === "select") {
-                        if (!val || String(val).trim() === "" || String(val).trim().toLowerCase() === "select an option") {
-                          return false;
-                        }
-                        return true;
-                      }
-
-                      if (!val || String(val).trim() === "") return false;
-
-                      // Special validation for ZIP code (must be exactly 5 digits)
-                      const isZipCodeField =
-                        f.field_label?.toLowerCase().includes("zip") ||
-                        f.field_label?.toLowerCase().includes("postal code") ||
-                        f.field_name?.toLowerCase().includes("zip") ||
-                        f.field_name === "Field_24" || // ZIP Code
-                        f.field_name === "field_24";
-                      if (isZipCodeField) {
-                        return /^\d{5}$/.test(String(val).trim());
-                      }
-
-                      return true;
-                    });
-                  };
-
-                  const hasRequiredAddressFields = addressFields.some((f) => f.is_required);
-                  const allValid = allAddressFieldsValid();
+                  const addressRequired = addressFields.some((f) => f.is_required);
+                  const addressValid = isAddressGroupValid(addressFields, customFieldValues);
 
                   return (
                     <div
                       key="address-group"
                       className="address-underline flex items-start mb-3"
                     >
-                      {/* left side same label width space */}
                       <label className="w-48 font-medium flex items-center mt-4">
                         Address:
-                        {/* Show green check only when all address sub-fields are satisfied */}
-                        {hasRequiredAddressFields && allValid && (
-                          <span className="text-green-500 ml-1">✔</span>
-                        )}
+                        {addressRequired &&
+                          (addressValid ? (
+                            <span className="text-green-500 ml-1">✔</span>
+                          ) : (
+                            <span className="text-red-500 ml-1">*</span>
+                          ))}
                       </label>
 
-                      {/* right side same as other inputs */}
                       <div className="flex-1">
                         <AddressGroupRenderer
                           fields={addressFields}
@@ -1351,177 +1319,13 @@ export default function AddHiringManager() {
                   field.field_name === "field_9" ||
                   (field.field_label?.toLowerCase() === "owner" && field.field_name?.toLowerCase().includes("9"));
 
-                // Helper function to check if field has a valid value
-                const hasValidValue = () => {
-                  // Handle null, undefined, or empty values
-                  if (fieldValue === null || fieldValue === undefined) return false;
-                  const trimmed = String(fieldValue).trim();
-                  // Empty string means no value selected (especially for select fields)
-                  if (trimmed === "") return false;
-
-                  // Special validation for select fields
-                  if (field.field_type === "select") {
-                    // Must not be empty or "Select an option"
-                    if (trimmed === "" || trimmed.toLowerCase() === "select an option") {
-                      return false;
-                    }
-                    return true;
-                  }
-
-                  // Special validation for date fields
-                  if (field.field_type === "date") {
-                    // Accept both YYYY-MM-DD (storage format) and mm/dd/yyyy (display format)
-                    let dateToValidate = trimmed;
-
-                    // If it's in mm/dd/yyyy format, convert to YYYY-MM-DD
-                    if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
-                      const [month, day, year] = trimmed.split("/");
-                      dateToValidate = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-                    }
-
-                    // Check if it's a valid date format (YYYY-MM-DD)
-                    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-                    if (!dateRegex.test(dateToValidate)) return false;
-
-                    const date = new Date(dateToValidate);
-                    if (isNaN(date.getTime())) return false;
-
-                    // Additional validation: check if the date components match
-                    const [year, month, day] = dateToValidate.split("-");
-                    if (date.getFullYear() !== parseInt(year) ||
-                      date.getMonth() + 1 !== parseInt(month) ||
-                      date.getDate() !== parseInt(day)) {
-                      return false; // Invalid date (e.g., 02/30/2024)
-                    }
-
-                    return true;
-                  }
-
-                  // Special validation for ZIP code (must be exactly 5 digits)
-                  const isZipCodeField =
-                    field.field_label?.toLowerCase().includes("zip") ||
-                    field.field_label?.toLowerCase().includes("postal code") ||
-                    field.field_name?.toLowerCase().includes("zip") ||
-                    field.field_name === "Field_24" ||
-                    field.field_name === "field_24";
-                  if (isZipCodeField) {
-                    return /^\d{5}$/.test(trimmed);
-                  }
-
-                  // Special validation for numeric fields that allow values >= 0
-                  const isNonNegativeField =
-                    field.field_label?.toLowerCase().includes("employees") ||
-                    field.field_label?.toLowerCase().includes("offices") ||
-                    field.field_label?.toLowerCase().includes("oasis key") ||
-                    field.field_name?.toLowerCase().includes("employees") ||
-                    field.field_name?.toLowerCase().includes("offices") ||
-                    field.field_name?.toLowerCase().includes("oasis") ||
-                    field.field_name === "Field_32" ||
-                    field.field_name === "field_32" ||
-                    field.field_name === "Field_25" ||
-                    field.field_name === "field_25" ||
-                    field.field_name === "Field_31" ||
-                    field.field_name === "field_31";
-                  if (isNonNegativeField && field.field_type === "number") {
-                    const numValue = parseFloat(trimmed);
-                    // Allow values >= 0 (0, 1, 2, etc.)
-                    return !isNaN(numValue) && numValue >= 0;
-                  }
-
-                  // Special validation for phone fields
-                  const isPhoneField =
-                    (field.field_type === "phone" ||
-                      field.field_label?.toLowerCase().includes("phone"));
-                  if (isPhoneField && trimmed !== "") {
-                    // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
-                    // Remove all non-numeric characters to check digit count
-                    const digitsOnly = trimmed.replace(/\D/g, "");
-                    // Must have exactly 10 digits
-                    if (digitsOnly.length !== 10) {
-                      return false;
-                    }
-                    // Check if formatted correctly as (000) 000-0000
-                    const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
-                    if (!phoneRegex.test(trimmed)) return false;
-                    // NANP: valid area code (2-9), exchange (2-9), and area code in US list
-                    return isValidUSPhoneNumber(trimmed);
-                  }
-
-                  // Special validation for email fields
-                  const isEmailField =
-                    field.field_type === "email" ||
-                    field.field_label?.toLowerCase().includes("email") ||
-                    field.field_name?.toLowerCase().includes("email");
-                  if (isEmailField && trimmed !== "") {
-                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                    return emailRegex.test(trimmed);
-                  }
-
-                  // Special validation for URL fields (LinkedIn URL, etc.)
-                  const isUrlField =
-                    field.field_type === "url" ||
-                    field.field_label?.toLowerCase().includes("website") ||
-                    field.field_label?.toLowerCase().includes("url") ||
-                    field.field_label?.toLowerCase().includes("linkedin") ||
-                    field.field_name?.toLowerCase().includes("url") ||
-                    field.field_name?.toLowerCase().includes("linkedin");
-                  if (isUrlField && trimmed !== "") {
-                    // URL must start with http://, https://, or www.
-                    const urlPattern = /^(https?:\/\/|www\.).+/i;
-                    if (!urlPattern.test(trimmed)) {
-                      return false;
-                    }
-
-                    // Stricter validation: Check for complete domain structure
-                    let urlToValidate = trimmed;
-                    if (trimmed.toLowerCase().startsWith('www.')) {
-                      const domainPart = trimmed.substring(4);
-                      if (!domainPart.includes('.') || domainPart.split('.').length < 2) {
-                        return false;
-                      }
-                      const domainParts = domainPart.split('.');
-                      if (domainParts.length < 2 || domainParts[0].length === 0 || domainParts[domainParts.length - 1].length < 2) {
-                        return false;
-                      }
-                      urlToValidate = `https://${trimmed}`;
-                    } else {
-                      const urlWithoutProtocol = trimmed.replace(/^https?:\/\//i, '');
-                      if (!urlWithoutProtocol.includes('.') || urlWithoutProtocol.split('.').length < 2) {
-                        return false;
-                      }
-                      const domainParts = urlWithoutProtocol.split('/')[0].split('.');
-                      if (domainParts.length < 2 || domainParts[0].length === 0 || domainParts[domainParts.length - 1].length < 2) {
-                        return false;
-                      }
-                      urlToValidate = trimmed;
-                    }
-
-                    // Final validation: try to create a URL object
-                    try {
-                      const urlObj = new URL(urlToValidate);
-                      if (!urlObj.hostname || !urlObj.hostname.includes('.') || urlObj.hostname.split('.').length < 2) {
-                        return false;
-                      }
-                      const hostnameParts = urlObj.hostname.split('.');
-                      if (hostnameParts[hostnameParts.length - 1].length < 2) {
-                        return false;
-                      }
-                      return true;
-                    } catch {
-                      return false;
-                    }
-                  }
-
-                  return true;
-                };
-
                 return (
                   <div key={field.id} className="flex items-center mt-4">
                     <label className="w-48 font-medium flex items-center">
                       {field.field_label}:
                       {/* Show indicator for required fields */}
                       {field.is_required &&
-                        (hasValidValue() ? (
+                        (isCustomFieldValueValid(field, fieldValue) ? (
                           <span className="text-green-500 ml-1">✔</span>
                         ) : (
                           <span className="text-red-500 ml-1">*</span>

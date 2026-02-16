@@ -8,9 +8,11 @@ import { validateEmail } from "@/lib/validation/emailValidation";
 import { validateAddress } from "@/lib/validation/addressValidation";
 import CustomFieldRenderer, {
   useCustomFields,
+  isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
 import AddressGroupRenderer, {
   getAddressFields,
+  isAddressGroupValid,
 } from "@/components/AddressGroupRenderer";
 
 interface CustomFieldDefinition {
@@ -1225,9 +1227,12 @@ export default function AddJobSeeker() {
                     <div key="address-group" className="flex items-start mb-3">
                       <label className="w-48 font-medium flex items-center mt-4">
                         Address:
-                        {addressFields.some((f) => f.is_required) && (
-                          <span className="text-red-500 ml-1">*</span>
-                        )}
+                        {addressFields.some((f) => f.is_required) &&
+                          (isAddressGroupValid(addressFields, customFieldValues) ? (
+                            <span className="text-green-500 ml-1">✔</span>
+                          ) : (
+                            <span className="text-red-500 ml-1">*</span>
+                          ))}
                       </label>
 
                       <div className="flex-1">
@@ -1311,48 +1316,12 @@ export default function AddJobSeeker() {
                   ? parseMultiValue(fieldValue)
                   : [];
 
-                const hasValidValue = () => {
-                  if (fieldValue === null || fieldValue === undefined) return false;
-                  const trimmed = String(fieldValue).trim();
-
-                  if (field.field_type === "select") {
-                    if (trimmed === "") return false;
-                    if (
-                      trimmed.toLowerCase() === "select an option" ||
-                      trimmed.toLowerCase() === "select owner" ||
-                      trimmed.toLowerCase() === "select department" ||
-                      trimmed.toLowerCase() === "select status"
-                    ) {
-                      return false;
-                    }
-                    const normalizedOptions = Array.isArray(field.options)
-                      ? field.options.filter(
-                          (opt: unknown): opt is string => typeof opt === "string"
-                        )
-                      : [];
-                    if (
-                      normalizedOptions.length > 0 &&
-                      !normalizedOptions.includes(trimmed)
-                    ) {
-                      return false;
-                    }
-                    return true;
-                  }
-
-                  if (isMultiValueField) {
-                    return multiValueArray.length > 0;
-                  }
-
-                  if (trimmed === "") return false;
-                  return true;
-                };
-
                 return (
                   <div key={field.id} className="flex items-center mb-3">
                     <label className="w-48 font-medium flex items-center">
                       {field.field_label}:
                       {field.is_required &&
-                        (hasValidValue() ? (
+                        (isCustomFieldValueValid(field, fieldValue) ? (
                           <span className="text-green-500 ml-1">✔</span>
                         ) : (
                           <span className="text-red-500 ml-1">*</span>

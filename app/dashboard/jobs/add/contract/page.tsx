@@ -9,9 +9,11 @@ import LoadingScreen from "@/components/LoadingScreen";
 import { getCookie } from "cookies-next";
 import CustomFieldRenderer, {
   useCustomFields,
+  isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
 import AddressGroupRenderer, {
   getAddressFields,
+  isAddressGroupValid,
 } from "@/components/AddressGroupRenderer";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 
@@ -345,6 +347,7 @@ export default function AddJob() {
   const leadId = searchParams.get("leadId") || searchParams.get("lead_id");
   const organizationIdFromUrl =
     searchParams.get("organizationId") || searchParams.get("organization_id");
+  const hiringManagerIdFromUrl = searchParams.get("hiringManagerId");
   const hasPrefilledFromLeadRef = useRef(false);
   const hasPrefilledOrgRef = useRef(false);
   const [selectedJobType, setSelectedJobType] = useState<string>("");
@@ -395,7 +398,8 @@ export default function AddJob() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Use the custom fields hook (✅ Added setCustomFieldValues like Organizations)
+  // When URL has organizationId or hiringManagerId, user must select HM in first step; we then hide the HM custom field on the form.
+  const requireHiringManagerFromUrl = Boolean(organizationIdFromUrl || hiringManagerIdFromUrl);
   const {
     customFields,
     customFieldValues,
@@ -426,7 +430,6 @@ export default function AddJob() {
   }, [hiringManagerOptions, hiringManagerValue]);
 
   // Pre-populate hiring manager from URL when redirected from jobs/add (org flow)
-  const hiringManagerIdFromUrl = searchParams.get("hiringManagerId");
   useEffect(() => {
     if (!jobId && hiringManagerIdFromUrl && hiringManagerCustomField) {
       setCustomFieldValues((prev) => {
@@ -1382,7 +1385,9 @@ export default function AddJob() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!isEditMode) {
+    // Only require Hiring Manager when coming from org flow (organization or HM in URL)
+    const requireHiringManager = !isEditMode && requireHiringManagerFromUrl;
+    if (requireHiringManager) {
       if (!hiringManagerCustomField) {
         setError("Hiring Manager field is not configured in Field Management.");
         return;
@@ -1478,15 +1483,8 @@ export default function AddJob() {
     router.back();
   };
 
-  const isFormValid = useMemo(() => {
-    const customFieldValidation = validateCustomFields();
-    if (!customFieldValidation.isValid) return false;
-    if (!isEditMode) {
-      if (!hiringManagerCustomField) return false;
-      if (!hiringManagerValue || String(hiringManagerValue).trim() === "") return false;
-    }
-    return true;
-  }, [customFieldValues, isEditMode, hiringManagerCustomField, hiringManagerValue, validateCustomFields]);
+  const formValidation = useMemo(() => validateCustomFields(), [customFieldValues, isEditMode, validateCustomFields]);
+  const isFormValid = formValidation.isValid;
 
   // From organization view: first step — select Hiring Manager (inline, no modal), then type selection
   if (showOrgHmFirstStep) {
@@ -1820,7 +1818,11 @@ export default function AddJob() {
                     // Don't render hidden fields at all (neither label nor input)
                     if (field.is_hidden) return null;
 
-                    if (field.field_label === "Hiring Manager" && !isEditMode) {
+                    // When user came from org Add Job and already selected HM in first step, hide the HM field (label or lookup type hiring-managers) so it's not shown again.
+                    const isHiringManagerField =
+                      field.field_label === "Hiring Manager" ||
+                      (field.field_type === "lookup" && field.lookup_type === "hiring-managers");
+                    if (isHiringManagerField && !isEditMode && requireHiringManagerFromUrl) {
                       return null;
                     }
 
@@ -1837,9 +1839,12 @@ export default function AddJob() {
                         >
                           <label className="w-48 font-medium flex items-center mt-4">
                             Address:
-                            {addressFields.some((f) => f.is_required) && (
-                              <span className="text-red-500 ml-1">*</span>
-                            )}
+                            {addressFields.some((f) => f.is_required) &&
+                              (isAddressGroupValid(addressFields, customFieldValues) ? (
+                                <span className="text-green-500 ml-1">✔</span>
+                              ) : (
+                                <span className="text-red-500 ml-1">*</span>
+                              ))}
                           </label>
 
                           <div className="flex-1">
@@ -1870,111 +1875,14 @@ export default function AddJob() {
                       const payRateValue = customFieldValues["Field_11"] || "";
                       const markupValue = customFieldValues["Field_12"] || customFieldValues["Field_512"] || "";
                       const calculatedValue = calculateClientBillRate(payRateValue, markupValue);
-                      const hasValidValue = () => {
-                        if (fieldValue === null || fieldValue === undefined) return false;
-
-                        const trimmed = String(fieldValue).trim();
-                        if (trimmed === "") return false;
-
-                        /* ================= DATE FIELD (TIMEZONE SAFE) ================= */
-                        if (field.field_type === "date") {
-                          let normalizedDate = trimmed;
-
-                          // Convert MM/DD/YYYY → YYYY-MM-DD
-                          if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
-                            const [mm, dd, yyyy] = trimmed.split("/");
-                            normalizedDate = `${yyyy}-${mm}-${dd}`;
-                          }
-
-                          // Strict YYYY-MM-DD format
-                          if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
-                            return false;
-                          }
-
-                          const [year, month, day] = normalizedDate.split("-").map(Number);
-
-                          // Manual date validation (NO timezone usage)
-                          if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
-                            return false;
-                          }
-
-                          const daysInMonth = new Date(year, month, 0).getDate();
-                          if (day > daysInMonth) {
-                            return false;
-                          }
-
-                          return true;
-                        }
-                        /* =============================================================== */
-
-                        // ZIP code
-                        const isZipCodeField =
-                          field.field_label?.toLowerCase().includes("zip") ||
-                          field.field_label?.toLowerCase().includes("postal code") ||
-                          field.field_name?.toLowerCase().includes("zip");
-
-                        if (isZipCodeField) {
-                          return /^\d{5}$/.test(trimmed);
-                        }
-
-                        // Non-negative number fields
-                        const isNonNegativeField =
-                          field.field_label?.toLowerCase().includes("employees") ||
-                          field.field_label?.toLowerCase().includes("offices") ||
-                          field.field_label?.toLowerCase().includes("oasis key");
-
-                        if (isNonNegativeField && field.field_type === "number") {
-                          const num = Number(trimmed);
-                          return !isNaN(num) && num >= 0;
-                        }
-
-                        // Phone field
-                        const isPhoneField =
-                          (field.field_type === "phone" ||
-                            field.field_label?.toLowerCase().includes("phone"));
-                        // field.field_name?.toLowerCase().includes("phone");
-
-                        if (isPhoneField && trimmed !== "") {
-                          // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
-                          // Remove all non-numeric characters to check digit count
-                          const digitsOnly = trimmed.replace(/\D/g, "");
-                          // Must have exactly 10 digits
-                          if (digitsOnly.length !== 10) {
-                            return false;
-                          }
-                          // Check if formatted correctly as (000) 000-0000
-                          const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
-                          if (!phoneRegex.test(trimmed)) return false;
-                          // NANP: valid area code (2-9), exchange (2-9), and area code in US list
-                          return isValidUSPhoneNumber(trimmed);
-                        }
-
-                        // URL field
-                        const isUrlField =
-                          field.field_type === "url" ||
-                          field.field_label?.toLowerCase().includes("website") ||
-                          field.field_label?.toLowerCase().includes("url");
-
-                        if (isUrlField) {
-                          try {
-                            const url = trimmed.startsWith("http")
-                              ? new URL(trimmed)
-                              : new URL(`https://${trimmed}`);
-                            return url.hostname.includes(".");
-                          } catch {
-                            return false;
-                          }
-                        }
-
-                        return true;
-                      };
+                      const effectiveValue = isCalculatedField ? (calculatedValue || fieldValue) : fieldValue;
 
                       return (
                         <div key={field.id} className="flex items-center mb-3">
                           <label className="w-48 font-medium flex items-center">
                             {field.field_label}:
                             {field.is_required &&
-                              (hasValidValue() ? (
+                              (isCustomFieldValueValid(field, effectiveValue) ? (
                                 <span className="text-green-500 ml-1">✔</span>
                               ) : (
                                 <span className="text-red-500 ml-1">*</span>
@@ -2010,114 +1918,15 @@ export default function AddJob() {
                       );
                     }
 
-                    const hasValidValue = () => {
-                      if (fieldValue === null || fieldValue === undefined) return false;
-
-                      const trimmed = String(fieldValue).trim();
-                      if (trimmed === "") return false;
-
-                      /* ================= DATE FIELD (TIMEZONE SAFE) ================= */
-                      if (field.field_type === "date") {
-                        let normalizedDate = trimmed;
-
-                        // Convert MM/DD/YYYY → YYYY-MM-DD
-                        if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
-                          const [mm, dd, yyyy] = trimmed.split("/");
-                          normalizedDate = `${yyyy}-${mm}-${dd}`;
-                        }
-
-                        // Strict YYYY-MM-DD format
-                        if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
-                          return false;
-                        }
-
-                        const [year, month, day] = normalizedDate.split("-").map(Number);
-
-                        // Manual date validation (NO timezone usage)
-                        if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
-                          return false;
-                        }
-
-                        const daysInMonth = new Date(year, month, 0).getDate();
-                        if (day > daysInMonth) {
-                          return false;
-                        }
-
-                        return true;
-                      }
-                      /* =============================================================== */
-
-                      // ZIP code
-                      const isZipCodeField =
-                        field.field_label?.toLowerCase().includes("zip") ||
-                        field.field_label?.toLowerCase().includes("postal code") ||
-                        field.field_name?.toLowerCase().includes("zip");
-
-                      if (isZipCodeField) {
-                        return /^\d{5}$/.test(trimmed);
-                      }
-
-                      // Non-negative number fields
-                      const isNonNegativeField =
-                        field.field_label?.toLowerCase().includes("employees") ||
-                        field.field_label?.toLowerCase().includes("offices") ||
-                        field.field_label?.toLowerCase().includes("oasis key");
-
-                      if (isNonNegativeField && field.field_type === "number") {
-                        const num = Number(trimmed);
-                        return !isNaN(num) && num >= 0;
-                      }
-
-                      // Phone field
-                      const isPhoneField =
-                        (field.field_type === "phone" ||
-                          field.field_label?.toLowerCase().includes("phone"));
-                      // field.field_name?.toLowerCase().includes("phone");
-
-                      if (isPhoneField && trimmed !== "") {
-                        // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
-                        // Remove all non-numeric characters to check digit count
-                        const digitsOnly = trimmed.replace(/\D/g, "");
-                        // Must have exactly 10 digits
-                        if (digitsOnly.length !== 10) {
-                          return false;
-                        }
-                        // Check if formatted correctly as (000) 000-0000
-                        const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
-                        if (!phoneRegex.test(trimmed)) return false;
-                        // NANP: valid area code (2-9), exchange (2-9), and area code in US list
-                        return isValidUSPhoneNumber(trimmed);
-                      }
-
-                      // URL field
-                      const isUrlField =
-                        field.field_type === "url" ||
-                        field.field_label?.toLowerCase().includes("website") ||
-                        field.field_label?.toLowerCase().includes("url");
-
-                      if (isUrlField) {
-                        try {
-                          const url = trimmed.startsWith("http")
-                            ? new URL(trimmed)
-                            : new URL(`https://${trimmed}`);
-                          return url.hostname.includes(".");
-                        } catch {
-                          return false;
-                        }
-                      }
-
-                      return true;
-                    };
-
                     return (
                       <div key={field.id} className="flex items-center mb-3">
                         <label className="w-48 font-medium flex items-center">
                           {field.field_label}:
                           {field.is_required &&
-                            (hasValidValue() ? (
-                              <span className="text-green-500 ml-1">✔</span> // ✅ Green check if filled
+                            (isCustomFieldValueValid(field, fieldValue) ? (
+                              <span className="text-green-500 ml-1">✔</span>
                             ) : (
-                              <span className="text-red-500 ml-1">*</span> // ❌ Red star if empty
+                              <span className="text-red-500 ml-1">*</span>
                             ))}
                         </label>
 
@@ -2162,6 +1971,13 @@ export default function AddJob() {
             </div>
 
             <div className="h-20" aria-hidden="true" />
+            {!isFormValid && formValidation.message && (
+              <div className="sticky bottom-20 left-0 right-0 z-10 -mx-4 px-4 sm:-mx-6 sm:px-6">
+                <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded text-sm">
+                  {formValidation.message}
+                </div>
+              </div>
+            )}
             <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
               <button
                 type="button"
