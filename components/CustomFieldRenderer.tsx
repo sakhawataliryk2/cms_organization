@@ -80,7 +80,7 @@ export default function CustomFieldRenderer({
     onChange(field.field_name, Array.isArray(value) ? [] : "");
   }, [isDisabledByDependency, dependentOnFieldId, field.field_name, onChange]);
 
-  // Auto-fill Owner lookup field from cookies when empty (form side)
+  // Auto-fill Owner lookup field from cookies when empty (field label is "Owner" and type is lookup)
   React.useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -96,28 +96,9 @@ export default function CustomFieldRenderer({
       String(value).trim() !== "";
     if (hasValue) return;
 
-    try {
-      const cookieString = document.cookie || "";
-      const cookieMap: Record<string, string> = {};
-
-      cookieString.split(";").forEach((part) => {
-        const [k, v] = part.split("=").map((s) => s.trim());
-        if (!k) return;
-        cookieMap[decodeURIComponent(k)] = decodeURIComponent(v ?? "");
-      });
-
-      const ownerId =
-        cookieMap["owner_id"] ||
-        cookieMap["ownerId"] ||
-        cookieMap["user_id"] ||
-        cookieMap["userId"] ||
-        "";
-
-      if (ownerId) {
-        onChange(field.field_name, ownerId);
-      }
-    } catch {
-      // Silent fail; just don't auto-fill if cookies can't be read
+    const ownerId = getOwnerIdFromCookies();
+    if (ownerId) {
+      onChange(field.field_name, ownerId);
     }
   }, [field.field_label, field.field_name, field.field_type, readOnly, value, onChange]);
 
@@ -1581,6 +1562,37 @@ function setCachedFields(entityType: string, fields: CustomFieldDefinition[]) {
   fieldManagementCache[entityType] = { fields, cachedAt: Date.now() };
 }
 
+/** Get current user/owner id from cookies (user cookie or JWT token). Used for Owner lookup auto-fill. */
+function getOwnerIdFromCookies(): string {
+  if (typeof document === "undefined" || !document.cookie) return "";
+  try {
+    const cookieString = document.cookie;
+    const cookieMap: Record<string, string> = {};
+    cookieString.split(";").forEach((part) => {
+      const [k, v] = part.split("=").map((s) => s.trim());
+      if (!k) return;
+      cookieMap[decodeURIComponent(k)] = decodeURIComponent(v ?? "");
+    });
+    const userCookie = cookieMap["user"];
+    if (userCookie) {
+      const userData = JSON.parse(userCookie) as { id?: string | number };
+      if (userData?.id != null) return String(userData.id);
+    }
+    if (cookieMap["token"]) {
+      const payloadB64 = cookieMap["token"].split(".")[1];
+      if (payloadB64) {
+        const json = atob(payloadB64.replace(/-/g, "+").replace(/_/g, "/"));
+        const decoded = JSON.parse(json) as { userId?: string | number; id?: string | number };
+        const uid = decoded?.userId ?? decoded?.id;
+        if (uid != null) return String(uid);
+      }
+    }
+    return cookieMap["owner_id"] || cookieMap["ownerId"] || cookieMap["user_id"] || cookieMap["userId"] || "";
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Returns whether a single custom field has a valid value (same rules as form validation).
  * Use this for per-field indicators (e.g. ✔ vs * on required fields).
@@ -1766,13 +1778,20 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
     if (cached && cached.length >= 0) {
       setCustomFields(cached);
       setCustomFieldValues((prev) => {
+        const ownerIdFromCookie = getOwnerIdFromCookies();
         const next: Record<string, any> = {};
         cached.forEach((field: CustomFieldDefinition) => {
           if (prev[field.field_name] !== undefined) {
             next[field.field_name] = prev[field.field_name];
             return;
           }
-          next[field.field_name] = field.default_value || "";
+          const isOwnerLookup =
+            (field.field_label || "").trim().toLowerCase() === "owner" &&
+            field.field_type === "lookup";
+          next[field.field_name] =
+            isOwnerLookup && ownerIdFromCookie
+              ? ownerIdFromCookie
+              : (field.default_value || "");
         });
         return next;
       });
@@ -1806,15 +1825,22 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
         setCachedFields(entityType, sortedFields);
         setCustomFields(sortedFields);
 
-        // Initialize custom field values
+        // Initialize custom field values (seed Owner lookup from cookies when applicable)
         setCustomFieldValues((prev) => {
+          const ownerIdFromCookie = getOwnerIdFromCookies();
           const next: Record<string, any> = {};
           sortedFields.forEach((field: CustomFieldDefinition) => {
             if (prev[field.field_name] !== undefined) {
               next[field.field_name] = prev[field.field_name];
               return;
             }
-            next[field.field_name] = field.default_value || "";
+            const isOwnerLookup =
+              (field.field_label || "").trim().toLowerCase() === "owner" &&
+              field.field_type === "lookup";
+            next[field.field_name] =
+              isOwnerLookup && ownerIdFromCookie
+                ? ownerIdFromCookie
+                : (field.default_value || "");
           });
           return next;
         });
