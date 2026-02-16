@@ -80,6 +80,47 @@ export default function CustomFieldRenderer({
     onChange(field.field_name, Array.isArray(value) ? [] : "");
   }, [isDisabledByDependency, dependentOnFieldId, field.field_name, onChange]);
 
+  // Auto-fill Owner lookup field from cookies when empty (form side)
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const isOwnerLabel =
+      (field.field_label || "").trim().toLowerCase() === "owner";
+    const isLookupField = field.field_type === "lookup";
+
+    if (!isOwnerLabel || !isLookupField || readOnly) return;
+
+    const hasValue =
+      value !== undefined &&
+      value !== null &&
+      String(value).trim() !== "";
+    if (hasValue) return;
+
+    try {
+      const cookieString = document.cookie || "";
+      const cookieMap: Record<string, string> = {};
+
+      cookieString.split(";").forEach((part) => {
+        const [k, v] = part.split("=").map((s) => s.trim());
+        if (!k) return;
+        cookieMap[decodeURIComponent(k)] = decodeURIComponent(v ?? "");
+      });
+
+      const ownerId =
+        cookieMap["owner_id"] ||
+        cookieMap["ownerId"] ||
+        cookieMap["user_id"] ||
+        cookieMap["userId"] ||
+        "";
+
+      if (ownerId) {
+        onChange(field.field_name, ownerId);
+      }
+    } catch {
+      // Silent fail; just don't auto-fill if cookies can't be read
+    }
+  }, [field.field_label, field.field_name, field.field_type, readOnly, value, onChange]);
+
   // Track if we've auto-populated the date to prevent infinite loops
   const hasAutoFilledRef = React.useRef(false);
 
