@@ -9,6 +9,7 @@ import LoadingScreen from "@/components/LoadingScreen";
 import { getCookie } from "cookies-next";
 import CustomFieldRenderer, {
   useCustomFields,
+  isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 
@@ -331,6 +332,8 @@ export default function AddDirectHireJob() {
   const jobId = searchParams.get("id"); // Get job ID from URL if present
   const leadId = searchParams.get("leadId") || searchParams.get("lead_id");
   const organizationIdFromUrl = searchParams.get("organizationId") || searchParams.get("organization_id");
+  const hiringManagerIdFromUrl = searchParams.get("hiringManagerId");
+  const requireHiringManagerFromUrl = Boolean(organizationIdFromUrl || hiringManagerIdFromUrl);
   const hasPrefilledFromLeadRef = useRef(false);
   const hasPrefilledOrgRef = useRef(false);
   const [organizationName, setOrganizationName] = useState<string>("");
@@ -393,7 +396,6 @@ export default function AddDirectHireJob() {
   }, [hiringManagerOptions, hiringManagerValue]);
 
   // Pre-populate hiring manager from URL when redirected from jobs/add (org flow)
-  const hiringManagerIdFromUrl = searchParams.get("hiringManagerId");
   useEffect(() => {
     if (!jobId && hiringManagerIdFromUrl && hiringManagerCustomField) {
       setCustomFieldValues((prev) => {
@@ -1057,7 +1059,8 @@ export default function AddDirectHireJob() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!isEditMode) {
+    const requireHiringManager = !isEditMode && requireHiringManagerFromUrl;
+    if (requireHiringManager) {
       if (!hiringManagerCustomField) {
         setError("Hiring Manager field is not configured in Field Management.");
         return;
@@ -1317,110 +1320,14 @@ export default function AddDirectHireJob() {
                     // Don't render hidden fields at all
                     if (field.is_hidden) return null;
 
-                    if (field.field_label === "Hiring Manager" && !isEditMode) {
+                    const isHiringManagerField =
+                      field.field_label === "Hiring Manager" ||
+                      (field.field_type === "lookup" && field.lookup_type === "hiring-managers");
+                    if (isHiringManagerField && !isEditMode && requireHiringManagerFromUrl) {
                       return null;
                     }
 
                     const fieldValue = customFieldValues[field.field_name] || "";
-
-                    // Helper function to check if field has a valid value
-                    const hasValidValue = () => {
-                      if (fieldValue === null || fieldValue === undefined) return false;
-
-                      const trimmed = String(fieldValue).trim();
-                      if (trimmed === "") return false;
-
-                      /* ================= DATE FIELD (TIMEZONE SAFE) ================= */
-                      if (field.field_type === "date") {
-                        let normalizedDate = trimmed;
-
-                        // Convert MM/DD/YYYY → YYYY-MM-DD
-                        if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
-                          const [mm, dd, yyyy] = trimmed.split("/");
-                          normalizedDate = `${yyyy}-${mm}-${dd}`;
-                        }
-
-                        // Strict YYYY-MM-DD format
-                        if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
-                          return false;
-                        }
-
-                        const [year, month, day] = normalizedDate.split("-").map(Number);
-
-                        // Manual date validation (NO timezone usage)
-                        if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
-                          return false;
-                        }
-
-                        const daysInMonth = new Date(year, month, 0).getDate();
-                        if (day > daysInMonth) {
-                          return false;
-                        }
-
-                        return true;
-                      }
-                      /* =============================================================== */
-
-                      // ZIP code
-                      const isZipCodeField =
-                        field.field_label?.toLowerCase().includes("zip") ||
-                        field.field_label?.toLowerCase().includes("postal code") ||
-                        field.field_name?.toLowerCase().includes("zip");
-
-                      if (isZipCodeField) {
-                        return /^\d{5}$/.test(trimmed);
-                      }
-
-                      // Non-negative number fields
-                      const isNonNegativeField =
-                        field.field_label?.toLowerCase().includes("employees") ||
-                        field.field_label?.toLowerCase().includes("offices") ||
-                        field.field_label?.toLowerCase().includes("oasis key");
-
-                      if (isNonNegativeField && field.field_type === "number") {
-                        const num = Number(trimmed);
-                        return !isNaN(num) && num >= 0;
-                      }
-
-                      // Phone field
-                      const isPhoneField =
-                        (field.field_type === "phone" ||
-                          field.field_label?.toLowerCase().includes("phone"));
-
-                      if (isPhoneField && trimmed !== "") {
-                        // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
-                        // Remove all non-numeric characters to check digit count
-                        const digitsOnly = trimmed.replace(/\D/g, "");
-                        // Must have exactly 10 digits
-                        if (digitsOnly.length !== 10) {
-                          return false;
-                        }
-                        // Check if formatted correctly as (000) 000-0000
-                        const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
-                        if (!phoneRegex.test(trimmed)) return false;
-                        // NANP: valid area code (2-9), exchange (2-9), and area code in US list
-                        return isValidUSPhoneNumber(trimmed);
-                      }
-
-                      // URL field
-                      const isUrlField =
-                        field.field_type === "url" ||
-                        field.field_label?.toLowerCase().includes("website") ||
-                        field.field_label?.toLowerCase().includes("url");
-
-                      if (isUrlField) {
-                        try {
-                          const url = trimmed.startsWith("http")
-                            ? new URL(trimmed)
-                            : new URL(`https://${trimmed}`);
-                          return url.hostname.includes(".");
-                        } catch {
-                          return false;
-                        }
-                      }
-
-                      return true;
-                    };
 
                     const fieldLabelLower = String(field.field_label || "").toLowerCase();
                     const isAdditionalSkillsField =
@@ -1529,7 +1436,7 @@ export default function AddDirectHireJob() {
                           <label className="w-48 font-medium flex items-center">
                             {field.field_label}:
                             {field.is_required &&
-                              (hasValidValue() ? (
+                              (isCustomFieldValueValid(field, fieldValue) ? (
                                 <span className="text-green-500 ml-1">✔</span>
                               ) : (
                                 <span className="text-red-500 ml-1">*</span>
@@ -1570,7 +1477,7 @@ export default function AddDirectHireJob() {
                         <label className="w-48 font-medium flex items-center">
                           {field.field_label}:
                           {field.is_required &&
-                            (hasValidValue() ? (
+                            (isCustomFieldValueValid(field, fieldValue) ? (
                               <span className="text-green-500 ml-1">✔</span>
                             ) : (
                               <span className="text-red-500 ml-1">*</span>

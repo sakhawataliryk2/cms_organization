@@ -1491,31 +1491,12 @@ export default function JobView() {
       const label = field?.field_label || field?.field_name || key;
       const fieldValue = value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
       const lookupType = (field?.lookup_type || field?.lookupType || "") as any;
+      const fieldInfo = { key, label, fieldType: field?.field_type ?? field?.fieldType, lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
       return (
         <div key={key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
-          <div className="flex-1 p-2">{
-                /\(\d{3}\)\s\d{3}-\d{4}/.test(fieldValue || "") ? (
-                  <a href={`tel:${String(fieldValue)}`} className="text-blue-600 hover:underline">
-                    {String(fieldValue)}
-                  </a>
-                ) : String(fieldValue)?.includes("@") ? (
-                  <a href={`mailto:${String(fieldValue)}`} className="text-blue-600 hover:underline">
-                    {String(fieldValue)}
-                  </a>
-                ) : String(fieldValue)?.startsWith("http") || String(fieldValue)?.startsWith("https") ? (
-                  <a href={String(fieldValue)} className="text-blue-600 hover:underline">
-                    {String(fieldValue)}
-                  </a>
-                ) : lookupType && fieldValue ? (
-                  <RecordNameResolver
-                    id={String(fieldValue || "") || null}
-                    type={lookupType as any}
-                    clickable
-                    fallback={String(fieldValue || "") || ""}
-                  />) : (
-                  String(fieldValue)
-                )}
+          <div className="flex-1 p-2">
+            <FieldValueRenderer value={fieldValue} fieldInfo={fieldInfo} />
               </div>
         </div>
       );
@@ -1603,34 +1584,13 @@ export default function JobView() {
         default: {
           const field = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
           const fieldLabel = field?.field_label || field?.field_name || key;
-          const lookupType = field?.lookup_type || field?.lookupType || "";
-          console.log("lookupType", lookupType);
           const fieldValue = job.customFields?.[fieldLabel] ?? job?.custom_fields?.[fieldLabel] ?? "-";
+          const fieldInfo = { key, label: fieldLabel, fieldType: field?.field_type ?? field?.fieldType, lookupType: field?.lookup_type ?? field?.lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
           return (
             <div key={key} className="flex border-b border-gray-200 last:border-b-0">
               <LabelCell />
-              <div className="flex-1 p-2">{
-                /\(\d{3}\)\s\d{3}-\d{4}/.test(fieldValue || "") ? (
-                  <a href={`tel:${String(fieldValue)}`} className="text-blue-600 hover:underline">
-                    {String(fieldValue)}
-                  </a>
-                ) : String(fieldValue)?.includes("@") ? (
-                  <a href={`mailto:${String(fieldValue)}`} className="text-blue-600 hover:underline">
-                    {String(fieldValue)}
-                  </a>
-                ) : String(fieldValue)?.startsWith("http") || String(fieldValue)?.startsWith("https") ? (
-                  <a href={String(fieldValue)} className="text-blue-600 hover:underline">
-                    {String(fieldValue)}
-                  </a>
-                ) : lookupType && fieldValue ? (
-                  <RecordNameResolver
-                    id={String(fieldValue || "") || null}
-                    type={lookupType as any}
-                    clickable
-                    fallback={String(fieldValue || "") || ""}
-                  />) : (
-                  String(fieldValue) || "-"
-                )}
+              <div className="flex-1 p-2">
+                <FieldValueRenderer value={fieldValue} fieldInfo={fieldInfo as any} />
               </div>
             </div>
           );

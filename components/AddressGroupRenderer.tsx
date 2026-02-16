@@ -51,6 +51,39 @@ export function getAddressFields(customFields: CustomFieldDefinition[]) {
   ) as CustomFieldDefinition[];
 }
 
+/** Check a single address field value (same rules as AddressGroupRenderer). */
+function checkAddressFieldComplete(
+  field: CustomFieldDefinition,
+  values: Record<string, any>
+): boolean {
+  const value = values?.[field.field_name] ?? "";
+  if (field.field_type === "select") {
+    if (
+      !value ||
+      String(value).trim() === "" ||
+      String(value).trim().toLowerCase() === "select an option"
+    )
+      return false;
+    return true;
+  }
+  if (!value || String(value).trim() === "") return false;
+  const isZipCodeField =
+    field.field_label?.toLowerCase().includes("zip") ||
+    field.field_label?.toLowerCase().includes("postal code") ||
+    field.field_name?.toLowerCase().includes("zip");
+  if (isZipCodeField) return /^\d{5}$/.test(String(value).trim());
+  return true;
+}
+
+/** Returns true when all address fields in the group have valid values (for ✔ / * label). */
+export function isAddressGroupValid(
+  fields: CustomFieldDefinition[],
+  values: Record<string, any>
+): boolean {
+  if (!fields.length) return false;
+  return fields.every((f) => checkAddressFieldComplete(f, values));
+}
+
 function SearchIcon() {
   return (
     <svg
@@ -197,34 +230,8 @@ export default function AddressGroupRenderer({
     return null;
   }
 
-  const checkFieldComplete = (field: CustomFieldDefinition | undefined): boolean => {
-    if (!field) return true;
-    const value = values?.[field.field_name] ?? "";
-
-    if (field.field_type === "select") {
-      if (
-        !value ||
-        String(value).trim() === "" ||
-        String(value).trim().toLowerCase() === "select an option"
-      ) {
-        return false;
-      }
-      return true;
-    }
-
-    if (!value || String(value).trim() === "") return false;
-
-    // Use label/type only — no field_name (Field_24) so mapping per entity is respected
-    const isZipCodeField =
-      field.field_label?.toLowerCase().includes("zip") ||
-      field.field_label?.toLowerCase().includes("postal code") ||
-      field.field_name?.toLowerCase().includes("zip");
-    if (isZipCodeField) {
-      return /^\d{5}$/.test(String(value).trim());
-    }
-
-    return true;
-  };
+  const checkFieldComplete = (field: CustomFieldDefinition | undefined): boolean =>
+    !field || checkAddressFieldComplete(field, values);
 
   const isAddressComplete = addressField ? checkFieldComplete(addressField) : false;
   const isAddress2Complete = address2Field ? checkFieldComplete(address2Field) : true;

@@ -7,8 +7,9 @@ import LoadingScreen from "@/components/LoadingScreen";
 import { getCookie } from "cookies-next";
 import CustomFieldRenderer, {
   useCustomFields,
+  isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
-import AddressGroupRenderer, { getAddressFields } from "@/components/AddressGroupRenderer";
+import AddressGroupRenderer, { getAddressFields, isAddressGroupValid } from "@/components/AddressGroupRenderer";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 
 
@@ -1568,57 +1569,24 @@ export default function AddOrganization() {
                     addressFields.length > 0 &&
                     field.id === addressAnchorId
                   ) {
-                    // Check if all required address fields are satisfied
-                    const allAddressFieldsValid = () => {
-                      const requiredFields = addressFields.filter((f) => f.is_required);
-                      if (requiredFields.length === 0) return true; // No required fields, consider valid
-
-                      return requiredFields.every((f) => {
-                        const val = customFieldValues[f.field_name];
-
-                        // For select fields, check if a valid option is selected
-                        if (f.field_type === "select") {
-                          if (!val || String(val).trim() === "" || String(val).trim().toLowerCase() === "select an option") {
-                            return false;
-                          }
-                          return true;
-                        }
-
-                        if (!val || String(val).trim() === "") return false;
-
-                        // Special validation for ZIP code (must be exactly 5 digits)
-                        const isZipCodeField =
-                          f.field_label?.toLowerCase().includes("zip") ||
-                          f.field_label?.toLowerCase().includes("postal code") ||
-                          f.field_name?.toLowerCase().includes("zip") ||
-                          f.field_name === "Field_24" || // ZIP Code
-                          f.field_name === "field_24";
-                        if (isZipCodeField) {
-                          return /^\d{5}$/.test(String(val).trim());
-                        }
-
-                        return true;
-                      });
-                    };
-
-                    const hasRequiredAddressFields = addressFields.some((f) => f.is_required);
-                    const allValid = allAddressFieldsValid();
+                    const addressRequired = addressFields.some((f) => f.is_required);
+                    const addressValid = isAddressGroupValid(addressFields, customFieldValues);
 
                     return (
                       <div
                         key="address-group"
                         className="address-underline flex items-start mb-3"
                       >
-                        {/* left side same label width space */}
                         <label className="w-48 font-medium flex items-center mt-4">
                           Address:
-                          {/* Show green check only when all address sub-fields are satisfied */}
-                          {hasRequiredAddressFields && allValid && (
-                            <span className="text-green-500 ml-1">✔</span>
-                          )}
+                          {addressRequired &&
+                            (addressValid ? (
+                              <span className="text-green-500 ml-1">✔</span>
+                            ) : (
+                              <span className="text-red-500 ml-1">*</span>
+                            ))}
                         </label>
 
-                        {/* right side same as other inputs */}
                         <div className="flex-1">
                           <AddressGroupRenderer
                             fields={addressFields}
@@ -1855,114 +1823,13 @@ export default function AddOrganization() {
 
                   //   return true;
                   // };
-                  // Helper function to check if field has a valid value
-                  const hasValidValue = () => {
-                    if (fieldValue === null || fieldValue === undefined) return false;
-
-                    const trimmed = String(fieldValue).trim();
-                    if (trimmed === "") return false;
-
-                    /* ================= DATE FIELD (TIMEZONE SAFE) ================= */
-                    if (field.field_type === "date") {
-                      let normalizedDate = trimmed;
-
-                      // Convert MM/DD/YYYY → YYYY-MM-DD
-                      if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
-                        const [mm, dd, yyyy] = trimmed.split("/");
-                        normalizedDate = `${yyyy}-${mm}-${dd}`;
-                      }
-
-                      // Strict YYYY-MM-DD format
-                      if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
-                        return false;
-                      }
-
-                      const [year, month, day] = normalizedDate.split("-").map(Number);
-
-                      // Manual date validation (NO timezone usage)
-                      if (year < 1900 || month < 1 || month > 12 || day < 1 || day > 31) {
-                        return false;
-                      }
-
-                      const daysInMonth = new Date(year, month, 0).getDate();
-                      if (day > daysInMonth) {
-                        return false;
-                      }
-
-                      return true;
-                    }
-                    /* =============================================================== */
-
-                    // ZIP code
-                    const isZipCodeField =
-                      field.field_label?.toLowerCase().includes("zip") ||
-                      field.field_label?.toLowerCase().includes("postal code") ||
-                      field.field_name?.toLowerCase().includes("zip") ||
-                      field.field_name === "Field_24" ||
-                      field.field_name === "field_24";
-
-                    if (isZipCodeField) {
-                      return /^\d{5}$/.test(trimmed);
-                    }
-
-                    // Non-negative number fields
-                    const isNonNegativeField =
-                      field.field_label?.toLowerCase().includes("employees") ||
-                      field.field_label?.toLowerCase().includes("offices") ||
-                      field.field_label?.toLowerCase().includes("oasis key");
-
-                    if (isNonNegativeField && field.field_type === "number") {
-                      const num = Number(trimmed);
-                      return !isNaN(num) && num >= 0;
-                    }
-
-                    // Phone field
-                    const isPhoneField =
-                      (field.field_type === "phone" ||
-                        field.field_label?.toLowerCase().includes("phone"));
-                    if (isPhoneField && trimmed !== "") {
-                      // Phone must be complete: exactly 10 digits formatted as (000) 000-0000
-                      // Remove all non-numeric characters to check digit count
-                      // const digitsOnly = trimmed.replace(/\D/g, "");
-                      // // Must have exactly 10 digits
-                      // if (digitsOnly.length !== 10) {
-                      //   return false;
-                      // }
-                      // // Check if formatted correctly as (000) 000-0000
-                      // const phoneRegex = /^\(\d{3}\) \d{3}-\d{4}$/;
-                      // if (!phoneRegex.test(trimmed)) return false;
-                      // // NANP: valid area code (2-9), exchange (2-9), and area code in US list
-                      return isValidUSPhoneNumber(trimmed);
-                    }
-
-                    // URL field
-                    const isUrlField =
-                      field.field_type === "url" ||
-                      field.field_label?.toLowerCase().includes("website") ||
-                      field.field_label?.toLowerCase().includes("url");
-
-                    if (isUrlField) {
-                      try {
-                        const url = trimmed.startsWith("http")
-                          ? new URL(trimmed)
-                          : new URL(`https://${trimmed}`);
-                        return url.hostname.includes(".");
-                      } catch {
-                        return false;
-                      }
-                    }
-
-                    return true;
-                  };
-
-
                   return (
                     <div key={field.id} className="flex items-center mb-3">
                       <label className="w-48 font-medium flex items-center">
                         {field.field_label}:
                         {/* Show indicator for required fields OR conditionally required fields */}
                         {(field.is_required || isContractSignedByRequired) &&
-                          (hasValidValue() ? (
+                          (isCustomFieldValueValid(field, fieldValue) ? (
                             <span className="text-green-500 ml-1">✔</span>
                           ) : (
                             <span className="text-red-500 ml-1">*</span>
