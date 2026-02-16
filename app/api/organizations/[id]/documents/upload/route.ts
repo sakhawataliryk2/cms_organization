@@ -21,19 +21,57 @@ export async function POST(
       );
     }
 
-    // Get form data from request
+    // Get form data from request (sent from the browser as multipart/form-data)
     const formData = await request.formData();
 
-    // Forward the form data to backend API
-    const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
-    const response = await fetch(`${apiUrl}/api/organizations/${id}/documents/upload`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        // Don't set Content-Type header - let fetch set it with boundary for multipart/form-data
+    const file = formData.get("file") as File | null;
+    const document_name = formData.get("document_name") as string | null;
+    const document_type = (formData.get("document_type") as string | null) ?? "General";
+
+    if (!file) {
+      return NextResponse.json(
+        { success: false, message: "File is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!document_name || !document_name.trim()) {
+      return NextResponse.json(
+        { success: false, message: "Document name is required" },
+        { status: 400 }
+      );
+    }
+
+    // Convert file to base64 so it matches the backend controller's expectations
+    const arrayBuffer = await file.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const base64Data = buffer.toString("base64");
+
+    const payload = {
+      document_name,
+      document_type,
+      file: {
+        name: file.name,
+        type: file.type || "application/octet-stream",
+        data: base64Data,
       },
-      body: formData,
-    });
+    };
+
+    // Forward the JSON payload to backend API
+    const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
+    console.log("apiUrl", apiUrl);
+
+    const response = await fetch(
+      `${apiUrl}/api/organizations/${id}/documents/upload`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      }
+    );
 
     let data: { success?: boolean; message?: string; document?: unknown };
     try {
