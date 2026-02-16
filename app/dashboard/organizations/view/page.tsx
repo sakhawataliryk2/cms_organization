@@ -6982,7 +6982,7 @@ console.log("Archived_at", organization.archived_at)
             </div>
 
             {/* Form Content */}
-            <div className="p-6 space-y-6">
+            <div className="p-6 space-y-6 overflow-y-auto max-h-[65vh]">
               {/* Organization Info */}
               <div className="bg-gray-50 p-4 rounded">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
