@@ -6243,7 +6243,7 @@ Best regards`;
               <div className="bg-gray-50 p-4 rounded">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Source Job Seeker</label>
                 <p className="text-sm text-gray-900 font-medium">
-                  {jobSeeker ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.full_name || `${jobSeeker.last_name || ""}, ${jobSeeker.first_name || ""}`.trim() || "N/A"}` : "N/A"}
+                  {jobSeeker ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName || ""}` : "N/A"}
                 </p>
               </div>
               <div>
