@@ -68,31 +68,48 @@ export default function MultiSelectLookupField({
       if (!response.ok) throw new Error(`Failed to fetch ${lookupType}`);
       const data = await response.json();
       let fetchedOptions: LookupOption[] = [];
+
+      // Filter out archived records (archived_at / archivedAt not null)
+      const isNotArchived = (item: any) =>
+        item &&
+        item.archived_at == null &&
+        item.archivedAt == null;
+
       if (lookupType === 'organizations') {
-        fetchedOptions = (data.organizations || []).map((org: any) => ({
-          id: org.id.toString(),
-          name: org.name,
-        }));
+        fetchedOptions = (data.organizations || [])
+          .filter(isNotArchived)
+          .map((org: any) => ({
+            id: org.id.toString(),
+            name: org.name,
+          }));
       } else if (lookupType === 'hiring-managers') {
-        fetchedOptions = (data.hiringManagers || []).map((hm: any) => ({
-          id: hm.id.toString(),
-          name: hm.full_name || `${hm.first_name} ${hm.last_name}`,
-        }));
+        fetchedOptions = (data.hiringManagers || [])
+          .filter(isNotArchived)
+          .map((hm: any) => ({
+            id: hm.id.toString(),
+            name: hm.full_name || `${hm.first_name} ${hm.last_name}`,
+          }));
       } else if (lookupType === 'job-seekers') {
-        fetchedOptions = (data.jobSeekers || []).map((js: any) => ({
-          id: js.id.toString(),
-          name: js.full_name || `${js.first_name} ${js.last_name}`,
-        }));
+        fetchedOptions = (data.jobSeekers || [])
+          .filter(isNotArchived)
+          .map((js: any) => ({
+            id: js.id.toString(),
+            name: js.full_name || `${js.first_name} ${js.last_name}`,
+          }));
       } else if (lookupType === 'jobs') {
-        fetchedOptions = (data.jobs || []).map((job: any) => ({
-          id: job.id.toString(),
-          name: job.job_title,
-        }));
+        fetchedOptions = (data.jobs || [])
+          .filter(isNotArchived)
+          .map((job: any) => ({
+            id: job.id.toString(),
+            name: job.job_title,
+          }));
       } else if (lookupType === 'owner') {
-        fetchedOptions = (data.users || []).map((user: any) => ({
-          id: user.id.toString(),
-          name: user.name || user.email || '',
-        }));
+        fetchedOptions = (data.users || [])
+          .filter(isNotArchived)
+          .map((user: any) => ({
+            id: user.id.toString(),
+            name: user.name || user.email || '',
+          }));
       }
       setOptions(fetchedOptions);
     } catch (err) {
