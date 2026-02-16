@@ -694,48 +694,48 @@ export default function AddJob() {
   }, [organizations, organizationIdFromUrl, jobId, customFieldsLoading, customFields, setCustomFieldValues]);
 
   // Auto-populate Field_507 (Account Manager) with logged-in user's name
-  useEffect(() => {
-    // Wait for customFields to load
-    if (customFieldsLoading || customFields.length === 0) return;
+  // useEffect(() => {
+  //   // Wait for customFields to load
+  //   if (customFieldsLoading || customFields.length === 0) return;
 
-    // Find Field_507 specifically
-    const accountManagerField = customFields.find(
-      (f) =>
-        f.field_name === "Field_507" ||
-        f.field_name === "field_507" ||
-        f.field_name?.toLowerCase() === "field_507"
-    );
+  //   // Find Field_507 specifically
+  //   const accountManagerField = customFields.find(
+  //     (f) =>
+  //       f.field_name === "Field_507" ||
+  //       f.field_name === "field_507" ||
+  //       f.field_name?.toLowerCase() === "field_507"
+  //   );
 
-    if (accountManagerField) {
-      const currentValue = customFieldValues[accountManagerField.field_name];
-      // Only auto-populate if field is empty (works in both create and edit mode)
-      if (!currentValue || currentValue.trim() === "") {
-        try {
-          const userDataStr = getCookie("user");
-          if (userDataStr) {
-            const userData = JSON.parse(userDataStr as string);
-            if (userData.name) {
-              setCustomFieldValues((prev) => ({
-                ...prev,
-                [accountManagerField.field_name]: userData.name,
-              }));
-              console.log(
-                "Auto-populated Field_507 (Account Manager) with current user:",
-                userData.name
-              );
-            }
-          }
-        } catch (e) {
-          console.error("Error parsing user data from cookie:", e);
-        }
-      }
-    }
-  }, [
-    customFields,
-    customFieldsLoading,
-    customFieldValues,
-    setCustomFieldValues,
-  ]);
+  //   if (accountManagerField) {
+  //     const currentValue = customFieldValues[accountManagerField.field_name];
+  //     // Only auto-populate if field is empty (works in both create and edit mode)
+  //     if (!currentValue || currentValue.trim() === "") {
+  //       try {
+  //         const userDataStr = getCookie("user");
+  //         if (userDataStr) {
+  //           const userData = JSON.parse(userDataStr as string);
+  //           if (userData.name) {
+  //             setCustomFieldValues((prev) => ({
+  //               ...prev,
+  //               [accountManagerField.field_name]: userData.name,
+  //             }));
+  //             console.log(
+  //               "Auto-populated Field_507 (Account Manager) with current user:",
+  //               userData.name
+  //             );
+  //           }
+  //         }
+  //       } catch (e) {
+  //         console.error("Error parsing user data from cookie:", e);
+  //       }
+  //     }
+  //   }
+  // }, [
+  //   customFields,
+  //   customFieldsLoading,
+  //   customFieldValues,
+  //   setCustomFieldValues,
+  // ]);
 
   // Sync currentOrganizationId with Organization field (Field_3) value when it changes
   useEffect(() => {
