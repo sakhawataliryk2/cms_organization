@@ -6396,7 +6396,7 @@ export default function JobView() {
                 >
                   SAVE
                 </button>
-                <button
+                {/* <button
                   onClick={() => handleAddNote("appointment")}
                   className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
                   disabled={!noteForm.text.trim() || !noteForm.action || noteForm.aboutReferences.length === 0}
@@ -6411,7 +6411,7 @@ export default function JobView() {
                   title="Save Note and open Task Scheduler"
                 >
                   SAVE & Add Task
-                </button>
+                </button> */}
               </div>
             </div>
           </div>
