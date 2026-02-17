@@ -59,7 +59,7 @@ const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
 
 export default function AddHiringManager() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const hiringManagerId = searchParams.get("id");
   const organizationIdFromUrl = searchParams.get("organizationId");
 

@@ -1337,6 +1337,7 @@ export default function PlacementList() {
                     >
                       <ActionDropdown
                         label="Actions"
+                        disabled
                         options={[
                           { label: "View", action: () => handleViewPlacement(placement.id) },
                           ...(ownerField ? [{

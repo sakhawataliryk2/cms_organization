@@ -1087,6 +1087,7 @@ export default function ArchivedJobSeekersList() {
                     >
                       <ActionDropdown
                         label="Actions"
+                        disabled
                         options={[
                           { label: "View", action: () => handleViewJobSeeker(js.id) },
                           {

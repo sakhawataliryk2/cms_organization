@@ -43,7 +43,7 @@ const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
 
 export default function AddTask() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const taskId = searchParams.get("id");
   const relatedEntity = searchParams.get("relatedEntity");
   const relatedEntityId = searchParams.get("relatedEntityId");

@@ -1112,6 +1112,7 @@ export default function ArchivedHiringManagersList() {
                     >
                       <ActionDropdown
                         label="Actions"
+                        disabled
                         options={[
                           { label: "View", action: () => handleViewHiringManager(hm.id) },
                           {

@@ -327,7 +327,7 @@ function SortableColumnHeader({
 
 export default function TearsheetView() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const tearsheetId = searchParams.get("id");
   const tabFromUrl = searchParams.get("tab");
 

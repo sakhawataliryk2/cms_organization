@@ -147,7 +147,7 @@ function MultiValueTagInput({
 
 export default function AddJobSeeker() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const jobSeekerId = searchParams.get("id");
 
   const [isSubmitting, setIsSubmitting] = useState(false);

@@ -15,6 +15,7 @@ interface ActionDropdownProps {
     buttonClassName?: string;
     menuClassName?: string;
     optionClassName?: string;
+    disabled?: boolean;
 }
 
 function getScrollParents(element: HTMLElement | null): HTMLElement[] {
@@ -37,7 +38,8 @@ export default function ActionDropdown({
     options,
     buttonClassName = 'z-50 px-3 py-1 bg-gray-100 border border-gray-300 rounded flex items-center text-gray-600',
     menuClassName = 'absolute w-40 bg-white border border-gray-300 shadow-lg rounded z-[100]',
-    optionClassName = 'hover:bg-gray-100 px-3 py-2 cursor-pointer'
+    optionClassName = 'hover:bg-gray-100 px-3 py-2 cursor-pointer',
+    disabled = false
 }: ActionDropdownProps) {
     const [isOpen, setIsOpen] = useState(false);
     const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
@@ -49,6 +51,7 @@ export default function ActionDropdown({
     optionsLengthRef.current = options.length;
 
     const toggleDropdown = () => {
+        if (disabled) return;
         setIsOpen(prev => !prev);
     };
 
@@ -148,7 +151,8 @@ export default function ActionDropdown({
             <button
                 ref={buttonRef}
                 onClick={toggleDropdown}
-                className={buttonClassName}
+                disabled={disabled}
+                className={`${buttonClassName} ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
             >
                 {label} <span className="ml-1">▼</span>
             </button>

@@ -63,7 +63,7 @@ const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
 
 export default function AddLead() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const leadId = searchParams.get("id");
 
   const [isSubmitting, setIsSubmitting] = useState(false);

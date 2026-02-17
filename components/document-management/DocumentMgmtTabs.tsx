@@ -4,35 +4,46 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 export default function DocumentMgmtTabs() {
   const router = useRouter();
-  const pathname = usePathname();
-  const params = useSearchParams();
+  const pathname = usePathname() ?? "";
+  const params = useSearchParams() ?? new URLSearchParams();
 
+  const basePath = "/dashboard/admin/document-management";
+  const onSectionList =
+    pathname === basePath || pathname === `${basePath}/`;
   const onPackets = pathname.includes("/document-management/packets");
-  const onOrganizations = params.get("tab") === "organizations";
-  const onDocs = !onPackets && !onOrganizations;
+  const onOnboarding = pathname.includes("/document-management/onboarding");
+  const onOrganization = pathname.includes("/document-management/organization");
 
-  // keep archived state in URL so it survives refresh + navigation
   const archived = params.get("archived") === "1";
 
-  const goDocs = (nextArchived?: boolean) => {
+  const goOnboarding = (nextArchived?: boolean) => {
     const q = new URLSearchParams(params.toString());
-    q.delete("tab");
     if (typeof nextArchived === "boolean") {
       nextArchived ? q.set("archived", "1") : q.delete("archived");
     }
     const qs = q.toString();
-    router.push(`/dashboard/admin/document-management${qs ? `?${qs}` : ""}`);
+    router.push(
+      `/dashboard/admin/document-management/onboarding${qs ? `?${qs}` : ""}`
+    );
   };
 
-  const goOrganizations = () => {
-    const q = new URLSearchParams(params.toString());
-    q.set("tab", "organizations");
-    q.delete("archived");
-    router.push(`/dashboard/admin/document-management?${q.toString()}`);
+  const goOrganization = () => {
+    router.push("/dashboard/admin/document-management/organization");
   };
 
   return (
     <div className="flex items-center gap-4 mb-4 border-b border-gray-200 pb-0">
+      <button
+        onClick={() => router.push("/dashboard/admin/document-management")}
+        className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
+          onSectionList
+            ? "text-blue-600 border-blue-600"
+            : "text-gray-600 hover:text-gray-800 border-transparent"
+        }`}
+      >
+        SECTIONS
+      </button>
+
       <button
         onClick={() =>
           router.push("/dashboard/admin/document-management/packets")
@@ -47,31 +58,30 @@ export default function DocumentMgmtTabs() {
       </button>
 
       <button
-        onClick={() => goDocs()}
+        onClick={() => goOnboarding()}
         className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-          onDocs
+          onOnboarding
             ? "text-blue-600 border-blue-600"
             : "text-gray-600 hover:text-gray-800 border-transparent"
         }`}
       >
-        DOCUMENTS
+        OnBoarding
       </button>
 
       <button
-        onClick={goOrganizations}
+        onClick={goOrganization}
         className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-          onOrganizations
+          onOrganization
             ? "text-blue-600 border-blue-600"
             : "text-gray-600 hover:text-gray-800 border-transparent"
         }`}
       >
-        ORGANIZATIONS
+        Organization
       </button>
 
-      {/* Archived toggle - only show on Documents tab */}
-      {onDocs && (
+      {onOnboarding && (
         <button
-          onClick={() => goDocs(!archived)}
+          onClick={() => goOnboarding(!archived)}
           className={`ml-auto px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
             archived
               ? "text-blue-600 border-blue-600"

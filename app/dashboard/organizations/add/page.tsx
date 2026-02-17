@@ -56,7 +56,7 @@ const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
 
 export default function AddOrganization() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const organizationId = searchParams.get("id");
 
   const [isSubmitting, setIsSubmitting] = useState(false);

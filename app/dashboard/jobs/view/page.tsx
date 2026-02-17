@@ -11,6 +11,7 @@ import { FiBriefcase, FiSearch } from "react-icons/fi";
 import { HiOutlineUser, HiOutlineOfficeBuilding } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import RequestActionModal from '@/components/RequestActionModal';
 // Drag and drop imports
 import {
   DndContext,
@@ -305,7 +306,7 @@ const JOB_VIEW_TAB_IDS = ["summary", "modify", "history", "notes", "docs"];
 
 export default function JobView() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const jobId = searchParams.get("id");
   const tabFromUrl = searchParams.get("tab");
 
@@ -463,6 +464,9 @@ export default function JobView() {
   const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
   const [pendingDeleteRequest, setPendingDeleteRequest] = useState<any>(null);
   const [isLoadingDeleteRequest, setIsLoadingDeleteRequest] = useState(false);
+  const [showUnarchiveModal, setShowUnarchiveModal] = useState(false);
+  const [unarchiveReason, setUnarchiveReason] = useState('');
+  const [isSubmittingUnarchive, setIsSubmittingUnarchive] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const [showAddDocument, setShowAddDocument] = useState(false);
@@ -3871,6 +3875,53 @@ export default function JobView() {
     }
   };
 
+  const handleUnarchiveSubmit = async () => {
+    if (!unarchiveReason.trim() || !jobId) {
+      toast.error("Please enter a reason for unarchiving.");
+      return;
+    }
+    setIsSubmittingUnarchive(true);
+    try {
+      const userCookie = document.cookie.replace(
+        /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      let currentUser: { name?: string; email?: string } = {};
+      if (userCookie) {
+        try {
+          currentUser = JSON.parse(decodeURIComponent(userCookie));
+        } catch (e) {
+          console.error("Error parsing user cookie:", e);
+        }
+      }
+      const recordDisplay = job
+        ? `${formatRecordId(job.id, "job")} ${job.title || ""}`.trim()
+        : formatRecordId(jobId, "job");
+      const res = await fetch(`/api/jobs/${jobId}/unarchive-request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reason: unarchiveReason.trim(),
+          record_number: recordDisplay,
+          requested_by: currentUser?.name || "Unknown",
+          requested_by_email: currentUser?.email || "",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to send unarchive request");
+      toast.success("Unarchive request sent. Payroll will be notified via email.");
+      setShowUnarchiveModal(false);
+      setUnarchiveReason("");
+    } catch (err) {
+      console.error("Error submitting unarchive request:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to send unarchive request. Please try again."
+      );
+    } finally {
+      setIsSubmittingUnarchive(false);
+    }
+  };
+
   // Check for pending delete request on mount
   useEffect(() => {
     if (jobId) {
@@ -3878,26 +3929,19 @@ export default function JobView() {
     }
   }, [jobId]);
 
-  const actionOptions = [
-    { label: "Add Note", action: () => handleActionSelected("add-note") },
-    { label: "Add Task", action: () => handleActionSelected("add-task") },
-    {
-      label: "Add Placement",
-      action: () => handleActionSelected("add-placement"),
-    },
-    {
-      label: "Add Tearsheet",
-      action: () => handleActionSelected("add-tearsheet"),
-    },
-    {
-      label: "Publish to Job Board",
-      action: () => handleActionSelected("publish"),
-    },
-    { label: "Delete", action: () => handleActionSelected("delete") },
-    { label: "Clone", action: () => handleActionSelected("clone") },
-    // { label: 'Edit', action: () => handleActionSelected('edit') },
-    // { label: 'Transfer', action: () => handleActionSelected('transfer') },
-  ];
+  const isArchived = !!job?.archived_at;
+
+  const actionOptions = isArchived
+    ? [{ label: "Unarchive", action: () => setShowUnarchiveModal(true) }]
+    : [
+        { label: "Add Note", action: () => handleActionSelected("add-note") },
+        { label: "Add Task", action: () => handleActionSelected("add-task") },
+        { label: "Add Placement", action: () => handleActionSelected("add-placement") },
+        { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
+        { label: "Publish to Job Board", action: () => handleActionSelected("publish") },
+        { label: "Delete", action: () => handleActionSelected("delete") },
+        { label: "Clone", action: () => handleActionSelected("clone") },
+      ];
 
   // Tabs from the image
   const tabs = [
@@ -4273,11 +4317,14 @@ export default function JobView() {
     <div className="bg-white p-4 rounded shadow-sm">
       <h2 className="text-lg font-semibold mb-4">Edit Job</h2>
       <p className="text-gray-600 mb-4">
-        Click the button below to edit this job's details.
+        {isArchived
+          ? "Archived records cannot be edited."
+          : "Click the button below to edit this job's details."}
       </p>
       <button
         onClick={handleEdit}
-        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        disabled={isArchived}
+        className={`px-4 py-2 rounded ${isArchived ? "bg-gray-400 text-gray-200 cursor-not-allowed" : "bg-blue-500 text-white hover:bg-blue-600"}`}
       >
         Edit Job
       </button>
@@ -4912,24 +4959,30 @@ export default function JobView() {
 
       {/* Navigation Tabs */}
       <div className="flex bg-gray-300 mt-1 border-b border-gray-400 px-2">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={`px-4 py-2 ${activeTab === tab.id
-              ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
-              : "text-gray-700 hover:bg-gray-200"
-              }`}
-            onClick={() => {
-              if (tab.id === "modify") {
-                handleEdit();
-              } else {
-                setActiveTab(tab.id);
-              }
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {tabs.map((tab) => {
+          const isModifyTab = tab.id === "modify";
+          const tabDisabled = isModifyTab && isArchived;
+          return (
+            <button
+              key={tab.id}
+              className={`px-4 py-2 ${activeTab === tab.id
+                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+                : "text-gray-700 hover:bg-gray-200"
+                } ${tabDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+              disabled={tabDisabled}
+              onClick={() => {
+                if (tabDisabled) return;
+                if (isModifyTab) {
+                  handleEdit();
+                } else {
+                  setActiveTab(tab.id);
+                }
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Quick Action Buttons */}
@@ -5547,7 +5600,7 @@ export default function JobView() {
                 {/* Permanent Employment Info Section */}
                 <div className="border border-gray-300 rounded p-4 bg-white">
                   <h3 className="text-md font-semibold mb-4 flex items-center">
-                    <span className="w-4 h-4 bg-green-500 rounded-full mr-2 flex-shrink-0"></span>
+                    <span className="w-4 h-4 bg-green-500 rounded-full mr-2 shrink-0"></span>
                     Permanent Employment Info
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
@@ -5625,7 +5678,7 @@ export default function JobView() {
                 {/* Contract Employment Info Section */}
                 <div className="border border-gray-300 rounded p-4 bg-white">
                   <h3 className="text-md font-semibold mb-4 flex items-center">
-                    <span className="w-4 h-4 bg-green-500 rounded-full mr-2 flex-shrink-0"></span>
+                    <span className="w-4 h-4 bg-green-500 rounded-full mr-2 shrink-0"></span>
                     Contract Employment Info
                   </h3>
                   <div className="grid grid-cols-2 gap-4">
@@ -5669,7 +5722,7 @@ export default function JobView() {
                 {/* Pay Rate Information Section */}
                 <div className="border border-gray-300 rounded p-4 bg-white">
                   <h3 className="text-md font-semibold mb-4 flex items-center">
-                    <span className="w-4 h-4 bg-green-500 rounded-full mr-2 flex-shrink-0"></span>
+                    <span className="w-4 h-4 bg-green-500 rounded-full mr-2 shrink-0"></span>
                     Pay Rate Information
                   </h3>
                   <div className="space-y-4">
@@ -5992,7 +6045,7 @@ export default function JobView() {
                               onClick={() => handleAboutReferenceSelect(suggestion)}
                               className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
                             >
-                              <HiOutlineOfficeBuilding className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                              <HiOutlineOfficeBuilding className="w-4 h-4 text-gray-500 shrink-0" />
                               <div className="flex-1">
                                 <div className="text-sm font-medium text-gray-900">
                                   {suggestion.display}
@@ -6035,7 +6088,7 @@ export default function JobView() {
                             key={val}
                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
                           >
-                            <HiOutlineUser className="w-4 h-4 flex-shrink-0" />
+                            <HiOutlineUser className="w-4 h-4 shrink-0" />
                             {val}
                             <button
                               type="button"
@@ -6509,6 +6562,24 @@ export default function JobView() {
           resetButtonText="Reset"
         />
       )}
+
+      {/* Unarchive Request Modal */}
+      <RequestActionModal
+        open={showUnarchiveModal}
+        onClose={() => {
+          setShowUnarchiveModal(false);
+          setUnarchiveReason("");
+        }}
+        modelType="unarchive"
+        entityLabel="Job"
+        recordDisplay={
+          job ? `${formatRecordId(job.id, "job")} ${job.title || ""}`.trim() : "N/A"
+        }
+        reason={unarchiveReason}
+        onReasonChange={setUnarchiveReason}
+        onSubmit={handleUnarchiveSubmit}
+        isSubmitting={isSubmittingUnarchive}
+      />
 
       {/* Delete Request Modal */}
       {showDeleteModal && (

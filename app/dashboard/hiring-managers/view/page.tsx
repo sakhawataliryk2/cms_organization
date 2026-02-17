@@ -13,6 +13,7 @@ import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import { sendCalendarInvite, type CalendarEvent } from "@/lib/office365";
 import RecordNameResolver from '@/components/RecordNameResolver';
 import FieldValueRenderer from '@/components/FieldValueRenderer';
+import RequestActionModal from '@/components/RequestActionModal';
 // Drag and drop imports
 import {
   DndContext,
@@ -131,7 +132,7 @@ interface NoteFormState {
 
 export default function HiringManagerView() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const hiringManagerId = searchParams.get("id");
   const tabFromUrl = searchParams.get("tab");
   const deleteFromUrl = searchParams.get("delete");
@@ -1249,6 +1250,9 @@ export default function HiringManagerView() {
   const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
   const [pendingDeleteRequest, setPendingDeleteRequest] = useState<any>(null);
   const [isLoadingDeleteRequest, setIsLoadingDeleteRequest] = useState(false);
+  const [showUnarchiveModal, setShowUnarchiveModal] = useState(false);
+  const [unarchiveReason, setUnarchiveReason] = useState('');
+  const [isSubmittingUnarchive, setIsSubmittingUnarchive] = useState(false);
 
   // Check for delete parameter in URL to open delete modal
   useEffect(() => {
@@ -3092,6 +3096,53 @@ export default function HiringManagerView() {
     }
   };
 
+  const handleUnarchiveSubmit = async () => {
+    if (!unarchiveReason.trim() || !hiringManagerId) {
+      toast.error("Please enter a reason for unarchiving.");
+      return;
+    }
+    setIsSubmittingUnarchive(true);
+    try {
+      const userCookie = document.cookie.replace(
+        /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      let currentUser: { name?: string; email?: string } = {};
+      if (userCookie) {
+        try {
+          currentUser = JSON.parse(decodeURIComponent(userCookie));
+        } catch (e) {
+          console.error("Error parsing user cookie:", e);
+        }
+      }
+      const recordDisplay = hiringManager
+        ? `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName || ""}`.trim()
+        : formatRecordId(hiringManagerId, "hiringManager");
+      const res = await fetch(`/api/hiring-managers/${hiringManagerId}/unarchive-request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reason: unarchiveReason.trim(),
+          record_number: recordDisplay,
+          requested_by: currentUser?.name || "Unknown",
+          requested_by_email: currentUser?.email || "",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to send unarchive request");
+      toast.success("Unarchive request sent. Payroll will be notified via email.");
+      setShowUnarchiveModal(false);
+      setUnarchiveReason("");
+    } catch (err) {
+      console.error("Error submitting unarchive request:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to send unarchive request. Please try again."
+      );
+    } finally {
+      setIsSubmittingUnarchive(false);
+    }
+  };
+
   // Handle password reset
   const handlePasswordReset = async () => {
     if (!hiringManagerId) {
@@ -3500,29 +3551,21 @@ export default function HiringManagerView() {
     setShowDeleteModal(true);
   };
 
-  const actionOptions = [
-    { label: "Add Note", action: () => handleActionSelected("add-note") },
-    { label: "Add Job", action: () => handleActionSelected("add-job") },
-    { label: "Send Email", action: () => handleActionSelected("send-email") },
-    { label: "Add Task", action: () => handleActionSelected("add-task") },
-    {
-      label: "Add Appointment",
-      action: () => handleActionSelected("add-appointment"),
-    },
-    {
-      label: "Add Tearsheet",
-      action: () => handleActionSelected("add-tearsheet"),
-    },
-    {
-      label: "Password Reset",
-      action: () => handleActionSelected("password-reset"),
-    },
-    { label: "Transfer", action: () => handleActionSelected("transfer") },
-    { label: "Delete", action: () => handleActionSelected("delete") },
-    // {label: 'Edit', action: () => handleActionSelected('edit') },
-    // {label: 'Clone', action: () => handleActionSelected('clone') },
-    // {label: 'Export', action: () => handleActionSelected('export') },
-  ];
+  const isArchived = !!hiringManager?.archived_at;
+
+  const actionOptions = isArchived
+    ? [{ label: "Unarchive", action: () => setShowUnarchiveModal(true) }]
+    : [
+        { label: "Add Note", action: () => handleActionSelected("add-note") },
+        { label: "Add Job", action: () => handleActionSelected("add-job") },
+        { label: "Send Email", action: () => handleActionSelected("send-email") },
+        { label: "Add Task", action: () => handleActionSelected("add-task") },
+        { label: "Add Appointment", action: () => handleActionSelected("add-appointment") },
+        { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
+        { label: "Password Reset", action: () => handleActionSelected("password-reset") },
+        { label: "Transfer", action: () => handleActionSelected("transfer") },
+        { label: "Delete", action: () => handleActionSelected("delete") },
+      ];
 
   // Tabs from the interface
   const tabs = [
@@ -4213,11 +4256,14 @@ export default function HiringManagerView() {
     <div className="bg-white p-4 rounded shadow-sm">
       <h2 className="text-lg font-semibold mb-4">Edit Hiring Manager</h2>
       <p className="text-gray-600 mb-4">
-        Click the button below to edit this hiring manager's details.
+        {isArchived
+          ? "Archived records cannot be edited."
+          : "Click the button below to edit this hiring manager's details."}
       </p>
       <button
         onClick={handleEdit}
-        className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+        disabled={isArchived}
+        className={`px-4 py-2 rounded ${isArchived ? "bg-gray-400 text-gray-200 cursor-not-allowed" : "bg-blue-500 text-white hover:bg-blue-600"}`}
       >
         Edit Hiring Manager
       </button>
@@ -4365,24 +4411,30 @@ export default function HiringManagerView() {
 
       {/* Navigation Tabs */}
       <div className="flex bg-gray-300 mt-1 border-b border-gray-400 px-2">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={`px-4 py-2 ${activeTab === tab.id
-              ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
-              : "text-gray-700 hover:bg-gray-200"
-              }`}
-            onClick={() => {
-              if (tab.id === "modify") {
-                handleEdit();
-              } else {
-                setActiveTab(tab.id);
-              }
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {tabs.map((tab) => {
+          const isModifyTab = tab.id === "modify";
+          const tabDisabled = isModifyTab && isArchived;
+          return (
+            <button
+              key={tab.id}
+              className={`px-4 py-2 ${activeTab === tab.id
+                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+                : "text-gray-700 hover:bg-gray-200"
+                } ${tabDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+              disabled={tabDisabled}
+              onClick={() => {
+                if (tabDisabled) return;
+                if (isModifyTab) {
+                  handleEdit();
+                } else {
+                  setActiveTab(tab.id);
+                }
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Quick Action Buttons */}
@@ -5187,6 +5239,26 @@ export default function HiringManagerView() {
         )
       }
 
+      {/* Unarchive Request Modal */}
+      <RequestActionModal
+        open={showUnarchiveModal}
+        onClose={() => {
+          setShowUnarchiveModal(false);
+          setUnarchiveReason("");
+        }}
+        modelType="unarchive"
+        entityLabel="Hiring Manager"
+        recordDisplay={
+          hiringManager
+            ? `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName || ""}`.trim()
+            : formatRecordId(hiringManagerId ?? "", "hiringManager")
+        }
+        reason={unarchiveReason}
+        onReasonChange={setUnarchiveReason}
+        onSubmit={handleUnarchiveSubmit}
+        isSubmitting={isSubmittingUnarchive}
+      />
+
       {/* Delete Modal */}
       {
         showDeleteModal && (
@@ -5578,7 +5650,7 @@ export default function HiringManagerView() {
                                 onClick={() => handleAboutReferenceSelect(suggestion)}
                                 className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
                               >
-                                <FiUserCheck className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                <FiUserCheck className="w-4 h-4 text-gray-500 shrink-0" />
                                 <div className="flex-1">
                                   <div className="text-sm font-medium text-gray-900">
                                     {suggestion.display}
@@ -5624,7 +5696,7 @@ export default function HiringManagerView() {
                               key={val}
                               className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
                             >
-                              <HiOutlineUser className="w-4 h-4 flex-shrink-0" />
+                              <HiOutlineUser className="w-4 h-4 shrink-0" />
                               {val}
                               <button
                                 type="button"
@@ -5674,7 +5746,7 @@ export default function HiringManagerView() {
                                 onClick={() => handleEmailNotificationSelect(user)}
                                 className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
                               >
-                                <HiOutlineUser className="w-4 h-4 text-gray-500 flex-shrink-0" />
+                                <HiOutlineUser className="w-4 h-4 text-gray-500 shrink-0" />
                                 <div className="flex-1">
                                   <div className="text-sm font-medium text-gray-900">
                                     {user.name || user.email}

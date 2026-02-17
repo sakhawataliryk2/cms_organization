@@ -40,7 +40,7 @@ export default function HomeDashboardNav() {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [isFileUploadOpen, setIsFileUploadOpen] = useState<boolean>(false);
   const [isAddMenuOpen, setIsAddMenuOpen] = useState<boolean>(false);
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const router = useRouter();
   const addMenuRef = useRef<HTMLDivElement>(null);
 
