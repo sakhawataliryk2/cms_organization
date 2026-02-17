@@ -953,34 +953,31 @@ export default function CustomFieldRenderer({
     //     />
     //   );
     case "date": {
-      // Treat "Date Added" fields as read-only with a lock icon (label only)
-      const isDateAddedField =
-        field.field_label?.toLowerCase() === "date added";
 
       // Common display value (mm/dd/yyyy)
-      const todayDefault = () => {
-        const today = new Date();
-        const m = String(today.getMonth() + 1).padStart(2, "0");
-        const d = String(today.getDate()).padStart(2, "0");
-        const y = today.getFullYear();
-        return `${m}/${d}/${y}`;
-      };
-      const displayReadOnlyValue = value ? formatDateToMMDDYYYY(String(value)) : todayDefault();
+      // const todayDefault = () => {
+      //   const today = new Date();
+      //   const m = String(today.getMonth() + 1).padStart(2, "0");
+      //   const d = String(today.getDate()).padStart(2, "0");
+      //   const y = today.getFullYear();
+      //   return `${m}/${d}/${y}`;
+      // };
+      // const displayReadOnlyValue = value ? formatDateToMMDDYYYY(String(value)) : todayDefault();
 
-      if (isDateAddedField) {
-        return (
-          <div className="relative flex items-center">
-            <input
-              id={field.field_name}
-              type="text"
-              value={displayReadOnlyValue}
-              readOnly
-              className={`${className} bg-gray-100 cursor-not-allowed`}
-            />
-            <FiLock className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500" />
-          </div>
-        );
-      }
+      // if (isDateAddedField) {
+      //   return (
+      //     <div className="relative flex items-center">
+      //       <input
+      //         id={field.field_name}
+      //         type="text"
+      //         value={displayReadOnlyValue}
+      //         readOnly
+      //         className={`${className} bg-gray-100 cursor-not-allowed`}
+      //       />
+      //       <FiLock className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500" />
+      //     </div>
+      //   );
+      // }
 
       // Calendar popup state
       // Calendar popup state
@@ -1141,15 +1138,15 @@ export default function CustomFieldRenderer({
       const currentDateObj = getCurrentDate;
 
       return (
-        <div className="relative" ref={calendarRef}>
-          <div className="relative flex items-center">
+        <div className="relative w-full" ref={calendarRef}>
+          <div className="relative flex items-center w-full">
             <input
               id={field.field_name}
               type="text"
               value={displayValue}
               onChange={handleDateChange}
               placeholder="mm/dd/yyyy"
-              className={className}
+              className={`${className} flex-1 min-w-0 pr-10`}
               required={field.is_required}
               maxLength={10}
               onBlur={(e) => {
@@ -1661,7 +1658,6 @@ export function isCustomFieldValueValid(field: CustomFieldDefinition, value: any
   if (trimmed === "") return false;
 
   if (field.field_type === "date") {
-    if (field.field_label?.toLowerCase() === "date added") return true;
     let dateToValidate = trimmed;
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
       const [month, day, year] = trimmed.split("/");

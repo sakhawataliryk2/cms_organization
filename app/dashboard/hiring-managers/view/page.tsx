@@ -52,6 +52,7 @@ import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import { toast } from "sonner";
 import AddTearsheetModal from "@/components/AddTearsheetModal";
 import CountdownTimer from '@/components/CountdownTimer';
+import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 
 // Default header fields for Hiring Managers module - defined outside component to ensure stable reference
 const HIRING_MANAGER_DEFAULT_HEADER_FIELDS = ["phone", "email"];
@@ -105,153 +106,6 @@ function SortablePanel({ id, children, isOverlay = false }: { id: string; childr
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// Sortable row for Hiring Manager Details edit modal (vertical drag + checkbox + label)
-function SortableDetailsFieldRow({
-  id,
-  label,
-  checked,
-  onToggle,
-  isOverlay,
-}: {
-  id: string;
-  label: string;
-  checked: boolean;
-  onToggle: () => void;
-  isOverlay?: boolean;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style: React.CSSProperties = {
-    transform: CSS.Translate.toString(transform),
-    transition,
-    opacity: isDragging && !isOverlay ? 0.5 : 1,
-  };
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
-    >
-      {!isOverlay && (
-        <button
-          {...attributes}
-          {...listeners}
-          className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
-          title="Drag to reorder"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <TbGripVertical size={18} />
-        </button>
-      )}
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onToggle}
-        onClick={(e) => e.stopPropagation()}
-        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-      />
-      <span className="text-sm text-gray-700 flex-1">{label}</span>
-    </div>
-  );
-}
-
-// Sortable row for Header Fields edit modal (vertical drag + checkbox + label)
-function SortableHeaderFieldRow({
-  id,
-  label,
-  checked,
-  onToggle,
-  isOverlay,
-}: {
-  id: string;
-  label: string;
-  checked: boolean;
-  onToggle: () => void;
-  isOverlay?: boolean;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging && !isOverlay ? 0.5 : 1,
-  };
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
-    >
-      {!isOverlay && (
-        <button
-          {...attributes}
-          {...listeners}
-          className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
-          title="Drag to reorder"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <TbGripVertical size={18} />
-        </button>
-      )}
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onToggle}
-        onClick={(e) => e.stopPropagation()}
-        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 shrink-0"
-      />
-      <span className="text-sm text-gray-700 flex-1 truncate">{label}</span>
-    </div>
-  );
-}
-
-// Sortable row for Hiring Manager Organization Details edit modal (vertical drag + checkbox + label)
-function SortableOrganizationDetailsFieldRow({
-  id,
-  label,
-  checked,
-  onToggle,
-  isOverlay,
-}: {
-  id: string;
-  label: string;
-  checked: boolean;
-  onToggle: () => void;
-  isOverlay?: boolean;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style: React.CSSProperties = {
-    transform: CSS.Translate.toString(transform),
-    transition,
-    opacity: isDragging && !isOverlay ? 0.5 : 1,
-  };
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
-    >
-      {!isOverlay && (
-        <button
-          {...attributes}
-          {...listeners}
-          className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
-          title="Drag to reorder"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <TbGripVertical size={18} />
-        </button>
-      )}
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onToggle}
-        onClick={(e) => e.stopPropagation()}
-        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-      />
-      <span className="text-sm text-gray-700 flex-1">{label}</span>
     </div>
   );
 }
@@ -1216,24 +1070,13 @@ export default function HiringManagerView() {
     defaultFields: HIRING_MANAGER_DEFAULT_HEADER_FIELDS,
   });
 
-  // Sensors for Header Fields modal drag-and-drop
-  const headerFieldsSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
-
-  // Drop animation config for drag overlay
+  // Drop animation config for drag overlay (used by main content DnD)
   const dropAnimationConfig = useMemo(() => ({
     sideEffects: defaultDropAnimationSideEffects({
-      styles: {
-        active: {
-          opacity: "0.5",
-        },
-      },
+      styles: { active: { opacity: "0.5" } },
     }),
   }), []);
 
-  const [headerFieldsDragActiveId, setHeaderFieldsDragActiveId] = useState<string | null>(null);
   // Maintain order for all header fields (including unselected ones for proper ordering)
   const [headerFieldsOrder, setHeaderFieldsOrder] = useState<string[]>([]);
 
@@ -1334,25 +1177,6 @@ export default function HiringManagerView() {
   };
 
 
-  const handleHeaderFieldsDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setHeaderFieldsDragActiveId(null);
-    if (!over || active.id === over.id) return;
-    setHeaderFieldsOrder((prev) => {
-      const oldIndex = prev.indexOf(active.id as string);
-      const newIndex = prev.indexOf(over.id as string);
-      if (oldIndex === -1 || newIndex === -1) return prev;
-      return arrayMove(prev, oldIndex, newIndex);
-    });
-    // Also update headerFields order if both are in headerFields
-    setHeaderFields((prev) => {
-      const oldIndex = prev.indexOf(active.id as string);
-      const newIndex = prev.indexOf(over.id as string);
-      if (oldIndex === -1 || newIndex === -1) return prev;
-      return arrayMove(prev, oldIndex, newIndex);
-    });
-  };
-
   // Initialize headerFieldsOrder when headerFields or catalog changes
   useEffect(() => {
     if (headerFieldCatalog.length > 0 && headerFieldsOrder.length === 0) {
@@ -1371,12 +1195,10 @@ export default function HiringManagerView() {
   // Modal-local state for Hiring Manager Details edit
   const [modalDetailsOrder, setModalDetailsOrder] = useState<string[]>([]);
   const [modalDetailsVisible, setModalDetailsVisible] = useState<Record<string, boolean>>({});
-  const [detailsDragActiveId, setDetailsDragActiveId] = useState<string | null>(null);
 
   // Modal-local state for Hiring Manager Organization Details edit
   const [modalOrganizationDetailsOrder, setModalOrganizationDetailsOrder] = useState<string[]>([]);
   const [modalOrganizationDetailsVisible, setModalOrganizationDetailsVisible] = useState<Record<string, boolean>>({});
-  const [organizationDetailsDragActiveId, setOrganizationDetailsDragActiveId] = useState<string | null>(null);
 
   const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
 
@@ -1717,19 +1539,6 @@ export default function HiringManagerView() {
     });
   };
 
-  // Hiring Manager Details modal: drag end (reorder)
-  const handleDetailsDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-    setDetailsDragActiveId(null);
-    if (!over || active.id === over.id) return;
-    setModalDetailsOrder((prev) => {
-      const oldIndex = prev.indexOf(active.id as string);
-      const newIndex = prev.indexOf(over.id as string);
-      if (oldIndex === -1 || newIndex === -1) return prev;
-      return arrayMove(prev, oldIndex, newIndex);
-    });
-  }, []);
-
   // Hiring Manager Details modal: save order/visibility and persist for all records
   const handleSaveDetailsFields = useCallback(() => {
     const newOrder = Array.from(new Set(modalDetailsOrder.filter((k) => modalDetailsVisible[k] === true)));
@@ -1739,19 +1548,6 @@ export default function HiringManagerView() {
     setVisibleFields((prev) => ({ ...prev, details: newOrder }));
     setEditingPanel(null);
   }, [modalDetailsOrder, modalDetailsVisible]);
-
-  // Hiring Manager Organization Details modal: drag end (reorder)
-  const handleOrganizationDetailsDragEnd = useCallback((event: DragEndEvent) => {
-    const { active, over } = event;
-    setOrganizationDetailsDragActiveId(null);
-    if (!over || active.id === over.id) return;
-    setModalOrganizationDetailsOrder((prev) => {
-      const oldIndex = prev.indexOf(active.id as string);
-      const newIndex = prev.indexOf(over.id as string);
-      if (oldIndex === -1 || newIndex === -1) return prev;
-      return arrayMove(prev, oldIndex, newIndex);
-    });
-  }, []);
 
   // Hiring Manager Organization Details modal: save order/visibility and persist for all records
   const handleSaveOrganizationDetailsFields = useCallback(() => {
@@ -4782,14 +4578,66 @@ export default function HiringManagerView() {
         </div>
       </div >
 
-      {/* Edit Fields Modal */}
-      {editingPanel && (
+      {/* Edit Fields Modal - details and organizationDetails use SortableFieldsEditModal */}
+      {editingPanel === "details" && (
+        <SortableFieldsEditModal
+          open={true}
+          onClose={handleCloseEditModal}
+          title="Edit Fields - Hiring Manager Details"
+          description="Drag to reorder, check/uncheck to show or hide fields."
+          order={modalDetailsOrder}
+          visible={modalDetailsVisible}
+          fieldCatalog={detailsFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
+          onToggle={(key) =>
+            setModalDetailsVisible((prev) => ({ ...prev, [key]: !prev[key] }))
+          }
+          onDragEnd={(event) => {
+            const { active, over } = event;
+            if (!over || active.id === over.id) return;
+            setModalDetailsOrder((prev) => {
+              const oldIndex = prev.indexOf(active.id as string);
+              const newIndex = prev.indexOf(over.id as string);
+              if (oldIndex === -1 || newIndex === -1) return prev;
+              return arrayMove(prev, oldIndex, newIndex);
+            });
+          }}
+          onSave={handleSaveDetailsFields}
+          saveButtonText="Save"
+          listMaxHeight="60vh"
+        />
+      )}
+      {editingPanel === "organizationDetails" && (
+        <SortableFieldsEditModal
+          open={true}
+          onClose={handleCloseEditModal}
+          title="Edit Fields - Organization Details"
+          description="Drag to reorder, check/uncheck to show or hide fields."
+          order={modalOrganizationDetailsOrder}
+          visible={modalOrganizationDetailsVisible}
+          fieldCatalog={organizationDetailsFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
+          onToggle={(key) =>
+            setModalOrganizationDetailsVisible((prev) => ({ ...prev, [key]: !prev[key] }))
+          }
+          onDragEnd={(event) => {
+            const { active, over } = event;
+            if (!over || active.id === over.id) return;
+            setModalOrganizationDetailsOrder((prev) => {
+              const oldIndex = prev.indexOf(active.id as string);
+              const newIndex = prev.indexOf(over.id as string);
+              if (oldIndex === -1 || newIndex === -1) return prev;
+              return arrayMove(prev, oldIndex, newIndex);
+            });
+          }}
+          onSave={handleSaveOrganizationDetailsFields}
+          saveButtonText="Save"
+          listMaxHeight="60vh"
+        />
+      )}
+      {editingPanel && editingPanel !== "details" && editingPanel !== "organizationDetails" && (
         <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">
-                Edit Fields - {editingPanel === "details" ? "Hiring Manager Details" : editingPanel === "organizationDetails" ? "Organization Details" : editingPanel}
-              </h2>
+              <h2 className="text-lg font-semibold">Edit Fields - {editingPanel}</h2>
               <button
                 onClick={handleCloseEditModal}
                 className="p-1 rounded hover:bg-gray-200"
@@ -4798,150 +4646,7 @@ export default function HiringManagerView() {
               </button>
             </div>
             <div className="p-6">
-              {editingPanel === "details" && (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCorners}
-                  onDragStart={(e) => setDetailsDragActiveId(e.active.id as string)}
-                  onDragEnd={handleDetailsDragEnd}
-                  onDragCancel={() => setDetailsDragActiveId(null)}
-                >
-                  <div className="mb-4">
-                    <h3 className="font-medium mb-3">Drag to reorder, check/uncheck to show/hide:</h3>
-                    <SortableContext
-                      items={modalDetailsOrder}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
-                        {modalDetailsOrder.map((key, index) => {
-                          const label = detailsFieldCatalog.find((f) => f.key === key)?.label ?? key;
-                          const field = detailsFieldCatalog.find((f) => f.key === key);
-                          if (!field) return null;
-                          return (
-                            <SortableDetailsFieldRow
-                              key={`details-${key}-${index}`}
-                              id={key}
-                              label={label}
-                              checked={modalDetailsVisible[key] || false}
-                              onToggle={() =>
-                                setModalDetailsVisible((prev) => ({
-                                  ...prev,
-                                  [key]: !prev[key],
-                                }))
-                              }
-                            />
-                          );
-                        })}
-                      </div>
-                    </SortableContext>
-                    <DragOverlay>
-                      {detailsDragActiveId ? (
-                        (() => {
-                          const label = detailsFieldCatalog.find((f) => f.key === detailsDragActiveId)?.label ?? detailsDragActiveId;
-                          const field = detailsFieldCatalog.find((f) => f.key === detailsDragActiveId);
-                          if (!field) return null;
-                          return (
-                            <SortableDetailsFieldRow
-                              id={detailsDragActiveId}
-                              label={label}
-                              checked={modalDetailsVisible[detailsDragActiveId] || false}
-                              onToggle={() => { }}
-                              isOverlay
-                            />
-                          );
-                        })()
-                      ) : null}
-                    </DragOverlay>
-                  </div>
-                  <div className="flex justify-end space-x-2 pt-4 border-t">
-                    <button
-                      onClick={handleCloseEditModal}
-                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSaveDetailsFields}
-                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                    >
-                      Save
-                    </button>
-                  </div>
-                </DndContext>
-              )}
-              {editingPanel === "organizationDetails" && (
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCorners}
-                  onDragStart={(e) => setOrganizationDetailsDragActiveId(e.active.id as string)}
-                  onDragEnd={handleOrganizationDetailsDragEnd}
-                  onDragCancel={() => setOrganizationDetailsDragActiveId(null)}
-                >
-                  <div className="mb-4">
-                    <h3 className="font-medium mb-3">Drag to reorder, check/uncheck to show/hide:</h3>
-                    <SortableContext
-                      items={modalOrganizationDetailsOrder}
-                      strategy={verticalListSortingStrategy}
-                    >
-                      <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
-                        {modalOrganizationDetailsOrder.map((key, index) => {
-                          const label = organizationDetailsFieldCatalog.find((f) => f.key === key)?.label ?? key;
-                          const field = organizationDetailsFieldCatalog.find((f) => f.key === key);
-                          if (!field) return null;
-                          return (
-                            <SortableOrganizationDetailsFieldRow
-                              key={`organizationDetails-${key}-${index}`}
-                              id={key}
-                              label={label}
-                              checked={modalOrganizationDetailsVisible[key] || false}
-                              onToggle={() =>
-                                setModalOrganizationDetailsVisible((prev) => ({
-                                  ...prev,
-                                  [key]: !prev[key],
-                                }))
-                              }
-                            />
-                          );
-                        })}
-                      </div>
-                    </SortableContext>
-                    <DragOverlay>
-                      {organizationDetailsDragActiveId ? (
-                        (() => {
-                          const label = organizationDetailsFieldCatalog.find((f) => f.key === organizationDetailsDragActiveId)?.label ?? organizationDetailsDragActiveId;
-                          const field = organizationDetailsFieldCatalog.find((f) => f.key === organizationDetailsDragActiveId);
-                          if (!field) return null;
-                          return (
-                            <SortableOrganizationDetailsFieldRow
-                              id={organizationDetailsDragActiveId}
-                              label={label}
-                              checked={modalOrganizationDetailsVisible[organizationDetailsDragActiveId] || false}
-                              onToggle={() => { }}
-                              isOverlay
-                            />
-                          );
-                        })()
-                      ) : null}
-                    </DragOverlay>
-                  </div>
-                  <div className="flex justify-end space-x-2 pt-4 border-t">
-                    <button
-                      onClick={handleCloseEditModal}
-                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={handleSaveOrganizationDetailsFields}
-                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-                    >
-                      Save
-                    </button>
-                  </div>
-                </DndContext>
-              )}
-              {editingPanel !== "details" && editingPanel !== "organizationDetails" && (
-                <>
+              <>
                   <div className="mb-4">
                     <h3 className="font-medium mb-3">
                       Available Fields from Modify Page:
@@ -5054,8 +4759,7 @@ export default function HiringManagerView() {
                       Close
                     </button>
                   </div>
-                </>
-              )}
+              </>
             </div>
           </div>
         </div>
@@ -6018,105 +5722,55 @@ export default function HiringManagerView() {
           </div>
         )
       }
-      {/* Header Fields Modal */}
+      {/* Header Fields Modal - uses universal SortableFieldsEditModal */}
       {showHeaderFieldModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Customize Header Fields</h2>
-              <button
-                onClick={() => setShowHeaderFieldModal(false)}
-                className="p-1 rounded hover:bg-gray-200"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
-            <div className="p-6">
-              <DndContext
-                sensors={headerFieldsSensors}
-                collisionDetection={closestCorners}
-                onDragStart={(e) => setHeaderFieldsDragActiveId(e.active.id as string)}
-                onDragEnd={handleHeaderFieldsDragEnd}
-                onDragCancel={() => setHeaderFieldsDragActiveId(null)}
-                modifiers={[restrictToVerticalAxis]}
-              >
-                <p className="text-sm text-gray-600 mb-4">
-                  Drag to reorder. Toggle visibility with the checkbox. Changes apply to all hiring manager records.
-                </p>
-                <SortableContext
-                  items={headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
-                    {(headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)).length === 0 ? (
-                      <div className="text-center py-4 text-gray-500">
-                        No fields available
-                      </div>
-                    ) : (
-                      (headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)).map((key) => {
-                        const label = getHeaderFieldLabel(key);
-                        const checked = headerFields.includes(key);
-                        return (
-                          <SortableHeaderFieldRow
-                            key={key}
-                            id={key}
-                            label={label}
-                            checked={checked}
-                            onToggle={() => {
-                              if (checked) {
-                                setHeaderFields((prev) => prev.filter((x) => x !== key));
-                              } else {
-                                setHeaderFields((prev) => [...prev, key]);
-                                // Add to order if not already there
-                                if (!headerFieldsOrder.includes(key)) {
-                                  setHeaderFieldsOrder((prev) => [...prev, key]);
-                                }
-                              }
-                            }}
-                          />
-                        );
-                      })
-                    )}
-                  </div>
-                </SortableContext>
-                <DragOverlay dropAnimation={dropAnimationConfig}>
-                  {headerFieldsDragActiveId ? (
-                    <SortableHeaderFieldRow
-                      id={headerFieldsDragActiveId}
-                      label={getHeaderFieldLabel(headerFieldsDragActiveId)}
-                      checked={headerFields.includes(headerFieldsDragActiveId)}
-                      onToggle={() => {}}
-                      isOverlay
-                    />
-                  ) : null}
-                </DragOverlay>
-                <div className="flex justify-end gap-2 pt-4 border-t mt-4">
-                  <button
-                    onClick={() => {
-                      setHeaderFields(HIRING_MANAGER_DEFAULT_HEADER_FIELDS);
-                      setHeaderFieldsOrder(HIRING_MANAGER_DEFAULT_HEADER_FIELDS);
-                    }}
-                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-                  >
-                    Reset
-                  </button>
-                  <button
-                    onClick={async () => {
-                      const success = await saveHeaderConfig();
-                      if (success) {
-                        setShowHeaderFieldModal(false);
-                      }
-                    }}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={headerFields.length === 0 || isSavingHeaderConfig}
-                  >
-                    {isSavingHeaderConfig ? "Saving..." : "Done"}
-                  </button>
-                </div>
-              </DndContext>
-            </div>
-          </div>
-        </div>
+        <SortableFieldsEditModal
+          open={true}
+          onClose={() => setShowHeaderFieldModal(false)}
+          title="Customize Header Fields"
+          description="Drag to reorder. Toggle visibility with the checkbox. Changes apply to all hiring manager records."
+          order={headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)}
+          visible={Object.fromEntries(headerFieldCatalog.map((f) => [f.key, headerFields.includes(f.key)]))}
+          fieldCatalog={headerFieldCatalog.map((f) => ({ key: f.key, label: f.label ?? getHeaderFieldLabel(f.key) }))}
+          onToggle={(key) => {
+            if (headerFields.includes(key)) {
+              setHeaderFields((prev) => prev.filter((x) => x !== key));
+            } else {
+              setHeaderFields((prev) => [...prev, key]);
+              if (!headerFieldsOrder.includes(key)) {
+                setHeaderFieldsOrder((prev) => [...prev, key]);
+              }
+            }
+          }}
+          onDragEnd={(event) => {
+            const { active, over } = event;
+            if (!over || active.id === over.id) return;
+            setHeaderFieldsOrder((prev) => {
+              const oldIndex = prev.indexOf(active.id as string);
+              const newIndex = prev.indexOf(over.id as string);
+              if (oldIndex === -1 || newIndex === -1) return prev;
+              return arrayMove(prev, oldIndex, newIndex);
+            });
+            setHeaderFields((prev) => {
+              const oldIndex = prev.indexOf(active.id as string);
+              const newIndex = prev.indexOf(over.id as string);
+              if (oldIndex === -1 || newIndex === -1) return prev;
+              return arrayMove(prev, oldIndex, newIndex);
+            });
+          }}
+          onSave={async () => {
+            const success = await saveHeaderConfig();
+            if (success) setShowHeaderFieldModal(false);
+          }}
+          saveButtonText={isSavingHeaderConfig ? "Saving..." : "Done"}
+          isSaveDisabled={headerFields.length === 0 || !!isSavingHeaderConfig}
+          onReset={() => {
+            setHeaderFields(HIRING_MANAGER_DEFAULT_HEADER_FIELDS);
+            setHeaderFieldsOrder(HIRING_MANAGER_DEFAULT_HEADER_FIELDS);
+          }}
+          resetButtonText="Reset"
+          listMaxHeight="50vh"
+        />
       )}
 
       <ConfirmFileDetailsModal

@@ -54,6 +54,7 @@ import FieldValueRenderer from "@/components/FieldValueRenderer";
 import { FiSearch } from "react-icons/fi";
 import { toast } from "sonner";
 import AddTearsheetModal from "@/components/AddTearsheetModal";
+import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 
 // Default header fields for Organizations module - defined outside component to ensure stable reference
 const ORG_DEFAULT_HEADER_FIELDS = ["phone", "website"];
@@ -117,104 +118,6 @@ function DroppableContainer({ id, children, items }: { id: string, children: Rea
         {children}
       </div>
     </SortableContext>
-  );
-}
-
-// Sortable row for Organization Contact Info edit modal (vertical drag + checkbox + label)
-function SortableContactInfoFieldRow({
-  id,
-  label,
-  checked,
-  onToggle,
-  isOverlay,
-}: {
-  id: string;
-  label: string;
-  checked: boolean;
-  onToggle: () => void;
-  isOverlay?: boolean;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging && !isOverlay ? 0.5 : 1,
-  };
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
-    >
-      {!isOverlay && (
-        <button
-          {...attributes}
-          {...listeners}
-          className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
-          title="Drag to reorder"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <TbGripVertical size={18} />
-        </button>
-      )}
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onToggle}
-        onClick={(e) => e.stopPropagation()}
-        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 shrink-0"
-      />
-      <span className="text-sm text-gray-700 flex-1 truncate">{label}</span>
-    </div>
-  );
-}
-
-// Sortable row for Header Fields edit modal (vertical drag + checkbox + label)
-function SortableHeaderFieldRow({
-  id,
-  label,
-  checked,
-  onToggle,
-  isOverlay,
-}: {
-  id: string;
-  label: string;
-  checked: boolean;
-  onToggle: () => void;
-  isOverlay?: boolean;
-}) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
-  const style: React.CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging && !isOverlay ? 0.5 : 1,
-  };
-  return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={`flex items-center gap-2 p-2 border border-gray-200 rounded bg-white ${isOverlay ? "shadow-lg cursor-grabbing" : "hover:bg-gray-50"} ${isDragging && !isOverlay ? "invisible" : ""}`}
-    >
-      {!isOverlay && (
-        <button
-          {...attributes}
-          {...listeners}
-          className="p-1 text-gray-400 hover:text-gray-600 cursor-grab active:cursor-grabbing touch-none"
-          title="Drag to reorder"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <TbGripVertical size={18} />
-        </button>
-      )}
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={onToggle}
-        onClick={(e) => e.stopPropagation()}
-        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 shrink-0"
-      />
-      <span className="text-sm text-gray-700 flex-1 truncate">{label}</span>
-    </div>
   );
 }
 
@@ -730,18 +633,6 @@ export default function OrganizationView() {
     configType: "header",
   });
 
-  // Sensors for Contact Info modal drag-and-drop
-  const contactInfoSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
-
-  // Sensors for Header Fields modal drag-and-drop
-  const headerFieldsSensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
-
   // Drop animation config for drag overlay
   const dropAnimationConfig = useMemo(() => ({
     sideEffects: defaultDropAnimationSideEffects({
@@ -895,8 +786,6 @@ export default function OrganizationView() {
   // Modal-local state for Contact Info edit: order and visibility (only applied on Save)
   const [modalContactInfoOrder, setModalContactInfoOrder] = useState<string[]>([]);
   const [modalContactInfoVisible, setModalContactInfoVisible] = useState<Record<string, boolean>>({});
-  const [contactInfoDragActiveId, setContactInfoDragActiveId] = useState<string | null>(null);
-  const [headerFieldsDragActiveId, setHeaderFieldsDragActiveId] = useState<string | null>(null);
   // Maintain order for all header fields (including unselected ones for proper ordering)
   const [headerFieldsOrder, setHeaderFieldsOrder] = useState<string[]>([]);
   const [isSavingStatus, setIsSavingStatus] = useState(false);
@@ -1570,7 +1459,6 @@ export default function OrganizationView() {
   // Contact Info modal: drag end handler for reordering
   const handleContactInfoDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    setContactInfoDragActiveId(null);
     if (!over || active.id === over.id) return;
     setModalContactInfoOrder((prev) => {
       const oldIndex = prev.indexOf(active.id as string);
@@ -1582,7 +1470,6 @@ export default function OrganizationView() {
 
   const handleHeaderFieldsDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-    setHeaderFieldsDragActiveId(null);
     if (!over || active.id === over.id) return;
     setHeaderFieldsOrder((prev) => {
       const oldIndex = prev.indexOf(active.id as string);
@@ -6191,13 +6078,30 @@ console.log("Archived_at", organization.archived_at)
         )}
       </div>
 
-      {/* Edit Fields Modal */}
-      {editingPanel && (
+      {/* Edit Fields Modal - Contact Info uses universal SortableFieldsEditModal */}
+      {editingPanel === "contactInfo" && (
+        <SortableFieldsEditModal
+          open={true}
+          onClose={handleCloseEditModal}
+          title="Edit Fields - Organization Contact Info"
+          description="Drag to reorder, check/uncheck to show/hide. Changes apply to all organization contact cards."
+          order={modalContactInfoOrder}
+          visible={modalContactInfoVisible}
+          fieldCatalog={contactInfoFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
+          onToggle={toggleModalContactInfoVisible}
+          onDragEnd={handleContactInfoDragEnd}
+          onSave={saveContactInfoConfig}
+          isLoading={isLoadingFields}
+          saveButtonText="Save (applies to all organizations)"
+          isSaveDisabled={modalContactInfoOrder.filter((k) => modalContactInfoVisible[k]).length === 0}
+        />
+      )}
+      {editingPanel && editingPanel !== "contactInfo" && (
         <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
               <h2 className="text-lg font-semibold">
-                Edit Fields - {editingPanel === "contactInfo" ? "Organization Contact Info" : editingPanel}
+                Edit Fields - {editingPanel}
               </h2>
               <button
                 onClick={handleCloseEditModal}
@@ -6207,74 +6111,6 @@ console.log("Archived_at", organization.archived_at)
               </button>
             </div>
             <div className="p-6">
-              {editingPanel === "contactInfo" ? (
-                <DndContext
-                  sensors={contactInfoSensors}
-                  collisionDetection={closestCorners}
-                  onDragStart={(e) => setContactInfoDragActiveId(e.active.id as string)}
-                  onDragEnd={handleContactInfoDragEnd}
-                  onDragCancel={() => setContactInfoDragActiveId(null)}
-                >
-                  <p className="text-sm text-gray-600 mb-4">
-                    Drag to reorder, check/uncheck to show/hide. Changes apply to all organization contact cards.
-                  </p>
-                  <SortableContext
-                    items={modalContactInfoOrder}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
-                      {isLoadingFields && contactInfoFieldCatalog.length === 0 ? (
-                        <div className="text-center py-4 text-gray-500">
-                          Loading fields...
-                        </div>
-                      ) : (
-                        modalContactInfoOrder.map((key, index) => {
-                          const label = contactInfoFieldCatalog.find((f) => f.key === key)?.label ?? key;
-                          const isVisible = modalContactInfoVisible[key] ?? false;
-                          return (
-                            <SortableContactInfoFieldRow
-                              key={`contactInfo-${key}-${index}`}
-                              id={key}
-                              label={label}
-                              checked={isVisible}
-                              onToggle={() => toggleModalContactInfoVisible(key)}
-                            />
-                          );
-                        })
-                      )}
-                    </div>
-                  </SortableContext>
-                  <DragOverlay>
-                    {contactInfoDragActiveId ? (() => {
-                      const label = contactInfoFieldCatalog.find((f) => f.key === contactInfoDragActiveId)?.label ?? contactInfoDragActiveId;
-                      return (
-                        <SortableContactInfoFieldRow
-                          id={contactInfoDragActiveId}
-                          label={label}
-                          checked={modalContactInfoVisible[contactInfoDragActiveId] ?? false}
-                          onToggle={() => { }}
-                          isOverlay
-                        />
-                      );
-                    })() : null}
-                  </DragOverlay>
-                  <div className="flex justify-end gap-2 pt-4 border-t mt-4">
-                    <button
-                      onClick={handleCloseEditModal}
-                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={saveContactInfoConfig}
-                      className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                      disabled={modalContactInfoOrder.filter((k) => modalContactInfoVisible[k]).length === 0}
-                    >
-                      Save (applies to all organizations)
-                    </button>
-                  </div>
-                </DndContext>
-              ) : (
                 <>
                   <div className="mb-4">
                     <h3 className="font-medium mb-3">
@@ -6416,7 +6252,6 @@ console.log("Archived_at", organization.archived_at)
                     </button>
                   </div>
                 </>
-              )}
             </div>
           </div>
         </div>
@@ -7309,103 +7144,37 @@ console.log("Archived_at", organization.archived_at)
       />
       {/* Header Fields Modal */}
       {showHeaderFieldModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Customize Header Fields</h2>
-              <button
-                onClick={() => setShowHeaderFieldModal(false)}
-                className="p-1 rounded hover:bg-gray-200"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
-            <div className="p-6">
-              <DndContext
-                sensors={headerFieldsSensors}
-                collisionDetection={closestCorners}
-                onDragStart={(e) => setHeaderFieldsDragActiveId(e.active.id as string)}
-                onDragEnd={handleHeaderFieldsDragEnd}
-                onDragCancel={() => setHeaderFieldsDragActiveId(null)}
-                modifiers={[restrictToVerticalAxis]}
-              >
-                <p className="text-sm text-gray-600 mb-4">
-                  Drag to reorder. Toggle visibility with the checkbox. Changes apply to all organization records.
-                </p>
-                <SortableContext
-                  items={headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)}
-                  strategy={verticalListSortingStrategy}
-                >
-                  <div className="space-y-2 max-h-[50vh] overflow-y-auto border border-gray-200 rounded p-3">
-                    {(headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)).length === 0 ? (
-                      <div className="text-center py-4 text-gray-500">
-                        No fields available
-                      </div>
-                    ) : (
-                      (headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)).map((key) => {
-                        const label = getHeaderFieldLabel(key);
-                        const checked = headerFields.includes(key);
-                        return (
-                          <SortableHeaderFieldRow
-                            key={key}
-                            id={key}
-                            label={label}
-                            checked={checked}
-                            onToggle={() => {
-                              if (checked) {
-                                setHeaderFields((prev) => prev.filter((x) => x !== key));
-                              } else {
-                                setHeaderFields((prev) => [...prev, key]);
-                                // Add to order if not already there
-                                if (!headerFieldsOrder.includes(key)) {
-                                  setHeaderFieldsOrder((prev) => [...prev, key]);
-                                }
-                              }
-                            }}
-                          />
-                        );
-                      })
-                    )}
-                  </div>
-                </SortableContext>
-                <DragOverlay dropAnimation={dropAnimationConfig}>
-                  {headerFieldsDragActiveId ? (
-                    <SortableHeaderFieldRow
-                      id={headerFieldsDragActiveId}
-                      label={getHeaderFieldLabel(headerFieldsDragActiveId)}
-                      checked={headerFields.includes(headerFieldsDragActiveId)}
-                      onToggle={() => { }}
-                      isOverlay
-                    />
-                  ) : null}
-                </DragOverlay>
-                <div className="flex justify-end gap-2 pt-4 border-t mt-4">
-                  <button
-                    onClick={() => {
-                      setHeaderFields(ORG_DEFAULT_HEADER_FIELDS);
-                      setHeaderFieldsOrder(ORG_DEFAULT_HEADER_FIELDS);
-                    }}
-                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-                  >
-                    Reset
-                  </button>
-                  <button
-                    onClick={async () => {
-                      const success = await saveHeaderConfig();
-                      if (success) {
-                        setShowHeaderFieldModal(false);
-                      }
-                    }}
-                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={headerFields.length === 0}
-                  >
-                    Done
-                  </button>
-                </div>
-              </DndContext>
-            </div>
-          </div>
-        </div>
+        <SortableFieldsEditModal
+          open={true}
+          onClose={() => setShowHeaderFieldModal(false)}
+          title="Customize Header Fields"
+          description="Drag to reorder. Toggle visibility with the checkbox. Changes apply to all organization records."
+          order={headerFieldsOrder.length > 0 ? headerFieldsOrder : headerFieldCatalog.map((f) => f.key)}
+          visible={Object.fromEntries(headerFieldCatalog.map((f) => [f.key, headerFields.includes(f.key)]))}
+          fieldCatalog={headerFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
+          onToggle={(key) => {
+            if (headerFields.includes(key)) {
+              setHeaderFields((prev) => prev.filter((x) => x !== key));
+            } else {
+              setHeaderFields((prev) => [...prev, key]);
+              if (!headerFieldsOrder.includes(key)) {
+                setHeaderFieldsOrder((prev) => [...prev, key]);
+              }
+            }
+          }}
+          onDragEnd={handleHeaderFieldsDragEnd}
+          onSave={async () => {
+            const success = await saveHeaderConfig();
+            if (success) setShowHeaderFieldModal(false);
+          }}
+          saveButtonText="Done"
+          isSaveDisabled={headerFields.length === 0}
+          onReset={() => {
+            setHeaderFields(ORG_DEFAULT_HEADER_FIELDS);
+            setHeaderFieldsOrder(ORG_DEFAULT_HEADER_FIELDS);
+          }}
+          resetButtonText="Reset"
+        />
       )}
     </div>
   );

@@ -39,10 +39,21 @@ type InternalUser = {
 
 const DEFAULT_CATEGORIES = ["General", "Onboarding", "Healthcare", "HR"];
 
+type OrgDefaultWelcome = {
+  id: number;
+  slot: string;
+  template_document_id: number | null;
+  document_name?: string | null;
+  file_url?: string | null;
+  file_path?: string | null;
+};
+
 const DocumentManagementPage = () => {
   const router = useRouter();
   const params = useSearchParams();
   const showArchived = params.get("archived") === "1";
+  const activeTab: "documents" | "organizations" =
+    params.get("tab") === "organizations" ? "organizations" : "documents";
 
   const [loadingEdit, setLoadingEdit] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -77,6 +88,13 @@ const DocumentManagementPage = () => {
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
+
+  // Organizations tab state
+  const [welcomeDefault, setWelcomeDefault] = useState<OrgDefaultWelcome | null>(null);
+  const [loadingOrgDefaults, setLoadingOrgDefaults] = useState(false);
+  const [loadingPush, setLoadingPush] = useState(false);
+  const [welcomeSelectOpen, setWelcomeSelectOpen] = useState(false);
+  const [orgTemplates, setOrgTemplates] = useState<Document[]>([]);
 
   // ✅ modal state
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -174,6 +192,98 @@ const DocumentManagementPage = () => {
     fetchInternalUsers();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showArchived]);
+
+  const fetchWelcomeDefault = async () => {
+    setLoadingOrgDefaults(true);
+    try {
+      const res = await fetch("/api/organization-default-documents/welcome", {
+        cache: "no-store",
+      });
+      const data = await res.json();
+      if (res.ok && data?.default) {
+        setWelcomeDefault(data.default);
+      } else {
+        setWelcomeDefault(null);
+      }
+    } catch {
+      setWelcomeDefault(null);
+    } finally {
+      setLoadingOrgDefaults(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === "organizations") {
+      fetchWelcomeDefault();
+      fetch("/api/template-documents", { cache: "no-store" })
+        .then((r) => r.json())
+        .then((d) => {
+          if (d?.success && Array.isArray(d.documents)) {
+            setOrgTemplates(
+              d.documents.map((x: any) => ({
+                id: x.id,
+                document_name: x.document_name,
+                category: x.category,
+                file_url: x.file_url,
+                file_path: x.file_path,
+                archived: x.is_archived ?? x.archived,
+              }))
+            );
+          }
+        })
+        .catch(() => setOrgTemplates([]));
+    }
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!welcomeSelectOpen) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if ((e.target as HTMLElement)?.closest?.("[data-welcome-select]")) return;
+      setWelcomeSelectOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [welcomeSelectOpen]);
+
+  const setWelcomeDocument = async (templateId: number) => {
+    try {
+      const res = await fetch("/api/organization-default-documents/welcome", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ template_document_id: templateId }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data?.success)
+        throw new Error(data?.message || "Failed to set Welcome document");
+      toast.success("Welcome document set. New organizations will receive this document.");
+      setWelcomeSelectOpen(false);
+      fetchWelcomeDefault();
+    } catch (e: any) {
+      toast.error(e.message || "Failed to set Welcome document");
+    }
+  };
+
+  const pushWelcomeToAll = async () => {
+    if (!confirm("Push the current Welcome document to all existing organizations? This will update their Welcome document to match the template."))
+      return;
+    setLoadingPush(true);
+    try {
+      const res = await fetch(
+        "/api/organization-default-documents/welcome/push-to-all",
+        { method: "POST" }
+      );
+      const data = await res.json();
+      if (!res.ok || !data?.success)
+        throw new Error(data?.message || "Failed to push");
+      toast.success(data.message || "Pushed to all organizations");
+      fetchWelcomeDefault();
+    } catch (e: any) {
+      toast.error(e.message || "Failed to push");
+    } finally {
+      setLoadingPush(false);
+    }
+  };
 
   const categories = useMemo(() => DEFAULT_CATEGORIES, []);
 
@@ -637,45 +747,122 @@ const DocumentManagementPage = () => {
 
   return (
     <div>
-      {/* Tabs */}
-      {/* <div className="flex space-x-4 mb-4">
-        <button
-          onClick={() =>
-            router.push("/dashboard/admin/document-management/packets")
-          }
-          className={`px-4 py-2 text-sm font-medium ${
-            pathname.includes("/packets")
-              ? "text-blue-600 border-b-2 border-blue-600"
-              : "text-gray-600 hover:text-gray-800"
-          }`}
-        >
-          PACKETS
-        </button>
-        <button
-          onClick={() => setActiveTab("documents")}
-          className={`px-4 py-2 text-sm font-medium ${
-            activeTab === "documents"
-              ? "text-blue-600 border-b-2 border-blue-600"
-              : "text-gray-600 hover:text-gray-800"
-          }`}
-        >
-          DOCUMENTS
-        </button>
-        <button
-          onClick={() => {
-            setShowArchived((p) => !p);
-            setCurrentPage(1);
-          }}
-          className={`px-3 py-2 text-sm border rounded ${
-            showArchived
-              ? "bg-gray-900 text-white border-gray-900"
-              : "bg-white text-gray-700 border-gray-300"
-          }`}
-        >
-          {showArchived ? "Showing Archived" : "Show Archived"}
-        </button>
-      </div> */}
+      {activeTab === "organizations" ? (
+        /* Organizations tab content */
+        <div className="bg-white p-6 rounded shadow-sm">
+          <h2 className="text-lg font-semibold text-gray-800 mb-2">
+            Organization Default Documents
+          </h2>
+          <p className="text-sm text-gray-600 mb-6">
+            These documents are automatically uploaded when a new organization is
+            created. You can update them at any time. Use &quot;Push to All Organizations&quot; to
+            distribute the updated version to all organizations that have this document.
+          </p>
 
+          {loadingOrgDefaults ? (
+            <div className="text-sm text-gray-600">Loading...</div>
+          ) : (
+            <div className="border border-gray-200 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-semibold text-gray-700">
+                  Welcome Document
+                </span>
+                {welcomeDefault?.template_document_id ? (
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={pushWelcomeToAll}
+                      disabled={loadingPush}
+                      className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                    >
+                      {loadingPush ? "Pushing..." : "Push to All Organizations"}
+                    </button>
+                    <button
+                      onClick={() =>
+                        router.push(
+                          `/dashboard/admin/document-management/${welcomeDefault.template_document_id}/editor`
+                        )
+                      }
+                      className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                    >
+                      Open Editor
+                    </button>
+                    <button
+                      onClick={() =>
+                        window.open(
+                          `/dashboard/admin/document-management/${welcomeDefault.template_document_id}/view`,
+                          "_blank"
+                        )
+                      }
+                      className="px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50"
+                    >
+                      View PDF
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+              {welcomeDefault?.template_document_id ? (
+                <div className="text-sm text-gray-700">
+                  Current: <strong>{welcomeDefault.document_name || "Welcome Document"}</strong>
+                  {welcomeDefault.file_url && (
+                    <span className="ml-2 text-gray-500">
+                      (PDF available)
+                    </span>
+                  )}
+                </div>
+              ) : (
+                <div className="text-sm text-gray-600">
+                  No Welcome document configured. New organizations will receive a
+                  default text placeholder. Set a template document below to use a
+                  custom Welcome PDF.
+                </div>
+              )}
+              <div className="mt-3">
+                <div className="relative" data-welcome-select>
+                  <button
+                    onClick={() => setWelcomeSelectOpen((p) => !p)}
+                    className="px-3 py-2 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50"
+                  >
+                    {welcomeDefault?.template_document_id
+                      ? "Change Welcome Document"
+                      : "Set Welcome Document"}
+                  </button>
+                  {welcomeSelectOpen && (
+                    <div className="absolute left-0 top-full mt-1 z-50 bg-white border border-gray-200 rounded shadow-lg py-1 min-w-[240px] max-h-60 overflow-y-auto">
+                      {orgTemplates
+                        .filter((d) => !d.archived && (d.file_url || d.file_path))
+                        .map((d) => (
+                          <button
+                            key={d.id}
+                            onClick={() => setWelcomeDocument(d.id)}
+                            className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                          >
+                            {d.document_name} {d.category ? `(${d.category})` : ""}
+                          </button>
+                        ))}
+                      {orgTemplates.filter((d) => !d.archived && (d.file_url || d.file_path)).length === 0 && (
+                        <div className="px-3 py-2 text-sm text-gray-500">
+                          No template documents with PDFs.{" "}
+                          <button
+                            onClick={() => {
+                              setWelcomeSelectOpen(false);
+                              router.push("/dashboard/admin/document-management");
+                              openCreateModal();
+                            }}
+                            className="text-blue-600 underline"
+                          >
+                            Create one in DOCUMENTS tab
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <>
       {/* Controls */}
       <div className="bg-white p-4 rounded shadow-sm mb-4">
         <div className="flex items-center justify-between mb-4">
@@ -922,6 +1109,8 @@ const DocumentManagementPage = () => {
           </table>
         </div>
       </div>
+        </>
+      )}
 
       {/* Modal */}
       {showCreateModal && (

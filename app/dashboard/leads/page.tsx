@@ -23,6 +23,7 @@ import BulkOwnershipModal from "@/components/BulkOwnershipModal";
 import BulkStatusModal from "@/components/BulkStatusModal";
 import BulkTearsheetModal from "@/components/BulkTearsheetModal";
 import BulkNoteModal from "@/components/BulkNoteModal";
+import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 
 interface Lead {
   id: string;
@@ -1337,145 +1338,49 @@ export default function LeadList() {
       </div>
       </div>
 
+      {/* Column Modal - uses universal SortableFieldsEditModal */}
       {showColumnModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Customize Columns</h2>
-              <button
-                onClick={() => setShowColumnModal(false)}
-                className="p-1 rounded hover:bg-gray-200"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
-
-            <div className="p-6 grid grid-cols-2 gap-6">
-              {/* Available */}
-              <div>
-                <h3 className="font-medium mb-3">Available Columns</h3>
-                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
-                  {columnsCatalog.map((c)  => {
-                    const checked = columnFields.includes(c.key);
-                    return (
-                      <label
-                        key={c.key}
-                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => {
-                            setColumnFields((prev) => {
-                              if (prev.includes(c.key))
-                                return prev.filter((x) => x !== c.key);
-                              return [...prev, c.key];
-                            });
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm text-gray-800">{c.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Order */}
-              <div>
-                <h3 className="font-medium mb-3">Column Order</h3>
-                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
-                  {columnFields.length === 0 ? (
-                    <div className="text-sm text-gray-500 italic">
-                      No columns selected
-                    </div>
-                  ) : (
-                    columnFields.map((key, idx) => (
-                      <div
-                        key={key}
-                        className="flex items-center justify-between p-2 border rounded"
-                      >
-                        <div className="text-sm font-medium">
-                          {getColumnLabel(key)}
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
-                            disabled={idx === 0}
-                            onClick={() => {
-                              setColumnFields((prev) => {
-                                const copy = [...prev];
-                                [copy[idx - 1], copy[idx]] = [
-                                  copy[idx],
-                                  copy[idx - 1],
-                                ];
-                                return copy;
-                              });
-                            }}
-                          >
-                            ↑
-                          </button>
-
-                          <button
-                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
-                            disabled={idx === columnFields.length - 1}
-                            onClick={() => {
-                              setColumnFields((prev) => {
-                                const copy = [...prev];
-                                [copy[idx], copy[idx + 1]] = [
-                                  copy[idx + 1],
-                                  copy[idx],
-                                ];
-                                return copy;
-                              });
-                            }}
-                          >
-                            ↓
-                          </button>
-
-                          <button
-                            className="px-2 py-1 border rounded text-xs hover:bg-red-50 text-red-600"
-                            onClick={() =>
-                              setColumnFields((prev) =>
-                                prev.filter((x) => x !== key)
-                              )
-                            }
-                            title="Remove"
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <div className="flex justify-end gap-2 mt-4">
-                  <button
-                    className="px-4 py-2 border rounded hover:bg-gray-50"
-                    onClick={() => setColumnFields(columnsCatalog.map((c) => c.key))}
-                  >
-                    Reset
-                  </button>
-
-                  <button
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    disabled={isSavingColumns}
-                    onClick={async () => {
-                      const success = await saveColumnConfig();
-                      if (success) {
-                        setShowColumnModal(false);
-                      }
-                    }}
-                  >
-                    {isSavingColumns ? "Saving..." : "Done"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <SortableFieldsEditModal
+          open={true}
+          onClose={() => setShowColumnModal(false)}
+          title="Customize Columns"
+          description="Drag to reorder, check/uncheck to show or hide columns in the table. Changes apply to the lead list."
+          order={[
+            ...columnFields,
+            ...columnsCatalog.filter((c) => !columnFields.includes(c.key)).map((c) => c.key),
+          ]}
+          visible={Object.fromEntries(columnsCatalog.map((c) => [c.key, columnFields.includes(c.key)]))}
+          fieldCatalog={columnsCatalog.map((c) => ({ key: c.key, label: c.label }))}
+          onToggle={(key) => {
+            if (columnFields.includes(key)) {
+              setColumnFields((prev) => prev.filter((x) => x !== key));
+            } else {
+              setColumnFields((prev) => [...prev, key]);
+            }
+          }}
+          onDragEnd={(event) => {
+            const { active, over } = event;
+            if (!over || active.id === over.id) return;
+            const fullOrder = [
+              ...columnFields,
+              ...columnsCatalog.filter((c) => !columnFields.includes(c.key)).map((c) => c.key),
+            ];
+            const oldIndex = fullOrder.indexOf(active.id as string);
+            const newIndex = fullOrder.indexOf(over.id as string);
+            if (oldIndex === -1 || newIndex === -1) return;
+            const newOrder = arrayMove(fullOrder, oldIndex, newIndex);
+            setColumnFields(newOrder.filter((k) => columnFields.includes(k)));
+          }}
+          onSave={async () => {
+            const success = await saveColumnConfig();
+            if (success) setShowColumnModal(false);
+          }}
+          saveButtonText="Done"
+          isSaveDisabled={isSavingColumns}
+          onReset={() => setColumnFields(columnsCatalog.map((c) => c.key))}
+          resetButtonText="Reset"
+          listMaxHeight="60vh"
+        />
       )}
 
       {/* Save Favorite Modal */}
