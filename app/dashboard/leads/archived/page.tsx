@@ -1204,6 +1204,7 @@ export default function ArchivedLeadsList() {
                       >
                         <ActionDropdown
                           label="Actions"
+                          disabled
                           options={[
                             { label: "View", action: () => handleViewLead(lead.id) },
                             {

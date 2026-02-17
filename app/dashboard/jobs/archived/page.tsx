@@ -864,6 +864,7 @@ export default function ArchivedJobsList() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm" onClick={(e) => e.stopPropagation()}>
                       <ActionDropdown
                         label="Actions"
+                        disabled
                         options={[
                           { label: "View", action: () => handleViewJob(job.id) },
                           {

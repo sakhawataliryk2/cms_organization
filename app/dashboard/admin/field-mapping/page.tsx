@@ -149,7 +149,7 @@ const SortableFilterableHeader = ({
 };
 
 const FieldMapping = () => {
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const router = useRouter();
   const section = searchParams.get("section") || "jobs";
 

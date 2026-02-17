@@ -349,7 +349,7 @@ function HiringManagerSearchSelect({
 
 export default function AddJob() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const jobId = searchParams.get("id"); // Get job ID from URL if present (edit mode)
   const cloneFrom = searchParams.get("cloneFrom"); // Clone from this job ID (prefill, new job)
   const jobType = searchParams.get("type"); // Get job type from URL if present

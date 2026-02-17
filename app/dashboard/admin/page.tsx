@@ -16,7 +16,8 @@ import {
     FiX,
     FiCheck,
     FiMail,
-    FiAlertCircle
+    FiAlertCircle,
+    FiActivity
 } from 'react-icons/fi';
 import { FaRegFolderOpen } from "react-icons/fa";
 import { MdDriveFolderUpload } from "react-icons/md";
@@ -78,7 +79,7 @@ interface ModuleFieldConfig {
 
 export default function AdminCenter() {
     const router = useRouter();
-    const searchParams = useSearchParams();
+    const searchParams = useSearchParams() ?? new URLSearchParams();
     const [showDownloadModal, setShowDownloadModal] = useState(false);
     const [selectedModule, setSelectedModule] = useState<string>(''); // Single module selection
     const [selectedFields, setSelectedFields] = useState<string[]>([]); // Selected fields for export
@@ -1087,7 +1088,13 @@ export default function AdminCenter() {
         name: 'Email Management',
         icon: <FiMail size={50} color="white" />,
         path: '/dashboard/admin/email-management'
-    }
+    },
+        {
+            id: 'activity-tracker',
+            name: 'Activity Tracker',
+            icon: <FiActivity size={50} color="white" />,
+            path: '/dashboard/admin/activity-tracker'
+        }
     ];
 
     const handleModuleClick = (moduleId: string, path: string) => {

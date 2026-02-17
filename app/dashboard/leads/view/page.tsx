@@ -19,6 +19,7 @@ import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import { toast } from "sonner";
 import AddTearsheetModal from "@/components/AddTearsheetModal";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
+import RequestActionModal from "@/components/RequestActionModal";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import CountdownTimer from "@/components/CountdownTimer";
 import {
@@ -214,7 +215,7 @@ const LEAD_VIEW_TAB_IDS = ["summary", "modify", "notes", "history", "quotes", "i
 
 export default function LeadView() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const leadId = searchParams.get("id");
   const tabFromUrl = searchParams.get("tab");
 
@@ -316,6 +317,9 @@ export default function LeadView() {
   const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
   const [pendingDeleteRequest, setPendingDeleteRequest] = useState<any>(null);
   const [isLoadingDeleteRequest, setIsLoadingDeleteRequest] = useState(false);
+  const [showUnarchiveModal, setShowUnarchiveModal] = useState(false);
+  const [unarchiveReason, setUnarchiveReason] = useState("");
+  const [isSubmittingUnarchive, setIsSubmittingUnarchive] = useState(false);
 
   const sortedFilteredNotes = useMemo(() => {
     let out = [...notes];
@@ -2580,6 +2584,53 @@ export default function LeadView() {
     }
   };
 
+  const handleUnarchiveSubmit = async () => {
+    if (!unarchiveReason.trim() || !leadId) {
+      toast.error("Please enter a reason for unarchiving.");
+      return;
+    }
+    setIsSubmittingUnarchive(true);
+    try {
+      const userCookie = document.cookie.replace(
+        /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      let currentUser: { name?: string; email?: string } = {};
+      if (userCookie) {
+        try {
+          currentUser = JSON.parse(decodeURIComponent(userCookie));
+        } catch (e) {
+          console.error("Error parsing user cookie:", e);
+        }
+      }
+      const recordDisplay = lead
+        ? `${formatRecordId(lead.id, "lead")} ${(lead.first_name || "").trim()} ${(lead.last_name || "").trim()}`.trim() || lead.organization_name || formatRecordId(lead.id, "lead")
+        : formatRecordId(leadId, "lead");
+      const res = await fetch(`/api/leads/${leadId}/unarchive-request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reason: unarchiveReason.trim(),
+          record_number: recordDisplay,
+          requested_by: currentUser?.name || "Unknown",
+          requested_by_email: currentUser?.email || "",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to send unarchive request");
+      toast.success("Unarchive request sent. Payroll will be notified via email.");
+      setShowUnarchiveModal(false);
+      setUnarchiveReason("");
+    } catch (err) {
+      console.error("Error submitting unarchive request:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to send unarchive request. Please try again."
+      );
+    } finally {
+      setIsSubmittingUnarchive(false);
+    }
+  };
+
   // Check for pending delete request on mount
   useEffect(() => {
     if (leadId) {
@@ -2724,17 +2775,17 @@ export default function LeadView() {
     setShowEmailDropdown(false);
   };
 
-  // Update the actionOptions
-  const actionOptions = [
-    { label: "Add Note", action: () => handleActionSelected("add-note") },
-    { label: "Add Task", action: () => handleActionSelected("add-task") },
-    { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
-    { label: "Convert", action: () => handleActionSelected("convert") },
-    { label: "Delete", action: () => handleActionSelected("delete") },
-    // { label: "Edit", action: () => handleActionSelected("edit") },
-    // { label: "Send Email", action: () => handleActionSelected("email") },
-    // { label: "Transfer", action: () => handleActionSelected("transfer") },
-  ];
+  const isArchived = !!lead?.archived_at;
+
+  const actionOptions = isArchived
+    ? [{ label: "Unarchive", action: () => setShowUnarchiveModal(true) }]
+    : [
+        { label: "Add Note", action: () => handleActionSelected("add-note") },
+        { label: "Add Task", action: () => handleActionSelected("add-task") },
+        { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
+        { label: "Convert", action: () => handleActionSelected("convert") },
+        { label: "Delete", action: () => handleActionSelected("delete") },
+      ];
 
   const tabs = [
     { id: "summary", label: "Summary" },
@@ -2759,6 +2810,14 @@ export default function LeadView() {
 
   // Update the renderModifyTab function to forward to the add page instead of showing inline form
   const renderModifyTab = () => {
+    if (isArchived) {
+      return (
+        <div className="bg-white p-4 rounded shadow-sm">
+          <h2 className="text-lg font-semibold mb-4">Modify Lead</h2>
+          <p className="text-gray-600 mb-4">Archived records cannot be edited.</p>
+        </div>
+      );
+    }
     // If we have a lead ID, redirect to the add page with that ID
     if (leadId) {
       router.push(`/dashboard/leads/add?id=${leadId}`);
@@ -3667,18 +3726,26 @@ export default function LeadView() {
 
       {/* Navigation Tabs */}
       <div className="flex bg-gray-300 mt-1 border-b border-gray-400 px-2">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={`px-4 py-2 ${activeTab === tab.id
-              ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
-              : "text-gray-700 hover:bg-gray-200"
-              }`}
-            onClick={() => setActiveTab(tab.id)}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {tabs.map((tab) => {
+          const isModifyTab = tab.id === "modify";
+          const tabDisabled = isModifyTab && isArchived;
+          return (
+            <button
+              key={tab.id}
+              className={`px-4 py-2 ${activeTab === tab.id
+                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+                : "text-gray-700 hover:bg-gray-200"
+                } ${tabDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+              disabled={tabDisabled}
+              onClick={() => {
+                if (tabDisabled) return;
+                setActiveTab(tab.id);
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Quick Action Buttons */}
@@ -4524,6 +4591,26 @@ export default function LeadView() {
           </div>
         </div>
       )}
+
+      {/* Unarchive Request Modal */}
+      <RequestActionModal
+        open={showUnarchiveModal}
+        onClose={() => {
+          setShowUnarchiveModal(false);
+          setUnarchiveReason("");
+        }}
+        modelType="unarchive"
+        entityLabel="Lead"
+        recordDisplay={
+          lead
+            ? `${formatRecordId(lead.id, "lead")} ${(lead.first_name || "").trim()} ${(lead.last_name || "").trim()}`.trim() || lead.organization_name || "N/A"
+            : "N/A"
+        }
+        reason={unarchiveReason}
+        onReasonChange={setUnarchiveReason}
+        onSubmit={handleUnarchiveSubmit}
+        isSubmitting={isSubmittingUnarchive}
+      />
 
       {/* Delete Request Modal */}
       {showDeleteModal && (

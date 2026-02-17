@@ -172,7 +172,7 @@ export default function DashboardNav() {
   const [showTbiQuickTab, setShowTbiQuickTab] = useState(false);
   const [currentUrl, setCurrentUrl] = useState<string>("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const pathname = usePathname();
+  const pathname = usePathname() ?? "";
   const router = useRouter();
   const addMenuRef = useRef<HTMLDivElement>(null);
   const addMenuDropdownRef = useRef<HTMLDivElement>(null);
@@ -528,14 +528,15 @@ export default function DashboardNav() {
       router.push("/dashboard");
     }
   };
-  const searchParams = useSearchParams();
+
+  const searchParams = useSearchParams() ?? new URLSearchParams();
+
 
   useEffect(() => {
     setCurrentUrl(
-      `${pathname}${searchParams.toString() ? `?${searchParams}` : ""}`
+      `${pathname}${(searchParams || new URLSearchParams()).toString() ? `?${searchParams}` : ""}`
     );
-  }, [pathname, searchParams]);
-
+  }, [pathname, searchParams || new URLSearchParams()]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -744,8 +745,8 @@ export default function DashboardNav() {
 
   const isNavItemActive = (itemPath: string) => {
     if (pathname === itemPath) return true;
-    if (itemPath === "/") return pathname === "/";
-    return pathname.startsWith(`${itemPath}/`);
+    if (itemPath === "/") return pathname ? pathname === "/" : false;
+    return pathname ? pathname.startsWith(`${itemPath}/`) : false;
   };
 
   return (
@@ -838,7 +839,7 @@ export default function DashboardNav() {
               <FiMenu size={22} />
             </button>
             {isSearchOpen ? (
-              <div className="relative" ref={searchRef}>
+              <div className="relative ml-3" ref={searchRef}>
                 <form onSubmit={handleSearch} className="flex items-center">
                   <div className="relative flex items-center">
                     <input

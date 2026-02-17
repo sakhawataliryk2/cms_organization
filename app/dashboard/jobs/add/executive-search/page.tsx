@@ -328,7 +328,7 @@ function HiringManagerSearchSelect({
 
 export default function AddExecutiveSearchJob() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const jobId = searchParams.get("id"); // Get job ID from URL if present (edit mode)
   const cloneFrom = searchParams.get("cloneFrom"); // Clone from this job ID (prefill, new job)
   const leadId = searchParams.get("leadId") || searchParams.get("lead_id");

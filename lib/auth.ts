@@ -142,7 +142,7 @@ export const refreshTokenIfNeeded = async (): Promise<void> => {
 // Custom hook for authentication protection
 export function useAuth() {
     const router = useRouter();
-    const pathname = usePathname();
+    const pathname = usePathname() ?? "";
 
     useEffect(() => {
         if (typeof window === 'undefined') return;

@@ -25,6 +25,7 @@ import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFil
 import { toast } from "sonner";
 import AddTearsheetModal from "@/components/AddTearsheetModal";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
+import RequestActionModal from "@/components/RequestActionModal";
 
 import {
     DndContext,
@@ -158,7 +159,7 @@ interface NoteFormState {
 
 export default function TaskView() {
     const router = useRouter();
-    const searchParams = useSearchParams();
+    const searchParams = useSearchParams() ?? new URLSearchParams();
     const taskId = searchParams.get('id');
     const tabFromUrl = searchParams.get('tab');
 
@@ -681,6 +682,9 @@ export default function TaskView() {
     const [isSubmittingDelete, setIsSubmittingDelete] = useState(false);
     const [pendingDeleteRequest, setPendingDeleteRequest] = useState<any>(null);
     const [isLoadingDeleteRequest, setIsLoadingDeleteRequest] = useState(false);
+    const [showUnarchiveModal, setShowUnarchiveModal] = useState(false);
+    const [unarchiveReason, setUnarchiveReason] = useState("");
+    const [isSubmittingUnarchive, setIsSubmittingUnarchive] = useState(false);
 
     const fetchAvailableFields = useCallback(async () => {
         setIsLoadingFields(true);
@@ -1515,6 +1519,53 @@ export default function TaskView() {
         }
     };
 
+    const handleUnarchiveSubmit = async () => {
+        if (!unarchiveReason.trim() || !taskId) {
+            toast.error("Please enter a reason for unarchiving.");
+            return;
+        }
+        setIsSubmittingUnarchive(true);
+        try {
+            const userCookie = document.cookie.replace(
+                /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
+                "$1"
+            );
+            let currentUser: { name?: string; email?: string } = {};
+            if (userCookie) {
+                try {
+                    currentUser = JSON.parse(decodeURIComponent(userCookie));
+                } catch (e) {
+                    console.error("Error parsing user cookie:", e);
+                }
+            }
+            const recordDisplay = task
+                ? `${formatRecordId(task.id, "task")} ${task.title || ""}`.trim()
+                : formatRecordId(taskId, "task");
+            const res = await fetch(`/api/tasks/${taskId}/unarchive-request`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    reason: unarchiveReason.trim(),
+                    record_number: recordDisplay,
+                    requested_by: currentUser?.name || "Unknown",
+                    requested_by_email: currentUser?.email || "",
+                }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.message || "Failed to send unarchive request");
+            toast.success("Unarchive request sent. Payroll will be notified via email.");
+            setShowUnarchiveModal(false);
+            setUnarchiveReason("");
+        } catch (err) {
+            console.error("Error submitting unarchive request:", err);
+            toast.error(
+                err instanceof Error ? err.message : "Failed to send unarchive request. Please try again."
+            );
+        } finally {
+            setIsSubmittingUnarchive(false);
+        }
+    };
+
     // Check for pending delete request on mount
     useEffect(() => {
         if (taskId) {
@@ -1556,18 +1607,15 @@ export default function TaskView() {
         }
     };
 
-    const actionOptions = [
-        { label: 'Add Note', action: () => handleActionSelected('add-note') },
-        { label: 'Add Tearsheet', action: () => handleActionSelected('add-tearsheet') },
-        { label: 'Delete', action: () => handleActionSelected('delete') },
-        // { label: 'Edit', action: () => handleActionSelected('edit') },
-        // {
-        //     label: task?.isCompleted ? 'Mark Incomplete' : 'Mark Complete',
-        //     action: () => handleActionSelected(task?.isCompleted ? 'incomplete' : 'complete')
-        // },
-        // { label: 'Clone', action: () => handleActionSelected('clone') },    
-        // { label: 'Transfer', action: () => handleActionSelected('transfer') },
-    ];
+    const isArchived = !!task?.archivedAt;
+
+    const actionOptions = isArchived
+        ? [{ label: 'Unarchive', action: () => setShowUnarchiveModal(true) }]
+        : [
+            { label: 'Add Note', action: () => handleActionSelected('add-note') },
+            { label: 'Add Tearsheet', action: () => handleActionSelected('add-tearsheet') },
+            { label: 'Delete', action: () => handleActionSelected('delete') },
+          ];
 
     // Tabs from the design
     const tabs = [
@@ -1947,10 +1995,13 @@ export default function TaskView() {
     const renderModifyTab = () => (
         <div className="bg-white p-4 rounded shadow-sm">
             <h2 className="text-lg font-semibold mb-4">Edit Task</h2>
-            <p className="text-gray-600 mb-4">Click the button below to edit this task's details.</p>
+            <p className="text-gray-600 mb-4">
+                {isArchived ? "Archived records cannot be edited." : "Click the button below to edit this task's details."}
+            </p>
             <button
                 onClick={handleEdit}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+                disabled={isArchived}
+                className={`px-4 py-2 rounded ${isArchived ? "bg-gray-400 text-gray-200 cursor-not-allowed" : "bg-blue-500 text-white hover:bg-blue-600"}`}
             >
                 Edit Task
             </button>
@@ -2530,24 +2581,30 @@ export default function TaskView() {
 
             {/* Navigation Tabs */}
             <div className="flex bg-gray-300 mt-1 border-b border-gray-400 px-2">
-                {tabs.map((tab) => (
-                    <button
-                        key={tab.id}
-                        className={`px-4 py-2 ${activeTab === tab.id
-                            ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
-                            : "text-gray-700 hover:bg-gray-200"
-                            }`}
-                        onClick={() => {
-                            if (tab.id === "modify") {
-                                handleEdit();
-                            } else {
-                                setActiveTab(tab.id);
-                            }
-                        }}
-                    >
-                        {tab.label}
-                    </button>
-                ))}
+                {tabs.map((tab) => {
+                    const isModifyTab = tab.id === "modify";
+                    const tabDisabled = isModifyTab && isArchived;
+                    return (
+                        <button
+                            key={tab.id}
+                            className={`px-4 py-2 ${activeTab === tab.id
+                                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+                                : "text-gray-700 hover:bg-gray-200"
+                                } ${tabDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+                            disabled={tabDisabled}
+                            onClick={() => {
+                                if (tabDisabled) return;
+                                if (isModifyTab) {
+                                    handleEdit();
+                                } else {
+                                    setActiveTab(tab.id);
+                                }
+                            }}
+                        >
+                            {tab.label}
+                        </button>
+                    );
+                })}
             </div>
 
             {/* Main Content Area */}
@@ -2990,6 +3047,24 @@ export default function TaskView() {
                     listMaxHeight="50vh"
                 />
             )}
+
+            {/* Unarchive Request Modal */}
+            <RequestActionModal
+                open={showUnarchiveModal}
+                onClose={() => {
+                    setShowUnarchiveModal(false);
+                    setUnarchiveReason("");
+                }}
+                modelType="unarchive"
+                entityLabel="Task"
+                recordDisplay={
+                    task ? `${formatRecordId(task.id, "task")} ${task.title || ""}`.trim() : "N/A"
+                }
+                reason={unarchiveReason}
+                onReasonChange={setUnarchiveReason}
+                onSubmit={handleUnarchiveSubmit}
+                isSubmitting={isSubmittingUnarchive}
+            />
 
             {/* Delete Request Modal */}
             {showDeleteModal && (

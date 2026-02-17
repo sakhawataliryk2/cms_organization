@@ -29,6 +29,9 @@ import BulkOwnershipModal from "@/components/BulkOwnershipModal";
 import BulkStatusModal from "@/components/BulkStatusModal";
 import BulkTearsheetModal from "@/components/BulkTearsheetModal";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
+import AdvancedSearchPanel, {
+  type AdvancedSearchCriterion,
+} from "@/components/AdvancedSearchPanel";
 
 interface Organization {
   id: string;
@@ -57,6 +60,7 @@ type OrganizationFavorite = {
   columnFilters: Record<string, ColumnFilterState>;
   columnSorts: Record<string, ColumnSortState>;
   columnFields: string[];
+  advancedSearchCriteria?: AdvancedSearchCriterion[];
   createdAt: number;
 };
 
@@ -439,6 +443,11 @@ export default function OrganizationList() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState<
+    AdvancedSearchCriterion[]
+  >([]);
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const advancedSearchButtonRef = useRef<HTMLButtonElement>(null);
 
   // Individual row action modals state
   const [showOwnershipModal, setShowOwnershipModal] = useState(false);
@@ -464,6 +473,35 @@ export default function OrganizationList() {
         let filterType: "text" | "select" | "number" = "text";
         if (name === "status") filterType = "select";
         else if (name === "job_orders_count" || name === "placements_count") filterType = "number";
+        // Normalize select options (admin-center fields)
+        let options: { label: string; value: string }[] | undefined = undefined;
+        const rawOptions = (f as any)?.options;
+        if (rawOptions) {
+          try {
+            const parsed =
+              typeof rawOptions === "string" ? JSON.parse(rawOptions) : rawOptions;
+            if (Array.isArray(parsed)) {
+              options = parsed
+                .map((opt: any) => {
+                  if (typeof opt === "string")
+                    return { label: opt, value: opt };
+                  const label = String(opt?.label ?? opt?.value ?? "").trim();
+                  const value = String(opt?.value ?? opt?.label ?? "").trim();
+                  if (!label && !value) return null;
+                  return { label: label || value, value: value || label };
+                })
+                .filter(Boolean) as { label: string; value: string }[];
+            } else if (typeof parsed === "object" && parsed !== null) {
+              options = Object.entries(parsed).map(([k, v]) => ({
+                label: String(v),
+                value: String(k),
+              }));
+            }
+          } catch {
+            // ignore
+          }
+        }
+
         return {
           key: isBackendCol ? name : `custom:${label || name}`,
           label: String(label || name),
@@ -471,6 +509,11 @@ export default function OrganizationList() {
           filterType,
           fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
           lookupType: (f as any)?.lookup_type ?? (f as any)?.lookupType ?? "",
+          multiSelectLookupType:
+            (f as any)?.multi_select_lookup_type ??
+            (f as any)?.multiSelectLookupType ??
+            "",
+          options,
         };
       });
 
@@ -555,6 +598,142 @@ export default function OrganizationList() {
       default:
         return "N/A";
     }
+  };
+
+  // Apply a single advanced-search criterion to an org (returns true if org matches)
+  const matchesAdvancedCriterion = (
+    org: Organization,
+    c: AdvancedSearchCriterion
+  ): boolean => {
+    const raw = getColumnValue(org, c.fieldKey);
+    const colInfo = getColumnInfo(c.fieldKey);
+    const fieldType = (colInfo as any)?.fieldType ?? "";
+    const type = String(fieldType || "").toLowerCase();
+    const isDate = /date|datetime/.test(type);
+    const isTime = type === "time";
+    const isNumber = type === "number" || type === "currency" || type === "percentage" || type === "percent";
+
+    const isEmptyValue =
+      raw === undefined ||
+      raw === null ||
+      String(raw).trim() === "" ||
+      String(raw).toLowerCase() === "n/a";
+
+    if (c.operator === "is_empty") return isEmptyValue;
+    if (c.operator === "is_not_empty") return !isEmptyValue;
+
+    if (isDate) {
+      const orgDate = raw === "N/A" || !raw ? null : new Date(raw);
+      if (!orgDate || isNaN(orgDate.getTime())) return false;
+
+      if (c.operator === "before" && c.value) {
+        const target = new Date(c.value);
+        return !isNaN(target.getTime()) && orgDate.getTime() < target.getTime();
+      }
+      if (c.operator === "after" && c.value) {
+        const target = new Date(c.value);
+        return !isNaN(target.getTime()) && orgDate.getTime() > target.getTime();
+      }
+      if (c.operator === "equals" && c.value) {
+        const target = new Date(c.value);
+        if (isNaN(target.getTime())) return false;
+        const o = orgDate.toISOString().slice(0, 10);
+        const t = target.toISOString().slice(0, 10);
+        return o === t;
+      }
+      if ((c.operator === "between" || c.operator === "is_between") && c.valueFrom && c.valueTo) {
+        const from = new Date(c.valueFrom);
+        const to = new Date(c.valueTo);
+        if (isNaN(from.getTime()) || isNaN(to.getTime())) return false;
+        const ts = orgDate.getTime();
+        return ts >= from.getTime() && ts <= to.getTime();
+      }
+      if (c.operator === "within" && c.value) {
+        const days = Number(c.value);
+        if (Number.isNaN(days) || days < 0) return false;
+        const now = Date.now();
+        const from = now - days * 24 * 60 * 60 * 1000;
+        const ts = orgDate.getTime();
+        return ts >= from && ts <= now;
+      }
+      return false;
+    }
+
+    if (isTime) {
+      // Compare HH:MM strings lexicographically
+      const orgTime = String(raw ?? "").trim();
+      if (!orgTime || orgTime.toLowerCase() === "n/a") return false;
+      const v = (c.value ?? "").trim();
+      if (c.operator === "equals") return orgTime === v;
+      if (c.operator === "before") return v ? orgTime < v : false;
+      if (c.operator === "after") return v ? orgTime > v : false;
+      if (c.operator === "between" && c.valueFrom && c.valueTo) {
+        const a = c.valueFrom.trim();
+        const b = c.valueTo.trim();
+        return orgTime >= a && orgTime <= b;
+      }
+      return false;
+    }
+
+    if (isNumber) {
+      const n = typeof raw === "number" ? raw : Number(String(raw).replace(/,/g, ""));
+      if (Number.isNaN(n)) return false;
+      const v = Number(c.value);
+      const a = Number(c.valueFrom);
+      const b = Number(c.valueTo);
+      if (c.operator === "equals") return !Number.isNaN(v) && n === v;
+      if (c.operator === "not_equals") return !Number.isNaN(v) && n !== v;
+      if (c.operator === "gt") return !Number.isNaN(v) && n > v;
+      if (c.operator === "gte") return !Number.isNaN(v) && n >= v;
+      if (c.operator === "lt") return !Number.isNaN(v) && n < v;
+      if (c.operator === "lte") return !Number.isNaN(v) && n <= v;
+      if (c.operator === "between") {
+        if (Number.isNaN(a) || Number.isNaN(b)) return false;
+        return n >= a && n <= b;
+      }
+      return false;
+    }
+
+    // Text/select/lookup as string
+    const str = String(raw ?? "").toLowerCase();
+    if (str === "n/a" || !str) {
+      if (c.operator === "exclude") return true;
+      return false;
+    }
+    const v = String(c.value ?? "").trim().toLowerCase();
+    const words = v
+      .split(/[\s,]+/)
+      .map((w) => w.trim().toLowerCase())
+      .filter(Boolean);
+
+    if (c.operator === "equals") return v !== "" ? str === v : true;
+    if (c.operator === "not_equals") return v !== "" ? str !== v : true;
+    if (c.operator === "starts_with") return v !== "" ? str.startsWith(v) : true;
+    if (c.operator === "ends_with") return v !== "" ? str.endsWith(v) : true;
+
+    if (c.operator === "any_of") {
+      const list = String(c.value ?? "")
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean);
+      if (list.length === 0) return true;
+      return list.includes(str);
+    }
+    if (c.operator === "none_of") {
+      const list = String(c.value ?? "")
+        .split(",")
+        .map((x) => x.trim().toLowerCase())
+        .filter(Boolean);
+      if (list.length === 0) return true;
+      return !list.includes(str);
+    }
+
+    if (words.length === 0) return true;
+    if (c.operator === "include_any") return words.some((w) => str.includes(w));
+    if (c.operator === "include_all") return words.every((w) => str.includes(w));
+    if (c.operator === "exclude") return !words.some((w) => str.includes(w));
+
+    return true;
   };
 
   // Fetch organizations on component mount
@@ -643,6 +822,7 @@ export default function OrganizationList() {
     setColumnFilters(nextFilters);
     setColumnSorts(nextSorts);
     if (validColumnFields.length > 0) setColumnFields(validColumnFields);
+    setAdvancedSearchCriteria(fav.advancedSearchCriteria ?? []);
   };
 
   const persistFavorites = (next: OrganizationFavorite[]) => {
@@ -671,6 +851,7 @@ export default function OrganizationList() {
       columnFilters,
       columnSorts,
       columnFields,
+      advancedSearchCriteria: advancedSearchCriteria.length > 0 ? advancedSearchCriteria : undefined,
       createdAt: Date.now(),
     };
 
@@ -684,6 +865,7 @@ export default function OrganizationList() {
     setSearchTerm("");
     setColumnFilters({});
     setColumnSorts({});
+    setAdvancedSearchCriteria([]);
     setSelectedFavoriteId("");
   };
 
@@ -725,6 +907,13 @@ export default function OrganizationList() {
       });
     });
 
+    // Apply advanced search criteria (AND)
+    if (advancedSearchCriteria.length > 0) {
+      result = result.filter((org) =>
+        advancedSearchCriteria.every((c) => matchesAdvancedCriterion(org, c))
+      );
+    }
+
     // Apply sorting (multiple columns supported, but we'll use the first active sort)
     const activeSorts = Object.entries(columnSorts).filter(([_, dir]) => dir !== null);
     if (activeSorts.length > 0) {
@@ -753,7 +942,7 @@ export default function OrganizationList() {
     }
 
     return result;
-  }, [organizations, columnFilters, columnSorts, searchTerm]);
+  }, [organizations, columnFilters, columnSorts, searchTerm, advancedSearchCriteria]);
 
   const handleViewArchived = () => {
     router.push("/dashboard/organizations/archived");
@@ -1208,8 +1397,20 @@ export default function OrganizationList() {
               </svg>
             </div>
           </div>
+          <button
+            ref={advancedSearchButtonRef}
+            type="button"
+            onClick={() => setShowAdvancedSearch((v) => !v)}
+            className={`px-4 py-2 text-sm font-medium rounded border flex items-center gap-2 ${
+              showAdvancedSearch || advancedSearchCriteria.length > 0
+                ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+            }`}
+          >
+            Advanced
+          </button>
 
-          {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
+          {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0 || advancedSearchCriteria.length > 0) && (
             <button
               onClick={handleClearAllFilters}
               className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
@@ -1368,7 +1569,7 @@ export default function OrganizationList() {
                       colSpan={3 + columnFields.length}
                       className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
                     >
-                      {searchTerm
+                      {searchTerm || Object.keys(columnFilters).length > 0 || advancedSearchCriteria.length > 0
                         ? "No organizations found matching your search."
                         : 'No organizations found. Click "Add Organization" to create one.'}
                     </td>
@@ -1542,6 +1743,9 @@ export default function OrganizationList() {
                   {Object.keys(columnFilters).length > 0 && (
                     <li>{Object.keys(columnFilters).length} active filters</li>
                   )}
+                  {advancedSearchCriteria.length > 0 && (
+                    <li>{advancedSearchCriteria.length} advanced search condition(s)</li>
+                  )}
                   {Object.keys(columnSorts).length > 0 && (
                     <li>{Object.keys(columnSorts).length} active sorts</li>
                   )}
@@ -1611,6 +1815,24 @@ export default function OrganizationList() {
           onSuccess={handleIndividualActionSuccess}
         />
       )}
+
+      {/* Advanced Search Panel */}
+      <AdvancedSearchPanel
+        open={showAdvancedSearch}
+        onClose={() => setShowAdvancedSearch(false)}
+        fieldCatalog={columnsCatalog.map((c) => ({
+          key: c.key,
+          label: c.label,
+          fieldType: (c as any).fieldType,
+          lookupType: (c as any).lookupType,
+          multiSelectLookupType: (c as any).multiSelectLookupType,
+          options: (c as any).options,
+        }))}
+        onSearch={(criteria) => setAdvancedSearchCriteria(criteria)}
+        recentStorageKey="organizationAdvancedSearchRecent"
+        initialCriteria={advancedSearchCriteria}
+        anchorEl={advancedSearchButtonRef.current}
+      />
     </div>
   );
 }

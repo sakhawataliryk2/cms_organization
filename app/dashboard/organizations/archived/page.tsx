@@ -1194,6 +1194,7 @@ export default function ArchivedOrganizationsList() {
                       >
                         <ActionDropdown
                           label="Actions"
+                          disabled
                           options={[
                             { label: "View", action: () => handleViewOrganization(org.id) },
                             {

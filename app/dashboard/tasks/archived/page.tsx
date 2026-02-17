@@ -1046,6 +1046,7 @@ export default function ArchivedTasksList() {
                     >
                       <ActionDropdown
                         label="Actions"
+                        disabled
                         options={[
                           { label: "View", action: () => handleViewTask(task.id) },
                           {

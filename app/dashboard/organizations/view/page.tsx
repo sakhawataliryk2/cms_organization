@@ -38,7 +38,16 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
-import { FiLock, FiUnlock, FiEdit2, FiStar, FiArrowUp, FiArrowDown, FiFilter } from "react-icons/fi";
+import {
+  FiLock,
+  FiUnlock,
+  FiEdit2,
+  FiStar,
+  FiArrowUp,
+  FiArrowDown,
+  FiFilter,
+  FiSearch,
+} from "react-icons/fi";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import {
   buildPinnedKey,
@@ -51,10 +60,10 @@ import HistoryTabFilters, { useHistoryFilters } from "@/components/HistoryTabFil
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
 import RecordNameResolver from "@/components/RecordNameResolver";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
-import { FiSearch } from "react-icons/fi";
 import { toast } from "sonner";
 import AddTearsheetModal from "@/components/AddTearsheetModal";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
+import RequestActionModal from "@/components/RequestActionModal";
 
 // Default header fields for Organizations module - defined outside component to ensure stable reference
 const ORG_DEFAULT_HEADER_FIELDS = ["phone", "website"];
@@ -312,11 +321,12 @@ const ORG_VIEW_TAB_IDS = ["summary", "modify", "notes", "history", "quotes", "in
 
 export default function OrganizationView() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const hmFilter = searchParams.get("hm");
-  const tabFromUrl = searchParams.get("tab");
-
-  const organizationId = searchParams.get("id");
+  const searchParams = useSearchParams() ?? new URLSearchParams();
+  // Null-safe search params (older Next types can mark this as nullable).
+  const safeSearchParams = searchParams;
+  const hmFilter = safeSearchParams.get("hm");
+  const tabFromUrl = safeSearchParams.get("tab");
+  const organizationId = safeSearchParams.get("id");
 
   const [organization, setOrganization] = useState<any>(null);
   // console.log("Organi")
@@ -527,7 +537,7 @@ export default function OrganizationView() {
 
   // Delete request modal state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const deleteFromUrl = searchParams.get("delete");
+  const deleteFromUrl = safeSearchParams.get("delete");
   const [deleteForm, setDeleteForm] = useState({
     reason: "", // Mandatory reason for deletion
   });
@@ -540,11 +550,11 @@ export default function OrganizationView() {
     if (deleteFromUrl === "true" && !showDeleteModal) {
       setShowDeleteModal(true);
       // Remove the delete parameter from URL after opening modal
-      const params = new URLSearchParams(searchParams.toString());
+      const params = new URLSearchParams(safeSearchParams.toString());
       params.delete("delete");
       router.replace(`?${params.toString()}`, { scroll: false });
     }
-  }, [deleteFromUrl, showDeleteModal, searchParams, router]);
+  }, [deleteFromUrl, showDeleteModal, safeSearchParams, router]);
 
   // Dependency check state
   const [isLoadingDependencies, setIsLoadingDependencies] = useState(false);
@@ -552,6 +562,11 @@ export default function OrganizationView() {
   const [showDependencyWarningModal, setShowDependencyWarningModal] = useState(false);
   const [deleteActionType, setDeleteActionType] = useState<"standard" | "cascade">("standard");
   const [cascadeUserConsent, setCascadeUserConsent] = useState(false);
+
+  // Unarchive request modal state
+  const [showUnarchiveModal, setShowUnarchiveModal] = useState(false);
+  const [unarchiveReason, setUnarchiveReason] = useState("");
+  const [isSubmittingUnarchive, setIsSubmittingUnarchive] = useState(false);
 
   // Summary counts state
   const [summaryCounts, setSummaryCounts] = useState({
@@ -571,7 +586,7 @@ export default function OrganizationView() {
 
   const setActiveTab = (tabId: string) => {
     setActiveTabState(tabId);
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams(safeSearchParams.toString());
     if (tabId === "summary") params.delete("tab");
     else params.set("tab", tabId);
     router.replace(`?${params.toString()}`, { scroll: false });
@@ -3767,6 +3782,52 @@ export default function OrganizationView() {
     }
   };
 
+  const handleUnarchiveSubmit = async () => {
+    if (!unarchiveReason.trim() || !organizationId) {
+      toast.error("Please enter a reason for unarchiving.");
+      return;
+    }
+    setIsSubmittingUnarchive(true);
+    try {
+      const userCookie = document.cookie.replace(
+        /(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      let currentUser: { name?: string; email?: string } = {};
+      if (userCookie) {
+        try {
+          currentUser = JSON.parse(decodeURIComponent(userCookie));
+        } catch (e) {
+          console.error("Error parsing user cookie:", e);
+        }
+      }
+      const res = await fetch(`/api/organizations/${organizationId}/unarchive-request`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          reason: unarchiveReason.trim(),
+          record_number: organization
+            ? `${formatRecordId(organization.id, "organization")} ${organization.name}`
+            : formatRecordId(organizationId, "organization"),
+          requested_by: currentUser?.name || "Unknown",
+          requested_by_email: currentUser?.email || "",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.message || "Failed to send unarchive request");
+      toast.success("Unarchive request sent. Payroll will be notified via email.");
+      setShowUnarchiveModal(false);
+      setUnarchiveReason("");
+    } catch (err) {
+      console.error("Error submitting unarchive request:", err);
+      toast.error(
+        err instanceof Error ? err.message : "Failed to send unarchive request. Please try again."
+      );
+    } finally {
+      setIsSubmittingUnarchive(false);
+    }
+  };
+
   // Handle field changes in the Modify tab
   const handleFieldChange = (fieldName: string, value: string) => {
     setEditableFields({
@@ -4452,29 +4513,28 @@ export default function OrganizationView() {
     );
   };
 
-  const actionOptions = [
-    { label: "Add Note", action: () => handleActionSelected("add-note") },
-    {
-      label: "Add Hiring Manager",
-      action: () => handleActionSelected("add-hiring-manager"),
-    },
-    { label: "Add Job", action: () => handleActionSelected("add-job") },
-    { label: "Add Task", action: () => handleActionSelected("add-task") },
-    {
-      label: "Add Tearsheet",
-      action: () => handleActionSelected("add-tearsheet"),
-    },
-    {
-      label: isArchived ? "Transfer (Archived)" : "Transfer",
-      action: () => handleActionSelected("transfer"),
-      disabled: isArchived,
-    },
-    {
-      label: getDeleteLabel(),
-      action: () => handleActionSelected("delete"),
-      disabled: isDeleteDisabled(),
-    },
-  ];
+  // When archived: only Unarchive is enabled; all other actions disabled
+  const actionOptions = isArchived
+    ? [{ label: "Unarchive", action: () => setShowUnarchiveModal(true) }]
+    : [
+        { label: "Add Note", action: () => handleActionSelected("add-note") },
+        {
+          label: "Add Hiring Manager",
+          action: () => handleActionSelected("add-hiring-manager"),
+        },
+        { label: "Add Job", action: () => handleActionSelected("add-job") },
+        { label: "Add Task", action: () => handleActionSelected("add-task") },
+        {
+          label: "Add Tearsheet",
+          action: () => handleActionSelected("add-tearsheet"),
+        },
+        { label: "Transfer", action: () => handleActionSelected("transfer") },
+        {
+          label: getDeleteLabel(),
+          action: () => handleActionSelected("delete"),
+          disabled: isDeleteDisabled(),
+        },
+      ];
 
   const tabs = [
     { id: "summary", label: "Summary" },
@@ -4510,11 +4570,14 @@ export default function OrganizationView() {
       <div className="bg-white p-4 rounded shadow-sm">
         <h2 className="text-lg font-semibold mb-4">Modify Organization</h2>
         <p className="text-gray-600 mb-4">
-          Click the button below to edit this organization's details.
+          {isArchived
+            ? "Archived records cannot be edited."
+            : "Click the button below to edit this organization's details."}
         </p>
         <button
           onClick={handleModifyClick}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          disabled={isArchived}
+          className={`px-4 py-2 rounded ${isArchived ? "bg-gray-400 text-gray-200 cursor-not-allowed" : "bg-blue-500 text-white hover:bg-blue-600"}`}
         >
           Modify Organization
         </button>
@@ -5128,28 +5191,34 @@ console.log("Archived_at", organization.archived_at)
 
       {/* Navigation Tabs */}
       <div className="flex bg-gray-300 mt-1 border-b border-gray-400 px-2">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            className={`px-4 py-2 ${activeTab === tab.id
-              ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
-              : "text-gray-700 hover:bg-gray-200"
-              }`}
-            onClick={() => {
-              if (tab.id === "modify") {
-                handleModifyClick();
-              } else {
-                setActiveTab(tab.id);
-                // Refresh hiring managers when contacts tab is activated
-                if (tab.id === "contacts" && organizationId) {
-                  fetchHiringManagers(organizationId);
+        {tabs.map((tab) => {
+          const isModifyTab = tab.id === "modify";
+          const tabDisabled = isModifyTab && isArchived;
+          return (
+            <button
+              key={tab.id}
+              className={`px-4 py-2 ${activeTab === tab.id
+                ? "bg-gray-200 rounded-t border-t border-r border-l border-gray-400 font-medium"
+                : "text-gray-700 hover:bg-gray-200"
+                } ${tabDisabled ? "opacity-50 cursor-not-allowed" : ""}`}
+              disabled={tabDisabled}
+              onClick={() => {
+                if (tabDisabled) return;
+                if (isModifyTab) {
+                  handleModifyClick();
+                } else {
+                  setActiveTab(tab.id);
+                  // Refresh hiring managers when contacts tab is activated
+                  if (tab.id === "contacts" && organizationId) {
+                    fetchHiringManagers(organizationId);
+                  }
                 }
-              }
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
+              }}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Quick Action Buttons */}
@@ -6794,6 +6863,26 @@ console.log("Archived_at", organization.archived_at)
           </div>
         </div>
       )}
+
+      {/* Unarchive Request Modal */}
+      <RequestActionModal
+        open={showUnarchiveModal}
+        onClose={() => {
+          setShowUnarchiveModal(false);
+          setUnarchiveReason("");
+        }}
+        modelType="unarchive"
+        entityLabel="Organization"
+        recordDisplay={
+          organization
+            ? `${formatRecordId(organization.id, "organization")} ${organization.name}`
+            : "N/A"
+        }
+        reason={unarchiveReason}
+        onReasonChange={setUnarchiveReason}
+        onSubmit={handleUnarchiveSubmit}
+        isSubmitting={isSubmittingUnarchive}
+      />
 
       {/* Delete Request Modal */}
       {showDeleteModal && (

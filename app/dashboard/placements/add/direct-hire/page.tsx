@@ -34,7 +34,7 @@ const EXPECTED_JOB_TYPE = "direct";
 
 export default function AddPlacement() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const placementId = searchParams.get("id");
   const jobIdFromUrl = searchParams.get("jobId");
 

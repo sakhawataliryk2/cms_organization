@@ -188,7 +188,7 @@ function JobSearchSelect({
 
 export default function AddPlacementLanding() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const searchParams = useSearchParams() ?? new URLSearchParams();
   const [jobs, setJobs] = useState<JobItem[]>([]);
   const [jobsLoading, setJobsLoading] = useState(true);
   const [selectError, setSelectError] = useState<string | null>(null);

@@ -31,6 +31,7 @@ const SECTION_CONFIG: Record<
       { value: "ONBOARDING_JOBSEEKER_REPEAT", label: "Onboarding - Job Seeker (Repeat)" },
       { value: "JOB_SEEKER_DELETE_REQUEST", label: "Job Seeker - Delete Request (Payroll)" },
       { value: "JOB_SEEKER_TRANSFER_REQUEST", label: "Job Seeker - Transfer Request (Payroll)" },
+      { value: "JOB_SEEKER_UNARCHIVE_REQUEST", label: "Job Seeker - Unarchive Request (Onboarding)" },
     ],
     placeholders: {
       ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}"],
@@ -56,6 +57,16 @@ const SECTION_CONFIG: Record<
         "{{approvalUrl}}",
         "{{denyUrl}}",
       ],
+      JOB_SEEKER_UNARCHIVE_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{recordType}}",
+        "{{recordNumber}}",
+        "{{reason}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
     },
     required: {
       ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}"],
@@ -63,6 +74,7 @@ const SECTION_CONFIG: Record<
       ONBOARDING_JOBSEEKER_REPEAT: ["{{portalUrl}}"],
       JOB_SEEKER_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       JOB_SEEKER_TRANSFER_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+      JOB_SEEKER_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
     },
     defaults: {
       ONBOARDING_INTERNAL_SENT: {
@@ -139,12 +151,27 @@ const SECTION_CONFIG: Record<
           `<p>{{approvalUrl}} {{denyUrl}}</p>` +
           `</div>`,
       },
+      JOB_SEEKER_UNARCHIVE_REQUEST: {
+        template_name: "UNARCHIVE_TEMPLATE",
+        subject: "Unarchive Request: {{recordType}} {{recordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Unarchive Request (Job Seeker)</h2>` +
+          `<p>An unarchive request has been submitted for the following record.</p>` +
+          `<p><strong>Record:</strong> {{recordNumber}}</p>` +
+          `<p><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</p>` +
+          `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
+          `<p><strong>Reason:</strong> {{reason}}</p>` +
+          `<p><a href="{{approvalUrl}}">Approve Unarchive</a> | <a href="{{denyUrl}}">Deny Unarchive</a></p>` +
+          `</div>`,
+      },
     },
   },
   organization: {
     types: [
       { value: "ORGANIZATION_DELETE_REQUEST", label: "Organization - Delete Request (Payroll)" },
       { value: "ORGANIZATION_TRANSFER_REQUEST", label: "Organization - Transfer Request (Payroll)" },
+      { value: "ORGANIZATION_UNARCHIVE_REQUEST", label: "Organization - Unarchive Request (Payroll)" },
     ],
     placeholders: {
       ORGANIZATION_DELETE_REQUEST: [
@@ -167,10 +194,21 @@ const SECTION_CONFIG: Record<
         "{{approvalUrl}}",
         "{{denyUrl}}",
       ],
+      ORGANIZATION_UNARCHIVE_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{recordType}}",
+        "{{recordNumber}}",
+        "{{reason}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
     },
     required: {
       ORGANIZATION_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       ORGANIZATION_TRANSFER_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+      ORGANIZATION_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
     },
     defaults: {
       ORGANIZATION_DELETE_REQUEST: {
@@ -209,12 +247,27 @@ const SECTION_CONFIG: Record<
           `<p>{{approvalUrl}} {{denyUrl}}</p>` +
           `</div>`,
       },
+      ORGANIZATION_UNARCHIVE_REQUEST: {
+        template_name: "UNARCHIVE_TEMPLATE",
+        subject: "Unarchive Request: {{recordType}} {{recordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Unarchive Request (Organization)</h2>` +
+          `<p>An unarchive request has been submitted.</p>` +
+          `<p><strong>Record:</strong> {{recordNumber}}</p>` +
+          `<p><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</p>` +
+          `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
+          `<p><strong>Reason:</strong> {{reason}}</p>` +
+          `<p><a href="{{approvalUrl}}">Approve Unarchive</a> | <a href="{{denyUrl}}">Deny Unarchive</a></p>` +
+          `</div>`,
+      },
     },
   },
   "hiring-manager": {
     types: [
       { value: "HIRING_MANAGER_DELETE_REQUEST", label: "Hiring Manager - Delete Request (Payroll)" },
       { value: "HIRING_MANAGER_TRANSFER_REQUEST", label: "Hiring Manager - Transfer Request (Payroll)" },
+      { value: "HIRING_MANAGER_UNARCHIVE_REQUEST", label: "Hiring Manager - Unarchive Request (Payroll)" },
     ],
     placeholders: {
       HIRING_MANAGER_DELETE_REQUEST: [
@@ -237,10 +290,21 @@ const SECTION_CONFIG: Record<
         "{{approvalUrl}}",
         "{{denyUrl}}",
       ],
+      HIRING_MANAGER_UNARCHIVE_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{recordType}}",
+        "{{recordNumber}}",
+        "{{reason}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
     },
     required: {
       HIRING_MANAGER_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       HIRING_MANAGER_TRANSFER_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+      HIRING_MANAGER_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
     },
     defaults: {
       HIRING_MANAGER_DELETE_REQUEST: {
@@ -279,11 +343,26 @@ const SECTION_CONFIG: Record<
           `<p>{{approvalUrl}} {{denyUrl}}</p>` +
           `</div>`,
       },
+      HIRING_MANAGER_UNARCHIVE_REQUEST: {
+        template_name: "UNARCHIVE_TEMPLATE",
+        subject: "Unarchive Request: {{recordType}} {{recordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Unarchive Request (Hiring Manager)</h2>` +
+          `<p>An unarchive request has been submitted.</p>` +
+          `<p><strong>Record:</strong> {{recordNumber}}</p>` +
+          `<p><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</p>` +
+          `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
+          `<p><strong>Reason:</strong> {{reason}}</p>` +
+          `<p><a href="{{approvalUrl}}">Approve Unarchive</a> | <a href="{{denyUrl}}">Deny Unarchive</a></p>` +
+          `</div>`,
+      },
     },
   },
   jobs: {
     types: [
       { value: "JOB_DELETE_REQUEST", label: "Job - Delete Request (Payroll)" },
+      { value: "JOB_UNARCHIVE_REQUEST", label: "Job - Unarchive Request (Payroll)" },
     ],
     placeholders: {
       JOB_DELETE_REQUEST: [
@@ -297,9 +376,20 @@ const SECTION_CONFIG: Record<
         "{{approvalUrl}}",
         "{{denyUrl}}",
       ],
+      JOB_UNARCHIVE_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{recordType}}",
+        "{{recordNumber}}",
+        "{{reason}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
     },
     required: {
       JOB_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+      JOB_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
     },
     defaults: {
       JOB_DELETE_REQUEST: {
@@ -321,11 +411,26 @@ const SECTION_CONFIG: Record<
           `<p>{{approvalUrl}} {{denyUrl}}</p>` +
           `</div>`,
       },
+      JOB_UNARCHIVE_REQUEST: {
+        template_name: "UNARCHIVE_TEMPLATE",
+        subject: "Unarchive Request: {{recordType}} {{recordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Unarchive Request (Job)</h2>` +
+          `<p>An unarchive request has been submitted.</p>` +
+          `<p><strong>Record:</strong> {{recordNumber}}</p>` +
+          `<p><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</p>` +
+          `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
+          `<p><strong>Reason:</strong> {{reason}}</p>` +
+          `<p><a href="{{approvalUrl}}">Approve Unarchive</a> | <a href="{{denyUrl}}">Deny Unarchive</a></p>` +
+          `</div>`,
+      },
     },
   },
   leads: {
     types: [
       { value: "LEAD_DELETE_REQUEST", label: "Lead - Delete Request (Payroll)" },
+      { value: "LEAD_UNARCHIVE_REQUEST", label: "Lead - Unarchive Request (Payroll)" },
     ],
     placeholders: {
       LEAD_DELETE_REQUEST: [
@@ -339,9 +444,20 @@ const SECTION_CONFIG: Record<
         "{{approvalUrl}}",
         "{{denyUrl}}",
       ],
+      LEAD_UNARCHIVE_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{recordType}}",
+        "{{recordNumber}}",
+        "{{reason}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
     },
     required: {
       LEAD_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+      LEAD_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
     },
     defaults: {
       LEAD_DELETE_REQUEST: {
@@ -363,12 +479,27 @@ const SECTION_CONFIG: Record<
           `<p>{{approvalUrl}} {{denyUrl}}</p>` +
           `</div>`,
       },
+      LEAD_UNARCHIVE_REQUEST: {
+        template_name: "UNARCHIVE_TEMPLATE",
+        subject: "Unarchive Request: {{recordType}} {{recordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Unarchive Request (Lead)</h2>` +
+          `<p>An unarchive request has been submitted.</p>` +
+          `<p><strong>Record:</strong> {{recordNumber}}</p>` +
+          `<p><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</p>` +
+          `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
+          `<p><strong>Reason:</strong> {{reason}}</p>` +
+          `<p><a href="{{approvalUrl}}">Approve Unarchive</a> | <a href="{{denyUrl}}">Deny Unarchive</a></p>` +
+          `</div>`,
+      },
     },
   },
   tasks: {
     types: [
       { value: "TASK_REMINDER", label: "Task Reminder" },
       { value: "TASK_DELETE_REQUEST", label: "Task - Delete Request (Payroll)" },
+      { value: "TASK_UNARCHIVE_REQUEST", label: "Task - Unarchive Request (Payroll)" },
     ],
     placeholders: {
       TASK_REMINDER: [
@@ -394,10 +525,21 @@ const SECTION_CONFIG: Record<
         "{{approvalUrl}}",
         "{{denyUrl}}",
       ],
+      TASK_UNARCHIVE_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{recordType}}",
+        "{{recordNumber}}",
+        "{{reason}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
     },
     required: {
       TASK_REMINDER: ["{{taskTitle}}", "{{dueDateAndTime}}", "{{taskLink}}"],
       TASK_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+      TASK_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
     },
     defaults: {
       TASK_REMINDER: {
@@ -437,11 +579,26 @@ const SECTION_CONFIG: Record<
           `<p>{{approvalUrl}} {{denyUrl}}</p>` +
           `</div>`,
       },
+      TASK_UNARCHIVE_REQUEST: {
+        template_name: "UNARCHIVE_TEMPLATE",
+        subject: "Unarchive Request: {{recordType}} {{recordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Unarchive Request (Task)</h2>` +
+          `<p>An unarchive request has been submitted.</p>` +
+          `<p><strong>Record:</strong> {{recordNumber}}</p>` +
+          `<p><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</p>` +
+          `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
+          `<p><strong>Reason:</strong> {{reason}}</p>` +
+          `<p><a href="{{approvalUrl}}">Approve Unarchive</a> | <a href="{{denyUrl}}">Deny Unarchive</a></p>` +
+          `</div>`,
+      },
     },
   },
   placements: {
     types: [
       { value: "PLACEMENT_DELETE_REQUEST", label: "Placement - Delete Request (Payroll)" },
+      { value: "PLACEMENT_UNARCHIVE_REQUEST", label: "Placement - Unarchive Request (Payroll)" },
     ],
     placeholders: {
       PLACEMENT_DELETE_REQUEST: [
@@ -455,9 +612,20 @@ const SECTION_CONFIG: Record<
         "{{approvalUrl}}",
         "{{denyUrl}}",
       ],
+      PLACEMENT_UNARCHIVE_REQUEST: [
+        "{{requestedBy}}",
+        "{{requestedByEmail}}",
+        "{{recordType}}",
+        "{{recordNumber}}",
+        "{{reason}}",
+        "{{requestDate}}",
+        "{{approvalUrl}}",
+        "{{denyUrl}}",
+      ],
     },
     required: {
       PLACEMENT_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+      PLACEMENT_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
     },
     defaults: {
       PLACEMENT_DELETE_REQUEST: {
@@ -477,6 +645,20 @@ const SECTION_CONFIG: Record<
           `</ul>` +
           `<p>Please review the request and take the appropriate action using the links below:</p>` +
           `<p>{{approvalUrl}} {{denyUrl}}</p>` +
+          `</div>`,
+      },
+      PLACEMENT_UNARCHIVE_REQUEST: {
+        template_name: "UNARCHIVE_TEMPLATE",
+        subject: "Unarchive Request: {{recordType}} {{recordNumber}}",
+        body:
+          `<div>` +
+          `<h2>Unarchive Request (Placement)</h2>` +
+          `<p>An unarchive request has been submitted.</p>` +
+          `<p><strong>Record:</strong> {{recordNumber}}</p>` +
+          `<p><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</p>` +
+          `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
+          `<p><strong>Reason:</strong> {{reason}}</p>` +
+          `<p><a href="{{approvalUrl}}">Approve Unarchive</a> | <a href="{{denyUrl}}">Deny Unarchive</a></p>` +
           `</div>`,
       },
     },
