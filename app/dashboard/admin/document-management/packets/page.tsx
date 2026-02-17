@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FiSearch, FiRefreshCw } from "react-icons/fi";
+import { FiSearch, FiRefreshCw, FiArrowLeft } from "react-icons/fi";
+import DocumentMgmtTabs from "@/components/document-management/DocumentMgmtTabs";
 
 type Packet = {
   id: number;
@@ -59,6 +60,14 @@ export default function PacketsPage() {
 
   return (
     <div className="bg-gray-200 min-h-screen p-4">
+      <button
+        onClick={() => router.push("/dashboard/admin/document-management")}
+        className="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4"
+      >
+        <FiArrowLeft className="w-5 h-5" />
+        Back to Document Management
+      </button>
+      <DocumentMgmtTabs />
       {/* Header */}
       <div className="bg-white rounded shadow-sm p-4 mb-4">
         <div className="flex items-center justify-between gap-3 flex-wrap">

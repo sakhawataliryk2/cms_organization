@@ -20,6 +20,10 @@ import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
+import AdvancedSearchPanel, {
+  type AdvancedSearchCriterion,
+} from "@/components/AdvancedSearchPanel";
+import { matchesAdvancedValue } from "@/lib/advancedSearch";
 
 interface JobSeeker {
   id: string;
@@ -49,6 +53,7 @@ type JobSeekerFavorite = {
   columnFilters: Record<string, ColumnFilterState>;
   columnSorts: Record<string, ColumnSortState>;
   columnFields: string[];
+  advancedSearchCriteria?: AdvancedSearchCriterion[];
   createdAt: number;
 };
 
@@ -244,6 +249,11 @@ export default function ArchivedJobSeekersList() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState<
+    AdvancedSearchCriterion[]
+  >([]);
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const advancedSearchButtonRef = useRef<HTMLButtonElement>(null);
 
   // Favorites State
   const [favorites, setFavorites] = useState<JobSeekerFavorite[]>([]);
@@ -310,6 +320,7 @@ export default function ArchivedJobSeekersList() {
     if (validColumnFields.length > 0) {
       setColumnFields(validColumnFields);
     }
+    setAdvancedSearchCriteria(fav.advancedSearchCriteria ?? []);
 
     setSelectedFavoriteId(fav.id);
     setFavoritesMenuOpen(false);
@@ -336,6 +347,8 @@ export default function ArchivedJobSeekersList() {
       columnFilters,
       columnSorts,
       columnFields,
+      advancedSearchCriteria:
+        advancedSearchCriteria.length > 0 ? advancedSearchCriteria : undefined,
       createdAt: Date.now(),
     };
 
@@ -358,6 +371,7 @@ export default function ArchivedJobSeekersList() {
     setSearchTerm("");
     setColumnFilters({});
     setColumnSorts({});
+    setAdvancedSearchCriteria([]);
     setSelectedFavoriteId(null);
   };
 
@@ -709,6 +723,22 @@ export default function ArchivedJobSeekersList() {
   const filteredAndSortedJobSeekers = useMemo(() => {
     let result = jobSeekers.filter((js) => js.status === "Archived" || !!js.archived_at);
 
+    const matchesAdvancedCriterion = (
+      js: JobSeeker,
+      c: AdvancedSearchCriterion
+    ): boolean => {
+      const raw = getColumnValue(js, c.fieldKey);
+      const colInfo = getColumnInfo(c.fieldKey);
+      const fieldType = (colInfo as any)?.fieldType ?? "";
+      return matchesAdvancedValue(raw, fieldType, c);
+    };
+
+    if (advancedSearchCriteria.length > 0) {
+      result = result.filter((js) =>
+        advancedSearchCriteria.every((c) => matchesAdvancedCriterion(js, c))
+      );
+    }
+
     // Apply filters
     Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
       if (!filterValue || filterValue.trim() === "") return;
@@ -763,7 +793,7 @@ export default function ArchivedJobSeekersList() {
     }
 
     return result;
-  }, [jobSeekers, columnFilters, columnSorts, searchTerm]);
+  }, [jobSeekers, columnFilters, columnSorts, searchTerm, advancedSearchCriteria]);
 
   const handleViewJobSeeker = (id: string) => {
     router.push(`/dashboard/job-seekers/view?id=${id}`);
@@ -989,17 +1019,51 @@ export default function ArchivedJobSeekersList() {
               </svg>
             </div>
           </div>
-          {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={handleClearAllFilters}
-              className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+              ref={advancedSearchButtonRef}
+              type="button"
+              onClick={() => setShowAdvancedSearch((v) => !v)}
+              className={`px-4 py-2 text-sm font-medium rounded border flex items-center gap-2 ${
+                showAdvancedSearch || advancedSearchCriteria.length > 0
+                  ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              }`}
             >
-              <FiX />
-              Clear All
+              Advanced
             </button>
-          )}
+            {(searchTerm ||
+              Object.keys(columnFilters).length > 0 ||
+              Object.keys(columnSorts).length > 0 ||
+              advancedSearchCriteria.length > 0) && (
+              <button
+                onClick={handleClearAllFilters}
+                className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+              >
+                <FiX />
+                Clear All
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      <AdvancedSearchPanel
+        open={showAdvancedSearch}
+        onClose={() => setShowAdvancedSearch(false)}
+        fieldCatalog={jsColumnsCatalog.map((c) => ({
+          key: c.key,
+          label: c.label,
+          fieldType: (c as any).fieldType,
+          lookupType: (c as any).lookupType,
+          multiSelectLookupType: (c as any).multiSelectLookupType,
+          options: (c as any).options,
+        }))}
+        onSearch={(criteria) => setAdvancedSearchCriteria(criteria)}
+        recentStorageKey="jobSeekersArchivedAdvancedSearchRecent"
+        initialCriteria={advancedSearchCriteria}
+        anchorEl={advancedSearchButtonRef.current}
+      />
 
       {/* Job Seekers Table */}
       <div className="overflow-x-auto">

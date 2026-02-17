@@ -548,7 +548,7 @@ export default function AddJob() {
 
   // Calculate address fields once using useMemo
   const addressFields = useMemo(
-    () => getAddressFields(customFields),
+    () => getAddressFields(customFields as any),
     [customFields]
   );
   const addressAnchorId = useMemo(

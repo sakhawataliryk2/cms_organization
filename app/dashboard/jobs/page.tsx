@@ -24,6 +24,10 @@ import BulkStatusModal from "@/components/BulkStatusModal";
 import BulkTearsheetModal from "@/components/BulkTearsheetModal";
 import BulkNoteModal from "@/components/BulkNoteModal";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
+import AdvancedSearchPanel, {
+  type AdvancedSearchCriterion,
+} from "@/components/AdvancedSearchPanel";
+import { matchesAdvancedValue } from "@/lib/advancedSearch";
 
 interface Job {
   id: string;
@@ -52,6 +56,7 @@ type JobsFavorite = {
   columnFilters: Record<string, ColumnFilterState>;
   columnSorts: Record<string, ColumnSortState>;
   columnFields: string[];
+  advancedSearchCriteria?: AdvancedSearchCriterion[];
   createdAt: number;
 };
 
@@ -281,6 +286,11 @@ export default function JobList() {
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
 
   const [searchTerm, setSearchTerm] = useState("");
+  const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState<
+    AdvancedSearchCriterion[]
+  >([]);
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const advancedSearchButtonRef = useRef<HTMLButtonElement>(null);
   const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -403,6 +413,7 @@ export default function JobList() {
     setColumnFilters(nextFilters);
     setColumnSorts(nextSorts);
     if (validColumnFields.length > 0) setColumnFields(validColumnFields);
+    setAdvancedSearchCriteria(fav.advancedSearchCriteria ?? []);
   };
 
   const persistFavorites = (next: JobsFavorite[]) => {
@@ -431,6 +442,8 @@ export default function JobList() {
       columnFilters,
       columnSorts,
       columnFields,
+      advancedSearchCriteria:
+        advancedSearchCriteria.length > 0 ? advancedSearchCriteria : undefined,
       createdAt: Date.now(),
     };
 
@@ -444,6 +457,7 @@ export default function JobList() {
     setSearchTerm("");
     setColumnFilters({});
     setColumnSorts({});
+    setAdvancedSearchCriteria([]);
     setSelectedFavoriteId("");
   };
 
@@ -614,6 +628,22 @@ export default function JobList() {
     // Exclude archived jobs from main listing (same as Organization)
     let result = jobs.filter((job) => job.status !== "Archived" && !job.archived_at);
 
+    const matchesAdvancedCriterion = (
+      job: Job,
+      c: AdvancedSearchCriterion
+    ): boolean => {
+      const raw = getColumnValue(job, c.fieldKey);
+      const colInfo = getColumnInfo(c.fieldKey);
+      const fieldType = (colInfo as any)?.fieldType ?? "";
+      return matchesAdvancedValue(raw, fieldType, c);
+    };
+
+    if (advancedSearchCriteria.length > 0) {
+      result = result.filter((job) =>
+        advancedSearchCriteria.every((c) => matchesAdvancedCriterion(job, c))
+      );
+    }
+
     // Apply global search
     if (searchTerm.trim() !== "") {
       const term = searchTerm.toLowerCase();
@@ -676,7 +706,7 @@ export default function JobList() {
     }
 
     return result;
-  }, [jobs, columnFilters, columnSorts, searchTerm]);
+  }, [jobs, columnFilters, columnSorts, searchTerm, advancedSearchCriteria]);
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
@@ -1088,17 +1118,53 @@ export default function JobList() {
             </div>
           </div>
 
-          {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={handleClearAllFilters}
-              className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+              ref={advancedSearchButtonRef}
+              type="button"
+              onClick={() => setShowAdvancedSearch((v) => !v)}
+              className={`px-4 py-2 text-sm font-medium rounded border flex items-center gap-2 ${
+                showAdvancedSearch || advancedSearchCriteria.length > 0
+                  ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              }`}
             >
-              <FiX />
-              Clear All
+              Advanced
             </button>
-          )}
+
+            {(searchTerm ||
+              Object.keys(columnFilters).length > 0 ||
+              Object.keys(columnSorts).length > 0 ||
+              advancedSearchCriteria.length > 0) && (
+              <button
+                onClick={handleClearAllFilters}
+                className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+              >
+                <FiX />
+                Clear All
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Advanced Search Panel */}
+      <AdvancedSearchPanel
+        open={showAdvancedSearch}
+        onClose={() => setShowAdvancedSearch(false)}
+        fieldCatalog={columnsCatalog.map((c) => ({
+          key: c.key,
+          label: c.label,
+          fieldType: (c as any).fieldType,
+          lookupType: (c as any).lookupType,
+          multiSelectLookupType: (c as any).multiSelectLookupType,
+          options: (c as any).options,
+        }))}
+        onSearch={(criteria) => setAdvancedSearchCriteria(criteria)}
+        recentStorageKey="jobsAdvancedSearchRecent"
+        initialCriteria={advancedSearchCriteria}
+        anchorEl={advancedSearchButtonRef.current}
+      />
 
       <div className="w-full max-w-full overflow-x-hidden">
         <div className="overflow-x-auto">

@@ -34,17 +34,6 @@ export default function DocumentMgmtTabs() {
   return (
     <div className="flex items-center gap-4 mb-4 border-b border-gray-200 pb-0">
       <button
-        onClick={() => router.push("/dashboard/admin/document-management")}
-        className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-          onSectionList
-            ? "text-blue-600 border-blue-600"
-            : "text-gray-600 hover:text-gray-800 border-transparent"
-        }`}
-      >
-        SECTIONS
-      </button>
-
-      <button
         onClick={() =>
           router.push("/dashboard/admin/document-management/packets")
         }
@@ -65,20 +54,9 @@ export default function DocumentMgmtTabs() {
             : "text-gray-600 hover:text-gray-800 border-transparent"
         }`}
       >
-        OnBoarding
+        DOCUMENTS
       </button>
-
-      <button
-        onClick={goOrganization}
-        className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px ${
-          onOrganization
-            ? "text-blue-600 border-blue-600"
-            : "text-gray-600 hover:text-gray-800 border-transparent"
-        }`}
-      >
-        Organization
-      </button>
-
+      
       {onOnboarding && (
         <button
           onClick={() => goOnboarding(!archived)}

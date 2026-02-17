@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+// import DocumentMgmtTabs from "@/components/document-management/DocumentMgmtTabs";
 
 export default function DocumentManagementLayout({
   children,

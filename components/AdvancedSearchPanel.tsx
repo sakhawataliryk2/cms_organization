@@ -41,118 +41,170 @@ function makeCriterionId() {
   return `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function getFieldKind(fieldType?: string): {
-  kind:
-    | "text"
-    | "number"
-    | "percent"
-    | "date"
-    | "datetime"
-    | "time"
-    | "select"
-    | "multiselect"
-    | "lookup"
-    | "boolean";
-} {
+// Per-admin-field-type operator configuration
+function getOperatorsForFieldType(fieldType?: string): OperatorDef[] {
   const t = String(fieldType || "").toLowerCase();
-  if (t === "date") return { kind: "date" };
-  if (t === "datetime") return { kind: "datetime" };
-  if (t === "time") return { kind: "time" };
-  if (t === "number" || t === "currency") return { kind: "number" };
-  if (t === "percentage" || t === "percent") return { kind: "percent" };
-  if (t === "select" || t === "dropdown") return { kind: "select" };
+
+  // text / textarea
+  if (t === "text" || t === "textarea") {
+    return [
+      { value: "contains", label: "Contains" },
+      { value: "not_contains", label: "Does Not Contain" },
+      { value: "equals", label: "Equals" },
+      { value: "starts_with", label: "Starts With" },
+      { value: "is_empty", label: "Is Empty" },
+    ];
+  }
+
+  // email
+  if (t === "email") {
+    return [
+      { value: "contains", label: "Contains" },
+      { value: "equals", label: "Equals" },
+      { value: "domain_equals", label: "Domain Equals (example: gmail.com)" },
+      { value: "is_empty", label: "Is Empty" },
+    ];
+  }
+
+  // phone
+  if (t === "phone") {
+    return [
+      { value: "equals", label: "Equals" },
+      { value: "contains", label: "Contains" },
+      { value: "starts_with", label: "Starts With" },
+      { value: "area_code_is", label: "Area Code Is" },
+      { value: "area_code_is_not", label: "Area Code Is Not" },
+      { value: "is_empty", label: "Is Empty" },
+    ];
+  }
+
+  // number-like: number, percentage, currency
+  if (t === "number" || t === "percentage" || t === "percent" || t === "currency") {
+    return [
+      { value: "equals", label: "Equals" },
+      { value: "gt", label: "Greater Than" },
+      { value: "lt", label: "Less Than" },
+      { value: "between", label: "Between" },
+      { value: "is_empty", label: "Is Empty" },
+    ];
+  }
+
+  // date
+  if (t === "date") {
+    return [
+      { value: "on", label: "On" },
+      { value: "before", label: "Before" },
+      { value: "after", label: "After" },
+      { value: "between", label: "Between" },
+      { value: "is_empty", label: "Is Empty" },
+    ];
+  }
+
+  // datetime
+  if (t === "datetime") {
+    return [
+      { value: "on", label: "On" },
+      { value: "before", label: "Before" },
+      { value: "after", label: "After" },
+      { value: "between", label: "Between" },
+      { value: "is_empty", label: "Is Empty" },
+    ];
+  }
+
+  // select / radio
+  if (t === "select" || t === "dropdown" || t === "radio") {
+    return [
+      { value: "equals", label: "Is" },
+      { value: "not_equals", label: "Is Not" },
+      { value: "is_empty", label: "Is Empty" },
+    ];
+  }
+
+  // multiselect / multicheckbox / multiselect_lookup
   if (
     t === "multiselect" ||
     t === "multicheckbox" ||
-    t === "multi_select"
-  )
-    return { kind: "multiselect" };
-  if (t === "lookup" || t === "multiselect_lookup") return { kind: "lookup" };
-  if (t === "boolean" || t === "checkbox" || t === "switch")
-    return { kind: "boolean" };
-  return { kind: "text" };
-}
-
-const COMMON_OPERATORS: OperatorDef[] = [
-  { value: "is_empty", label: "Is Empty" },
-  { value: "is_not_empty", label: "Is Not Empty" },
-];
-
-const TEXT_OPERATORS: OperatorDef[] = [
-  { value: "include_any", label: "Include Any" },
-  { value: "include_all", label: "Include All" },
-  { value: "exclude", label: "Exclude" },
-  { value: "equals", label: "Equals" },
-  { value: "not_equals", label: "Does Not Equal" },
-  { value: "starts_with", label: "Starts With" },
-  { value: "ends_with", label: "Ends With" },
-];
-
-const NUMBER_OPERATORS: OperatorDef[] = [
-  { value: "equals", label: "Equals" },
-  { value: "not_equals", label: "Does Not Equal" },
-  { value: "gt", label: "Greater Than" },
-  { value: "gte", label: "Greater Than / Equal" },
-  { value: "lt", label: "Less Than" },
-  { value: "lte", label: "Less Than / Equal" },
-  { value: "between", label: "Is Between" },
-];
-
-const DATE_OPERATORS: OperatorDef[] = [
-  { value: "within", label: "Within (Last N Days)" },
-  { value: "before", label: "Before" },
-  { value: "after", label: "After" },
-  { value: "equals", label: "Equals" },
-  { value: "between", label: "Is Between" },
-];
-
-const TIME_OPERATORS: OperatorDef[] = [
-  { value: "before", label: "Before" },
-  { value: "after", label: "After" },
-  { value: "equals", label: "Equals" },
-  { value: "between", label: "Is Between" },
-];
-
-const SELECT_OPERATORS: OperatorDef[] = [
-  { value: "equals", label: "Is" },
-  { value: "not_equals", label: "Is Not" },
-  { value: "any_of", label: "Is Any Of" },
-  { value: "none_of", label: "Is None Of" },
-];
-
-const BOOLEAN_OPERATORS: OperatorDef[] = [
-  { value: "is_true", label: "Is True" },
-  { value: "is_false", label: "Is False" },
-];
-
-function operatorsForKind(kind: ReturnType<typeof getFieldKind>["kind"]) {
-  switch (kind) {
-    case "date":
-    case "datetime":
-      return [...DATE_OPERATORS, ...COMMON_OPERATORS];
-    case "time":
-      return [...TIME_OPERATORS, ...COMMON_OPERATORS];
-    case "number":
-    case "percent":
-      return [...NUMBER_OPERATORS, ...COMMON_OPERATORS];
-    case "select":
-    case "multiselect":
-      return [...SELECT_OPERATORS, ...COMMON_OPERATORS];
-    case "lookup":
-      return [...TEXT_OPERATORS, ...COMMON_OPERATORS];
-    case "boolean":
-      return [...BOOLEAN_OPERATORS, ...COMMON_OPERATORS];
-    default:
-      return [...TEXT_OPERATORS, ...COMMON_OPERATORS];
+    t === "multi_select" ||
+    t === "multiselect_lookup"
+  ) {
+    return [
+      { value: "include_any", label: "Include Any" },
+      { value: "include_all", label: "Include All" },
+      { value: "exclude", label: "Exclude" },
+      { value: "is_empty", label: "Is Empty" },
+    ];
   }
+
+  // checkbox / boolean
+  if (t === "checkbox" || t === "boolean" || t === "switch") {
+    return [
+      { value: "is_checked", label: "Is Checked" },
+      { value: "is_not_checked", label: "Is Not Checked" },
+    ];
+  }
+
+  // lookup
+  if (t === "lookup") {
+    return [
+      { value: "equals", label: "Is" },
+      { value: "not_equals", label: "Is Not" },
+      { value: "is_empty", label: "Is Empty" },
+    ];
+  }
+
+  // url
+  if (t === "url") {
+    return [
+      { value: "contains", label: "Contains" },
+      { value: "equals", label: "Equals" },
+      { value: "starts_with", label: "Starts With" },
+      { value: "is_empty", label: "Is Empty" },
+    ];
+  }
+
+  // link
+  if (t === "link") {
+    return [
+      { value: "contains", label: "Contains" },
+      { value: "equals", label: "Equals" },
+      { value: "is_empty", label: "Is Empty" },
+    ];
+  }
+
+  // file
+  if (t === "file") {
+    return [
+      { value: "exists", label: "Exists" },
+      { value: "not_exists", label: "Does Not Exist" },
+    ];
+  }
+
+  // composite
+  if (t === "composite") {
+    return [
+      { value: "contains", label: "Contains" },
+      { value: "equals", label: "Equals" },
+      { value: "is_empty", label: "Is Empty" },
+    ];
+  }
+
+  // fallback – treat as text
+  return [
+    { value: "contains", label: "Contains" },
+    { value: "not_contains", label: "Does Not Contain" },
+    { value: "equals", label: "Equals" },
+    { value: "starts_with", label: "Starts With" },
+    { value: "is_empty", label: "Is Empty" },
+  ];
 }
 
 function operatorNeedsNoValue(op: string) {
   return (
     op === "is_empty" ||
-    op === "is_not_empty" ||
-    op === "is_true" ||
-    op === "is_false"
+    op === "exists" ||
+    op === "not_exists" ||
+    op === "is_checked" ||
+    op === "is_not_checked"
   );
 }
 
@@ -586,8 +638,30 @@ function SearchRow({
     width: number;
   } | null>(null);
   const fieldInfo = getFieldInfo(row.fieldKey);
-  const kind = getFieldKind(fieldInfo?.fieldType).kind;
-  const operators = operatorsForKind(kind);
+  const rawType = String(fieldInfo?.fieldType || "").toLowerCase();
+  const operators = getOperatorsForFieldType(rawType);
+  // derive a coarse input kind from admin field_type for rendering inputs
+  const kind =
+    rawType === "date"
+      ? "date"
+      : rawType === "datetime"
+      ? "datetime"
+      : rawType === "time"
+      ? "time"
+      : rawType === "number" || rawType === "currency"
+      ? "number"
+      : rawType === "percentage" || rawType === "percent"
+      ? "percent"
+      : rawType === "select" || rawType === "dropdown" || rawType === "radio"
+      ? "select"
+      : rawType === "multiselect" ||
+        rawType === "multicheckbox" ||
+        rawType === "multi_select" ||
+        rawType === "multiselect_lookup"
+      ? "multiselect"
+      : rawType === "checkbox" || rawType === "boolean" || rawType === "switch"
+      ? "boolean"
+      : "text";
 
   const showRange = operatorNeedsRange(row.operator);
   const showNoValue = operatorNeedsNoValue(row.operator);
@@ -704,6 +778,7 @@ function SearchRow({
                     <div className="px-3 py-2 border-b border-gray-100 bg-white sticky top-0">
                       <input
                         type="text"
+                        autoFocus
                         placeholder="Search fields..."
                         value={fieldSearch}
                         onChange={(e) => onFieldSearchChange(e.target.value)}

@@ -196,7 +196,7 @@ export default function AddJobSeeker() {
 
   // Calculate address fields once using useMemo
   const addressFields = useMemo(
-    () => getAddressFields(customFields),
+    () => getAddressFields(customFields as any),
     [customFields]
   );
   const addressAnchorId = useMemo(
@@ -1227,12 +1227,6 @@ export default function AddJobSeeker() {
                     <div key="address-group" className="flex items-start mb-3">
                       <label className="w-48 font-medium flex items-center mt-4">
                         Address:
-                        {addressFields.some((f) => f.is_required) &&
-                          (isAddressGroupValid(addressFields, customFieldValues) ? (
-                            <span className="text-green-500 ml-1">✔</span>
-                          ) : (
-                            <span className="text-red-500 ml-1">*</span>
-                          ))}
                       </label>
 
                       <div className="flex-1">

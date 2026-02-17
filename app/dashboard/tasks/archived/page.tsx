@@ -19,6 +19,10 @@ import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import CountdownTimer from "@/components/CountdownTimer";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
+import AdvancedSearchPanel, {
+  type AdvancedSearchCriterion,
+} from "@/components/AdvancedSearchPanel";
+import { matchesAdvancedValue } from "@/lib/advancedSearch";
 
 interface Task {
   id: string;
@@ -54,6 +58,7 @@ type TaskFavorite = {
   columnFilters: Record<string, ColumnFilterState>;
   columnSorts: Record<string, ColumnSortState>;
   columnFields: string[];
+  advancedSearchCriteria?: AdvancedSearchCriterion[];
   createdAt: number;
 };
 
@@ -286,6 +291,11 @@ export default function ArchivedTasksList() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState<
+    AdvancedSearchCriterion[]
+  >([]);
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const advancedSearchButtonRef = useRef<HTMLButtonElement>(null);
   const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
   const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
   const [favorites, setFavorites] = useState<TaskFavorite[]>([]);
@@ -527,6 +537,22 @@ export default function ArchivedTasksList() {
   const filteredAndSortedTasks = useMemo(() => {
     let result = tasks.filter((t) => t.status === "Archived" || !!t.archived_at);
 
+    const matchesAdvancedCriterion = (
+      t: Task,
+      c: AdvancedSearchCriterion
+    ): boolean => {
+      const raw = getColumnValue(t, c.fieldKey);
+      const colInfo = getColumnInfo(c.fieldKey);
+      const fieldType = (colInfo as any)?.fieldType ?? "";
+      return matchesAdvancedValue(raw, fieldType, c);
+    };
+
+    if (advancedSearchCriteria.length > 0) {
+      result = result.filter((t) =>
+        advancedSearchCriteria.every((c) => matchesAdvancedCriterion(t, c))
+      );
+    }
+
     if (searchTerm.trim() !== "") {
       const term = searchTerm.toLowerCase();
       result = result.filter(
@@ -576,7 +602,7 @@ export default function ArchivedTasksList() {
       });
     }
     return result;
-  }, [tasks, columnFilters, columnSorts, searchTerm]);
+  }, [tasks, columnFilters, columnSorts, searchTerm, advancedSearchCriteria]);
 
   const handleBackToTasks = () => router.push("/dashboard/tasks");
   const handleViewTask = (id: string) => router.push(`/dashboard/tasks/view?id=${id}`);
@@ -689,6 +715,7 @@ export default function ArchivedTasksList() {
     setColumnFilters(nextFilters);
     setColumnSorts(nextSorts);
     if (validColumnFields.length > 0) setColumnFields(validColumnFields);
+    setAdvancedSearchCriteria(fav.advancedSearchCriteria ?? []);
     setSelectedFavoriteId(fav.id);
     setFavoritesMenuOpen(false);
   };
@@ -712,6 +739,8 @@ export default function ArchivedTasksList() {
       columnFilters,
       columnSorts,
       columnFields,
+      advancedSearchCriteria:
+        advancedSearchCriteria.length > 0 ? advancedSearchCriteria : undefined,
       createdAt: Date.now(),
     };
     persistFavorites([newFav, ...favorites]);
@@ -730,6 +759,7 @@ export default function ArchivedTasksList() {
     setSearchTerm("");
     setColumnFilters({});
     setColumnSorts({});
+    setAdvancedSearchCriteria([]);
     setSelectedFavoriteId(null);
   };
 
@@ -954,18 +984,50 @@ export default function ArchivedTasksList() {
               </svg>
             </div>
           </div>
-          {(searchTerm ||
-            Object.keys(columnFilters).length > 0 ||
-            Object.keys(columnSorts).length > 0) && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={handleClearAllFilters}
-              className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+              ref={advancedSearchButtonRef}
+              type="button"
+              onClick={() => setShowAdvancedSearch((v) => !v)}
+              className={`px-4 py-2 text-sm font-medium rounded border flex items-center gap-2 ${
+                showAdvancedSearch || advancedSearchCriteria.length > 0
+                  ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              }`}
             >
-              <FiX /> Clear All
+              Advanced
             </button>
-          )}
+            {(searchTerm ||
+              Object.keys(columnFilters).length > 0 ||
+              Object.keys(columnSorts).length > 0 ||
+              advancedSearchCriteria.length > 0) && (
+              <button
+                onClick={handleClearAllFilters}
+                className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+              >
+                <FiX /> Clear All
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      <AdvancedSearchPanel
+        open={showAdvancedSearch}
+        onClose={() => setShowAdvancedSearch(false)}
+        fieldCatalog={taskColumnsCatalog.map((c) => ({
+          key: c.key,
+          label: c.label,
+          fieldType: (c as any).fieldType,
+          lookupType: (c as any).lookupType,
+          multiSelectLookupType: (c as any).multiSelectLookupType,
+          options: (c as any).options,
+        }))}
+        onSearch={(criteria) => setAdvancedSearchCriteria(criteria)}
+        recentStorageKey="tasksArchivedAdvancedSearchRecent"
+        initialCriteria={advancedSearchCriteria}
+        anchorEl={advancedSearchButtonRef.current}
+      />
 
       <div className="overflow-x-auto">
         <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>

@@ -541,7 +541,7 @@ export default function AddJob() {
 
   // Calculate address fields once using useMemo
   const addressFields = useMemo(
-    () => getAddressFields(customFields),
+    () => getAddressFields(customFields as any),
     [customFields]
   );
   const addressAnchorId = useMemo(
@@ -1841,12 +1841,6 @@ export default function AddJob() {
                         >
                           <label className="w-48 font-medium flex items-center mt-4">
                             Address:
-                            {addressFields.some((f) => f.is_required) &&
-                              (isAddressGroupValid(addressFields, customFieldValues) ? (
-                                <span className="text-green-500 ml-1">✔</span>
-                              ) : (
-                                <span className="text-red-500 ml-1">*</span>
-                              ))}
                           </label>
 
                           <div className="flex-1">
@@ -1973,13 +1967,6 @@ export default function AddJob() {
             </div>
 
             <div className="h-20" aria-hidden="true" />
-            {!isFormValid && formValidation.message && (
-              <div className="sticky bottom-20 left-0 right-0 z-10 -mx-4 px-4 sm:-mx-6 sm:px-6">
-                <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded text-sm">
-                  {formValidation.message}
-                </div>
-              </div>
-            )}
             <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
               <button
                 type="button"

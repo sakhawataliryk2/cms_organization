@@ -15,18 +15,13 @@ const SECTIONS: Section[] = [
     id: "onboarding",
     name: "OnBoarding",
     description:
-      "Template documents for onboarding; create, edit, and map documents used in onboarding flows.",
+      "Template documents for onboarding; create, edit, and map documents used in onboarding flows (including document packets).",
   },
   {
     id: "organization",
     name: "Organization",
     description:
       "Organization welcome document and default documents for new organizations. Fetching for new records of organization is applied here.",
-  },
-  {
-    id: "packets",
-    name: "Packets",
-    description: "Manage document packets and packet templates.",
   },
 ];
 

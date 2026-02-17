@@ -3466,6 +3466,10 @@ export default function JobView() {
       setShowPublishModal(true);
       setPublishMessage(null);
       setPublishTargets({ linkedin: false, job_board: true });
+    } else if (action === "add-client-submission") {  
+      // setShowAddClientSubmissionModal(true);
+      toast.info("Coming soon");
+      return;
     }
   };
 
@@ -3939,8 +3943,9 @@ export default function JobView() {
         { label: "Add Placement", action: () => handleActionSelected("add-placement") },
         { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
         { label: "Publish to Job Board", action: () => handleActionSelected("publish") },
-        { label: "Delete", action: () => handleActionSelected("delete") },
+        { label: "Add Client Submission", action: () => handleActionSelected("add-client-submission") },
         { label: "Clone", action: () => handleActionSelected("clone") },
+        { label: "Delete", action: () => handleActionSelected("delete") },
       ];
 
   // Tabs from the image
