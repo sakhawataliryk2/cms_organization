@@ -624,6 +624,10 @@ export default function OrganizationView() {
   const [aboutText, setAboutText] = useState("");
   const [isEditingAbout, setIsEditingAbout] = useState(false);
   const [tempAboutText, setTempAboutText] = useState("");
+  // Website (jobs page) edit state for "Open Jobs from Website" panel
+  const [isEditingWebsiteUrl, setIsEditingWebsiteUrl] = useState(false);
+  const [tempWebsiteUrl, setTempWebsiteUrl] = useState("");
+  const [isSavingWebsiteUrl, setIsSavingWebsiteUrl] = useState(false);
 
   // Action fields (Field_500) for notes
   const [actionFields, setActionFields] = useState<any[]>([]);
@@ -3075,7 +3079,13 @@ export default function OrganizationView() {
 
       return (
         <SortablePanel key={panelId} id={panelId}>
-          <PanelWithHeader title="Open Jobs from Website:">
+          <PanelWithHeader
+            title="Open Jobs from Website:"
+            onEdit={() => {
+              setIsEditingWebsiteUrl(true);
+              setTempWebsiteUrl(organization?.website || "");
+            }}
+          >
             <div className="border border-gray-200 rounded">
               {/* Website URL Display */}
               {hasValidWebsite && (
@@ -3132,38 +3142,26 @@ export default function OrganizationView() {
                 </div>
               )}
 
-              {/* {isLoadingJobs ? (
-                <div className="flex justify-center py-4">
-                  <div className="animate-spin rounded-full h-6 w-6 border-t-2 border-b-2 border-blue-500" />
+              {!hasValidWebsite && (
+                <div className="p-4 text-sm text-gray-500">
+                  No jobs page URL has been configured. Use the pencil icon on this panel to enter the
+                  jobs page URL from the client website. This will also update the Organization
+                  Website field in Admin Center.
                 </div>
-              ) : openJobs.length > 0 ? (
-                <div className="divide-y divide-gray-200">
-                  {openJobs.slice(0, 5).map((job: any) => (
-                    <div
-                      key={job.id}
-                      className="p-3 hover:bg-gray-50 cursor-pointer"
-                      onClick={() => router.push(`/dashboard/jobs/view?id=${job.id}`)}
-                    >
-                      <div className="font-medium text-blue-600 hover:underline">
-                        {job.job_title || "Untitled Job"}
-                      </div>
-                      <div className="text-xs text-gray-500">{job.worksite_location || job.category || ""}</div>
-                    </div>
-                  ))}
-                  {openJobs.length > 5 && (
-                    <button
-                      onClick={() => setActiveTab("jobs")}
-                      className="w-full p-2 text-blue-500 text-sm hover:underline"
-                    >
-                      View all {openJobs.length} jobs
-                    </button>
-                  )}
+              )}
+
+              {hasValidWebsite && (
+                <div className="border-t border-gray-200">
+                  <div className="w-full aspect-video bg-gray-100">
+                    <iframe
+                      src={websiteMetadata?.url || (websiteUrl!.startsWith("http") ? websiteUrl! : `https://${websiteUrl}`)}
+                      title="Open jobs from website"
+                      className="w-full h-full border-0"
+                      loading="lazy"
+                    />
+                  </div>
                 </div>
-              ) : (
-                <div className="p-2">
-                  <p className="text-gray-500 italic">No open jobs found</p>
-                </div>
-              )} */}
+              )}
             </div>
           </PanelWithHeader>
         </SortablePanel>
@@ -3349,6 +3347,101 @@ export default function OrganizationView() {
     } catch (err) {
       console.error("Error saving about text:", err);
       toast.error("Failed to save about text. Please try again.");
+    }
+  };
+
+  // Normalize a URL by ensuring it has a protocol
+  const normalizeUrl = (url: string) => {
+    const trimmed = (url || "").trim();
+    if (!trimmed) return "";
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    return `https://${trimmed}`;
+  };
+
+  // Save website URL (jobs page) from "Open Jobs from Website" panel
+  const saveWebsiteUrl = async () => {
+    if (!organizationId) return;
+    const normalized = normalizeUrl(tempWebsiteUrl);
+    if (!normalized) {
+      toast.error("Please enter a valid jobs page URL.");
+      return;
+    }
+
+    setIsSavingWebsiteUrl(true);
+    try {
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+
+      // Preserve all existing custom fields and update Organization Website label
+      const currentCustomFields = organization?.customFields || {};
+      const updatedCustomFields = {
+        ...currentCustomFields,
+        "Organization Website": normalized,
+      };
+
+      const response = await fetch(`/api/organizations/${organizationId}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          website: normalized,
+          custom_fields: updatedCustomFields,
+        }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || "Failed to update website URL");
+      }
+
+      const data = await response.json().catch(() => ({}));
+
+      // Parse custom_fields from response if present
+      let returnedCustomFields = updatedCustomFields;
+      const apiOrg = (data as any).organization;
+      if (apiOrg?.custom_fields) {
+        try {
+          returnedCustomFields =
+            typeof apiOrg.custom_fields === "string"
+              ? JSON.parse(apiOrg.custom_fields)
+              : apiOrg.custom_fields;
+        } catch {
+          // ignore parse error and keep updatedCustomFields
+        }
+      }
+
+      // Update local organization state
+      setOrganization((prev: any) =>
+        prev
+          ? {
+              ...prev,
+              website: normalized,
+              contact: {
+                ...(prev.contact || {}),
+                website: normalized,
+              },
+              customFields: returnedCustomFields,
+            }
+          : prev
+      );
+
+      // Refresh website metadata and close modal
+      fetchWebsiteMetadata(normalized);
+      setIsEditingWebsiteUrl(false);
+      toast.success("Website URL updated successfully.");
+    } catch (err) {
+      console.error("Error updating website URL:", err);
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : "Failed to update website URL. Please try again."
+      );
+    } finally {
+      setIsSavingWebsiteUrl(false);
     }
   };
 
@@ -7264,6 +7357,70 @@ console.log("Archived_at", organization.archived_at)
           }}
           resetButtonText="Reset"
         />
+      )}
+
+      {/* Edit Website URL Modal for "Open Jobs from Website" panel */}
+      {isEditingWebsiteUrl && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-lg w-full mx-4">
+            <div className="flex justify-between items-center p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold">Set Jobs Page URL</h2>
+              <button
+                onClick={() => {
+                  if (!isSavingWebsiteUrl) {
+                    setIsEditingWebsiteUrl(false);
+                  }
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-gray-600">
+                Enter the full URL of the client&apos;s jobs page (for example,
+                <span className="font-mono"> https://example.com/jobs</span>). This URL will:
+              </p>
+              <ul className="list-disc list-inside text-sm text-gray-600 space-y-1">
+                <li>Be used to embed the jobs page in the &quot;Open Jobs from Website&quot; panel.</li>
+                <li>Update the main <span className="font-semibold">Website</span> field for this organization.</li>
+                <li>Update the <span className="font-mono">Organization Website</span> custom field from Admin Center.</li>
+              </ul>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Jobs Page URL
+                </label>
+                <input
+                  type="text"
+                  value={tempWebsiteUrl}
+                  onChange={(e) => setTempWebsiteUrl(e.target.value)}
+                  placeholder="https://company-site.com/jobs"
+                  className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+              <button
+                onClick={() => {
+                  if (!isSavingWebsiteUrl) {
+                    setIsEditingWebsiteUrl(false);
+                  }
+                }}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium disabled:opacity-50"
+                disabled={isSavingWebsiteUrl}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={saveWebsiteUrl}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+                disabled={isSavingWebsiteUrl || !tempWebsiteUrl.trim()}
+              >
+                {isSavingWebsiteUrl ? "Saving..." : "Save URL"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
