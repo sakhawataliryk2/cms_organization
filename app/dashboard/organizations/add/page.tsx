@@ -85,7 +85,7 @@ export default function AddOrganization() {
     getCustomFieldsForSubmission,
   } = useCustomFields("organizations");
   const addressFields = useMemo(
-    () => getAddressFields(customFields),
+    () => getAddressFields(customFields as any),
     [customFields]
   );
   const sortedCustomFields = useMemo(() => {
@@ -1579,12 +1579,6 @@ export default function AddOrganization() {
                       >
                         <label className="w-48 font-medium flex items-center mt-4">
                           Address:
-                          {addressRequired &&
-                            (addressValid ? (
-                              <span className="text-green-500 ml-1">✔</span>
-                            ) : (
-                              <span className="text-red-500 ml-1">*</span>
-                            ))}
                         </label>
 
                         <div className="flex-1">

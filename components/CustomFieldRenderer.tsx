@@ -18,7 +18,7 @@ interface CustomFieldDefinition {
   placeholder?: string | null;
   default_value?: string | null;
   sort_order: number;
-  lookup_type?: "organizations" | "hiring-managers" | "job-seekers" | "jobs";
+  lookup_type?: "organizations" | "hiring-managers" | "job-seekers" | "jobs" | "owner";
   sub_field_ids?: number[] | string[];
   /** When set, this field is disabled until the referenced field has a value */
   dependent_on_field_id?: string | null;
@@ -80,15 +80,15 @@ export default function CustomFieldRenderer({
     onChange(field.field_name, Array.isArray(value) ? [] : "");
   }, [isDisabledByDependency, dependentOnFieldId, field.field_name, onChange]);
 
-  // Auto-fill Owner lookup field from cookies when empty (field label is "Owner" and type is lookup)
+  // Auto-fill Owner lookup field from cookies when empty (lookup_type is "owner" and type is lookup)
   React.useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const isOwnerLabel =
-      (field.field_label || "").trim().toLowerCase() === "owner";
+    const isOwnerLookupType =
+      String((field as any).lookup_type || "").trim().toLowerCase() === "owner";
     const isLookupField = field.field_type === "lookup";
 
-    if (!isOwnerLabel || !isLookupField || readOnly) return;
+    if (!isOwnerLookupType || !isLookupField || readOnly) return;
 
     const hasValue =
       value !== undefined &&
@@ -1776,18 +1776,18 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
       setCustomFieldValues((prev) => {
         const ownerIdFromCookie = getOwnerIdFromCookies();
         const next: Record<string, any> = {};
-        cached.forEach((field: CustomFieldDefinition) => {
-          if (prev[field.field_name] !== undefined) {
-            next[field.field_name] = prev[field.field_name];
+        cached.forEach((fld: CustomFieldDefinition) => {
+          if (prev[fld.field_name] !== undefined) {
+            next[fld.field_name] = prev[fld.field_name];
             return;
           }
           const isOwnerLookup =
-            (field.field_label || "").trim().toLowerCase() === "owner" &&
-            field.field_type === "lookup";
-          next[field.field_name] =
+            fld.field_type === "lookup" &&
+            String((fld as any).lookup_type || "").trim().toLowerCase() === "owner";
+          next[fld.field_name] =
             isOwnerLookup && ownerIdFromCookie
               ? ownerIdFromCookie
-              : (field.default_value || "");
+              : (fld.default_value || "");
         });
         return next;
       });
@@ -1825,18 +1825,18 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
         setCustomFieldValues((prev) => {
           const ownerIdFromCookie = getOwnerIdFromCookies();
           const next: Record<string, any> = {};
-          sortedFields.forEach((field: CustomFieldDefinition) => {
-            if (prev[field.field_name] !== undefined) {
-              next[field.field_name] = prev[field.field_name];
+          sortedFields.forEach((fld: CustomFieldDefinition) => {
+            if (prev[fld.field_name] !== undefined) {
+              next[fld.field_name] = prev[fld.field_name];
               return;
             }
             const isOwnerLookup =
-              (field.field_label || "").trim().toLowerCase() === "owner" &&
-              field.field_type === "lookup";
-            next[field.field_name] =
+              fld.field_type === "lookup" &&
+              String((fld as any).lookup_type || "").trim().toLowerCase() === "owner";
+            next[fld.field_name] =
               isOwnerLookup && ownerIdFromCookie
                 ? ownerIdFromCookie
-                : (field.default_value || "");
+                : (fld.default_value || "");
           });
           return next;
         });

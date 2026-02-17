@@ -12,6 +12,7 @@ import {
   FiArrowLeft,
 } from "react-icons/fi";
 import { createPortal } from "react-dom";
+import DocumentMgmtTabs from "@/components/document-management/DocumentMgmtTabs";
 
 type Document = {
   id: number;
@@ -544,7 +545,7 @@ export default function DocumentManagementOnboardingPage() {
   };
 
   return (
-    <div>
+    <div className="bg-gray-200 min-h-screen p-4">
       <button
         onClick={() => router.push("/dashboard/admin/document-management")}
         className="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4"
@@ -552,6 +553,7 @@ export default function DocumentManagementOnboardingPage() {
         <FiArrowLeft className="w-5 h-5" />
         Back to Document Management
       </button>
+      <DocumentMgmtTabs />
 
       <div className="bg-white p-4 rounded shadow-sm mb-4">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-4">

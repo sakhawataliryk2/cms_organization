@@ -20,6 +20,10 @@ import { TbGripVertical } from "react-icons/tb";
 import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
+import AdvancedSearchPanel, {
+  type AdvancedSearchCriterion,
+} from "@/components/AdvancedSearchPanel";
+import { matchesAdvancedValue } from "@/lib/advancedSearch";
 
 interface HiringManager {
   id: string;
@@ -51,6 +55,7 @@ type HiringManagerFavorite = {
   columnFilters: Record<string, ColumnFilterState>;
   columnSorts: Record<string, ColumnSortState>;
   columnFields: string[];
+  advancedSearchCriteria?: AdvancedSearchCriterion[];
   createdAt: number;
 };
 
@@ -246,6 +251,11 @@ export default function ArchivedHiringManagersList() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [advancedSearchCriteria, setAdvancedSearchCriteria] = useState<
+    AdvancedSearchCriterion[]
+  >([]);
+  const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
+  const advancedSearchButtonRef = useRef<HTMLButtonElement>(null);
 
   // Favorites State
   const [favorites, setFavorites] = useState<HiringManagerFavorite[]>([]);
@@ -312,6 +322,7 @@ export default function ArchivedHiringManagersList() {
     if (validColumnFields.length > 0) {
       setColumnFields(validColumnFields);
     }
+    setAdvancedSearchCriteria(fav.advancedSearchCriteria ?? []);
 
     setSelectedFavoriteId(fav.id);
     setFavoritesMenuOpen(false);
@@ -338,6 +349,8 @@ export default function ArchivedHiringManagersList() {
       columnFilters,
       columnSorts,
       columnFields,
+      advancedSearchCriteria:
+        advancedSearchCriteria.length > 0 ? advancedSearchCriteria : undefined,
       createdAt: Date.now(),
     };
 
@@ -360,6 +373,7 @@ export default function ArchivedHiringManagersList() {
     setSearchTerm("");
     setColumnFilters({});
     setColumnSorts({});
+    setAdvancedSearchCriteria([]);
     setSelectedFavoriteId(null);
   };
 
@@ -713,6 +727,22 @@ export default function ArchivedHiringManagersList() {
       (hm) => hm.status === "Archived" || !!hm.archived_at
     );
 
+    const matchesAdvancedCriterion = (
+      hm: HiringManager,
+      c: AdvancedSearchCriterion
+    ): boolean => {
+      const raw = getColumnValue(hm, c.fieldKey);
+      const colInfo = getColumnInfo(c.fieldKey);
+      const fieldType = (colInfo as any)?.fieldType ?? "";
+      return matchesAdvancedValue(raw, fieldType, c);
+    };
+
+    if (advancedSearchCriteria.length > 0) {
+      result = result.filter((hm) =>
+        advancedSearchCriteria.every((c) => matchesAdvancedCriterion(hm, c))
+      );
+    }
+
     // Apply filters
     Object.entries(columnFilters).forEach(([columnKey, filterValue]) => {
       if (!filterValue || filterValue.trim() === "") return;
@@ -778,7 +808,7 @@ export default function ArchivedHiringManagersList() {
     }
 
     return result;
-  }, [hiringManagers, columnFilters, columnSorts, searchTerm]);
+  }, [hiringManagers, columnFilters, columnSorts, searchTerm, advancedSearchCriteria]);
 
   const handleViewHiringManager = (id: string) => {
     router.push(`/dashboard/hiring-managers/view?id=${id}`);
@@ -1011,17 +1041,51 @@ export default function ArchivedHiringManagersList() {
               </svg>
             </div>
           </div>
-          {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
+          <div className="flex items-center gap-2">
             <button
-              onClick={handleClearAllFilters}
-              className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+              ref={advancedSearchButtonRef}
+              type="button"
+              onClick={() => setShowAdvancedSearch((v) => !v)}
+              className={`px-4 py-2 text-sm font-medium rounded border flex items-center gap-2 ${
+                showAdvancedSearch || advancedSearchCriteria.length > 0
+                  ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+              }`}
             >
-              <FiX />
-              Clear All
+              Advanced
             </button>
-          )}
+            {(searchTerm ||
+              Object.keys(columnFilters).length > 0 ||
+              Object.keys(columnSorts).length > 0 ||
+              advancedSearchCriteria.length > 0) && (
+              <button
+                onClick={handleClearAllFilters}
+                className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+              >
+                <FiX />
+                Clear All
+              </button>
+            )}
+          </div>
         </div>
       </div>
+
+      <AdvancedSearchPanel
+        open={showAdvancedSearch}
+        onClose={() => setShowAdvancedSearch(false)}
+        fieldCatalog={hmColumnsCatalog.map((c) => ({
+          key: c.key,
+          label: c.label,
+          fieldType: (c as any).fieldType,
+          lookupType: (c as any).lookupType,
+          multiSelectLookupType: (c as any).multiSelectLookupType,
+          options: (c as any).options,
+        }))}
+        onSearch={(criteria) => setAdvancedSearchCriteria(criteria)}
+        recentStorageKey="hiringManagersArchivedAdvancedSearchRecent"
+        initialCriteria={advancedSearchCriteria}
+        anchorEl={advancedSearchButtonRef.current}
+      />
 
       {/* Hiring Managers Table */}
       <div className="overflow-x-auto">
