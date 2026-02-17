@@ -8,16 +8,17 @@ import CustomFieldRenderer, {
   useCustomFields,
   isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
-import LookupField from "@/components/LookupField";
-import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 import JobSummaryCard from "../JobSummaryCard";
 import Link from "next/link";
+import { FiX } from "react-icons/fi";
 
 // Map admin field labels to placement backend columns (all fields driven by admin; no hardcoded standard fields)
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
   "Job Seeker": "job_seeker_id",
+  "Job Seeker ID": "job_seeker_id",
   "Candidate": "job_seeker_id",
   "Job": "job_id",
+  "Job ID": "job_id",
   "Organization": "organization_id",
   "Organization Name": "organization_id",
   "Status": "status",
@@ -424,19 +425,11 @@ export default function AddPlacement() {
   };
 
   const handleGoBack = () => router.back();
-  const backToJobSelection = () => router.push("/dashboard/placements/add");
-
-  // Get organization ID value for LookupField
-  const organizationIdValue = organizationField ? (customFieldValues[organizationField.field_name] ?? "") : "";
 
   const canSubmit = useMemo(() => {
     const validation = validateCustomFields();
-    if (!validation.isValid) return false;
-    if (!jobField || !candidateField) return true;
-    const j = customFieldValues[jobField.field_name];
-    const c = customFieldValues[candidateField.field_name];
-    return j != null && String(j).trim() !== "" && c != null && String(c).trim() !== "";
-  }, [jobField, candidateField, customFieldValues, validateCustomFields]);
+    return validation.isValid;
+  }, [validateCustomFields]);
 
   if (isLoading && (placementId || (jobIdFromUrl && !selectedJob && !jobTypeMismatch && !jobFetchError))) {
     return <LoadingScreen message={placementId ? "Loading placement data..." : "Loading job details..."} />;
@@ -495,7 +488,7 @@ export default function AddPlacement() {
             <Image src="/window.svg" alt="Placement" width={24} height={24} className="mr-2" />
             <h1 className="text-xl font-bold">{isEditMode ? "Edit" : "Add"} Placement Contract</h1>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-6">
             {jobIdFromUrl && !isEditMode && (
               <Link
                 href="/dashboard/placements/add"
@@ -505,7 +498,7 @@ export default function AddPlacement() {
               </Link>
             )}
             <button onClick={handleGoBack} className="text-gray-500 hover:text-gray-700">
-              <span className="text-2xl font-bold">X</span>
+              <span className="text-2xl font-bold"><FiX size={20} /></span>
             </button>
           </div>
         </div>
@@ -531,99 +524,6 @@ export default function AddPlacement() {
                 // const column = BACKEND_COLUMN_BY_LABEL[field.field_label];
                 const fieldValue = customFieldValues[field.field_name] ?? field.default_value ?? "";
 
-                // if (column === "job_id") {
-                //   return (
-                //     <div key={field.id} className="flex items-center">
-                //       <label className="w-48 font-medium shrink-0">
-                //         {field.field_label}
-                //         {field.is_required && <span className="text-red-500 ml-1">*</span>}
-                //       </label>
-                //       <div className="flex-1 relative">
-                //         {isLoadingJobs ? (
-                //           <div className="p-2 text-gray-500">Loading jobs...</div>
-                //         ) : (
-                //           <select
-                //             value={String(fieldValue)}
-                //             onChange={(e) => handlePlacementFieldChange(field.field_name, e.target.value)}
-                //             className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                //             required={field.is_required}
-                //           >
-                //             <option value="">Select a job</option>
-                //             {jobs.map((job: any) => (
-                //               <option key={job.id} value={job.id}>
-                //                 {job.title ?? job.job_title ?? `Job #${job.id}`}
-                //               </option>
-                //             ))}
-                //           </select>
-                //         )}
-                //       </div>
-                //     </div>
-                //   );
-                // }
-
-                // if (column === "job_seeker_id") {
-                //   return (
-                //     <div key={field.id} className="flex items-center">
-                //       <label className="w-48 font-medium shrink-0">
-                //         {field.field_label}
-                //         {field.is_required && <span className="text-red-500 ml-1">*</span>}
-                //       </label>
-                //       <div className="flex-1 relative">
-                //         {isLoadingJobSeekers ? (
-                //           <div className="p-2 text-gray-500">Loading job seekers...</div>
-                //         ) : (
-                //           <select
-                //             value={String(fieldValue)}
-                //             onChange={(e) => handlePlacementFieldChange(field.field_name, e.target.value)}
-                //             className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                //             required={field.is_required}
-                //           >
-                //             <option value="">Select a job seeker</option>
-                //             {jobSeekers.map((js: any) => (
-                //               <option key={js.id} value={js.id}>
-                //                 {(() => {
-                //                   const name = js.full_name ?? `${js.first_name ?? ""} ${js.last_name ?? ""}`.trim();
-                //                   return name || `Job Seeker #${js.id}`;
-                //                 })()}
-                //               </option>
-                //             ))}
-                //           </select>
-                //         )}
-                //       </div>
-                //     </div>
-                //   );
-                // }
-
-                // if (column === "organization_id") {
-                //   return (
-                //     <div key={field.id} className="flex items-center">
-                //       <label className="w-48 font-medium shrink-0">
-                //         {field.field_label}
-                //         {(field.is_required) &&
-                //           (hasValidValue() ? (
-                //             <span className="text-green-500 ml-1">✔</span>
-                //           ) : (
-                //             <span className="text-red-500 ml-1">*</span>
-                //           ))}
-                //       </label>
-                //       <div className="flex-1">
-                //         <LookupField
-                //           value={String(organizationIdValue)}
-                //           onChange={(value) => {
-                //             // Store the organization ID
-                //             handleCustomFieldChange(field.field_name, value);
-                //           }}
-                //           lookupType="organizations"
-                //           placeholder="Select an organization"
-                //           required={field.is_required}
-                //           disabled={true}
-                //           className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                //         />
-                //       </div>
-                //     </div>
-                //   );
-                // }
-
                 return (
                   <div key={field.id} className="flex items-center">
                     <label className="w-48 font-medium shrink-0">
@@ -636,29 +536,13 @@ export default function AddPlacement() {
                         ))}
                     </label>
                     <div className="flex-1">
-                        {
-                          field?.field_label === "Organization" ? (
-                            <LookupField
-                              value={String(organizationIdValue)}
-                              onChange={(value) => {
-                                handleCustomFieldChange(field.field_name, value);
-                              }}
-                              lookupType="organizations"
-                              placeholder="Select an organization"
-                              required={field.is_required}
-                              disabled={true}
-                              className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
-                            />
-                          ) : (
-                            <CustomFieldRenderer
-                              field={field}
-                              value={fieldValue}
-                              allFields={customFields}
-                              values={customFieldValues}
-                              onChange={handlePlacementFieldChange}
-                            />
-                          )
-                        }
+                      <CustomFieldRenderer
+                        field={field}
+                        value={fieldValue}
+                        allFields={customFields}
+                        values={customFieldValues}
+                        onChange={handlePlacementFieldChange}
+                      />
                     </div>
                   </div>
                 );

@@ -350,7 +350,8 @@ function HiringManagerSearchSelect({
 export default function AddJob() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const jobId = searchParams.get("id"); // Get job ID from URL if present
+  const jobId = searchParams.get("id"); // Get job ID from URL if present (edit mode)
+  const cloneFrom = searchParams.get("cloneFrom"); // Clone from this job ID (prefill, new job)
   const jobType = searchParams.get("type"); // Get job type from URL if present
   const leadId = searchParams.get("leadId") || searchParams.get("lead_id");
   const organizationIdFromUrl =
@@ -368,10 +369,10 @@ export default function AddJob() {
 
   // Add these state variables
   const [isEditMode, setIsEditMode] = useState(!!jobId);
-  const [isLoadingJob, setIsLoadingJob] = useState(!!jobId);
+  const [isLoadingJob, setIsLoadingJob] = useState(!!jobId || !!cloneFrom);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [jobStep, setJobStep] = useState<2 | 3>(jobId ? 3 : 2);
+  const [jobStep, setJobStep] = useState<2 | 3>(jobId || cloneFrom ? 3 : 2);
   const [isHiringManagerModalOpen, setIsHiringManagerModalOpen] = useState(false);
   const [hiringManagerSearch, setHiringManagerSearch] = useState("");
   const [hiringManagerOptions, setHiringManagerOptions] = useState<
@@ -1190,15 +1191,16 @@ export default function AddJob() {
     setFormFields(standardFields);
   };
 
-  // Load job data when in edit mode
+  // Load job data when in edit mode or clone mode
   useEffect(() => {
-    if (jobId && formFields.length > 0 && !customFieldsLoading) {
-      fetchJobData(jobId);
+    const idToLoad = jobId || cloneFrom;
+    if (idToLoad && formFields.length > 0 && !customFieldsLoading) {
+      fetchJobData(idToLoad, !!cloneFrom);
     }
-  }, [jobId, formFields.length, customFieldsLoading]);
+  }, [jobId, cloneFrom, formFields.length, customFieldsLoading]);
 
-  // Function to fetch job data (✅ Updated to match Organizations pattern)
-  const fetchJobData = async (id: string) => {
+  // Function to fetch job data (✅ Updated to match Organizations pattern). When isClone, Date Added is set to today.
+  const fetchJobData = async (id: string, isClone?: boolean) => {
     setIsLoadingJob(true);
     setLoadError(null);
 
@@ -1287,9 +1289,9 @@ export default function AddJob() {
           "Required Skills": job.required_skills || "",
           "Job Board Status": job.job_board_status || "Not Posted",
           "Owner": job.owner || "",
-          "Date Added": job.date_added
-            ? job.date_added.split("T")[0]
-            : "",
+          "Date Added": isClone
+            ? new Date().toISOString().split("T")[0]
+            : (job.date_added ? job.date_added.split("T")[0] : ""),
         };
 
         customFields.forEach((field) => {
@@ -1351,7 +1353,7 @@ export default function AddJob() {
         updateField("owner", job.owner);
         updateField(
           "dateAdded",
-          job.date_added ? job.date_added.split("T")[0] : ""
+          isClone ? new Date().toISOString().split("T")[0] : (job.date_added ? job.date_added.split("T")[0] : "")
         );
 
         return updatedFields;

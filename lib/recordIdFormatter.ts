@@ -13,7 +13,7 @@ export const RECORD_PREFIXES = {
 export type RecordType = keyof typeof RECORD_PREFIXES;
 
 /**
- * Format a record ID with its type prefix
+ * Format a record ID with its type prefix (uses primary key id).
  * @param id - The numeric ID
  * @param type - The record type
  * @returns Formatted ID string (e.g., "J8" for job ID 8)
@@ -22,6 +22,26 @@ export function formatRecordId(id: number | string | null | undefined, type: Rec
     if (!id && id !== 0) return '';
     const prefix = RECORD_PREFIXES[type];
     return `${prefix}${id}`;
+}
+
+/** Types that use business record_number for display (prefix + '-' + number) */
+const DISPLAY_RECORD_NUMBER_TYPES: RecordType[] = ['task', 'job', 'organization'];
+
+/**
+ * Display format for task/job/organization: prefix + '-' + record_number (e.g. T-15, J-4, O-22).
+ * Use when the API returns record_number. For other types, falls back to formatRecordId(id, type).
+ */
+export function formatDisplayRecordNumber(
+    type: RecordType,
+    recordNumber: number | string | null | undefined,
+    fallbackId?: number | string | null
+): string {
+    if (DISPLAY_RECORD_NUMBER_TYPES.includes(type) && recordNumber !== null && recordNumber !== undefined && recordNumber !== '') {
+        const prefix = RECORD_PREFIXES[type];
+        return `${prefix}-${recordNumber}`;
+    }
+    if (fallbackId !== null && fallbackId !== undefined && fallbackId !== '') return formatRecordId(fallbackId, type);
+    return '';
 }
 
 /**
