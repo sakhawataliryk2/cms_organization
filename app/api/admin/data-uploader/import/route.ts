@@ -1,6 +1,95 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cookies } from 'next/headers';
 
+// Map Field Management field_name (snake_case) to backend API keys per entity
+const FIELD_NAME_TO_BACKEND: Record<string, Record<string, string>> = {
+    'job-seekers': {
+        first_name: 'firstName',
+        last_name: 'lastName',
+        email: 'email',
+        phone: 'phone',
+        mobile_phone: 'mobilePhone',
+        address: 'address',
+        city: 'city',
+        state: 'state',
+        zip: 'zip',
+        zip_code: 'zip',
+        status: 'status',
+        current_organization: 'currentOrganization',
+        title: 'title',
+        resume_text: 'resumeText',
+        skills: 'skills',
+        desired_salary: 'desiredSalary',
+        owner: 'owner',
+        date_added: 'dateAdded',
+        last_contact_date: 'lastContactDate',
+        custom_fields: 'custom_fields',
+    },
+    'leads': {
+        first_name: 'firstName',
+        last_name: 'lastName',
+        email: 'email',
+        phone: 'phone',
+        mobile_phone: 'mobilePhone',
+        title: 'title',
+        status: 'status',
+        organization_id: 'organizationId',
+        organizationId: 'organizationId',
+        address: 'address',
+        department: 'department',
+        owner: 'owner',
+        custom_fields: 'custom_fields',
+    },
+    'hiring-managers': {
+        first_name: 'firstName',
+        last_name: 'lastName',
+        email: 'email',
+        phone: 'phone',
+        mobile_phone: 'mobilePhone',
+        title: 'title',
+        organization_id: 'organizationId',
+        organizationId: 'organizationId',
+        status: 'status',
+        custom_fields: 'custom_fields',
+    },
+    'jobs': {
+        job_title: 'jobTitle',
+        title: 'jobTitle',
+        organization_id: 'organizationId',
+        organizationId: 'organizationId',
+        category: 'category',
+        status: 'status',
+        custom_fields: 'custom_fields',
+    },
+    'organizations': {
+        name: 'name',
+        contact_phone: 'contact_phone',
+        website: 'website',
+        status: 'status',
+        address: 'address',
+        nicknames: 'nicknames',
+        custom_fields: 'custom_fields',
+    },
+    'placements': {
+        job_seeker_id: 'jobSeekerId',
+        job_id: 'jobId',
+        status: 'status',
+        custom_fields: 'custom_fields',
+    },
+};
+
+function recordToBackendPayload(entityType: string, record: Record<string, any>): Record<string, any> {
+    const mapping = FIELD_NAME_TO_BACKEND[entityType];
+    if (!mapping) return record;
+    const out: Record<string, any> = {};
+    for (const [key, value] of Object.entries(record)) {
+        if (value === undefined || value === '') continue;
+        const backendKey = mapping[key] ?? key;
+        out[backendKey] = value;
+    }
+    return out;
+}
+
 export async function POST(request: NextRequest) {
     try {
         const cookieStore = await cookies();
@@ -61,28 +150,28 @@ export async function POST(request: NextRequest) {
             const errors: string[] = [];
 
             try {
-                // Prepare the payload based on entity type
-                let payload: Record<string, any> = {
-                    ...record,
-                };
+                // Convert field_name keys to backend-expected keys (e.g. first_name -> firstName)
+                const payload = recordToBackendPayload(entityType, record);
 
-                // Determine unique identifier field based on entity type
+                // Determine unique identifier field (backend key) for find-existing
                 let uniqueField = 'email';
                 if (entityType === 'organizations') {
                     uniqueField = 'name';
                 } else if (entityType === 'jobs') {
-                    uniqueField = 'title';
+                    uniqueField = 'jobTitle';
                 } else if (entityType === 'placements') {
-                    uniqueField = 'job_seeker_id'; // Would need job_id too for uniqueness
+                    uniqueField = 'jobSeekerId';
                 }
+                const uniqueValue = payload[uniqueField] ?? record[uniqueField];
 
                 // Check for duplicates if needed
-                if (options.skipDuplicates || options.importNewOnly || options.updateExisting) {
-                    if (record[uniqueField]) {
+                const opts = options || {};
+                if (opts.skipDuplicates || opts.importNewOnly || opts.updateExisting) {
+                    if (uniqueValue) {
                         // Try to find existing record
                         try {
                             const searchResponse = await fetch(
-                                `${apiUrl}/api/${endpoint}?${uniqueField}=${encodeURIComponent(record[uniqueField])}`,
+                                `${apiUrl}/api/${endpoint}?${uniqueField}=${encodeURIComponent(String(uniqueValue))}`,
                                 {
                                     method: 'GET',
                                     headers: {
@@ -93,22 +182,37 @@ export async function POST(request: NextRequest) {
 
                             if (searchResponse.ok) {
                                 const searchData = await searchResponse.json();
-                                const existingRecords = searchData[endpoint] || searchData.data || [];
+                                const responseListKeys: Record<string, string> = {
+                                    'job-seekers': 'jobSeekers',
+                                    'hiring-managers': 'hiringManagers',
+                                    'organizations': 'organizations',
+                                    'jobs': 'jobs',
+                                    'leads': 'leads',
+                                    'placements': 'placements',
+                                };
+                                const listKey = responseListKeys[endpoint] || endpoint;
+                                let existingRecords: any[] = searchData[listKey] || searchData[endpoint] || searchData.data || [];
+                                // Backend may not filter by query; filter client-side by unique field
+                                const backendUniqueKey = entityType === 'job-seekers' || entityType === 'leads' || entityType === 'hiring-managers' ? (uniqueField === 'email' ? 'email' : uniqueField) : uniqueField;
+                                existingRecords = existingRecords.filter((r: any) => {
+                                    const val = r[backendUniqueKey] ?? r[uniqueField];
+                                    return val != null && String(val).toLowerCase() === String(uniqueValue).toLowerCase();
+                                });
 
                                 if (existingRecords.length > 0) {
                                     const existingRecord = existingRecords[0];
 
-                                    if (options.skipDuplicates || options.importNewOnly) {
+                                    if (opts.skipDuplicates || opts.importNewOnly) {
                                         // Skip this record
                                         summary.failed++;
                                         summary.errors.push({
                                             row: rowNumber,
-                                            errors: [`Record already exists (${uniqueField}: ${record[uniqueField]})`],
+                                            errors: [`Record already exists (${uniqueField}: ${uniqueValue})`],
                                         });
                                         continue;
                                     }
 
-                                    if (options.updateExisting) {
+                                    if (opts.updateExisting) {
                                         // Update existing record
                                         const updateResponse = await fetch(`${apiUrl}/api/${endpoint}/${existingRecord.id}`, {
                                             method: 'PUT',

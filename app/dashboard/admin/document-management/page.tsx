@@ -23,6 +23,12 @@ const SECTIONS: Section[] = [
     description:
       "Organization welcome document and default documents for new organizations. Fetching for new records of organization is applied here.",
   },
+  {
+    id: "quotes",
+    name: "Quotes",
+    description:
+      "Upload quote documents for organizations or hiring managers. Upload to a single record or push to multiple/all records. Quotes appear in the Quotes tab on the respective Organization and Hiring Manager view pages.",
+  },
 ];
 
 export default function DocumentManagementPage() {

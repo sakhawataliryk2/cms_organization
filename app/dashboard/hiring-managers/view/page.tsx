@@ -3823,48 +3823,6 @@ export default function HiringManagerView() {
         ) : (
           <p className="text-gray-500 italic">No documents available</p>
         )}
-
-        {/* Document Viewer Modal */}
-        {selectedDocument && (
-          <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] flex flex-col">
-              <div className="bg-gray-100 p-4 border-b flex justify-between items-center shrink-0">
-                <div>
-                  <h2 className="text-lg font-semibold">{selectedDocument.document_name}</h2>
-                  <p className="text-sm text-gray-600">Type: {selectedDocument.document_type}</p>
-                </div>
-                <button onClick={() => setSelectedDocument(null)} className="p-1 rounded hover:bg-gray-200">
-                  <span className="text-2xl font-bold">×</span>
-                </button>
-              </div>
-              <div className="p-4 flex-1 min-h-0 flex flex-col">
-                <div className="mb-2">
-                  <p className="text-sm text-gray-600">
-                    Created by {selectedDocument.created_by_name || "System"} on{" "}
-                    {new Date(selectedDocument.created_at).toLocaleString()}
-                  </p>
-                </div>
-                {selectedDocument.file_path ? (
-                  <div className="overflow-y-auto flex-1 min-h-[60vh] flex flex-col">
-                    <DocumentViewer
-                      filePath={selectedDocument.file_path}
-                      mimeType={selectedDocument.mime_type}
-                      documentName={selectedDocument.document_name}
-                      className="flex-1"
-                      onOpenInNewTab={() =>
-                        window.open(selectedDocument.file_path, "_blank")
-                      }
-                    />
-                  </div>
-                ) : (
-                  <div className="bg-gray-50 p-4 rounded border whitespace-pre-wrap overflow-y-auto">
-                    {selectedDocument.content || "No content available"}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     );
   };
@@ -4614,7 +4572,105 @@ export default function HiringManagerView() {
             <div className="col-span-2">
               <div className="bg-white p-4 rounded shadow-sm">
                 <h2 className="text-lg font-semibold mb-4">Quotes</h2>
-                <p className="text-gray-500 italic">No quotes available</p>
+                {isLoadingDocuments ? (
+                  <div className="flex justify-center py-8">
+                    <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                  </div>
+                ) : documentError ? (
+                  <p className="text-red-500 py-2">{documentError}</p>
+                ) : (() => {
+                  const quoteDocs = (documents || []).filter(
+                    (d: any) => (d.document_type || "").toLowerCase() === "quote"
+                  );
+                  return quoteDocs.length > 0 ? (
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-gray-100 border-b">
+                            <th className="text-left p-3 font-medium">Actions</th>
+                            <th className="text-left p-3 font-medium">Document Name</th>
+                            <th className="text-left p-3 font-medium">Created By</th>
+                            <th className="text-left p-3 font-medium">Created At</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {quoteDocs.map((doc: any) => (
+                            <tr key={doc.id} className="border-b hover:bg-gray-50">
+                              <td className="p-3">
+                                <ActionDropdown
+                                  label="Actions"
+                                  options={[
+                                    { label: "View", action: () => setSelectedDocument(doc) },
+                                    { label: "Download", action: () => handleDownloadDocument(doc) },
+                                    { label: "Delete", action: () => handleDeleteDocument(doc.id) },
+                                  ]}
+                                />
+                              </td>
+                              <td className="p-3">
+                                <button
+                                  onClick={() => setSelectedDocument(doc)}
+                                  className="text-blue-600 hover:underline font-medium"
+                                >
+                                  {doc.document_name || "Unnamed"}
+                                </button>
+                              </td>
+                              <td className="p-3">{doc.created_by_name || "—"}</td>
+                              <td className="p-3">
+                                {doc.created_at
+                                  ? new Date(doc.created_at).toLocaleString()
+                                  : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  ) : (
+                    <p className="text-gray-500 italic">No quotes available. Upload quotes from Admin Center → Document Management → Quotes.</p>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
+          {/* Document Viewer Modal (shared by Docs and Quotes tabs) */}
+          {selectedDocument && (
+            <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
+              <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] flex flex-col">
+                <div className="bg-gray-100 p-4 border-b flex justify-between items-center shrink-0">
+                  <div>
+                    <h2 className="text-lg font-semibold">{selectedDocument.document_name}</h2>
+                    <p className="text-sm text-gray-600">Type: {selectedDocument.document_type}</p>
+                  </div>
+                  <button onClick={() => setSelectedDocument(null)} className="p-1 rounded hover:bg-gray-200">
+                    <span className="text-2xl font-bold">×</span>
+                  </button>
+                </div>
+                <div className="p-4 flex-1 min-h-0 flex flex-col">
+                  <div className="mb-2">
+                    <p className="text-sm text-gray-600">
+                      Created by {selectedDocument.created_by_name || "System"} on{" "}
+                      {new Date(selectedDocument.created_at).toLocaleString()}
+                    </p>
+                  </div>
+                  {selectedDocument.file_path ? (
+                    <div className="overflow-y-auto flex-1 min-h-[60vh] flex flex-col">
+                      <DocumentViewer
+                        filePath={selectedDocument.file_path}
+                        mimeType={selectedDocument.mime_type}
+                        documentName={selectedDocument.document_name}
+                        className="flex-1"
+                        onOpenInNewTab={() =>
+                          window.open(selectedDocument.file_path, "_blank")
+                        }
+                      />
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 p-4 rounded border whitespace-pre-wrap overflow-y-auto">
+                      {selectedDocument.content || "No content available"}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
