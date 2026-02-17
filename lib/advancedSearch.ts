@@ -1,6 +1,41 @@
 import type { AdvancedSearchCriterion } from "@/components/AdvancedSearchPanel";
 
 /**
+ * Determine whether a raw field value should be treated as "empty" for
+ * advanced search purposes.
+ *
+ * This intentionally treats common placeholder / non-values (e.g. "N/A", "-",
+ * em/en dashes, etc.) as empty in addition to undefined, null, and "".
+ */
+function isEmptyRawValue(raw: unknown): boolean {
+  if (raw === undefined || raw === null) return true;
+
+  const str = String(raw).trim();
+  if (!str) return true;
+
+  const lower = str.toLowerCase();
+
+  // Word-style placeholders
+  if (
+    lower === "n/a" ||
+    lower === "na" ||
+    lower === "n.a." ||
+    lower === "none" ||
+    lower === "null" ||
+    lower === "nil"
+  ) {
+    return true;
+  }
+
+  // Symbolic placeholders
+  if (str === "-" || str === "--" || str === "---" || str === "—" || str === "–") {
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Generic matcher used by list pages for Advanced Search.
  * Given a raw value (from the row), the admin `fieldType`, and the criterion,
  * returns true if the value matches the criterion.
@@ -19,11 +54,7 @@ export function matchesAdvancedValue(
     type === "percentage" ||
     type === "percent";
 
-  const isEmptyValue =
-    raw === undefined ||
-    raw === null ||
-    String(raw).trim() === "" ||
-    String(raw).toLowerCase() === "n/a";
+  const isEmptyValue = isEmptyRawValue(raw);
 
   // Empty / exists / boolean-no-value operators
   if (c.operator === "is_empty") return isEmptyValue;
@@ -45,7 +76,7 @@ export function matchesAdvancedValue(
 
   // Date / datetime
   if (isDate) {
-    const orgDate = !raw || String(raw).toLowerCase() === "n/a"
+    const orgDate = isEmptyRawValue(raw)
       ? null
       : new Date(String(raw));
     if (!orgDate || isNaN(orgDate.getTime())) return false;
@@ -89,8 +120,8 @@ export function matchesAdvancedValue(
 
   // Time
   if (isTime) {
+    if (isEmptyRawValue(raw)) return false;
     const orgTime = String(raw ?? "").trim();
-    if (!orgTime || orgTime.toLowerCase() === "n/a") return false;
     const v = (c.value ?? "").trim();
     if (c.operator === "equals") return orgTime === v;
     if (c.operator === "before") return v ? orgTime < v : false;
@@ -125,11 +156,11 @@ export function matchesAdvancedValue(
   }
 
   // String-like (text, email, phone, url, link, lookup, select, etc.)
-  const str = String(raw ?? "").toLowerCase();
-  if (str === "n/a" || !str) {
+  if (isEmptyRawValue(raw)) {
     if (c.operator === "exclude") return true;
     return false;
   }
+  const str = String(raw ?? "").toLowerCase();
   const v = String(c.value ?? "").trim().toLowerCase();
   const words = v
     .split(/[\s,]+/)

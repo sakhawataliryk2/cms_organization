@@ -104,6 +104,10 @@ export default function AdminCenter() {
     const [moduleFieldConfigs, setModuleFieldConfigs] = useState<ModuleFieldConfig>({});
     const [isLoadingFields, setIsLoadingFields] = useState(false);
     const [exportProgress, setExportProgress] = useState({ current: 0, total: 0, module: '' });
+    // Upload: dynamic fields from Field Management (so mapping matches current system)
+    const [uploadModuleFields, setUploadModuleFields] = useState<CustomFieldDefinition[]>([]);
+    const [isLoadingUploadFields, setIsLoadingUploadFields] = useState(false);
+    const [uploadUpdateExisting, setUploadUpdateExisting] = useState(true);
 
     // Auto-open upload modal if ?upload=true query parameter is present
     useEffect(() => {
@@ -234,6 +238,48 @@ export default function AdminCenter() {
         fetchModuleData();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedModule, showDownloadModal]);
+
+    // Fetch upload module fields from Field Management when upload modal is open and module selected
+    useEffect(() => {
+        if (!showUploadModal || !selectedUploadModule) {
+            setUploadModuleFields([]);
+            return;
+        }
+        const entityType = moduleToEntityType[selectedUploadModule];
+        const fetchUploadFields = async () => {
+            setIsLoadingUploadFields(true);
+            const standardFields = getStandardFields(selectedUploadModule);
+            let allFields: CustomFieldDefinition[] = [...standardFields];
+            if (entityType) {
+                try {
+                    const token = document.cookie.replace(
+                        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                        "$1"
+                    );
+                    const response = await fetch(`/api/admin/field-management/${entityType}`, {
+                        headers: { Authorization: `Bearer ${token}` },
+                    });
+                    if (response.ok) {
+                        const data = await response.json();
+                        const customFields = (data.customFields || data.fields || []).filter(
+                            (f: CustomFieldDefinition) => !f.is_hidden
+                        );
+                        const standardNames = new Set(standardFields.map(f => f.field_name));
+                        customFields.forEach((f: CustomFieldDefinition) => {
+                            if (!standardNames.has(f.field_name)) allFields.push(f);
+                        });
+                        allFields.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+                    }
+                } catch (err) {
+                    console.error('Error fetching upload fields:', err);
+                }
+            }
+            setUploadModuleFields(allFields);
+            setIsLoadingUploadFields(false);
+        };
+        fetchUploadFields();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [showUploadModal, selectedUploadModule]);
 
     // Available modules for upload with field mappings
     const uploadModules: UploadModule[] = [
@@ -383,52 +429,29 @@ export default function AdminCenter() {
         return standardFieldsMap[moduleId] || [];
     };
 
-    // Get field order and labels from Field Management (includes standard fields)
+    // Get field order and labels from Field Management only (admin center non-hidden fields)
     const getFieldConfig = (moduleId: string): { fields: string[]; labels: Record<string, string> } => {
-        const customConfig = moduleFieldConfigs[moduleId] || [];
-        const standardFields = getStandardFields(moduleId);
-        
-        // Combine standard and custom fields
-        const allFields: CustomFieldDefinition[] = [...standardFields];
-        const standardFieldNames = new Set(standardFields.map(f => f.field_name));
-        
-        // Add custom fields that aren't already in standard fields
-        customConfig.forEach((field: CustomFieldDefinition) => {
-            if (!standardFieldNames.has(field.field_name)) {
-                allFields.push(field);
-            }
-        });
-        
-        // Sort by sort_order
-        allFields.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
-        
+        const adminFields = moduleFieldConfigs[moduleId] || [];
+        const fallback = getStandardFields(moduleId);
+        const allFields = adminFields.length > 0 ? adminFields : fallback;
+        const sorted = [...allFields].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+
         const fields: string[] = [];
         const labels: Record<string, string> = {};
-
-        allFields.forEach((field: CustomFieldDefinition) => {
+        sorted.forEach((field: CustomFieldDefinition) => {
             fields.push(field.field_name);
             labels[field.field_name] = field.field_label;
         });
-
         return { fields, labels };
     };
 
-    // Get all available fields for the selected module
+    // Get all available fields for the selected module (admin center non-hidden fields only)
     const getAvailableFields = (): CustomFieldDefinition[] => {
         if (!selectedModule) return [];
-        const customConfig = moduleFieldConfigs[selectedModule] || [];
-        const standardFields = getStandardFields(selectedModule);
-        
-        const allFields: CustomFieldDefinition[] = [...standardFields];
-        const standardFieldNames = new Set(standardFields.map(f => f.field_name));
-        
-        customConfig.forEach((field: CustomFieldDefinition) => {
-            if (!standardFieldNames.has(field.field_name)) {
-                allFields.push(field);
-            }
-        });
-        
-        return allFields.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+        const adminFields = moduleFieldConfigs[selectedModule] || [];
+        const fallback = getStandardFields(selectedModule);
+        const allFields = adminFields.length > 0 ? adminFields : fallback;
+        return [...allFields].sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
     };
 
     // Handle field selection
@@ -455,18 +478,15 @@ export default function AdminCenter() {
     const convertToCSV = (data: any[], moduleId: string, moduleName: string, fieldsToInclude?: string[]): string => {
         if (data.length === 0) return '';
         
-        // Flatten all objects
+        // Flatten all objects (nested keys like custom_fields.Industry become accessible)
         const flattenedData = data.map(item => flattenObject(item));
         
-        // Get field configuration
+        // Get field configuration (labels for headers)
         const { labels } = getFieldConfig(moduleId);
         
-        // Use selected fields if provided, otherwise use all fields
+        // Use selected fields if provided (preserve order and include all selected columns)
         const headers = fieldsToInclude && fieldsToInclude.length > 0 
-            ? fieldsToInclude.filter(field => {
-                // Verify field exists in at least one data item
-                return flattenedData.some(item => item.hasOwnProperty(field));
-            })
+            ? fieldsToInclude
             : Object.keys(flattenedData[0] || {});
         
         // Create CSV rows with proper escaping and use field labels
@@ -477,7 +497,7 @@ export default function AdminCenter() {
             }).join(','),
             ...flattenedData.map(row =>
                 headers.map(header => {
-                    const value = row[header] || '';
+                    const value = row[header] ?? '';
                     // Convert to string and escape quotes
                     const stringValue = String(value).replace(/"/g, '""');
                     // Always wrap in quotes for consistency and to handle special characters
@@ -762,22 +782,47 @@ export default function AdminCenter() {
 
             setParsedData(dataRows);
             
-            // Auto-map fields based on module's field mappings
+            // Auto-map: prefer exact label match, use each Excel header at most once
             if (selectedUploadModule) {
+                const autoMappings: Record<string, string> = {};
                 const module = uploadModules.find(m => m.id === selectedUploadModule);
-                if (module) {
-                    const autoMappings: Record<string, string> = {};
-                    headers.forEach(header => {
-                        const lowerHeader = header.toLowerCase().trim();
-                        for (const [systemField, csvVariants] of Object.entries(module.fieldMappings)) {
-                            if (csvVariants.some(variant => lowerHeader === variant.toLowerCase())) {
-                                autoMappings[header] = systemField;
-                                break;
-                            }
-                        }
+                const systemFieldsList = uploadModuleFields.length > 0
+                    ? uploadModuleFields
+                    : (module ? Object.keys(module.fieldMappings).map(f => ({ field_name: f, field_label: f, is_required: (module.requiredFields || []).includes(f) })) : []);
+                const normalize = (s: string) => s.toLowerCase().trim().replace(/\s*\*+\s*$/, '').trim();
+                const usedHeaders = new Set<string>();
+
+                // Pass 1: exact label or exact field_name match (each header used only once)
+                systemFieldsList.forEach((field: { field_name: string; field_label: string }) => {
+                    const lowerLabel = normalize(field.field_label);
+                    const lowerName = field.field_name.toLowerCase().replace(/_/g, ' ');
+                    const match = headers.find(h => {
+                        if (usedHeaders.has(h)) return false;
+                        const normalized = normalize(h);
+                        return normalized === lowerLabel || normalized === lowerName;
                     });
-                    setFieldMappings(autoMappings);
-                }
+                    if (match) {
+                        autoMappings[field.field_name] = match;
+                        usedHeaders.add(match);
+                    }
+                });
+
+                // Pass 2: variant match for fields still unmapped (only unused headers)
+                systemFieldsList.forEach((field: { field_name: string; field_label: string }) => {
+                    if (autoMappings[field.field_name]) return;
+                    const csvVariants = module?.fieldMappings?.[field.field_name] ?? [];
+                    const match = headers.find(h => {
+                        if (usedHeaders.has(h)) return false;
+                        const normalized = normalize(h);
+                        return csvVariants.some((v: string) => normalize(v) === normalized);
+                    });
+                    if (match) {
+                        autoMappings[field.field_name] = match;
+                        usedHeaders.add(match);
+                    }
+                });
+
+                setFieldMappings(autoMappings);
             }
 
             setCurrentStep('map');
@@ -803,34 +848,37 @@ export default function AdminCenter() {
             return { isValid: false, errors, warnings };
         }
 
-        // Check if required fields are mapped
-        const mappedFields = Object.values(fieldMappings);
-        const missingRequired = module.requiredFields.filter(req => !mappedFields.includes(req));
+        // Required fields: use dynamic uploadModuleFields when available, else static module.requiredFields
+        const requiredFields = uploadModuleFields.length > 0
+            ? uploadModuleFields.filter(f => f.is_required).map(f => f.field_name)
+            : module.requiredFields;
+        // fieldMappings is systemField -> csvHeader
+        const missingRequired = requiredFields.filter(req => !fieldMappings[req] || fieldMappings[req].trim() === '');
         if (missingRequired.length > 0) {
-            errors.push(`Required fields not mapped: ${missingRequired.join(', ')}`);
+            const labels = missingRequired.map(r => uploadModuleFields.find(f => f.field_name === r)?.field_label ?? r);
+            errors.push(`Required fields not mapped: ${labels.join(', ')}`);
         }
 
         // Validate each row
         parsedData.forEach((row, index) => {
             const rowErrors: string[] = [];
             
-            module.requiredFields.forEach(reqField => {
-                const csvHeader = Object.keys(fieldMappings).find(h => fieldMappings[h] === reqField);
+            requiredFields.forEach(reqField => {
+                const csvHeader = fieldMappings[reqField];
                 if (csvHeader) {
                     const value = row.raw[csvHeader];
                     if (!value || value.trim() === '') {
-                        rowErrors.push(`Row ${row.rowNumber}: Missing required field "${reqField}"`);
+                        const label = uploadModuleFields.find(f => f.field_name === reqField)?.field_label ?? reqField;
+                        rowErrors.push(`Row ${row.rowNumber}: Missing required field "${label}"`);
                     }
                 }
             });
 
             // Validate email format if email field exists
-            const emailField = Object.keys(fieldMappings).find(h => 
-                fieldMappings[h] === 'email' || fieldMappings[h] === 'Email'
-            );
-            if (emailField && row.raw[emailField]) {
+            const emailCsvHeader = fieldMappings['email'];
+            if (emailCsvHeader && row.raw[emailCsvHeader]) {
                 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-                if (!emailRegex.test(row.raw[emailField])) {
+                if (!emailRegex.test(row.raw[emailCsvHeader])) {
                     warnings.push(`Row ${row.rowNumber}: Invalid email format`);
                 }
             }
@@ -845,23 +893,22 @@ export default function AdminCenter() {
         return { isValid: errors.length === 0, errors, warnings };
     };
 
-    // Map CSV data to system format
+    // Map CSV data to system format (fieldMappings: systemField -> csvHeader)
     const mapDataToSystemFormat = (): ParsedRow[] => {
         return parsedData.map(row => {
             const mapped: Record<string, any> = {};
-            
-            Object.entries(fieldMappings).forEach(([csvHeader, systemField]) => {
+            Object.entries(fieldMappings).forEach(([systemField, csvHeader]) => {
+                if (!csvHeader) return;
                 const value = row.raw[csvHeader];
                 if (value !== undefined && value !== '') {
                     mapped[systemField] = value.trim();
                 }
             });
-
             return { ...row, mapped };
         });
     };
 
-    // Handle upload
+    // Handle upload: use data-uploader import API so records are created/updated in main system
     const handleUpload = async () => {
         const validation = validateData();
         if (!validation.isValid) {
@@ -869,67 +916,67 @@ export default function AdminCenter() {
             return;
         }
 
-        setIsUploading(true);
-        setUploadProgress({ current: 0, total: parsedData.length });
-        setUploadResults(null);
-
         const mappedData = mapDataToSystemFormat();
         const module = uploadModules.find(m => m.id === selectedUploadModule);
         if (!module) {
             toast.error('Invalid module selected.');
-            setIsUploading(false);
             return;
         }
 
+        const recordsToSend = mappedData
+            .filter(row => row.errors.length === 0)
+            .map(row => row.mapped);
+
+        if (recordsToSend.length === 0) {
+            toast.error('No valid rows to upload.');
+            return;
+        }
+
+        setIsUploading(true);
+        setUploadProgress({ current: 0, total: recordsToSend.length });
+        setUploadResults(null);
+
         const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-        let successCount = 0;
-        let failedCount = 0;
-        const errors: string[] = [];
 
         try {
-            // Upload records one by one (or in batches)
-            for (let i = 0; i < mappedData.length; i++) {
-                const row = mappedData[i];
-                
-                // Skip rows with errors
-                if (row.errors.length > 0) {
-                    failedCount++;
-                    errors.push(`Row ${row.rowNumber}: ${row.errors.join(', ')}`);
-                    setUploadProgress({ current: i + 1, total: mappedData.length });
-                    continue;
-                }
+            const response = await fetch('/api/admin/data-uploader/import', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`,
+                },
+                body: JSON.stringify({
+                    entityType: selectedUploadModule,
+                    records: recordsToSend,
+                    options: {
+                        updateExisting: uploadUpdateExisting,
+                        skipDuplicates: false,
+                        importNewOnly: false,
+                    },
+                }),
+            });
 
-                try {
-                    const response = await fetch(module.apiEndpoint, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${token}`,
-                        },
-                        body: JSON.stringify(row.mapped),
-                    });
+            const data = await response.json();
 
-                    if (response.ok) {
-                        successCount++;
-                    } else {
-                        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
-                        failedCount++;
-                        errors.push(`Row ${row.rowNumber}: ${errorData.message || 'Upload failed'}`);
-                    }
-                } catch (error) {
-                    failedCount++;
-                    errors.push(`Row ${row.rowNumber}: ${error instanceof Error ? error.message : 'Network error'}`);
-                }
-
-                setUploadProgress({ current: i + 1, total: mappedData.length });
+            if (!response.ok) {
+                toast.error(data.message || 'Import failed');
+                setIsUploading(false);
+                return;
             }
 
+            const summary = data.summary || { successful: 0, failed: 0, errors: [] };
+            const errorsList = Array.isArray(summary.errors)
+                ? summary.errors.flatMap((e: { row?: number; errors?: string[] }) =>
+                    (e.errors || []).map((err: string) => (e.row ? `Row ${e.row}: ${err}` : err))
+                  )
+                : [];
             setUploadResults({
-                success: successCount,
-                failed: failedCount,
-                errors: errors.slice(0, 20) // Limit to first 20 errors
+                success: summary.successful ?? 0,
+                failed: summary.failed ?? 0,
+                errors: errorsList.slice(0, 20),
             });
             setCurrentStep('upload');
+            toast.success(`Import complete: ${summary.successful ?? 0} succeeded, ${summary.failed ?? 0} failed.`);
         } catch (error) {
             console.error('Upload error:', error);
             toast.error('An error occurred during upload. Please try again.');
@@ -974,7 +1021,16 @@ export default function AdminCenter() {
             const module = downloadModules.find(m => m.id === selectedModule);
             const moduleName = module?.name || selectedModule;
 
-            // Call backend export API with filters and selected fields
+            // Custom fields are stored by field_label (e.g. "Industry") but we send field_name (e.g. "Field_1").
+            // Send a map so the export API can look up custom_fields[field_label].
+            const availableFields = getAvailableFields();
+            const fieldNameToLabel: Record<string, string> = {};
+            availableFields.forEach((f: CustomFieldDefinition) => {
+                if (f.field_label && f.field_label !== f.field_name) {
+                    fieldNameToLabel[f.field_name] = f.field_label;
+                }
+            });
+
             const response = await fetch('/api/admin/data-downloader/export', {
                 method: 'POST',
                 headers: {
@@ -984,12 +1040,14 @@ export default function AdminCenter() {
                 body: JSON.stringify({
                     module: selectedModule,
                     selectedFields: selectedFields,
+                    fieldNameToLabel: Object.keys(fieldNameToLabel).length > 0 ? fieldNameToLabel : undefined,
                     filters: {
                         startDate: dateRange.start || null,
                         endDate: dateRange.end || null,
                         status: statusFilter || null,
                     },
                     format: exportFormat,
+                    debug: true,
                 }),
             });
 
@@ -1002,6 +1060,11 @@ export default function AdminCenter() {
 
             if (!result.success) {
                 throw new Error(result.message || 'Export failed');
+            }
+
+            if (result.debug) {
+                console.log('[Export Debug]', result.debug);
+                toast.info('Debug info in console (F12 → Console). Check "Export Debug" for details.');
             }
 
             const data = result.data || [];
@@ -1455,49 +1518,49 @@ export default function AdminCenter() {
                                 </>
                             )}
 
-                            {/* Step 2: Map Fields */}
+                            {/* Step 2: Map Fields - LEFT: system fields (Admin non-hidden); RIGHT: CSV/Excel column headers */}
                             {currentStep === 'map' && csvHeaders.length > 0 && (
                                 <>
                                     <div>
                                         <h3 className="text-sm font-medium text-gray-700 mb-3">
                                             Map CSV Columns to System Fields
                                         </h3>
-                                        <div className="border border-gray-200 rounded p-4 max-h-96 overflow-y-auto">
-                                            {csvHeaders.map(header => {
+                                        <p className="text-xs text-gray-500 mb-2">
+                                            Left: system fields for {uploadModules.find(m => m.id === selectedUploadModule)?.name ?? selectedUploadModule}. Right: select the column from your file that maps to each field.
+                                        </p>
+                                        {isLoadingUploadFields && (
+                                            <p className="text-sm text-gray-500 mb-2">Loading system fields…</p>
+                                        )}
+                                        <div className="border border-gray-200 rounded p-4 max-h-96 overflow-y-auto space-y-3">
+                                            {(uploadModuleFields.length > 0 ? uploadModuleFields : (() => {
                                                 const module = uploadModules.find(m => m.id === selectedUploadModule);
-                                                const systemFields = module ? Object.keys(module.fieldMappings) : [];
-                                                
-                                                return (
-                                                    <div key={header} className="flex items-center gap-4 mb-3 pb-3 border-b last:border-b-0">
-                                                        <div className="w-48 text-sm text-gray-700 font-medium">
-                                                            {header}
-                                                        </div>
-                                                        <div className="flex-1">
-                                                            <select
-                                                                value={fieldMappings[header] || ''}
-                                                                onChange={(e) => {
-                                                                    const newMappings = { ...fieldMappings };
-                                                                    if (e.target.value) {
-                                                                        newMappings[header] = e.target.value;
-                                                                    } else {
-                                                                        delete newMappings[header];
-                                                                    }
-                                                                    setFieldMappings(newMappings);
-                                                                }}
-                                                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                                            >
-                                                                <option value="">-- Skip --</option>
-                                                                {systemFields.map(field => (
-                                                                    <option key={field} value={field}>
-                                                                        {field}
-                                                                        {module?.requiredFields.includes(field) && ' *'}
-                                                                    </option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
+                                                return module ? Object.keys(module.fieldMappings).map(f => ({ field_name: f, field_label: f, is_required: (module.requiredFields || []).includes(f) })) : [];
+                                            })()).map((field: CustomFieldDefinition | { field_name: string; field_label: string; is_required?: boolean }) => (
+                                                <div key={field.field_name} className="flex items-center gap-4 py-2 border-b border-gray-100 last:border-b-0">
+                                                    <div className="w-52 shrink-0 text-sm font-medium text-gray-700 border-r border-gray-200 pr-3" title="System field from Admin Center">
+                                                        {field.field_label}
+                                                        {(field as CustomFieldDefinition).is_required && <span className="text-red-500 ml-0.5">*</span>}
                                                     </div>
-                                                );
-                                            })}
+                                                    <div className="flex-1 min-w-0">
+                                                        <select
+                                                            value={fieldMappings[field.field_name] || ''}
+                                                            onChange={(e) => {
+                                                                const v = e.target.value;
+                                                                setFieldMappings(prev => ({ ...prev, [field.field_name]: v }));
+                                                            }}
+                                                            className="w-full max-w-md p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                            title="CSV/Excel column header from your file"
+                                                        >
+                                                            <option value="">-- Skip --</option>
+                                                            {csvHeaders.map(header => (
+                                                                <option key={header} value={header}>
+                                                                    {header}
+                                                                </option>
+                                                            ))}
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
 
@@ -1548,27 +1611,32 @@ export default function AdminCenter() {
                                                 <thead className="bg-gray-50 sticky top-0">
                                                     <tr>
                                                         <th className="p-2 text-left border-b">Row</th>
-                                                        {Object.keys(fieldMappings).map(header => (
-                                                            <th key={header} className="p-2 text-left border-b">
-                                                                {fieldMappings[header]}
-                                                            </th>
-                                                        ))}
+                                                        {Object.entries(fieldMappings)
+                                                            .filter(([, csvHeader]) => csvHeader)
+                                                            .map(([systemField]) => {
+                                                                const label = uploadModuleFields.find(f => f.field_name === systemField)?.field_label ?? systemField;
+                                                                return (
+                                                                    <th key={systemField} className="p-2 text-left border-b">
+                                                                        {label}
+                                                                    </th>
+                                                                );
+                                                            })}
                                                         <th className="p-2 text-left border-b">Status</th>
                                                     </tr>
                                                 </thead>
                                                 <tbody>
                                                     {parsedData.slice(0, 10).map((row, index) => {
-                                                        const mapped = mapDataToSystemFormat()[index];
                                                         const hasErrors = row.errors.length > 0;
-                                                        
                                                         return (
                                                             <tr key={index} className={hasErrors ? 'bg-red-50' : ''}>
                                                                 <td className="p-2 border-b">{row.rowNumber}</td>
-                                                                {Object.keys(fieldMappings).map(header => (
-                                                                    <td key={header} className="p-2 border-b">
-                                                                        {row.raw[header] || '-'}
-                                                                    </td>
-                                                                ))}
+                                                                {Object.entries(fieldMappings)
+                                                                    .filter(([, csvHeader]) => csvHeader)
+                                                                    .map(([systemField, csvHeader]) => (
+                                                                        <td key={systemField} className="p-2 border-b">
+                                                                            {row.raw[csvHeader] ?? '-'}
+                                                                        </td>
+                                                                    ))}
                                                                 <td className="p-2 border-b">
                                                                     {hasErrors ? (
                                                                         <span className="text-red-600 text-xs">
@@ -1589,6 +1657,19 @@ export default function AdminCenter() {
                                                 </div>
                                             )}
                                         </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2 mb-4">
+                                        <input
+                                            type="checkbox"
+                                            id="upload-update-existing"
+                                            checked={uploadUpdateExisting}
+                                            onChange={(e) => setUploadUpdateExisting(e.target.checked)}
+                                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                                        />
+                                        <label htmlFor="upload-update-existing" className="text-sm text-gray-700">
+                                            Update existing records when a match is found (e.g. by email or name)
+                                        </label>
                                     </div>
 
                                     <div className="flex justify-end gap-3">
