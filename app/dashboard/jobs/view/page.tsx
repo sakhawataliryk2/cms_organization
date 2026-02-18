@@ -302,7 +302,32 @@ const JOB_DETAILS_STORAGE_KEY = "jobsJobDetailsFields";
 const DETAILS_STORAGE_KEY = "jobsDetailsFields";
 const HIRING_MANAGER_STORAGE_KEY = "jobsHiringManagerFields";
 
-const JOB_VIEW_TAB_IDS = ["summary", "modify", "history", "notes", "docs"];
+const JOB_VIEW_TAB_IDS = ["summary", "applied", "modify", "history", "notes", "docs"];
+
+// TEMP: Static applications list to simulate XML feed until feed is built
+const STATIC_XML_APPLICATIONS = [
+  {
+    id: 1,
+    candidateName: "ONIKA BOYKE",
+    dateApplied: "2025-09-06T11:28:00Z",
+    status: "Submitted",
+    addedBy: "XML Feed",
+  },
+  {
+    id: 2,
+    candidateName: "Shahara West",
+    dateApplied: "2025-09-15T15:21:00Z",
+    status: "Submitted",
+    addedBy: "XML Feed",
+  },
+  {
+    id: 3,
+    candidateName: "Ajarnie Neil",
+    dateApplied: "2025-09-09T16:52:00Z",
+    status: "Placed",
+    addedBy: "XML Feed",
+  },
+];
 
 export default function JobView() {
   const router = useRouter();
@@ -624,7 +649,14 @@ export default function JobView() {
           ).length;
         }
 
-        setQuickTabCounts({ applied, clientSubmissions, interviews, placements });
+        // Applied count will ultimately come from XML feed.
+        // For now, override with static XML applications to make UI deterministic.
+        setQuickTabCounts({
+          applied: STATIC_XML_APPLICATIONS.length,
+          clientSubmissions,
+          interviews,
+          placements,
+        });
       } catch {
         setQuickTabCounts({
           applied: 0,
@@ -3951,6 +3983,7 @@ export default function JobView() {
   // Tabs from the image
   const tabs = [
     { id: "summary", label: "Summary" },
+    // { id: "applied", label: "Applied" },
     { id: "modify", label: "Modify" },
     { id: "history", label: "History" },
     { id: "notes", label: "Notes" },
@@ -4185,8 +4218,9 @@ export default function JobView() {
                 switch (item.action) {
                   case "CREATE":
                     actionDisplay = "Job Created";
-                    detailsDisplay = `Created by ${item.performed_by_name || "Unknown"
-                      }`;
+                    detailsDisplay = `Created by ${
+                      item.performed_by_name || "Unknown"
+                    }`;
                     break;
                   case "UPDATE":
                     actionDisplay = "Job Updated";
@@ -4208,27 +4242,48 @@ export default function JobView() {
                         const beforeVal = details.before[key];
                         const afterVal = details.after[key];
 
-                        if (JSON.stringify(beforeVal) !== JSON.stringify(afterVal)) {
+                        if (
+                          JSON.stringify(beforeVal) !== JSON.stringify(afterVal)
+                        ) {
                           // Special handling for custom_fields
                           if (key === "custom_fields") {
-                            let beforeObj = typeof beforeVal === 'string' ? JSON.parse(beforeVal) : beforeVal;
-                            let afterObj = typeof afterVal === 'string' ? JSON.parse(afterVal) : afterVal;
+                            let beforeObj =
+                              typeof beforeVal === "string"
+                                ? JSON.parse(beforeVal)
+                                : beforeVal;
+                            let afterObj =
+                              typeof afterVal === "string"
+                                ? JSON.parse(afterVal)
+                                : afterVal;
 
                             // Handle case where custom_fields might be null/undefined
                             beforeObj = beforeObj || {};
                             afterObj = afterObj || {};
 
-                            if (typeof beforeObj === 'object' && typeof afterObj === 'object') {
-                              const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
+                            if (
+                              typeof beforeObj === "object" &&
+                              typeof afterObj === "object"
+                            ) {
+                              const allKeys = Array.from(
+                                new Set([
+                                  ...Object.keys(beforeObj),
+                                  ...Object.keys(afterObj),
+                                ])
+                              );
 
-                              allKeys.forEach(cfKey => {
+                              allKeys.forEach((cfKey) => {
                                 const beforeCfVal = beforeObj[cfKey];
                                 const afterCfVal = afterObj[cfKey];
 
                                 if (beforeCfVal !== afterCfVal) {
                                   changes.push(
-                                    <div key={`cf-${cfKey}`} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                                      <span className="font-semibold text-gray-700 min-w-[120px]">{cfKey}:</span>
+                                    <div
+                                      key={`cf-${cfKey}`}
+                                      className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm"
+                                    >
+                                      <span className="font-semibold text-gray-700 min-w-[120px]">
+                                        {cfKey}:
+                                      </span>
                                       <div className="flex flex-wrap gap-2 items-center">
                                         <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
                                           {formatValue(beforeCfVal)}
@@ -4245,23 +4300,6 @@ export default function JobView() {
                               continue; // Skip the standard field handling for custom_fields
                             }
                           }
-
-                          // Standard fields
-                          // const fieldName = key.replace(/_/g, " ");
-                          // changes.push(
-                          //   <div key={key} className="flex flex-col sm:flex-row sm:items-baseline gap-1 text-sm">
-                          //     <span className="font-semibold text-gray-700 capitalize min-w-[120px]">{fieldName}:</span>
-                          //     <div className="flex flex-wrap gap-2 items-center">
-                          //       <span className="text-red-600 bg-red-50 px-1 rounded line-through decoration-red-400 opacity-80">
-                          //         {formatValue(beforeVal)}
-                          //       </span>
-                          //       <span className="text-gray-400">→</span>
-                          //       <span className="text-green-700 bg-green-50 px-1 rounded font-medium">
-                          //         {formatValue(afterVal)}
-                          //       </span>
-                          //     </div>
-                          //   </div>
-                          // );
                         }
                       }
 
@@ -4272,7 +4310,11 @@ export default function JobView() {
                           </div>
                         );
                       } else {
-                        detailsDisplay = <span className="text-gray-500 italic">No visible changes detected</span>;
+                        detailsDisplay = (
+                          <span className="text-gray-500 italic">
+                            No visible changes detected
+                          </span>
+                        );
                       }
                     }
                     break;
@@ -4316,6 +4358,90 @@ export default function JobView() {
       )}
     </div>
   );
+
+  // Applied tab content – currently backed by static XML-style applications
+  const renderAppliedTab = () => {
+    return (
+      <div className="bg-white p-4 rounded shadow-sm border border-gray-200">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-lg font-semibold text-gray-800">Applied</h2>
+            <span className="text-sm text-gray-500">
+              ({STATIC_XML_APPLICATIONS.length})
+            </span>
+          </div>
+          <span className="text-xs text-gray-500">
+            Last Activity{" "}
+            {STATIC_XML_APPLICATIONS.length > 0
+              ? new Date(
+                  STATIC_XML_APPLICATIONS.reduce((latest, app) => {
+                    const t = new Date(app.dateApplied).getTime();
+                    return t > latest ? t : latest;
+                  }, 0)
+                ).toLocaleDateString()
+              : "—"}
+          </span>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full text-sm border border-gray-200">
+            <thead className="bg-gray-50">
+              <tr className="text-xs font-semibold uppercase text-gray-500">
+                <th className="px-3 py-2 text-left w-10">
+                  <input type="checkbox" className="w-4 h-4" disabled />
+                </th>
+                <th className="px-3 py-2 text-left">Candidate</th>
+                <th className="px-3 py-2 text-left">Date Applied</th>
+                <th className="px-3 py-2 text-left">Date Last Modified</th>
+                <th className="px-3 py-2 text-left">Status</th>
+                <th className="px-3 py-2 text-left">Added By</th>
+              </tr>
+            </thead>
+            <tbody>
+              {STATIC_XML_APPLICATIONS.map((app) => {
+                const appliedDate = new Date(app.dateApplied);
+                const formattedDate = `${appliedDate.toLocaleDateString()} ${appliedDate.toLocaleTimeString(
+                  [],
+                  { hour: "2-digit", minute: "2-digit" }
+                )}`;
+                return (
+                  <tr
+                    key={app.id}
+                    className="border-t border-gray-200 hover:bg-gray-50"
+                  >
+                    <td className="px-3 py-2">
+                      <input type="checkbox" className="w-4 h-4" />
+                    </td>
+                    <td className="px-3 py-2 text-blue-600 font-medium cursor-pointer">
+                      {app.candidateName}
+                    </td>
+                    <td className="px-3 py-2 text-gray-700">{formattedDate}</td>
+                    <td className="px-3 py-2 text-gray-700">{formattedDate}</td>
+                    <td className="px-3 py-2">
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">
+                        {app.status}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-gray-700">{app.addedBy}</td>
+                  </tr>
+                );
+              })}
+              {STATIC_XML_APPLICATIONS.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={6}
+                    className="px-3 py-6 text-center text-sm text-gray-500"
+                  >
+                    No applications have been received yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  };
 
   // FIXED: Modified the Modify tab to directly use handleEdit
   const renderModifyTab = () => (
@@ -5000,7 +5126,7 @@ export default function JobView() {
                 ? "bg-white text-blue-600 font-medium"
                 : "bg-white text-gray-700 hover:bg-gray-100"
                 } px-4 py-1 rounded-full shadow`}
-              onClick={() => setActiveQuickTab(action.id)}
+              onClick={() => action.id === "applied" ? setActiveTab("applied") : setActiveQuickTab(action.id)}
             >
               <span className="flex items-center gap-2">
                 <span>{action.label}</span>
@@ -5024,6 +5150,7 @@ export default function JobView() {
           </button>
         )} */}
       </div>
+
 
       {/* Main Content Area */}
       <div className="p-4">
@@ -5120,6 +5247,11 @@ export default function JobView() {
                 </div>
               )}
             </div>
+          )}
+
+          {/* Applied Tab */}
+          {activeTab === "applied" && (
+            <div className="col-span-7">{renderAppliedTab()}</div>
           )}
 
           {/* Notes Tab */}
