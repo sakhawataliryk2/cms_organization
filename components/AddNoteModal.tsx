@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import Image from 'next/image';
 import { FiUserCheck, FiSearch } from 'react-icons/fi';
 import { HiOutlineUser } from 'react-icons/hi';
-import { formatRecordId } from '@/lib/recordIdFormatter';
+import { formatRecordId, type RecordType } from '@/lib/recordIdFormatter';
 
 interface AddNoteModalProps {
     open: boolean;
@@ -302,7 +302,14 @@ export default function AddNoteModal({
                 fetch("/api/hiring-managers", { headers }),
             ]);
 
-            const suggestions: any[] = [];
+            const toSuggestion = (item: any, type: string, displayKey: string, formatKey: RecordType) => ({
+                id: item.id,
+                type,
+                display: `${formatRecordId(item.id, formatKey)} ${item[displayKey] || "Unnamed"}`,
+                value: formatRecordId(item.id, formatKey),
+            });
+
+            const lists: any[][] = [];
 
             // Process jobs
             if (jobsRes.status === "fulfilled" && jobsRes.value.ok) {
@@ -314,14 +321,9 @@ export default function AddNoteModal({
                             job.id?.toString().includes(searchTerm)
                     )
                     : (data.jobs || []);
-                jobs.forEach((job: any) => {
-                    suggestions.push({
-                        id: job.id,
-                        type: "Job",
-                        display: `${formatRecordId(job.id, "job")} ${job.job_title || "Untitled"}`,
-                        value: formatRecordId(job.id, "job"),
-                    });
-                });
+                lists.push(jobs.map((job: any) => toSuggestion(job, "Job", "job_title", "job")));
+            } else {
+                lists.push([]);
             }
 
             // Process organizations
@@ -334,14 +336,9 @@ export default function AddNoteModal({
                             org.id?.toString().includes(searchTerm)
                     )
                     : (data.organizations || []);
-                orgs.forEach((org: any) => {
-                    suggestions.push({
-                        id: org.id,
-                        type: "Organization",
-                        display: `${formatRecordId(org.id, "organization")} ${org.name || "Unnamed"}`,
-                        value: formatRecordId(org.id, "organization"),
-                    });
-                });
+                lists.push(orgs.map((org: any) => toSuggestion(org, "Organization", "name", "organization")));
+            } else {
+                lists.push([]);
             }
 
             // Process job seekers
@@ -354,15 +351,14 @@ export default function AddNoteModal({
                             js.id?.toString().includes(searchTerm)
                     )
                     : (data.jobSeekers || []);
-                jobSeekers.forEach((js: any) => {
-                    const name = `${js.first_name || ""} ${js.last_name || ""}`.trim() || "Unnamed";
-                    suggestions.push({
-                        id: js.id,
-                        type: "Job Seeker",
-                        display: `${formatRecordId(js.id, "jobSeeker")} ${name}`,
-                        value: formatRecordId(js.id, "jobSeeker"),
-                    });
-                });
+                lists.push(
+                    jobSeekers.map((js: any) => {
+                        const name = `${js.first_name || ""} ${js.last_name || ""}`.trim() || "Unnamed";
+                        return { id: js.id, type: "Job Seeker", display: `${formatRecordId(js.id, "jobSeeker")} ${name}`, value: formatRecordId(js.id, "jobSeeker") };
+                    })
+                );
+            } else {
+                lists.push([]);
             }
 
             // Process leads
@@ -375,14 +371,9 @@ export default function AddNoteModal({
                             lead.id?.toString().includes(searchTerm)
                     )
                     : (data.leads || []);
-                leads.forEach((lead: any) => {
-                    suggestions.push({
-                        id: lead.id,
-                        type: "Lead",
-                        display: `${formatRecordId(lead.id, "lead")} ${lead.name || "Unnamed"}`,
-                        value: formatRecordId(lead.id, "lead"),
-                    });
-                });
+                lists.push(leads.map((lead: any) => toSuggestion(lead, "Lead", "name", "lead")));
+            } else {
+                lists.push([]);
             }
 
             // Process tasks
@@ -395,14 +386,9 @@ export default function AddNoteModal({
                             task.id?.toString().includes(searchTerm)
                     )
                     : (data.tasks || []);
-                tasks.forEach((task: any) => {
-                    suggestions.push({
-                        id: task.id,
-                        type: "Task",
-                        display: `${formatRecordId(task.id, "task")} ${task.title || "Untitled"}`,
-                        value: formatRecordId(task.id, "task"),
-                    });
-                });
+                lists.push(tasks.map((task: any) => toSuggestion(task, "Task", "title", "task")));
+            } else {
+                lists.push([]);
             }
 
             // Process placements
@@ -411,17 +397,21 @@ export default function AddNoteModal({
                 const placements = searchTerm
                     ? (data.placements || []).filter(
                         (placement: any) =>
-                            placement.id?.toString().includes(searchTerm)
+                            placement.id?.toString().includes(searchTerm) ||
+                            (placement.jobSeekerName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
+                            (placement.jobTitle || "").toLowerCase().includes(searchTerm.toLowerCase())
                     )
                     : (data.placements || []);
-                placements.forEach((placement: any) => {
-                    suggestions.push({
-                        id: placement.id,
+                lists.push(
+                    placements.map((p: any) => ({
+                        id: p.id,
                         type: "Placement",
-                        display: `${formatRecordId(placement.id, "placement")} Placement`,
-                        value: formatRecordId(placement.id, "placement"),
-                    });
-                });
+                        display: `${formatRecordId(p.id, "placement")} ${[p.jobSeekerName, p.jobTitle].filter(Boolean).join(" – ") || "Placement"}`,
+                        value: formatRecordId(p.id, "placement"),
+                    }))
+                );
+            } else {
+                lists.push([]);
             }
 
             // Process hiring managers
@@ -436,25 +426,38 @@ export default function AddNoteModal({
                         }
                     )
                     : (data.hiringManagers || []);
-                hiringManagers.forEach((hm: any) => {
-                    const name = `${hm.first_name || ""} ${hm.last_name || ""}`.trim() || hm.full_name || "Unnamed";
-                    suggestions.push({
-                        id: hm.id,
-                        type: "Hiring Manager",
-                        display: `${formatRecordId(hm.id, "hiringManager")} ${name}`,
-                        value: formatRecordId(hm.id, "hiringManager"),
-                    });
-                });
+                lists.push(
+                    hiringManagers.map((hm: any) => {
+                        const name = `${hm.first_name || ""} ${hm.last_name || ""}`.trim() || hm.full_name || "Unnamed";
+                        return { id: hm.id, type: "Hiring Manager", display: `${formatRecordId(hm.id, "hiringManager")} ${name}`, value: formatRecordId(hm.id, "hiringManager") };
+                    })
+                );
+            } else {
+                lists.push([]);
             }
 
-            // Filter out already selected references
-            const selectedIds = noteForm.aboutReferences.map((ref) => ref.id);
-            const filteredSuggestions = suggestions.filter(
-                (s) => !selectedIds.includes(s.id)
-            );
+            // Filter out already selected references (normalize to string for comparison)
+            const selectedIds = new Set(noteForm.aboutReferences.map((ref) => String(ref.id)));
+            const filteredLists = lists.map((list) => list.filter((s) => !selectedIds.has(String(s.id))));
 
-            // Limit to top 10 suggestions
-            setAboutSuggestions(filteredSuggestions.slice(0, 10));
+            // Interleave so we show a mix of all entity types (Job, Org, Job Seeker, Lead, Task, Placement, HM, ...)
+            const MAX_SUGGESTIONS = 100;
+            const interleaved: any[] = [];
+            let index = 0;
+            while (interleaved.length < MAX_SUGGESTIONS) {
+                let added = 0;
+                for (const list of filteredLists) {
+                    if (interleaved.length >= MAX_SUGGESTIONS) break;
+                    if (index < list.length) {
+                        interleaved.push(list[index]);
+                        added++;
+                    }
+                }
+                if (added === 0) break;
+                index++;
+            }
+
+            setAboutSuggestions(interleaved);
         } catch (err) {
             console.error("Error searching about references:", err);
             setAboutSuggestions([]);
@@ -846,10 +849,16 @@ export default function AddNoteModal({
                                         type="text"
                                         value={aboutSearchQuery}
                                         onChange={(e) => {
-                                            setAboutSearchQuery(e.target.value);
-                                            searchAboutReferences(e.target.value);
+                                            const value = e.target.value;
+                                            setAboutSearchQuery(value);
+                                            searchAboutReferences(value);
                                         }}
-                                        onFocus={() => setShowAboutDropdown(true)}
+                                        onFocus={() => {
+                                            setShowAboutDropdown(true);
+                                            if (!aboutSearchQuery.trim()) {
+                                                searchAboutReferences("");
+                                            }
+                                        }}
                                         placeholder="Search for records to reference..."
                                         className="flex-1 min-w-[120px] border-none outline-none bg-transparent"
                                     />
@@ -874,7 +883,11 @@ export default function AddNoteModal({
                                                 </div>
                                             ))
                                         ) : (
-                                            <div className="p-3 text-gray-500 text-sm">No results found</div>
+                                            <div className="p-3 text-gray-500 text-sm">
+                                                {aboutSearchQuery.trim().length > 0
+                                                    ? "No results found"
+                                                    : "Type to search or select from list"}
+                                            </div>
                                         )}
                                     </div>
                                 )}
