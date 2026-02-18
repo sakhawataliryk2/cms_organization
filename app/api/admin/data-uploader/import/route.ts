@@ -78,6 +78,12 @@ const FIELD_NAME_TO_BACKEND: Record<string, Record<string, string>> = {
     },
 };
 
+// Common keys that may hold org name when Field Management uses custom field_name
+const ORGANIZATION_NAME_ALTERNATIVES = [
+    'name', 'company_name', 'organization_name', 'org_name', 'company', 'organization',
+    'Company Name', 'Organization Name', 'Name', 'field_1', 'Field_1', 'field1', 'Field1',
+];
+
 function recordToBackendPayload(entityType: string, record: Record<string, any>): Record<string, any> {
     const mapping = FIELD_NAME_TO_BACKEND[entityType];
     if (!mapping) return record;
@@ -86,6 +92,20 @@ function recordToBackendPayload(entityType: string, record: Record<string, any>)
         if (value === undefined || value === '') continue;
         const backendKey = mapping[key] ?? key;
         out[backendKey] = value;
+    }
+    // For organizations: if "name" is missing, try common alternative keys (custom fields may use different names)
+    if (entityType === 'organizations') {
+        const nameVal = out['name'];
+        if (!nameVal || String(nameVal).trim() === '') {
+            for (const alt of ORGANIZATION_NAME_ALTERNATIVES) {
+                if (alt === 'name') continue;
+                const val = record[alt] ?? out[alt];
+                if (val != null && String(val).trim() !== '') {
+                    out['name'] = String(val).trim();
+                    break;
+                }
+            }
+        }
     }
     return out;
 }

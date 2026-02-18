@@ -37,8 +37,8 @@ export default function ActionDropdown({
     label = 'Actions',
     options,
     buttonClassName = 'z-50 px-3 py-1 bg-gray-100 border border-gray-300 rounded flex items-center text-gray-600',
-    menuClassName = 'absolute w-40 bg-white border border-gray-300 shadow-lg rounded z-[100]',
-    optionClassName = 'hover:bg-gray-100 px-3 py-2 cursor-pointer',
+    menuClassName = 'absolute min-w-max w-max bg-white border border-gray-300 shadow-sm rounded z-[100]',
+    optionClassName = 'hover:bg-gray-100 px-3 py-2 cursor-pointer whitespace-nowrap w-full text-left',
     disabled = false
 }: ActionDropdownProps) {
     const [isOpen, setIsOpen] = useState(false);
@@ -98,16 +98,17 @@ export default function ActionDropdown({
         updateMenuPosition();
 
         const scrollParents = getScrollParents(buttonRef.current);
-        const handleScrollOrResize = () => updateMenuPosition();
+        const handleScroll = () => setIsOpen(false);
+        const handleResize = () => updateMenuPosition();
 
-        window.addEventListener('scroll', handleScrollOrResize, true);
-        window.addEventListener('resize', handleScrollOrResize);
-        scrollParents.forEach((el) => el.addEventListener('scroll', handleScrollOrResize));
+        window.addEventListener('scroll', handleScroll, true);
+        window.addEventListener('resize', handleResize);
+        scrollParents.forEach((el) => el.addEventListener('scroll', handleScroll));
 
         return () => {
-            window.removeEventListener('scroll', handleScrollOrResize, true);
-            window.removeEventListener('resize', handleScrollOrResize);
-            scrollParents.forEach((el) => el.removeEventListener('scroll', handleScrollOrResize));
+            window.removeEventListener('scroll', handleScroll, true);
+            window.removeEventListener('resize', handleResize);
+            scrollParents.forEach((el) => el.removeEventListener('scroll', handleScroll));
         };
     }, [isOpen, updateMenuPosition]);
 
@@ -125,7 +126,6 @@ export default function ActionDropdown({
                 position: 'fixed',
                 top: menuPosition.top,
                 left: menuPosition.left,
-                minWidth: '10rem',
             }}
         >
             <ul>
