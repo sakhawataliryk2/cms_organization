@@ -1964,7 +1964,7 @@ export default function LeadView() {
       setShowDeleteModal(true);
     } else if (action === "add-note") {
       setShowAddNote(true);
-      setActiveTab("notes");
+      // setActiveTab("notes");
     } else if (action === "add-task") {
       // Navigate to add task page with lead context
       if (leadId) {

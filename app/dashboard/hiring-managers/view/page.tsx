@@ -3399,7 +3399,7 @@ export default function HiringManagerView() {
       }
     } else if (action === "add-note") {
       setShowAddNote(true);
-      setActiveTab("notes");
+      // setActiveTab("notes");
     } else if (action === "add-job") {
       router.push(
         `/dashboard/jobs/add?relatedEntity=hiring_manager&relatedEntityId=${hiringManagerId}`

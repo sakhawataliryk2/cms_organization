@@ -3526,7 +3526,7 @@ export default function JobView() {
       fetchPlacementUsers();
     } else if (action === "add-note") {
       setShowAddNote(true);
-      setActiveTab("notes");
+      // setActiveTab("notes");
     } else if (action === "add-tearsheet") {
       setShowAddTearsheetModal(true);
     } else if (action === "publish") {
