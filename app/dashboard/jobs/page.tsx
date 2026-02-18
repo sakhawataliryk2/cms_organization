@@ -31,6 +31,7 @@ import { matchesAdvancedValue } from "@/lib/advancedSearch";
 
 interface Job {
   id: string;
+  record_number?: number;
   job_title: string;
   job_type: string;
   category: string;
@@ -651,6 +652,7 @@ export default function JobList() {
         (job) =>
           (job.job_title || "").toLowerCase().includes(term) ||
           String(job.id || "").toLowerCase().includes(term) ||
+          String(job.record_number ?? "").toLowerCase().includes(term) ||
           (job.job_type || "").toLowerCase().includes(term) ||
           (job.organization_name || "").toLowerCase().includes(term) ||
           (job.category || "").toLowerCase().includes(term) ||
@@ -884,7 +886,7 @@ export default function JobList() {
       headers.map(escapeCSV).join(','),
       ...selectedData.map((job) => {
         const row = [
-          `J ${job.id}`,
+          `J ${job.record_number ?? job.id}`,
           ...columnFields.map((key) => escapeCSV(getColumnValue(job, key)))
         ];
         return row.join(',');
@@ -1287,7 +1289,7 @@ export default function JobList() {
                         />
                       </td>
 
-                      <td className="px-6 py-4 text-black whitespace-nowrap">J {job?.id}</td>
+                      <td className="px-6 py-4 text-black whitespace-nowrap">J {job?.record_number ?? job?.id}</td>
                       {columnFields.map((key) => {
                         const colInfo = getColumnInfo(key);
                         const fieldInfo = colInfo

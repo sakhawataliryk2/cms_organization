@@ -22,6 +22,7 @@ import CountdownTimer from "@/components/CountdownTimer";
 
 interface Job {
   id: string;
+  record_number?: number;
   job_title: string;
   job_type?: string;
   category?: string;
@@ -604,6 +605,7 @@ export default function ArchivedJobsList() {
       result = result.filter((job) =>
         (job.job_title || "").toLowerCase().includes(term) ||
         String(job.id || "").toLowerCase().includes(term) ||
+        String(job.record_number ?? "").toLowerCase().includes(term) ||
         (job.organization_name || "").toLowerCase().includes(term) ||
         (job.category || "").toLowerCase().includes(term) ||
         (job.job_type || "").toLowerCase().includes(term) ||
@@ -896,7 +898,7 @@ export default function ArchivedJobsList() {
 
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col gap-1">
-                        <span className="text-sm font-medium text-gray-900">J {job.id}</span>
+                        <span className="text-sm font-medium text-gray-900">J {job.record_number ?? job.id}</span>
                         {job.archived_at && (
                           <CountdownTimer archivedAt={job.archived_at} />
                         )}
