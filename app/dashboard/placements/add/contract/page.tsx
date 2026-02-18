@@ -83,6 +83,19 @@ export default function AddPlacement() {
   const candidateField = fieldByColumn.job_seeker_id;
   const organizationField = fieldByColumn.organization_id;
 
+  // Prefer admin-configured lookup field for Job Seekers when available
+  const jobSeekerLookupField = useMemo(
+    () =>
+      sortedCustomFields.find(
+        (f: any) =>
+          f.field_type === "lookup" &&
+          String((f as any).lookup_type || "")
+            .trim()
+            .toLowerCase() === "job-seekers"
+      ),
+    [sortedCustomFields]
+  );
+
   // Fetch job by jobId when coming from job-first flow (validate type and prefill)
   useEffect(() => {
     if (!jobIdFromUrl || placementId) return;
@@ -328,14 +341,66 @@ export default function AddPlacement() {
         const column = BACKEND_COLUMN_BY_LABEL[label];
         if (column) {
           if (column === "job_seeker_id" || column === "job_id" || column === "organization_id") {
-            const n = Number(value);
-            apiData[column] = !isNaN(n) ? n : null;
+            const str = String(value).trim();
+            if (str === "") {
+              apiData[column] = null;
+            } else {
+              const n = Number(str);
+              apiData[column] = !isNaN(n) ? n : null;
+            }
           } else {
             apiData[column] = value;
           }
         }
         customFieldsForDB[label] = value;
       });
+
+      // Ensure job_id is always set from either:
+      // - The Job field in admin mapping (label -> job_id), OR
+      // - The selected job from job-first flow (jobIdFromUrl / selectedJob)
+      if (apiData.job_id == null) {
+        let finalJobId: number | null = null;
+
+        // Try Job custom field (if present)
+        if (jobField) {
+          const jobLabel = jobField.field_label;
+          const raw = customFieldsToSend[jobLabel];
+          if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
+            const n = Number(raw);
+            if (!isNaN(n) && n > 0) {
+              finalJobId = n;
+            }
+          }
+        }
+
+        // Fallback to selected job / URL param
+        if (finalJobId == null) {
+          const source = selectedJob?.id ?? (selectedJob as any)?.Id ?? jobIdFromUrl;
+          if (source != null) {
+            const n = Number(source);
+            if (!isNaN(n) && n > 0) {
+              finalJobId = n;
+            }
+          }
+        }
+
+        if (finalJobId != null) {
+          apiData.job_id = finalJobId;
+        }
+      }
+
+      // When admin has configured a Job Seeker lookup field, treat it as the source of truth
+      // for job_seeker_id regardless of its label.
+      if (jobSeekerLookupField) {
+        const rawJs = customFieldValues[jobSeekerLookupField.field_name];
+        const jsStr = String(rawJs ?? "").trim();
+        if (jsStr === "") {
+          apiData.job_seeker_id = null;
+        } else {
+          const n = Number(jsStr);
+          apiData.job_seeker_id = !isNaN(n) ? n : null;
+        }
+      }
 
       // Ensure organization_id is set from job if not already set
       if (apiData.job_id != null && jobs.length > 0) {
@@ -516,6 +581,47 @@ export default function AddPlacement() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Explicit Job Seeker selector so a real candidate is always chosen.
+              Use this only when admin has NOT provided a Job Seeker lookup field. */}
+          {!jobSeekerLookupField && candidateField && (
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Job Seeker
+                {candidateField.is_required && (
+                  <span className="text-red-500 ml-1">*</span>
+                )}
+              </label>
+              <select
+                className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+                value={customFieldValues[candidateField.field_name] || ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  handlePlacementFieldChange(
+                    candidateField.field_name,
+                    val === "" ? "" : val
+                  );
+                }}
+              >
+                <option value="">
+                  {isLoadingJobSeekers ? "Loading job seekers..." : "Select Job Seeker"}
+                </option>
+                {jobSeekers.map((js: any) => {
+                  const id = js.id ?? js.Id;
+                  const fullName =
+                    js.full_name ||
+                    `${js.first_name || js.firstName || ""} ${js.last_name || js.lastName || ""}`.trim() ||
+                    js.email ||
+                    `Job Seeker #${id}`;
+                  return (
+                    <option key={id} value={id}>
+                      {fullName}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 gap-4">
             {customFieldsLoading ? (
               <div className="text-center py-4 text-gray-500">Loading custom fields...</div>
@@ -523,6 +629,12 @@ export default function AddPlacement() {
               sortedCustomFields.map((field: any) => {
                 // const column = BACKEND_COLUMN_BY_LABEL[field.field_label];
                 const fieldValue = customFieldValues[field.field_name] ?? field.default_value ?? "";
+
+                // Hide Full Address field (combined display only; address is shown via Address group above)
+                const labelNorm = (field.field_label ?? "").toLowerCase().replace(/[_-]+/g, " ").trim();
+                const isFullAddressField =
+                  labelNorm.includes("full") && labelNorm.includes("address");
+                if (isFullAddressField) return null;
 
                 return (
                   <div key={field.id} className="flex items-center">

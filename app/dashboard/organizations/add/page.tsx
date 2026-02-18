@@ -1604,6 +1604,12 @@ export default function AddOrganization() {
                     return null;
                   }
 
+                  // Hide Full Address field (combined display only; address is shown via Address group above)
+                  const labelNorm = (field.field_label ?? "").toLowerCase().replace(/[_-]+/g, " ").trim();
+                  const isFullAddressField =
+                    labelNorm.includes("full") && labelNorm.includes("address");
+                  if (isFullAddressField) return null;
+
                   // Don't render hidden fields at all (neither label nor input)
                   if (field.is_hidden) return null;
                   const addressFieldIds = addressFields.map((f) => f.id);

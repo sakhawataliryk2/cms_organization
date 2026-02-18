@@ -1291,6 +1291,12 @@ export default function AddHiringManager() {
                   return null;
                 }
 
+                // Hide Full Address field (combined display only; address is shown via Address group above)
+                const labelNorm = (field.field_label ?? "").toLowerCase().replace(/[_-]+/g, " ").trim();
+                const isFullAddressField =
+                  labelNorm.includes("full") && labelNorm.includes("address");
+                if (isFullAddressField) return null;
+
                 // Don't render hidden fields at all (neither label nor input)
                 if (field.is_hidden) return null;
 
@@ -1307,12 +1313,6 @@ export default function AddHiringManager() {
 
                 const fieldValue = customFieldValues[field.field_name] || "";
 
-                // Special handling for Field_9 (Owner) - render as dropdown with active users
-                const isOwnerField =
-                  field.field_name === "Field_9" ||
-                  field.field_name === "field_9" ||
-                  (field.field_label?.toLowerCase() === "owner" && field.field_name?.toLowerCase().includes("9"));
-
                 return (
                   <div key={field.id} className="flex items-center mt-4">
                     <label className="w-48 font-medium flex items-center">
@@ -1326,24 +1326,7 @@ export default function AddHiringManager() {
                         ))}
                     </label>
                     <div className="flex-1 relative">
-                      {isOwnerField ? (
-                        // Render Owner field as dropdown with active users
-                        <select
-                          value={fieldValue}
-                          onChange={(e) =>
-                            handleCustomFieldChange(field.field_name, e.target.value)
-                          }
-                          className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500 appearance-none"
-                          required={field.is_required}
-                        >
-                          <option value="">Select Owner</option>
-                          {activeUsers.map((user) => (
-                            <option key={user.id} value={user.name || user.email}>
-                              {user.name || user.email || `User #${user.id}`}
-                            </option>
-                          ))}
-                        </select>
-                      ) : shouldBeReadOnly ? (
+                      {shouldBeReadOnly ? (
                         // Render read-only organization name (readable name only, no ID)
                         <input
                           type="text"
@@ -1382,8 +1365,8 @@ export default function AddHiringManager() {
               type="submit"
               disabled={isSubmitting || !isFormValid}
               className={`px-4 py-2 rounded ${isSubmitting || !isFormValid
-                  ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                  : "bg-blue-500 text-white hover:bg-blue-600"
+                ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                : "bg-blue-500 text-white hover:bg-blue-600"
                 }`}
             >
               {isEditMode ? "Update" : "Save"}

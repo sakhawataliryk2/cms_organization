@@ -145,6 +145,7 @@ export default function CustomFieldRenderer({
 
   // Auto-populate today's date for ALL date fields (Date Added, W9 Last Inserted Date, General Liabilities date updated, Worker Compensation Date, etc.)
   React.useEffect(() => {
+    if (readOnly || isDisabledByDependency) return;
     if (field.field_type === "date" && !value && !hasAutoFilledRef.current) {
       // Get today's date in mm/dd/yyyy format
       const today = new Date();
@@ -160,7 +161,7 @@ export default function CustomFieldRenderer({
     if (value) {
       hasAutoFilledRef.current = false;
     }
-  }, [field.field_type, field.field_label, field.field_name, value, onChange]);
+  }, [field.field_type, field.field_label, field.field_name, isDisabledByDependency, onChange, readOnly, value]);
 
   const normalizedOptions = React.useMemo<string[]>(() => {
     if (!field.options) {
@@ -1018,6 +1019,7 @@ export default function CustomFieldRenderer({
 
       // Handle date selection from calendar
       const handleDateSelect = (selectedDate: Date) => {
+        if (readOnly || isDisabledByDependency) return;
         const year = selectedDate.getFullYear();
         const month = String(selectedDate.getMonth() + 1).padStart(2, "0");
         const day = String(selectedDate.getDate()).padStart(2, "0");
@@ -1028,6 +1030,7 @@ export default function CustomFieldRenderer({
 
       // Handle manual input with mm/dd/yyyy formatting
       const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (readOnly || isDisabledByDependency) return;
         let inputValue = e.target.value;
         const digitsOnly = inputValue.replace(/\D/g, "");
 
@@ -1146,10 +1149,13 @@ export default function CustomFieldRenderer({
               value={displayValue}
               onChange={handleDateChange}
               placeholder="mm/dd/yyyy"
-              className={`${className} flex-1 min-w-0 pr-10`}
+              className={`${className} flex-1 min-w-0 pr-10 ${readOnly || isDisabledByDependency ? "bg-gray-50 text-gray-600 cursor-not-allowed" : ""}`}
               required={field.is_required}
               maxLength={10}
+              readOnly={readOnly || isDisabledByDependency}
+              disabled={readOnly || isDisabledByDependency}
               onBlur={(e) => {
+                if (readOnly || isDisabledByDependency) return;
                 const inputValue = e.target.value.trim();
                 if (inputValue && inputValue.length === 10) {
                   const [month, day, year] = inputValue.split("/");
@@ -1161,14 +1167,18 @@ export default function CustomFieldRenderer({
                 }
               }}
             />
-            <button
-              type="button"
-              onClick={() => setShowCalendar(!showCalendar)}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
-              title="Open calendar"
-            >
-              <FiCalendar className="w-5 h-5" />
-            </button>
+            {readOnly || isDisabledByDependency ? (
+              <FiLock className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500" />
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowCalendar(!showCalendar)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 focus:outline-none"
+                title="Open calendar"
+              >
+                <FiCalendar className="w-5 h-5" />
+              </button>
+            )}
           </div>
 
           {showCalendar && (
