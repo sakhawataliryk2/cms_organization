@@ -41,6 +41,21 @@ function makeCriterionId() {
   return `c-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function getScrollParents(element: HTMLElement | null): HTMLElement[] {
+  const parents: HTMLElement[] = [];
+  let el = element?.parentElement ?? null;
+  while (el) {
+    const style = getComputedStyle(el);
+    const overflowY = style.overflowY;
+    const overflowX = style.overflowX;
+    if (["auto", "scroll", "overlay"].includes(overflowY) || ["auto", "scroll", "overlay"].includes(overflowX)) {
+      parents.push(el);
+    }
+    el = el.parentElement;
+  }
+  return parents;
+}
+
 // Per-admin-field-type operator configuration
 function getOperatorsForFieldType(fieldType?: string): OperatorDef[] {
   const t = String(fieldType || "").toLowerCase();
@@ -291,14 +306,17 @@ export default function AdvancedSearchPanel({
   useEffect(() => {
     if (!open) return;
     const onResize = () => reposition();
-    const onScroll = () => reposition();
+    const onScroll = () => onClose();
+    const scrollParents = anchorEl ? getScrollParents(anchorEl) : [];
     window.addEventListener("resize", onResize);
     window.addEventListener("scroll", onScroll, true);
+    scrollParents.forEach((el) => el.addEventListener("scroll", onScroll));
     return () => {
       window.removeEventListener("resize", onResize);
       window.removeEventListener("scroll", onScroll, true);
+      scrollParents.forEach((el) => el.removeEventListener("scroll", onScroll));
     };
-  }, [open, reposition]);
+  }, [open, onClose, reposition, anchorEl]);
 
   // Close on outside click / escape
   useEffect(() => {
@@ -463,7 +481,7 @@ export default function AdvancedSearchPanel({
   return (
     <div
       ref={panelRef}
-      className={`bg-white border border-gray-200 shadow-2xl rounded-lg z-[9999] ${
+      className={`bg-white border border-gray-200 shadow-sm rounded-lg z-[9999] ${
         visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1"
       } transition-all duration-150 ease-out`}
       style={{

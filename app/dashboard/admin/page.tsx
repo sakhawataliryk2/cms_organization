@@ -2,7 +2,7 @@
 
 'use client'
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
     FiGrid,
@@ -26,6 +26,7 @@ import { IoDocumentOutline } from "react-icons/io5";
 import { TfiUser } from "react-icons/tfi";
 import { FaRegArrowAltCircleRight } from "react-icons/fa";
 import { toast } from "sonner";
+import FileUpload from '@/components/FileUpload';
 
 
 interface AdminModule {
@@ -88,7 +89,7 @@ export default function AdminCenter() {
     const [isExporting, setIsExporting] = useState(false);
     const [dateRange, setDateRange] = useState({ start: '', end: '' });
     const [statusFilter, setStatusFilter] = useState('');
-    
+
     // Upload states
     const [showUploadModal, setShowUploadModal] = useState(false);
     const [selectedUploadModule, setSelectedUploadModule] = useState<string>('');
@@ -108,6 +109,10 @@ export default function AdminCenter() {
     const [uploadModuleFields, setUploadModuleFields] = useState<CustomFieldDefinition[]>([]);
     const [isLoadingUploadFields, setIsLoadingUploadFields] = useState(false);
     const [uploadUpdateExisting, setUploadUpdateExisting] = useState(true);
+    const [isDraggingCsv, setIsDraggingCsv] = useState(false);
+    const [isParsingCsv, setIsParsingCsv] = useState(false);
+    const [parseProgress, setParseProgress] = useState(0);
+    const csvFileInputRef = useRef<HTMLInputElement>(null);
 
     // Auto-open upload modal if ?upload=true query parameter is present
     useEffect(() => {
@@ -125,21 +130,35 @@ export default function AdminCenter() {
                     for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
                     const blob = new Blob([arr], { type: type || 'text/csv' });
                     const file = new File([blob], name, { type: blob.type });
+                    setIsParsingCsv(true);
+                    setParseProgress(0);
                     file.text().then((text) => {
+                        setParseProgress(40);
                         const rows = parseCSVLocal(text);
                         if (rows.length === 0) {
+                            setIsParsingCsv(false);
+                            setParseProgress(0);
                             toast.error('CSV file is empty.');
                             return;
                         }
                         const headers = rows[0].map((h: string) => h.trim());
                         setCsvHeaders(headers);
+                        setParseProgress(70);
                         setParsedData(rows.slice(1).map((row: string[], index: number) => {
                             const raw: Record<string, string> = {};
                             headers.forEach((h: string, colIndex: number) => { raw[h] = row[colIndex] || ''; });
                             return { raw, mapped: {}, errors: [], rowNumber: index + 2 };
                         }));
                         setUploadFile(file);
-                    }).catch(() => toast.error('Error reading CSV file.'));
+                        setParseProgress(100);
+                    }).catch(() => {
+                        setIsParsingCsv(false);
+                        setParseProgress(0);
+                        toast.error('Error reading CSV file.');
+                    }).finally(() => {
+                        setIsParsingCsv(false);
+                        setParseProgress(0);
+                    });
                 } catch {
                     sessionStorage.removeItem('adminParseDataPendingFile');
                 }
@@ -280,7 +299,7 @@ export default function AdminCenter() {
             setIsLoadingFields(true);
             const entityType = moduleToEntityType[selectedModule];
             const configs: ModuleFieldConfig = {};
-            
+
             // Fetch fields
             if (!entityType) {
                 configs[selectedModule] = getStandardFields(selectedModule);
@@ -301,7 +320,7 @@ export default function AdminCenter() {
                         const fields = data.customFields || data.fields || [];
                         const visibleFields = fields
                             .filter((f: CustomFieldDefinition) => !f.is_hidden)
-                            .sort((a: CustomFieldDefinition, b: CustomFieldDefinition) => 
+                            .sort((a: CustomFieldDefinition, b: CustomFieldDefinition) =>
                                 (a.sort_order || 0) - (b.sort_order || 0)
                             );
                         configs[selectedModule] = visibleFields;
@@ -462,12 +481,12 @@ export default function AdminCenter() {
     // Flatten nested objects and arrays for CSV/Excel export
     const flattenObject = (obj: any, prefix = ''): Record<string, any> => {
         const flattened: Record<string, any> = {};
-        
+
         for (const key in obj) {
             if (obj.hasOwnProperty(key)) {
                 const newKey = prefix ? `${prefix}_${key}` : key;
                 const value = obj[key];
-                
+
                 if (value === null || value === undefined) {
                     flattened[newKey] = '';
                 } else if (typeof value === 'object' && !Array.isArray(value) && !(value instanceof Date)) {
@@ -475,7 +494,7 @@ export default function AdminCenter() {
                     Object.assign(flattened, flattenObject(value, newKey));
                 } else if (Array.isArray(value)) {
                     // Convert arrays to comma-separated strings
-                    flattened[newKey] = value.map(item => 
+                    flattened[newKey] = value.map(item =>
                         typeof item === 'object' ? JSON.stringify(item) : String(item)
                     ).join('; ');
                 } else if (value instanceof Date) {
@@ -485,7 +504,7 @@ export default function AdminCenter() {
                 }
             }
         }
-        
+
         return flattened;
     };
 
@@ -587,18 +606,18 @@ export default function AdminCenter() {
     // Convert data to CSV format with Field Management integration
     const convertToCSV = (data: any[], moduleId: string, moduleName: string, fieldsToInclude?: string[]): string => {
         if (data.length === 0) return '';
-        
+
         // Flatten all objects (nested keys like custom_fields.Industry become accessible)
         const flattenedData = data.map(item => flattenObject(item));
-        
+
         // Get field configuration (labels for headers)
         const { labels } = getFieldConfig(moduleId);
-        
+
         // Use selected fields if provided (preserve order and include all selected columns)
-        const headers = fieldsToInclude && fieldsToInclude.length > 0 
+        const headers = fieldsToInclude && fieldsToInclude.length > 0
             ? fieldsToInclude
             : Object.keys(flattenedData[0] || {});
-        
+
         // Create CSV rows with proper escaping and use field labels
         const csvRows = [
             headers.map(h => {
@@ -615,7 +634,7 @@ export default function AdminCenter() {
                 }).join(',')
             )
         ];
-        
+
         return csvRows.join('\n');
     };
 
@@ -649,18 +668,18 @@ export default function AdminCenter() {
 
                 const moduleName = moduleNames[moduleId] || moduleId;
                 const { labels } = getFieldConfig(moduleId);
-                
+
                 // Flatten data
                 const flattenedData = data.map(item => flattenObject(item));
-                
+
                 // Use selected fields if provided, otherwise use all fields
                 const headers = fieldsToInclude && fieldsToInclude.length > 0
                     ? fieldsToInclude.filter(field => flattenedData.some(item => item.hasOwnProperty(field)))
                     : Object.keys(flattenedData[0] || {});
-                
+
                 // Build header labels
                 const headerLabels = headers.map(field => labels[field] || field);
-                
+
                 // Create worksheet data with labels as headers
                 const worksheetData = [
                     headerLabels,
@@ -668,13 +687,13 @@ export default function AdminCenter() {
                         headers.map(header => row[header] || '')
                     )
                 ];
-                
+
                 const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
-                
+
                 // Set column widths
                 const colWidths = headers.map(() => ({ wch: 15 }));
                 worksheet['!cols'] = colWidths;
-                
+
                 // Add sheet to workbook (limit sheet name to 31 characters for Excel)
                 const sheetName = moduleName.substring(0, 31);
                 XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
@@ -682,10 +701,10 @@ export default function AdminCenter() {
 
             // Generate Excel file
             const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-            const blob = new Blob([excelBuffer], { 
-                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' 
+            const blob = new Blob([excelBuffer], {
+                type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             });
-            
+
             const filename = `Export_${new Date().toISOString().split('T')[0]}.xlsx`;
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
@@ -756,7 +775,7 @@ export default function AdminCenter() {
     const fetchModuleData = async (module: DownloadModule): Promise<any[]> => {
         try {
             const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-            
+
             const response = await fetch(module.apiEndpoint, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -770,21 +789,21 @@ export default function AdminCenter() {
 
             const data = await response.json();
             // Try multiple possible data keys
-            let moduleData = data[module.dataKey] || 
-                           data.data || 
-                           data[module.dataKey.toLowerCase()] ||
-                           (Array.isArray(data) ? data : []);
+            let moduleData = data[module.dataKey] ||
+                data.data ||
+                data[module.dataKey.toLowerCase()] ||
+                (Array.isArray(data) ? data : []);
 
             // Apply filters
             if (dateRange.start || dateRange.end) {
                 moduleData = moduleData.filter((item: any) => {
                     const itemDate = item.created_at || item.date_added || item.created_date;
                     if (!itemDate) return true;
-                    
+
                     const itemDateObj = new Date(itemDate);
                     const startDate = dateRange.start ? new Date(dateRange.start) : null;
                     const endDate = dateRange.end ? new Date(dateRange.end) : null;
-                    
+
                     if (startDate && itemDateObj < startDate) return false;
                     if (endDate && itemDateObj > endDate) return false;
                     return true;
@@ -811,11 +830,11 @@ export default function AdminCenter() {
         let currentRow: string[] = [];
         let currentField = '';
         let inQuotes = false;
-        
+
         for (let i = 0; i < csvText.length; i++) {
             const char = csvText[i];
             const nextChar = csvText[i + 1];
-            
+
             if (char === '"') {
                 if (inQuotes && nextChar === '"') {
                     currentField += '"';
@@ -840,43 +859,39 @@ export default function AdminCenter() {
                 currentField += char;
             }
         }
-        
+
         // Add last field and row
         if (currentField || currentRow.length > 0) {
             currentRow.push(currentField.trim());
             rows.push(currentRow);
         }
-        
+
         return rows;
     };
 
-    // Handle file selection
-    const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        // Validate file type
+    // Process CSV file (from input or drag-drop)
+    const processCsvFile = async (file: File) => {
         if (!file.name.toLowerCase().endsWith('.csv')) {
             toast.error('Please select a CSV file.');
             return;
         }
-
         setUploadFile(file);
-
+        setIsParsingCsv(true);
+        setParseProgress(0);
         try {
+            setParseProgress(15);
             const text = await file.text();
+            setParseProgress(45);
             const rows = parseCSV(text);
-            
             if (rows.length === 0) {
+                setIsParsingCsv(false);
+                setParseProgress(0);
                 toast.error('CSV file is empty.');
                 return;
             }
-
-            // First row is headers
             const headers = rows[0].map(h => h.trim());
             setCsvHeaders(headers);
-
-            // Parse data rows
+            setParseProgress(65);
             const dataRows: ParsedRow[] = rows.slice(1).map((row, index) => {
                 const raw: Record<string, string> = {};
                 headers.forEach((header, colIndex) => {
@@ -886,31 +901,38 @@ export default function AdminCenter() {
                     raw,
                     mapped: {},
                     errors: [],
-                    rowNumber: index + 2 // +2 because index is 0-based and we skip header row
+                    rowNumber: index + 2
                 };
             });
-
             setParsedData(dataRows);
-
-            // Auto-map using only admin center fields (no standard fallback)
+            setParseProgress(90);
             if (selectedUploadModule && uploadModuleFields.length > 0) {
                 setFieldMappings(runAutoMapping(headers, uploadModuleFields));
+                setCurrentStep('map');
             } else {
                 setFieldMappings({});
             }
-
-            setCurrentStep('map');
+            setParseProgress(100);
         } catch (error) {
             console.error('Error parsing CSV:', error);
             toast.error('Error reading CSV file. Please check the file format.');
+        } finally {
+            setIsParsingCsv(false);
+            setParseProgress(0);
         }
+    };
+
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (file) processCsvFile(file);
+        e.target.value = '';
     };
 
     // Validate parsed data
     const validateData = (): ValidationResult => {
         const errors: string[] = [];
         const warnings: string[] = [];
-        
+
         if (!selectedUploadModule) {
             errors.push('Please select a module.');
             return { isValid: false, errors, warnings };
@@ -930,7 +952,7 @@ export default function AdminCenter() {
         // Validate each row
         parsedData.forEach((row, index) => {
             const rowErrors: string[] = [];
-            
+
             requiredFields.forEach(reqField => {
                 const csvHeader = fieldMappings[reqField];
                 if (csvHeader) {
@@ -1036,7 +1058,7 @@ export default function AdminCenter() {
             const errorsList = Array.isArray(summary.errors)
                 ? summary.errors.flatMap((e: { row?: number; errors?: string[] }) =>
                     (e.errors || []).map((err: string) => (e.row ? `Row ${e.row}: ${err}` : err))
-                  )
+                )
                 : [];
             setUploadResults({
                 success: summary.successful ?? 0,
@@ -1214,12 +1236,12 @@ export default function AdminCenter() {
             icon: <FaRegArrowAltCircleRight size={50} color="white" />,
             path: '/dashboard/admin/the-button'
         },
-         {
-        id: 'email-management',
-        name: 'Email Management',
-        icon: <FiMail size={50} color="white" />,
-        path: '/dashboard/admin/email-management'
-    },
+        {
+            id: 'email-management',
+            name: 'Email Management',
+            icon: <FiMail size={50} color="white" />,
+            path: '/dashboard/admin/email-management'
+        },
         {
             id: 'activity-tracker',
             name: 'Activity Tracker',
@@ -1412,7 +1434,7 @@ export default function AdminCenter() {
                             {/* Filters */}
                             <div className="space-y-4 border-t pt-4">
                                 <h3 className="text-sm font-medium text-gray-700">Optional Filters</h3>
-                                
+
                                 {/* Date Range */}
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
@@ -1572,6 +1594,18 @@ export default function AdminCenter() {
                                         <label className="text-sm font-medium text-gray-700 mb-2 block">
                                             CSV File <span className="text-red-500">*</span>
                                         </label>
+                                        {isParsingCsv && (
+                                            <div className="mb-3">
+                                                <p className="text-sm text-gray-600 mb-2">Parsing CSV data…</p>
+                                                <div className="w-full bg-gray-200 rounded-full h-2.5">
+                                                    <div
+                                                        className="bg-blue-600 h-2.5 rounded-full transition-all duration-300"
+                                                        style={{ width: `${parseProgress}%` }}
+                                                    />
+                                                </div>
+                                                <p className="text-xs text-gray-500 mt-1 text-right">{parseProgress}%</p>
+                                            </div>
+                                        )}
                                         {uploadFile ? (
                                             <div className="p-3 bg-green-50 border border-green-200 rounded flex items-center justify-between">
                                                 <span className="text-sm text-green-800 truncate">{uploadFile.name}</span>
@@ -1579,22 +1613,38 @@ export default function AdminCenter() {
                                                     type="button"
                                                     onClick={() => { setUploadFile(null); setCsvHeaders([]); setParsedData([]); }}
                                                     className="text-gray-500 hover:text-red-600 text-sm shrink-0 ml-2"
+                                                    disabled={isParsingCsv}
                                                 >
                                                     Remove
                                                 </button>
                                             </div>
                                         ) : (
-                                            <input
-                                                type="file"
-                                                accept=".csv"
-                                                onChange={handleFileSelect}
-                                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            />
-                                        )}
-                                        {!uploadFile && (
-                                            <p className="text-xs text-gray-500 mt-1">
-                                                Accepted format: CSV. Or drop a CSV file on the Parse Data zone in the sidebar.
-                                            </p>
+                                            <div
+                                                onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (!isParsingCsv) setIsDraggingCsv(true); }}
+                                                onDragLeave={(e) => { e.preventDefault(); setIsDraggingCsv(false); }}
+                                                onDrop={(e) => {
+                                                    e.preventDefault();
+                                                    setIsDraggingCsv(false);
+                                                    if (isParsingCsv) return;
+                                                    const file = e.dataTransfer.files?.[0];
+                                                    if (file) processCsvFile(file);
+                                                }}
+                                                onClick={() => !isParsingCsv && csvFileInputRef.current?.click()}
+                                                className={`border-2 border-dashed rounded-lg p-6 text-center transition-colors ${isParsingCsv ? 'cursor-not-allowed opacity-60 border-gray-300 bg-gray-50' : `cursor-pointer ${isDraggingCsv ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'}`}`}
+                                            >
+                                                <input
+                                                    ref={csvFileInputRef}
+                                                    type="file"
+                                                    accept=".csv"
+                                                    onChange={handleFileSelect}
+                                                    className="hidden"
+                                                />
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-10 w-10 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                                                </svg>
+                                                <p className="mt-2 text-gray-600 text-sm">Drag and drop a CSV file here, or click to select</p>
+                                                <p className="text-xs text-gray-500 mt-1">Accepted format: CSV (max 10MB)</p>
+                                            </div>
                                         )}
                                     </div>
                                 </>
@@ -1659,6 +1709,38 @@ export default function AdminCenter() {
                                                     <li>... and {validationErrors.length - 10} more errors</li>
                                                 )}
                                             </ul>
+                                            <div className="mt-4 flex flex-wrap gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setUploadFile(null);
+                                                        setCsvHeaders([]);
+                                                        setParsedData([]);
+                                                        setFieldMappings({});
+                                                        setValidationErrors([]);
+                                                        setCurrentStep('select');
+                                                    }}
+                                                    className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100 text-sm"
+                                                >
+                                                    Change file
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const completeRows = parsedData.filter(row => row.errors.length === 0);
+                                                        const skippedCount = parsedData.length - completeRows.length;
+                                                        setParsedData(completeRows);
+                                                        setValidationErrors([]);
+                                                        setCurrentStep('preview');
+                                                        if (skippedCount > 0) {
+                                                            toast.success(`Skipped ${skippedCount} incomplete record(s). Continuing with ${completeRows.length} valid row(s).`);
+                                                        }
+                                                    }}
+                                                    className="px-4 py-2 bg-amber-600 text-white rounded hover:bg-amber-700 text-sm"
+                                                >
+                                                    Skip incomplete records ({parsedData.filter(r => r.errors.length > 0).length} to skip, {parsedData.filter(r => r.errors.length === 0).length} valid)
+                                                </button>
+                                            </div>
                                         </div>
                                     )}
 
