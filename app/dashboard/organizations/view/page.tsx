@@ -3604,7 +3604,6 @@ export default function OrganizationView() {
       checkDependencies();
     } else if (action === "add-note") {
       setShowAddNote(true);
-      setActiveTab("notes");
     } else if (action === "add-job") {
       // Navigate to add job page with organization context
       if (organizationId) {

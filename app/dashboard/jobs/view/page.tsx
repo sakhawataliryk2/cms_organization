@@ -2212,6 +2212,7 @@ export default function JobView() {
         leadsRes,
         tasksRes,
         placementsRes,
+        hiringManagersRes,
       ] = await Promise.allSettled([
         fetch("/api/jobs", { headers }),
         fetch("/api/organizations", { headers }),
@@ -2219,6 +2220,7 @@ export default function JobView() {
         fetch("/api/leads", { headers }),
         fetch("/api/tasks", { headers }),
         fetch("/api/placements", { headers }),
+        fetch("/api/hiring-managers", { headers }),
       ]);
 
       const suggestions: any[] = [];
@@ -2355,6 +2357,39 @@ export default function JobView() {
             display: `#${placement.id} ${placement.jobSeekerName || "Unnamed"
               } - ${placement.jobTitle || "Untitled"}`,
             value: `#${placement.id}`,
+          });
+        });
+      }
+
+      // Process hiring managers
+      if (hiringManagersRes.status === "fulfilled" && hiringManagersRes.value.ok) {
+        const data = await hiringManagersRes.value.json();
+        const hiringManagers = searchTerm
+          ? (data.hiringManagers || []).filter(
+            (hm: any) => {
+              const name =
+                hm.full_name ||
+                `${hm.first_name || ""} ${hm.last_name || ""}`.trim() ||
+                "";
+              return (
+                name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                hm.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                hm.id?.toString().includes(searchTerm)
+              );
+            }
+          )
+          : (data.hiringManagers || []);
+
+        hiringManagers.forEach((hm: any) => {
+          const name =
+            hm.full_name ||
+            `${hm.first_name || ""} ${hm.last_name || ""}`.trim() ||
+            "Unnamed";
+          suggestions.push({
+            id: hm.id,
+            type: "Hiring Manager",
+            display: `#${hm.id} ${name}`,
+            value: `#${hm.id}`,
           });
         });
       }
