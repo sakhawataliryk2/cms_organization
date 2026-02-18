@@ -309,19 +309,18 @@ export default function AddNoteModal({
                 value: formatRecordId(item.id, formatKey),
             });
 
+            // Match search term against the same display string shown in the dropdown (so "J67", "67", "Accounting" all match "J67 Accounting")
+            const matchesDisplay = (display: string) =>
+                !searchTerm || display.toLowerCase().includes(searchTerm.toLowerCase());
+
             const lists: any[][] = [];
 
             // Process jobs
             if (jobsRes.status === "fulfilled" && jobsRes.value.ok) {
                 const data = await jobsRes.value.json();
-                const jobs = searchTerm
-                    ? (data.jobs || []).filter(
-                        (job: any) =>
-                            job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            job.id?.toString().includes(searchTerm)
-                    )
-                    : (data.jobs || []);
-                lists.push(jobs.map((job: any) => toSuggestion(job, "Job", "job_title", "job")));
+                const allJobs = (data.jobs || []).map((job: any) => toSuggestion(job, "Job", "job_title", "job"));
+                const jobs = searchTerm ? allJobs.filter((s: any) => matchesDisplay(s.display)) : allJobs;
+                lists.push(jobs);
             } else {
                 lists.push([]);
             }
@@ -329,14 +328,9 @@ export default function AddNoteModal({
             // Process organizations
             if (orgsRes.status === "fulfilled" && orgsRes.value.ok) {
                 const data = await orgsRes.value.json();
-                const orgs = searchTerm
-                    ? (data.organizations || []).filter(
-                        (org: any) =>
-                            org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            org.id?.toString().includes(searchTerm)
-                    )
-                    : (data.organizations || []);
-                lists.push(orgs.map((org: any) => toSuggestion(org, "Organization", "name", "organization")));
+                const allOrgs = (data.organizations || []).map((org: any) => toSuggestion(org, "Organization", "name", "organization"));
+                const orgs = searchTerm ? allOrgs.filter((s: any) => matchesDisplay(s.display)) : allOrgs;
+                lists.push(orgs);
             } else {
                 lists.push([]);
             }
@@ -344,19 +338,12 @@ export default function AddNoteModal({
             // Process job seekers
             if (jobSeekersRes.status === "fulfilled" && jobSeekersRes.value.ok) {
                 const data = await jobSeekersRes.value.json();
-                const jobSeekers = searchTerm
-                    ? (data.jobSeekers || []).filter(
-                        (js: any) =>
-                            `${js.first_name || ""} ${js.last_name || ""}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            js.id?.toString().includes(searchTerm)
-                    )
-                    : (data.jobSeekers || []);
-                lists.push(
-                    jobSeekers.map((js: any) => {
-                        const name = `${js.first_name || ""} ${js.last_name || ""}`.trim() || "Unnamed";
-                        return { id: js.id, type: "Job Seeker", display: `${formatRecordId(js.id, "jobSeeker")} ${name}`, value: formatRecordId(js.id, "jobSeeker") };
-                    })
-                );
+                const allJS = (data.jobSeekers || []).map((js: any) => {
+                    const name = `${js.first_name || ""} ${js.last_name || ""}`.trim() || "Unnamed";
+                    return { id: js.id, type: "Job Seeker", display: `${formatRecordId(js.id, "jobSeeker")} ${name}`, value: formatRecordId(js.id, "jobSeeker") };
+                });
+                const jobSeekers = searchTerm ? allJS.filter((s: any) => matchesDisplay(s.display)) : allJS;
+                lists.push(jobSeekers);
             } else {
                 lists.push([]);
             }
@@ -364,14 +351,9 @@ export default function AddNoteModal({
             // Process leads
             if (leadsRes.status === "fulfilled" && leadsRes.value.ok) {
                 const data = await leadsRes.value.json();
-                const leads = searchTerm
-                    ? (data.leads || []).filter(
-                        (lead: any) =>
-                            lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            lead.id?.toString().includes(searchTerm)
-                    )
-                    : (data.leads || []);
-                lists.push(leads.map((lead: any) => toSuggestion(lead, "Lead", "name", "lead")));
+                const allLeads = (data.leads || []).map((lead: any) => toSuggestion(lead, "Lead", "name", "lead"));
+                const leads = searchTerm ? allLeads.filter((s: any) => matchesDisplay(s.display)) : allLeads;
+                lists.push(leads);
             } else {
                 lists.push([]);
             }
@@ -379,14 +361,9 @@ export default function AddNoteModal({
             // Process tasks
             if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
                 const data = await tasksRes.value.json();
-                const tasks = searchTerm
-                    ? (data.tasks || []).filter(
-                        (task: any) =>
-                            task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            task.id?.toString().includes(searchTerm)
-                    )
-                    : (data.tasks || []);
-                lists.push(tasks.map((task: any) => toSuggestion(task, "Task", "title", "task")));
+                const allTasks = (data.tasks || []).map((task: any) => toSuggestion(task, "Task", "title", "task"));
+                const tasks = searchTerm ? allTasks.filter((s: any) => matchesDisplay(s.display)) : allTasks;
+                lists.push(tasks);
             } else {
                 lists.push([]);
             }
@@ -394,22 +371,14 @@ export default function AddNoteModal({
             // Process placements
             if (placementsRes.status === "fulfilled" && placementsRes.value.ok) {
                 const data = await placementsRes.value.json();
-                const placements = searchTerm
-                    ? (data.placements || []).filter(
-                        (placement: any) =>
-                            placement.id?.toString().includes(searchTerm) ||
-                            (placement.jobSeekerName || "").toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            (placement.jobTitle || "").toLowerCase().includes(searchTerm.toLowerCase())
-                    )
-                    : (data.placements || []);
-                lists.push(
-                    placements.map((p: any) => ({
-                        id: p.id,
-                        type: "Placement",
-                        display: `${formatRecordId(p.id, "placement")} ${[p.jobSeekerName, p.jobTitle].filter(Boolean).join(" – ") || "Placement"}`,
-                        value: formatRecordId(p.id, "placement"),
-                    }))
-                );
+                const allPlacements = (data.placements || []).map((p: any) => ({
+                    id: p.id,
+                    type: "Placement",
+                    display: `${formatRecordId(p.id, "placement")} ${[p.jobSeekerName, p.jobTitle].filter(Boolean).join(" – ") || "Placement"}`,
+                    value: formatRecordId(p.id, "placement"),
+                }));
+                const placements = searchTerm ? allPlacements.filter((s: any) => matchesDisplay(s.display)) : allPlacements;
+                lists.push(placements);
             } else {
                 lists.push([]);
             }
@@ -417,21 +386,12 @@ export default function AddNoteModal({
             // Process hiring managers
             if (hiringManagersRes.status === "fulfilled" && hiringManagersRes.value.ok) {
                 const data = await hiringManagersRes.value.json();
-                const hiringManagers = searchTerm
-                    ? (data.hiringManagers || []).filter(
-                        (hm: any) => {
-                            const name = `${hm.first_name || ""} ${hm.last_name || ""}`.trim() || hm.full_name || "";
-                            return name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                hm.id?.toString().includes(searchTerm);
-                        }
-                    )
-                    : (data.hiringManagers || []);
-                lists.push(
-                    hiringManagers.map((hm: any) => {
-                        const name = `${hm.first_name || ""} ${hm.last_name || ""}`.trim() || hm.full_name || "Unnamed";
-                        return { id: hm.id, type: "Hiring Manager", display: `${formatRecordId(hm.id, "hiringManager")} ${name}`, value: formatRecordId(hm.id, "hiringManager") };
-                    })
-                );
+                const allHM = (data.hiringManagers || []).map((hm: any) => {
+                    const name = `${hm.first_name || ""} ${hm.last_name || ""}`.trim() || hm.full_name || "Unnamed";
+                    return { id: hm.id, type: "Hiring Manager", display: `${formatRecordId(hm.id, "hiringManager")} ${name}`, value: formatRecordId(hm.id, "hiringManager") };
+                });
+                const hiringManagers = searchTerm ? allHM.filter((s: any) => matchesDisplay(s.display)) : allHM;
+                lists.push(hiringManagers);
             } else {
                 lists.push([]);
             }
