@@ -1048,14 +1048,14 @@ export default function JobView() {
   const [noteForm, setNoteForm] = useState({
     text: "",
     action: "",
-    about: job ? `${formatRecordId(job.id, "job")} ${job.title}` : "",
+    about: job ? `${formatRecordId(job.record_number ?? job.id, "job")} ${job.title}` : "",
     aboutReferences: job
       ? [
         {
           id: job.id,
           type: "Job",
-          display: `${formatRecordId(job.id, "job")} ${job.title}`,
-          value: formatRecordId(job.id, "job"),
+          display: `${formatRecordId(job.record_number ?? job.id, "job")} ${job.title}`,
+          value: formatRecordId(job.record_number ?? job.id, "job"),
         },
       ]
       : [],
@@ -1314,7 +1314,7 @@ export default function JobView() {
   const handleTogglePinnedRecord = () => {
     if (!job) return;
     const key = buildPinnedKey("job", job.id);
-    const label = job.title || `${formatRecordId(job.id, "job")}`;
+    const label = job.title || `${formatRecordId(job.record_number ?? job.id, "job")}`;
     let url = `/dashboard/jobs/view?id=${job.id}`;
     if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
 
@@ -2021,7 +2021,7 @@ export default function JobView() {
       fetchAvailableFields();
       fetchHiringManagerFields();
       // Update note form about field when job is loaded
-      setNoteForm((prev) => ({ ...prev, about: `${job.id} ${job.title}` }));
+      setNoteForm((prev) => ({ ...prev, about: `${formatRecordId(job.record_number ?? job.id, "job")} ${job.title}` }));
       fetchDocuments(jobId);
     }
   }, [job, jobId]);
@@ -2234,7 +2234,8 @@ export default function JobView() {
           ? (data.jobs || []).filter(
               (job: any) =>
                 job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                job.id?.toString().includes(searchTerm)
+                job.id?.toString().includes(searchTerm) ||
+                String(job.record_number ?? "").includes(searchTerm)
             )
           : (data.jobs || []);
 
@@ -2242,9 +2243,9 @@ export default function JobView() {
           suggestions.push({
             id: job.id,
             type: "Job",
-            display: `${formatRecordId(job.id, "job")} ${job.job_title || "Untitled"
+            display: `${formatRecordId(job.record_number ?? job.id, "job")} ${job.job_title || "Untitled"
               }`,
-            value: formatRecordId(job.id, "job"),
+            value: formatRecordId(job.record_number ?? job.id, "job"),
           });
         });
       }
@@ -2884,6 +2885,7 @@ export default function JobView() {
       // Format the job data with default values for all fields
       const formattedJob = {
         id: data.job.id || "Unknown ID",
+        record_number: data.job.record_number,
         title: data.job.job_title || "Untitled Job",
         jobType: data.job.job_type || "Not specified",
         category: data.job.category || "Uncategorized",
@@ -3112,8 +3114,8 @@ export default function JobView() {
           {
             id: job.id,
             type: "Job",
-            display: `${formatRecordId(job.id, "job")} ${job.title}`,
-            value: formatRecordId(job.id, "job"),
+            display: `${formatRecordId(job.record_number ?? job.id, "job")} ${job.title}`,
+            value: formatRecordId(job.record_number ?? job.id, "job"),
           },
         ]
         : [];
@@ -3121,7 +3123,7 @@ export default function JobView() {
       setNoteForm({
         text: "",
         action: "",
-        about: job ? `${formatRecordId(job.id, "job")} ${job.title}` : "",
+        about: job ? `${formatRecordId(job.record_number ?? job.id, "job")} ${job.title}` : "",
         aboutReferences: defaultAboutRef,
         copyNote: "No",
         replaceGeneralContactComments: false,
@@ -3206,7 +3208,7 @@ export default function JobView() {
           location: appointmentForm.location,
           duration: appointmentForm.duration,
           jobId: jobId,
-          job: job?.title || `${formatRecordId(job?.id, "job")} ${job?.title || ""}`.trim(),
+          job: job?.title || `${formatRecordId(job?.record_number ?? job?.id, "job")} ${job?.title || ""}`.trim(),
           client: job?.organization_name || job?.client || "",
           attendees: appointmentForm.attendees,
           sendInvites: appointmentForm.sendInvites,
@@ -3879,7 +3881,7 @@ export default function JobView() {
           body: JSON.stringify({
             reason: deleteForm.reason.trim(),
             record_type: "job",
-            record_number: formatRecordId(job?.id, "job"),
+            record_number: formatRecordId(job?.record_number ?? job?.id, "job"),
             requested_by: currentUser?.id || currentUser?.name || "Unknown",
             requested_by_email: currentUser?.email || "",
           }),
@@ -3941,7 +3943,7 @@ export default function JobView() {
         }
       }
       const recordDisplay = job
-        ? `${formatRecordId(job.id, "job")} ${job.title || ""}`.trim()
+        ? `${formatRecordId(job.record_number ?? job.id, "job")} ${job.title || ""}`.trim()
         : formatRecordId(jobId, "job");
       const res = await fetch(`/api/jobs/${jobId}/unarchive-request`, {
         method: "POST",
@@ -4989,7 +4991,7 @@ export default function JobView() {
             <FiBriefcase size={24} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
-            {formatRecordId(job.id, "job")} {job.title}
+            {formatRecordId(job.record_number ?? job.id, "job")} {job.title}
           </h1>
           {job.archived_at && (
             <div className="ml-3">
@@ -6392,7 +6394,7 @@ export default function JobView() {
         modelType="unarchive"
         entityLabel="Job"
         recordDisplay={
-          job ? `${formatRecordId(job.id, "job")} ${job.title || ""}`.trim() : "N/A"
+          job ? `${formatRecordId(job.record_number ?? job.id, "job")} ${job.title || ""}`.trim() : "N/A"
         }
         reason={unarchiveReason}
         onReasonChange={setUnarchiveReason}
@@ -6427,7 +6429,7 @@ export default function JobView() {
                 </label>
                 <p className="text-sm text-gray-900 font-medium">
                   {job
-                    ? `${formatRecordId(job.id, "job")} ${job.job_title || "N/A"}`
+                    ? `${formatRecordId(job.record_number ?? job.id, "job")} ${job.title || job.job_title || "N/A"}`
                     : "N/A"}
                 </p>
               </div>
