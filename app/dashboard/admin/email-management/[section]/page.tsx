@@ -179,6 +179,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{organizationNameLink}}",
         "{{requestId}}",
         "{{reason}}",
         "{{requestDate}}",
@@ -222,6 +223,7 @@ const SECTION_CONFIG: Record<
           `<ul>` +
           `<li><strong>Request ID:</strong> {{requestId}} (the approval link uses this ID)</li>` +
           `<li><strong>Record (Organization):</strong> {{recordNumber}}</li>` +
+          `<li><strong>Organization Name:</strong> {{organizationNameLink}}</li>` +
           `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
           `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
           `<li><strong>Reason:</strong> {{reason}}</li>` +
