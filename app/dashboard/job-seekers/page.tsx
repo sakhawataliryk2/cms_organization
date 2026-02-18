@@ -31,6 +31,7 @@ import { matchesAdvancedValue } from "@/lib/advancedSearch";
 
 interface JobSeeker {
   id: string;
+  record_number?: number;
   first_name: string;
   last_name: string;
   full_name: string;
@@ -688,7 +689,8 @@ export default function JobSeekerList() {
         (js) =>
           (js.full_name || "").toLowerCase().includes(term) ||
           (js.email || "").toLowerCase().includes(term) ||
-          String(js.id || "").toLowerCase().includes(term)
+          String(js.id || "").toLowerCase().includes(term) ||
+          String(js.record_number ?? "").toLowerCase().includes(term)
       );
     }
 
@@ -1202,7 +1204,7 @@ export default function JobSeekerList() {
 
                     {/* Fixed ID */}
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                      JS {jobSeeker.id}
+                      JS {jobSeeker.record_number ?? jobSeeker.id}
                     </td>
 
                     {/* Dynamic columns */}

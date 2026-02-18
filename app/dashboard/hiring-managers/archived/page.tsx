@@ -27,6 +27,7 @@ import { matchesAdvancedValue } from "@/lib/advancedSearch";
 
 interface HiringManager {
   id: string;
+  record_number?: number;
   first_name: string;
   last_name: string;
   full_name: string;
@@ -771,6 +772,7 @@ export default function ArchivedHiringManagersList() {
           .toLowerCase()
           .includes(term) ||
         String(hm.id || "").toLowerCase().includes(term) ||
+        String(hm.record_number ?? "").toLowerCase().includes(term) ||
         (hm.email || "").toLowerCase().includes(term) ||
         (hm.title || "").toLowerCase().includes(term) ||
         (hm.organization_name || "").toLowerCase().includes(term) ||
@@ -1226,7 +1228,7 @@ export default function ArchivedHiringManagersList() {
                     {/* Fixed ID */}
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col gap-1">
-                        <span className="text-sm font-medium text-gray-900">HM {hm.id}</span>
+                        <span className="text-sm font-medium text-gray-900">HM {hm.record_number ?? hm.id}</span>
                         {hm.archived_at && (
                           <CountdownTimer archivedAt={hm.archived_at} />
                         )}

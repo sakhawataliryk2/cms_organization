@@ -27,6 +27,7 @@ import { matchesAdvancedValue } from "@/lib/advancedSearch";
 
 interface JobSeeker {
   id: string;
+  record_number?: number;
   first_name: string;
   last_name: string;
   full_name: string;
@@ -764,6 +765,7 @@ export default function ArchivedJobSeekersList() {
           .toLowerCase()
           .includes(term) ||
         String(js.id || "").toLowerCase().includes(term) ||
+        String(js.record_number ?? "").toLowerCase().includes(term) ||
         (js.email || "").toLowerCase().includes(term) ||
         (js.status || "").toLowerCase().includes(term) ||
         (js.owner || "").toLowerCase().includes(term) ||
@@ -1199,7 +1201,7 @@ export default function ArchivedJobSeekersList() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col gap-1">
-                        <span className="text-sm font-medium text-gray-900">JS {js.id}</span>
+                        <span className="text-sm font-medium text-gray-900">JS {js.record_number ?? js.id}</span>
                         {js.archived_at && (
                           <CountdownTimer archivedAt={js.archived_at} />
                         )}

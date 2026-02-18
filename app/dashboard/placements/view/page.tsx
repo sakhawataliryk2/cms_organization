@@ -1078,6 +1078,7 @@ export default function PlacementView() {
       };
       const formattedPlacement = {
         id: data.placement.id,
+        record_number: data.placement.record_number,
         jobSeekerId: data.placement.jobSeekerId || data.placement.job_seeker_id || '',
         jobSeekerName: data.placement.jobSeekerName || data.placement.job_seeker_name || 'Unknown Job Seeker',
         jobId: data.placement.jobId || data.placement.job_id || '',
@@ -1181,7 +1182,7 @@ export default function PlacementView() {
       const defaultRef = {
         id: placement.id,
         type: "Placement",
-        display: `#${placement.id} ${placement.jobSeekerName || ""} - ${placement.jobTitle || ""}`.trim() || `Placement #${placement.id}`,
+        display: `${formatRecordId(placement.record_number ?? placement.id, "placement")} ${placement.jobSeekerName || ""} - ${placement.jobTitle || ""}`.trim() || `Placement ${formatRecordId(placement.record_number ?? placement.id, "placement")}`,
         value: `#${placement.id}`,
       };
       setNoteForm((prev) => ({
@@ -2700,7 +2701,7 @@ export default function PlacementView() {
           body: JSON.stringify({
             reason: deleteForm.reason.trim(),
             record_type: "placement",
-            record_number: formatRecordId(placement?.id, "placement"),
+            record_number: formatRecordId(placement?.record_number ?? placement?.id, "placement"),
             requested_by: currentUser?.id || currentUser?.name || "Unknown",
             requested_by_email: currentUser?.email || "",
           }),
@@ -2762,7 +2763,7 @@ export default function PlacementView() {
         }
       }
       const recordDisplay = placement
-        ? `${formatRecordId(placement.id, "placement")} ${placement.job_title || ""}`.trim()
+        ? `${formatRecordId(placement.record_number ?? placement.id, "placement")} ${placement.jobTitle || placement.job_title || ""}`.trim()
         : formatRecordId(placementId, "placement");
       const res = await fetch(`/api/placements/${placementId}/unarchive-request`, {
         method: "POST",
@@ -2858,7 +2859,7 @@ export default function PlacementView() {
           ? {
             id: placement.id,
             type: "Placement",
-            display: `#${placement.id} ${placement.jobSeekerName || ""} - ${placement.jobTitle || ""}`.trim() || `Placement #${placement.id}`,
+            display: `${formatRecordId(placement.record_number ?? placement.id, "placement")} ${placement.jobSeekerName || ""} - ${placement.jobTitle || ""}`.trim() || `Placement ${formatRecordId(placement.record_number ?? placement.id, "placement")}`,
             value: `#${placement.id}`,
           }
           : null;
@@ -3950,7 +3951,7 @@ export default function PlacementView() {
             <FiBriefcase size={24} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
-            P {placement.id} {placement.jobSeekerName} - {placement.jobTitle}
+            P {placement.record_number ?? placement.id} {placement.jobSeekerName} - {placement.jobTitle}
             {placement.archived_at && (
               <div className="ml-3">
                 <CountdownTimer archivedAt={placement.archived_at} />
@@ -4441,7 +4442,7 @@ export default function PlacementView() {
         entityLabel="Placement"
         recordDisplay={
           placement
-            ? `${formatRecordId(placement.id, "placement")} ${placement.job_title || ""}`.trim()
+            ? `${formatRecordId(placement.record_number ?? placement.id, "placement")} ${placement.jobTitle || placement.job_title || ""}`.trim()
             : "N/A"
         }
         reason={unarchiveReason}
@@ -4477,7 +4478,7 @@ export default function PlacementView() {
                 </label>
                 <p className="text-sm text-gray-900 font-medium">
                   {placement
-                    ? `${formatRecordId(placement.id, "placement")} ${placement.job_title || "N/A"}`
+                    ? `${formatRecordId(placement.record_number ?? placement.id, "placement")} ${placement.jobTitle || placement.job_title || "N/A"}`
                     : "N/A"}
                 </p>
               </div>

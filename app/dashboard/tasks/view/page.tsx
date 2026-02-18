@@ -483,8 +483,8 @@ export default function TaskView() {
             const defaultRef = [{
                 id: String(task.id),
                 type: 'Task',
-                display: `${formatRecordId(Number(task.id), 'task')} ${task.title || 'Untitled'}`,
-                value: formatRecordId(Number(task.id), 'task'),
+                display: `${formatRecordId(task.record_number ?? task.id, 'task')} ${task.title || 'Untitled'}`,
+                value: formatRecordId(task.record_number ?? task.id, 'task'),
             }];
             setNoteForm(prev => ({
                 ...prev,
@@ -581,6 +581,7 @@ export default function TaskView() {
             // Format the task data with default values for all fields
             const formattedTask = {
                 id: data.task.id || 'Unknown ID',
+                record_number: data.task.record_number,
                 title: data.task.title || 'Untitled Task',
                 description: data.task.description || 'No description provided',
                 isCompleted: data.task.is_completed || false,
@@ -1017,8 +1018,8 @@ export default function TaskView() {
             }
             if (tasksRes.status === 'fulfilled' && tasksRes.value.ok) {
                 const data = await tasksRes.value.json();
-                (data.tasks || []).filter((t: any) => (t.title || '').toLowerCase().includes(searchTerm.toLowerCase()) || String(t.id).includes(searchTerm)).forEach((t: any) => {
-                    suggestions.push({ id: t.id, type: 'Task', display: `${formatRecordId(t.id, 'task')} ${t.title || 'Untitled'}`, value: formatRecordId(t.id, 'task') });
+                (data.tasks || []).filter((t: any) => (t.title || '').toLowerCase().includes(searchTerm.toLowerCase()) || String(t.id).includes(searchTerm) || String(t.record_number ?? '').includes(searchTerm)).forEach((t: any) => {
+                    suggestions.push({ id: t.id, type: 'Task', display: `${formatRecordId(t.record_number ?? t.id, 'task')} ${t.title || 'Untitled'}`, value: formatRecordId(t.record_number ?? t.id, 'task') });
                 });
             }
             if (placementsRes.status === 'fulfilled' && placementsRes.value.ok) {
@@ -1183,7 +1184,7 @@ export default function TaskView() {
 
             const data = await response.json();
             setNotes([data.note, ...notes]);
-            const defaultRef = task && taskId ? [{ id: String(task.id), type: 'Task', display: `${formatRecordId(Number(task.id), 'task')} ${task.title || 'Untitled'}`, value: formatRecordId(Number(task.id), 'task') }] : [];
+            const defaultRef = task && taskId ? [{ id: String(task.id), type: 'Task', display: `${formatRecordId(task.record_number ?? task.id, 'task')} ${task.title || 'Untitled'}`, value: formatRecordId(task.record_number ?? task.id, 'task') }] : [];
             setNoteForm({
                 text: '',
                 action: '',
@@ -1465,7 +1466,7 @@ export default function TaskView() {
                     body: JSON.stringify({
                         reason: deleteForm.reason.trim(),
                         record_type: "task",
-                        record_number: formatRecordId(task?.id, "task"),
+                        record_number: formatRecordId(task?.record_number ?? task?.id, "task"),
                         requested_by: currentUser?.id || currentUser?.name || "Unknown",
                         requested_by_email: currentUser?.email || "",
                     }),
@@ -1527,7 +1528,7 @@ export default function TaskView() {
                 }
             }
             const recordDisplay = task
-                ? `${formatRecordId(task.id, "task")} ${task.title || ""}`.trim()
+                ? `${formatRecordId(task.record_number ?? task.id, "task")} ${task.title || ""}`.trim()
                 : formatRecordId(taskId, "task");
             const res = await fetch(`/api/tasks/${taskId}/unarchive-request`, {
                 method: "POST",
@@ -2105,7 +2106,7 @@ export default function TaskView() {
     const handleTogglePinnedRecord = () => {
         if (!task) return;
         const key = buildPinnedKey("task", task.id);
-        const label = task.title || `${formatRecordId(task.id, "task")}`;
+        const label = task.title || `${formatRecordId(task.record_number ?? task.id, "task")}`;
         let url = `/dashboard/tasks/view?id=${task.id}`;
         if (activeTab && activeTab !== 'summary') url += `&tab=${activeTab}`;
 
@@ -2465,7 +2466,7 @@ export default function TaskView() {
                         <FiCheckSquare size={20} />
                     </div>
                     <h1 className="text-xl font-semibold text-gray-700">
-                        {formatRecordId(task.id, 'task')} {task.title}
+                        {formatRecordId(task.record_number ?? task.id, 'task')} {task.title}
                     </h1>
                     {task.archivedAt && (
                         <div className="ml-3">
@@ -2898,7 +2899,7 @@ export default function TaskView() {
                 modelType="unarchive"
                 entityLabel="Task"
                 recordDisplay={
-                    task ? `${formatRecordId(task.id, "task")} ${task.title || ""}`.trim() : "N/A"
+                    task ? `${formatRecordId(task.record_number ?? task.id, "task")} ${task.title || ""}`.trim() : "N/A"
                 }
                 reason={unarchiveReason}
                 onReasonChange={setUnarchiveReason}
@@ -2933,7 +2934,7 @@ export default function TaskView() {
                                 </label>
                                 <p className="text-sm text-gray-900 font-medium">
                                     {task
-                                        ? `${formatRecordId(task.id, "task")} ${task.title || "N/A"}`
+                                        ? `${formatRecordId(task.record_number ?? task.id, "task")} ${task.title || "N/A"}`
                                         : "N/A"}
                                 </p>
                             </div>

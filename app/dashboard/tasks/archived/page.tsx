@@ -26,6 +26,7 @@ import { matchesAdvancedValue } from "@/lib/advancedSearch";
 
 interface Task {
   id: string;
+  record_number?: number;
   title: string;
   description?: string;
   is_completed: boolean;
@@ -559,6 +560,7 @@ export default function ArchivedTasksList() {
         (task) =>
           (task.title || "").toLowerCase().includes(term) ||
           String(task.id || "").toLowerCase().includes(term) ||
+          String(task.record_number ?? "").toLowerCase().includes(term) ||
           (task.status || "").toLowerCase().includes(term) ||
           (task.job_seeker_name || "").toLowerCase().includes(term) ||
           (task.hiring_manager_name || "").toLowerCase().includes(term) ||
@@ -1148,7 +1150,7 @@ export default function ArchivedTasksList() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex flex-col gap-1">
-                        <span className="text-sm font-medium text-gray-900">T {task.id}</span>
+                        <span className="text-sm font-medium text-gray-900">T {task.record_number ?? task.id}</span>
                         {task.archived_at && (
                           <CountdownTimer archivedAt={task.archived_at} />
                         )}

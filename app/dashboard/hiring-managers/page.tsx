@@ -32,6 +32,7 @@ import { matchesAdvancedValue } from "@/lib/advancedSearch";
 
 interface HiringManager {
   id: string;
+  record_number?: number;
   first_name: string;
   last_name: string;
   full_name: string;
@@ -756,7 +757,7 @@ export default function HiringManagerList() {
       headers.map(escapeCSV).join(','),
       ...selectedData.map((hm) => {
         const row = [
-          `HM ${hm.id}`,
+          `HM ${hm.record_number ?? hm.id}`,
           ...columnFields.map((key) => escapeCSV(getColumnValue(hm, key)))
         ];
         return row.join(',');
@@ -827,6 +828,7 @@ export default function HiringManagerList() {
           .toLowerCase()
           .includes(term) ||
         String(hm.id || "").toLowerCase().includes(term) ||
+        String(hm.record_number ?? "").toLowerCase().includes(term) ||
         (hm.email || "").toLowerCase().includes(term) ||
         (hm.title || "").toLowerCase().includes(term) ||
         (hm.organization_name || "").toLowerCase().includes(term) ||
@@ -1249,7 +1251,7 @@ export default function HiringManagerList() {
                     {/* Fixed ID */}
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
-                        HM {hm.id}
+                        HM {hm.record_number ?? hm.id}
                       </div>
                     </td>
 

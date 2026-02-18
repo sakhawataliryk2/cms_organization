@@ -29,6 +29,7 @@ import CountdownTimer from "@/components/CountdownTimer";
 
 interface Lead {
   id: string;
+  record_number?: number;
   first_name: string;
   last_name: string;
   full_name?: string;
@@ -692,6 +693,7 @@ export default function ArchivedLeadsList() {
         (lead.last_name || "").toLowerCase().includes(term) ||
         (lead.full_name || "").toLowerCase().includes(term) ||
         String(lead.id || "").toLowerCase().includes(term) ||
+        String(lead.record_number ?? "").toLowerCase().includes(term) ||
         (lead.email || "").toLowerCase().includes(term) ||
         (lead.phone || "").toLowerCase().includes(term) ||
         (lead.status || "").toLowerCase().includes(term) ||
@@ -1242,7 +1244,7 @@ export default function ArchivedLeadsList() {
 
                       <td className="px-6 py-4 text-black whitespace-nowrap">
                         <div className="flex flex-col gap-1">
-                          <span>L {lead?.id}</span>
+                          <span>L {lead?.record_number ?? lead?.id}</span>
                           {lead.archived_at && (
                             <CountdownTimer archivedAt={lead.archived_at} />
                           )}
