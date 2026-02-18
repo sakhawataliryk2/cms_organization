@@ -13,7 +13,7 @@ type TabId = "organization" | "hiring-manager";
 type UploadMode = "single" | "multiple";
 
 type OrgRecord = { id: string | number; name?: string; [key: string]: unknown };
-type HMRecord = { id: string | number; name?: string; organization_name?: string; [key: string]: unknown };
+type HMRecord = { id: string | number; name?: string; organization_name?: string; custom_fields?: Record<string, unknown>; [key: string]: unknown };
 
 export default function DocumentManagementQuotesPage() {
   const router = useRouter();
@@ -90,9 +90,8 @@ export default function DocumentManagementQuotesPage() {
   });
 
   const filteredHMs = hiringManagers.filter((hm) => {
-    const name = (hm.name || hm.first_name + " " + hm.last_name || "").toString().toLowerCase();
-    const orgName = (hm.organization_name || "").toString().toLowerCase();
-    return name.includes(searchTerm.toLowerCase()) || orgName.includes(searchTerm.toLowerCase());
+    const name = (hm.name || hm.first_name + " " + hm.last_name || hm.custom_fields?.["First Name"] + " " + hm.custom_fields?.["Last Name"] || "").toString().toLowerCase(); 
+    return name.includes(searchTerm.toLowerCase());
   });
 
   const toggleOrgSelection = (id: string) => {

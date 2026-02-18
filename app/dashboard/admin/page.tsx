@@ -113,21 +113,135 @@ export default function AdminCenter() {
     useEffect(() => {
         const shouldOpenUpload = searchParams.get('upload') === 'true';
         if (shouldOpenUpload) {
-            // Reset upload state
-            setUploadFile(null);
-            setCsvHeaders([]);
-            setParsedData([]);
-            setFieldMappings({});
+            const pending = typeof window !== 'undefined' ? sessionStorage.getItem('adminParseDataPendingFile') : null;
+            if (pending) {
+                try {
+                    const { name, base64, type } = JSON.parse(pending);
+                    sessionStorage.removeItem('adminParseDataPendingFile');
+                    const binary = atob(base64);
+                    const arr = new Uint8Array(binary.length);
+                    for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+                    const blob = new Blob([arr], { type: type || 'text/csv' });
+                    const file = new File([blob], name, { type: blob.type });
+                    file.text().then((text) => {
+                        const rows = parseCSVLocal(text);
+                        if (rows.length === 0) {
+                            toast.error('CSV file is empty.');
+                            return;
+                        }
+                        const headers = rows[0].map((h: string) => h.trim());
+                        setCsvHeaders(headers);
+                        setParsedData(rows.slice(1).map((row: string[], index: number) => {
+                            const raw: Record<string, string> = {};
+                            headers.forEach((h: string, colIndex: number) => { raw[h] = row[colIndex] || ''; });
+                            return { raw, mapped: {}, errors: [], rowNumber: index + 2 };
+                        }));
+                        setUploadFile(file);
+                    }).catch(() => toast.error('Error reading CSV file.'));
+                } catch {
+                    sessionStorage.removeItem('adminParseDataPendingFile');
+                }
+            } else {
+                setUploadFile(null);
+                setCsvHeaders([]);
+                setParsedData([]);
+                setFieldMappings({});
+            }
             setUploadProgress({ current: 0, total: 0 });
             setUploadResults(null);
             setValidationErrors([]);
             setCurrentStep('select');
             setShowUploadModal(true);
-            // Clean up URL by removing query parameter
             router.replace('/dashboard/admin', { scroll: false });
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [searchParams]);
+
+    // parseCSV helper available for the upload effect (defined at module level)
+    const parseCSVLocal = (csvText: string): string[][] => {
+        const rows: string[][] = [];
+        let currentRow: string[] = [];
+        let currentField = '';
+        let inQuotes = false;
+        for (let i = 0; i < csvText.length; i++) {
+            const char = csvText[i];
+            const nextChar = csvText[i + 1];
+            if (char === '"') {
+                if (inQuotes && nextChar === '"') { currentField += '"'; i++; } else { inQuotes = !inQuotes; }
+            } else if (char === ',' && !inQuotes) {
+                currentRow.push(currentField.trim());
+                currentField = '';
+            } else if ((char === '\n' || char === '\r') && !inQuotes) {
+                if (currentField || currentRow.length > 0) {
+                    currentRow.push(currentField.trim());
+                    rows.push(currentRow);
+                    currentRow = [];
+                    currentField = '';
+                }
+                if (char === '\r' && nextChar === '\n') i++;
+            } else {
+                currentField += char;
+            }
+        }
+        if (currentField || currentRow.length > 0) {
+            currentRow.push(currentField.trim());
+            rows.push(currentRow);
+        }
+        return rows;
+    };
+
+    // Shared auto-mapping: match CSV headers to admin center fields using field_label and field_name variants
+    const runAutoMapping = (headers: string[], fields: CustomFieldDefinition[]) => {
+        if (fields.length === 0 || headers.length === 0) return {};
+        const normalize = (s: string) => (s || '').toLowerCase().trim().replace(/\s*\*+\s*$/, '').trim();
+        const usedHeaders = new Set<string>();
+        const autoMappings: Record<string, string> = {};
+        const getVariants = (field: CustomFieldDefinition) => {
+            const label = (field.field_label ?? '') || '';
+            const name = (field.field_name ?? '') || '';
+            const nLabel = normalize(label);
+            const nName = normalize(name.replace(/_/g, ' '));
+            const nNameUnderscore = name.toLowerCase().replace(/\s+/g, '_');
+            const nLabelNoSpaces = nLabel.replace(/\s+/g, '');
+            const nLabelUnderscore = nLabel.replace(/\s+/g, '_');
+            return [...new Set([nLabel, nName, nNameUnderscore, nLabelNoSpaces, nLabelUnderscore].filter(Boolean))];
+        };
+        fields.forEach((field: CustomFieldDefinition) => {
+            const fieldName = field.field_name || '';
+            if (!fieldName) return;
+            const variants = getVariants(field);
+            const match = headers.find((h: string) => {
+                if (usedHeaders.has(h)) return false;
+                const normalized = normalize(h);
+                return variants.some(v => v === normalized || normalized === (v || '').replace(/_/g, ' '));
+            });
+            if (match) {
+                autoMappings[fieldName] = match;
+                usedHeaders.add(match);
+            }
+        });
+        return autoMappings;
+    };
+
+    // When file is pre-loaded (from sidebar drop) and user selects module, wait for fields then auto-advance
+    useEffect(() => {
+        if (currentStep !== 'select' || !uploadFile || !selectedUploadModule || csvHeaders.length === 0) return;
+        if (uploadModuleFields.length === 0) return; // wait for admin fields to load
+        const mappings = runAutoMapping(csvHeaders, uploadModuleFields);
+        setFieldMappings(mappings);
+        setCurrentStep('map');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentStep, uploadFile, selectedUploadModule, csvHeaders, uploadModuleFields]);
+
+    // Late auto-mapping: when on map step with data but empty mappings (e.g. fields loaded after file select)
+    useEffect(() => {
+        if (currentStep !== 'map' || !uploadFile || csvHeaders.length === 0 || !selectedUploadModule) return;
+        if (uploadModuleFields.length === 0) return;
+        if (Object.keys(fieldMappings).length > 0) return; // already have mappings
+        const mappings = runAutoMapping(csvHeaders, uploadModuleFields);
+        setFieldMappings(mappings);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [currentStep, uploadFile, csvHeaders, selectedUploadModule, uploadModuleFields]);
 
     // Map module IDs to entity types for Field Management
     const moduleToEntityType: Record<string, string> = {
@@ -239,7 +353,7 @@ export default function AdminCenter() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selectedModule, showDownloadModal]);
 
-    // Fetch upload module fields from Field Management when upload modal is open and module selected
+    // Fetch upload module fields from Field Management only (admin center non-hidden fields, no standard fallback)
     useEffect(() => {
         if (!showUploadModal || !selectedUploadModule) {
             setUploadModuleFields([]);
@@ -248,8 +362,7 @@ export default function AdminCenter() {
         const entityType = moduleToEntityType[selectedUploadModule];
         const fetchUploadFields = async () => {
             setIsLoadingUploadFields(true);
-            const standardFields = getStandardFields(selectedUploadModule);
-            let allFields: CustomFieldDefinition[] = [...standardFields];
+            let allFields: CustomFieldDefinition[] = [];
             if (entityType) {
                 try {
                     const token = document.cookie.replace(
@@ -261,14 +374,9 @@ export default function AdminCenter() {
                     });
                     if (response.ok) {
                         const data = await response.json();
-                        const customFields = (data.customFields || data.fields || []).filter(
-                            (f: CustomFieldDefinition) => !f.is_hidden
-                        );
-                        const standardNames = new Set(standardFields.map(f => f.field_name));
-                        customFields.forEach((f: CustomFieldDefinition) => {
-                            if (!standardNames.has(f.field_name)) allFields.push(f);
-                        });
-                        allFields.sort((a, b) => (a.sort_order || 0) - (b.sort_order || 0));
+                        allFields = (data.customFields || data.fields || [])
+                            .filter((f: CustomFieldDefinition) => !(f.is_hidden ?? (f as any).isHidden))
+                            .sort((a: CustomFieldDefinition, b: CustomFieldDefinition) => ((a.sort_order ?? (a as any).sortOrder) || 0) - ((b.sort_order ?? (b as any).sortOrder) || 0));
                     }
                 } catch (err) {
                     console.error('Error fetching upload fields:', err);
@@ -781,48 +889,12 @@ export default function AdminCenter() {
             });
 
             setParsedData(dataRows);
-            
-            // Auto-map: prefer exact label match, use each Excel header at most once
-            if (selectedUploadModule) {
-                const autoMappings: Record<string, string> = {};
-                const module = uploadModules.find(m => m.id === selectedUploadModule);
-                const systemFieldsList = uploadModuleFields.length > 0
-                    ? uploadModuleFields
-                    : (module ? Object.keys(module.fieldMappings).map(f => ({ field_name: f, field_label: f, is_required: (module.requiredFields || []).includes(f) })) : []);
-                const normalize = (s: string) => s.toLowerCase().trim().replace(/\s*\*+\s*$/, '').trim();
-                const usedHeaders = new Set<string>();
 
-                // Pass 1: exact label or exact field_name match (each header used only once)
-                systemFieldsList.forEach((field: { field_name: string; field_label: string }) => {
-                    const lowerLabel = normalize(field.field_label);
-                    const lowerName = field.field_name.toLowerCase().replace(/_/g, ' ');
-                    const match = headers.find(h => {
-                        if (usedHeaders.has(h)) return false;
-                        const normalized = normalize(h);
-                        return normalized === lowerLabel || normalized === lowerName;
-                    });
-                    if (match) {
-                        autoMappings[field.field_name] = match;
-                        usedHeaders.add(match);
-                    }
-                });
-
-                // Pass 2: variant match for fields still unmapped (only unused headers)
-                systemFieldsList.forEach((field: { field_name: string; field_label: string }) => {
-                    if (autoMappings[field.field_name]) return;
-                    const csvVariants = module?.fieldMappings?.[field.field_name] ?? [];
-                    const match = headers.find(h => {
-                        if (usedHeaders.has(h)) return false;
-                        const normalized = normalize(h);
-                        return csvVariants.some((v: string) => normalize(v) === normalized);
-                    });
-                    if (match) {
-                        autoMappings[field.field_name] = match;
-                        usedHeaders.add(match);
-                    }
-                });
-
-                setFieldMappings(autoMappings);
+            // Auto-map using only admin center fields (no standard fallback)
+            if (selectedUploadModule && uploadModuleFields.length > 0) {
+                setFieldMappings(runAutoMapping(headers, uploadModuleFields));
+            } else {
+                setFieldMappings({});
             }
 
             setCurrentStep('map');
@@ -842,16 +914,10 @@ export default function AdminCenter() {
             return { isValid: false, errors, warnings };
         }
 
-        const module = uploadModules.find(m => m.id === selectedUploadModule);
-        if (!module) {
-            errors.push('Invalid module selected.');
-            return { isValid: false, errors, warnings };
-        }
-
-        // Required fields: use dynamic uploadModuleFields when available, else static module.requiredFields
-        const requiredFields = uploadModuleFields.length > 0
-            ? uploadModuleFields.filter(f => f.is_required).map(f => f.field_name)
-            : module.requiredFields;
+        // Required fields: use only admin center non-hidden fields (no standard fallback)
+        const requiredFields = uploadModuleFields
+            .filter(f => f.is_required ?? (f as any).isRequired)
+            .map(f => f.field_name ?? (f as any).fieldName);
         // fieldMappings is systemField -> csvHeader
         const missingRequired = requiredFields.filter(req => !fieldMappings[req] || fieldMappings[req].trim() === '');
         if (missingRequired.length > 0) {
@@ -1502,18 +1568,32 @@ export default function AdminCenter() {
 
                                     <div>
                                         <label className="text-sm font-medium text-gray-700 mb-2 block">
-                                            Select CSV File <span className="text-red-500">*</span>
+                                            CSV File <span className="text-red-500">*</span>
                                         </label>
-                                        <input
-                                            type="file"
-                                            accept=".csv"
-                                            onChange={handleFileSelect}
-                                            className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            disabled={!selectedUploadModule}
-                                        />
-                                        <p className="text-xs text-gray-500 mt-1">
-                                            Accepted format: CSV files only
-                                        </p>
+                                        {uploadFile ? (
+                                            <div className="p-3 bg-green-50 border border-green-200 rounded flex items-center justify-between">
+                                                <span className="text-sm text-green-800 truncate">{uploadFile.name}</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => { setUploadFile(null); setCsvHeaders([]); setParsedData([]); }}
+                                                    className="text-gray-500 hover:text-red-600 text-sm shrink-0 ml-2"
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <input
+                                                type="file"
+                                                accept=".csv"
+                                                onChange={handleFileSelect}
+                                                className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                        )}
+                                        {!uploadFile && (
+                                            <p className="text-xs text-gray-500 mt-1">
+                                                Accepted format: CSV. Or drop a CSV file on the Parse Data zone in the sidebar.
+                                            </p>
+                                        )}
                                     </div>
                                 </>
                             )}
@@ -1532,14 +1612,11 @@ export default function AdminCenter() {
                                             <p className="text-sm text-gray-500 mb-2">Loading system fields…</p>
                                         )}
                                         <div className="border border-gray-200 rounded p-4 max-h-96 overflow-y-auto space-y-3">
-                                            {(uploadModuleFields.length > 0 ? uploadModuleFields : (() => {
-                                                const module = uploadModules.find(m => m.id === selectedUploadModule);
-                                                return module ? Object.keys(module.fieldMappings).map(f => ({ field_name: f, field_label: f, is_required: (module.requiredFields || []).includes(f) })) : [];
-                                            })()).map((field: CustomFieldDefinition | { field_name: string; field_label: string; is_required?: boolean }) => (
+                                            {uploadModuleFields.length > 0 ? uploadModuleFields.map((field: CustomFieldDefinition) => (
                                                 <div key={field.field_name} className="flex items-center gap-4 py-2 border-b border-gray-100 last:border-b-0">
                                                     <div className="w-52 shrink-0 text-sm font-medium text-gray-700 border-r border-gray-200 pr-3" title="System field from Admin Center">
                                                         {field.field_label}
-                                                        {(field as CustomFieldDefinition).is_required && <span className="text-red-500 ml-0.5">*</span>}
+                                                        {field.is_required && <span className="text-red-500 ml-0.5">*</span>}
                                                     </div>
                                                     <div className="flex-1 min-w-0">
                                                         <select
@@ -1560,7 +1637,9 @@ export default function AdminCenter() {
                                                         </select>
                                                     </div>
                                                 </div>
-                                            ))}
+                                            )) : (
+                                                <p className="text-sm text-gray-500 py-4">No fields available for this module. Configure fields in Admin Center → Field Management.</p>
+                                            )}
                                         </div>
                                     </div>
 
