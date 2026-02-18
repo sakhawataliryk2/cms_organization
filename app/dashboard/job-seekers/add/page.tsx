@@ -34,14 +34,14 @@ interface FormField {
   name: string;
   label: string;
   type:
-    | "text"
-    | "email"
-    | "tel"
-    | "date"
-    | "select"
-    | "textarea"
-    | "file"
-    | "number";
+  | "text"
+  | "email"
+  | "tel"
+  | "date"
+  | "select"
+  | "textarea"
+  | "file"
+  | "number";
   required: boolean;
   visible: boolean;
   options?: string[]; // For select fields
@@ -1019,7 +1019,7 @@ export default function AddJobSeeker() {
       console.log(
         "Is apiData.custom_fields an object?",
         typeof apiData.custom_fields === "object" &&
-          !Array.isArray(apiData.custom_fields)
+        !Array.isArray(apiData.custom_fields)
       );
       console.log("=== END PAYLOAD ===");
 
@@ -1068,7 +1068,7 @@ export default function AddJobSeeker() {
       console.log(
         "custom_fields is object:",
         typeof apiData.custom_fields === "object" &&
-          !Array.isArray(apiData.custom_fields)
+        !Array.isArray(apiData.custom_fields)
       );
       console.log("All keys in apiData:", Object.keys(apiData));
       console.log("=== END VALIDATION ===");
@@ -1104,7 +1104,7 @@ export default function AddJobSeeker() {
       if (!response.ok) {
         throw new Error(
           data.message ||
-            `Failed to ${isEditMode ? "update" : "create"} job seeker`
+          `Failed to ${isEditMode ? "update" : "create"} job seeker`
         );
       }
 
@@ -1112,8 +1112,8 @@ export default function AddJobSeeker() {
       const resultId = isEditMode
         ? jobSeekerId
         : data.jobSeeker
-        ? data.jobSeeker.id
-        : null;
+          ? data.jobSeeker.id
+          : null;
       if (resultId) {
         router.push("/dashboard/job-seekers/view?id=" + resultId);
       } else {
@@ -1215,6 +1215,12 @@ export default function AddJobSeeker() {
             {(() => {
               const renderCustomFieldRow = (field: any) => {
                 // Don't render hidden fields at all (neither label nor input)
+                // Hide Full Address field (combined display only; address is shown via Address group above)
+                const labelNorm = (field.field_label ?? "").toLowerCase().replace(/[_-]+/g, " ").trim();
+                const isFullAddressField =
+                  labelNorm.includes("full") && labelNorm.includes("address");
+                if (isFullAddressField) return null;
+                
                 if (field.is_hidden) return null;
 
                 // ✅ Render Address Group exactly where first address field exists
@@ -1351,12 +1357,12 @@ export default function AddJobSeeker() {
                             isSkillsField
                               ? "Type a skill and press Enter"
                               : isAdditionalSkillField
-                              ? "Type an additional skill and press Enter"
-                              : isCertificationsField
-                              ? "Type a certification and press Enter"
-                              : isSoftwaresField
-                              ? "Type a software and press Enter"
-                              : "Type a value and press Enter"
+                                ? "Type an additional skill and press Enter"
+                                : isCertificationsField
+                                  ? "Type a certification and press Enter"
+                                  : isSoftwaresField
+                                    ? "Type a software and press Enter"
+                                    : "Type a value and press Enter"
                           }
                         />
                       ) : (
