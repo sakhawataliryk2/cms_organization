@@ -25,7 +25,7 @@ export default function DenyDeletePage() {
           return;
         }
 
-        const response = await fetch(`/api/organizations/delete/${deleteRequestId}`, {
+        const response = await fetch(`/api/organizations/delete/${deleteRequestId}/deny`, {
           method: "GET",
           headers: {
             "Content-Type": "application/json",

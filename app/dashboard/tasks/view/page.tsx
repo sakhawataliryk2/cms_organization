@@ -26,6 +26,7 @@ import { toast } from "sonner";
 import AddTearsheetModal from "@/components/AddTearsheetModal";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import RequestActionModal from "@/components/RequestActionModal";
+import AddNoteModal from "@/components/AddNoteModal";
 
 import {
     DndContext,
@@ -1206,19 +1207,6 @@ export default function TaskView() {
 
     const handleCloseAddNoteModal = () => {
         setShowAddNote(false);
-        const defaultRef = task && taskId ? [{ id: String(task.id), type: 'Task', display: `${formatRecordId(Number(task.id), 'task')} ${task.title || 'Untitled'}`, value: formatRecordId(Number(task.id), 'task') }] : [];
-        setNoteForm({
-            text: '',
-            action: '',
-            about: defaultRef.map(r => r.display).join(', '),
-            aboutReferences: defaultRef,
-            copyNote: 'No',
-            replaceGeneralContactComments: false,
-            additionalReferences: '',
-            scheduleNextAction: 'None',
-            emailNotification: [],
-        });
-        setValidationErrors({});
     };
 
     const handleGoBack = () => {
@@ -2661,163 +2649,15 @@ export default function TaskView() {
                 entityId={taskId || ""}
             />
 
-            {/* Add Note Modal - same layout and functionality as Hiring Manager (Action, About Reference, Email Notification) */}
-            {showAddNote && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-                        <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-                            <div className="flex items-center space-x-2">
-                                <Image src="/file.svg" alt="Note" width={20} height={20} />
-                                <h2 className="text-lg font-semibold">Add Note</h2>
-                            </div>
-                            <button onClick={handleCloseAddNoteModal} className="p-1 rounded hover:bg-gray-200">
-                                <span className="text-2xl font-bold">×</span>
-                            </button>
-                        </div>
-                        <div className="p-6">
-                            <div className="space-y-4">
-                                {/* Note Text - Required */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Note Text {noteForm.text.length > 0 ? <span className="text-green-500">✓</span> : <span className="text-red-500">*</span>}
-                                    </label>
-                                    <textarea
-                                        value={noteForm.text}
-                                        autoFocus
-                                        onChange={(e) => {
-                                            setNoteForm(prev => ({ ...prev, text: e.target.value }));
-                                            if (validationErrors.text) setValidationErrors(prev => ({ ...prev, text: undefined }));
-                                        }}
-                                        placeholder="Enter your note text here. Reference people and distribution lists using @ (e.g. @John Smith). Reference other records using # (e.g. #Project Manager)."
-                                        className={`w-full p-3 border rounded focus:outline-none focus:ring-2 ${validationErrors.text ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-blue-500"}`}
-                                        rows={6}
-                                    />
-                                    {validationErrors.text && <p className="mt-1 text-sm text-red-500">{validationErrors.text}</p>}
-                                </div>
-
-                                {/* Action - Required (Field500) */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        Action {noteForm.action ? <span className="text-green-500">✓</span> : <span className="text-red-500">*</span>}
-                                    </label>
-                                    {isLoadingActionFields ? (
-                                        <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">Loading actions...</div>
-                                    ) : (
-                                        <select
-                                            value={noteForm.action}
-                                            onChange={(e) => {
-                                                setNoteForm(prev => ({ ...prev, action: e.target.value }));
-                                                if (validationErrors.action) setValidationErrors(prev => ({ ...prev, action: undefined }));
-                                            }}
-                                            className={`w-full p-2 border rounded focus:outline-none focus:ring-2 ${validationErrors.action ? "border-red-500 focus:ring-red-500" : "border-gray-300 focus:ring-blue-500"}`}
-                                        >
-                                            <option value="">Select an action...</option>
-                                            {actionFields.map((action) => (
-                                                <option key={action.id} value={action.field_name || action.id}>{action.field_label || action.field_name || action.id}</option>
-                                            ))}
-                                        </select>
-                                    )}
-                                    {validationErrors.action && <p className="mt-1 text-sm text-red-500">{validationErrors.action}</p>}
-                                </div>
-
-                                {/* About / Reference - Required */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                        About / Reference {(noteForm.aboutReferences && noteForm.aboutReferences.length > 0) ? <span className="text-green-500">✓</span> : <span className="text-red-500">*</span>}
-                                    </label>
-                                    <div className="relative" ref={aboutInputRef}>
-                                        <div className={`min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:outline-none pr-8 ${validationErrors.about ? "border-red-500 focus-within:ring-red-500" : "border-gray-300 focus-within:ring-blue-500"}`}>
-                                            {(noteForm.aboutReferences || []).map((ref, index) => (
-                                                <span key={`${ref.type}-${ref.id}-${index}`} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm">
-                                                    <FiUserCheck className="w-4 h-4" />
-                                                    {ref.display}
-                                                    <button type="button" onClick={() => removeAboutReference(index)} className="hover:text-blue-600 font-bold leading-none" title="Remove">×</button>
-                                                </span>
-                                            ))}
-                                            <input
-                                                type="text"
-                                                value={aboutSearchQuery}
-                                                onChange={(e) => { setAboutSearchQuery(e.target.value); searchAboutReferences(e.target.value); setShowAboutDropdown(true); }}
-                                                onFocus={() => { setShowAboutDropdown(true); if (!aboutSearchQuery.trim()) searchAboutReferences(""); }}
-                                                placeholder={noteForm.aboutReferences.length === 0 ? "Search and select records (e.g., Job, Lead, Placement, Organization, Hiring Manager, Task)..." : "Add more..."}
-                                                className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
-                                            />
-                                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none"><FiSearch className="w-4 h-4" /></span>
-                                        </div>
-                                        {validationErrors.about && <p className="mt-1 text-sm text-red-500">{validationErrors.about}</p>}
-                                        {showAboutDropdown && (
-                                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
-                                                {isLoadingAboutSearch ? <div className="p-3 text-center text-gray-500 text-sm">Searching...</div> : aboutSuggestions.length > 0 ? (
-                                                    aboutSuggestions.map((suggestion, idx) => (
-                                                        <button key={`${suggestion.type}-${suggestion.id}-${idx}`} type="button" onClick={() => handleAboutReferenceSelect(suggestion)} className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2">
-                                                            <FiUserCheck className="w-4 h-4 text-gray-500 shrink-0" />
-                                                            <div className="flex-1">
-                                                                <div className="text-sm font-medium text-gray-900">{suggestion.display}</div>
-                                                                <div className="text-xs text-gray-500">{suggestion.type}</div>
-                                                            </div>
-                                                        </button>
-                                                    ))
-                                                ) : aboutSearchQuery.trim().length > 0 ? <div className="p-3 text-center text-gray-500 text-sm">No results found</div> : <div className="p-3 text-center text-gray-500 text-sm">Type to search or select from list</div>}
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                {/* Email Notification */}
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">Email Notification</label>
-                                    <div className="relative" ref={emailInputRef}>
-                                        {isLoadingUsers ? <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50 min-h-[42px]">Loading users...</div> : (
-                                            <div className="min-h-[42px] flex flex-wrap items-center gap-2 p-2 border border-gray-300 rounded focus-within:ring-2 focus-within:outline-none focus-within:ring-blue-500 pr-8">
-                                                {(noteForm.emailNotification || []).map((val, index) => (
-                                                    <span key={val} className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm">
-                                                        <HiOutlineUser className="w-4 h-4 shrink-0" />
-                                                        {val}
-                                                        <button type="button" onClick={() => removeEmailNotification(val)} className="hover:text-blue-600 font-bold leading-none" title="Remove">×</button>
-                                                    </span>
-                                                ))}
-                                                <input
-                                                    type="text"
-                                                    value={emailSearchQuery}
-                                                    onChange={(e) => { setEmailSearchQuery(e.target.value); setShowEmailDropdown(true); }}
-                                                    onFocus={() => setShowEmailDropdown(true)}
-                                                    placeholder={noteForm.emailNotification.length === 0 ? "Search and add users to notify..." : "Add more..."}
-                                                    className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
-                                                />
-                                                <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none"><FiSearch className="w-4 h-4" /></span>
-                                            </div>
-                                        )}
-                                        {showEmailDropdown && !isLoadingUsers && (
-                                            <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
-                                                {emailNotificationSuggestions.length > 0 ? emailNotificationSuggestions.map((user, idx) => (
-                                                    <button key={user.id ?? idx} type="button" onClick={() => handleEmailNotificationSelect(user)} className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2">
-                                                        <HiOutlineUser className="w-4 h-4 text-gray-500 shrink-0" />
-                                                        <div className="flex-1">
-                                                            <div className="text-sm font-medium text-gray-900">{user.name || user.email}</div>
-                                                            {user.email && user.name && <div className="text-xs text-gray-500">{user.email}</div>}
-                                                        </div>
-                                                    </button>
-                                                )) : <div className="p-3 text-center text-gray-500 text-sm">{emailSearchQuery.trim().length >= 1 ? "No matching users found" : "Type to search internal users"}</div>}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <p className="mt-1 text-xs text-gray-500">Only internal system users are available for notification</p>
-                                </div>
-                            </div>
-
-                            <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
-                                <button onClick={handleCloseAddNoteModal} className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium">CANCEL</button>
-                                <button
-                                    onClick={handleAddNote}
-                                    className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
-                                    disabled={!noteForm.text.trim() || !noteForm.action || (noteForm.aboutReferences || []).length === 0}
-                                >
-                                    SAVE
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            {showAddNote && task && (
+                <AddNoteModal
+                    open={showAddNote}
+                    onClose={handleCloseAddNoteModal}
+                    entityType="task"
+                    entityId={taskId || ""}
+                    entityDisplay={task.title || `Task #${taskId}`}
+                    onSuccess={() => fetchNotes(taskId!)}
+                />
             )}
 
             {/* Edit Fields Modal - details and taskOverview use SortableFieldsEditModal */}
