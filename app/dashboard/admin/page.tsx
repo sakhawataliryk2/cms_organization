@@ -113,6 +113,8 @@ export default function AdminCenter() {
     useEffect(() => {
         const shouldOpenUpload = searchParams.get('upload') === 'true';
         if (shouldOpenUpload) {
+            // Always reset module selection so user must choose module first (especially for drag-drop flow)
+            setSelectedUploadModule('');
             const pending = typeof window !== 'undefined' ? sessionStorage.getItem('adminParseDataPendingFile') : null;
             if (pending) {
                 try {
