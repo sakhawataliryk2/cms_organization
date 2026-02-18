@@ -549,6 +549,26 @@ export default function AddJob() {
     [addressFields]
   );
 
+  // Helper to normalize a label into a canonical address role
+  const getAddressRoleFromLabel = (
+    label: string | null | undefined
+  ):
+    | "address"
+    | "address2"
+    | "city"
+    | "state"
+    | "zip"
+    | null => {
+    const n = (label || "").toLowerCase().trim();
+    if (!n) return null;
+    if (n === "address" || n === "address1" || n === "street address") return "address";
+    if (n === "address2" || n === "address 2") return "address2";
+    if (n === "city") return "city";
+    if (n === "state" || n === "state/province" || n === "province") return "state";
+    if (n === "zip" || n === "zip code" || n === "postal code" || n === "postcode") return "zip";
+    return null;
+  };
+
   // Calculate Client Bill Rate (Field_13) from Pay Rate (Field_11) and Mark-up % (Field_12 or Field_512)
   const calculateClientBillRate = (payRate: string, markupPercent: string): string => {
     const payRateNum = parseFloat(payRate);
@@ -775,7 +795,64 @@ export default function AddJob() {
         if (response.ok) {
           const data = await response.json();
           const orgName = data.organization?.name || "";
+          const org = data.organization;
           setOrganizationName(orgName);
+
+          // Build a canonical organization address object from org + org.custom_fields
+          const orgAddress: {
+            address?: string;
+            address2?: string;
+            city?: string;
+            state?: string;
+            zip?: string;
+          } = {};
+
+          if (org?.address) {
+            orgAddress.address = String(org.address);
+          }
+
+          if (org?.custom_fields) {
+            let orgCustomFields: Record<string, any> = {};
+            try {
+              orgCustomFields =
+                typeof org.custom_fields === "string"
+                  ? JSON.parse(org.custom_fields)
+                  : org.custom_fields;
+            } catch (e) {
+              console.error("Error parsing organization custom_fields for address prefill:", e);
+            }
+
+            Object.entries(orgCustomFields).forEach(([label, value]) => {
+              const role = getAddressRoleFromLabel(label);
+              if (!role) return;
+              if (orgAddress[role]) return;
+              if (value === undefined || value === null) return;
+              const v = String(value).trim();
+              if (!v) return;
+              orgAddress[role] = v;
+            });
+          }
+
+          // Prefill address custom fields for this job from the canonical organization address
+          if (addressFields.length > 0) {
+            setCustomFieldValues((prev) => {
+              const next = { ...prev };
+
+              addressFields.forEach((addrField) => {
+                // Do not overwrite if user or other logic already set a value
+                if (next[addrField.field_name]) return;
+
+                const role = getAddressRoleFromLabel(addrField.field_label);
+                if (!role) return;
+                const value = orgAddress[role];
+                if (value && String(value).trim() !== "") {
+                  next[addrField.field_name] = value;
+                }
+              });
+
+              return next;
+            });
+          }
 
           // Set Field_3 (Organization custom field) if it exists
           // Use the organization name (which matches the dropdown option values)
