@@ -28,6 +28,7 @@ import CountdownTimer from "@/components/CountdownTimer";
 
 interface Organization {
   id: string;
+  record_number?: number;
   name: string;
   website: string;
   status: string;
@@ -690,6 +691,7 @@ export default function ArchivedOrganizationsList() {
       result = result.filter((org) =>
         (org.name || "").toLowerCase().includes(term) ||
         String(org.id || "").toLowerCase().includes(term) ||
+        String(org.record_number ?? "").toLowerCase().includes(term) ||
         (org.status || "").toLowerCase().includes(term) ||
         (org.contact_phone || "").toLowerCase().includes(term) ||
         (org.address || "").toLowerCase().includes(term) ||
@@ -1232,7 +1234,7 @@ export default function ArchivedOrganizationsList() {
 
                       <td className="px-6 py-4 text-black whitespace-nowrap">
                         <div className="flex flex-col gap-1">
-                          <span>O {org?.id}</span>
+                          <span>O {org?.record_number ?? org?.id}</span>
                           {org.archived_at && (
                             <CountdownTimer archivedAt={org.archived_at} />
                           )}

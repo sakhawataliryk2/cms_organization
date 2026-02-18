@@ -35,6 +35,7 @@ import AdvancedSearchPanel, {
 import { matchesAdvancedValue } from "@/lib/advancedSearch";
 
 interface Organization {
+  record_number: number;
   id: string;
   name: string;
   website: string;
@@ -757,6 +758,7 @@ export default function OrganizationList() {
       result = result.filter((org) =>
         (org.name || "").toLowerCase().includes(term) ||
         String(org.id || "").toLowerCase().includes(term) ||
+        String(org.record_number ?? "").toLowerCase().includes(term) ||
         (org.status || "").toLowerCase().includes(term) ||
         (org.contact_phone || "").toLowerCase().includes(term) ||
         (org.address || "").toLowerCase().includes(term)
@@ -925,7 +927,7 @@ export default function OrganizationList() {
       headers.map(escapeCSV).join(','),
       ...selectedData.map((org) => {
         const row = [
-          `O ${org.id}`,
+          `O ${org.record_number ?? org.id}`,
           ...columnFields.map((key) => escapeCSV(getColumnValue(org, key)))
         ];
         return row.join(',');
@@ -1303,7 +1305,7 @@ export default function OrganizationList() {
                   </th>
 
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ID
+                    Record Number
                   </th>
                   {/* Draggable Dynamic headers */}
                   <SortableContext
@@ -1391,7 +1393,8 @@ export default function OrganizationList() {
                         />
                       </td>
 
-                      <td className="px-6 py-4 text-black whitespace-nowrap">O {org?.id}</td>
+                      <td className="px-6 py-4 text-black whitespace-nowrap">O {org?.record_number}</td>
+
                       {columnFields.map((key) => {
                         const colInfo = getColumnInfo(key);
                         const fieldInfo = colInfo

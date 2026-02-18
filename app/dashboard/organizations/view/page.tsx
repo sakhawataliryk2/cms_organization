@@ -331,7 +331,7 @@ export default function OrganizationView() {
 
   const [organization, setOrganization] = useState<any>(null);
   // console.log("Organi")
-      console.log("Organization",organization)
+  console.log("Organization", organization)
   const [originalData, setOriginalData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -412,14 +412,14 @@ export default function OrganizationView() {
   const [noteForm, setNoteForm] = useState({
     text: "",
     action: "",
-    about: organization ? `${formatRecordId(organization.id, "organization")} ${organization.name}` : "",
+    about: organization ? `${formatRecordId(organization.record_number ?? organization.id, "organization")} ${organization.name}` : "",
     aboutReferences: organization
       ? [
         {
           id: organization.id,
           type: "Organization",
-          display: `${formatRecordId(organization.id, "organization")} ${organization.name}`,
-          value: formatRecordId(organization.id, "organization"),
+          display: `${formatRecordId(organization.record_number ?? organization.id, "organization")} ${organization.name}`,
+          value: formatRecordId(organization.record_number ?? organization.id, "organization"),
         },
       ]
       : [],
@@ -864,9 +864,9 @@ export default function OrganizationView() {
         {
           id: organization.id,
           type: "Organization",
-          display: `${formatRecordId(organization.id, "organization")} ${organization.name
+          display: `${formatRecordId(organization.record_number ?? organization.id, "organization")} ${organization.name
             }`,
-          value: formatRecordId(organization.id, "organization"),
+          value: formatRecordId(organization.record_number ?? organization.id, "organization"),
         },
       ];
       setNoteForm((prev) => ({
@@ -1120,16 +1120,17 @@ export default function OrganizationView() {
           ? (data.organizations || []).filter(
             (org: any) =>
               org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-              org.id?.toString().includes(searchTerm)
+              org.id?.toString().includes(searchTerm) ||
+              String(org.record_number ?? "").includes(searchTerm)
           )
           : (data.organizations || []);
         orgs.forEach((org: any) => {
           suggestions.push({
             id: org.id,
             type: "Organization",
-            display: `${formatRecordId(org.id, "organization")} ${org.name || "Unnamed"
+            display: `${formatRecordId(org.record_number ?? org.id, "organization")} ${org.name || "Unnamed"
               }`,
-            value: formatRecordId(org.id, "organization"),
+            value: formatRecordId(org.record_number ?? org.id, "organization"),
           });
         });
       }
@@ -1597,6 +1598,7 @@ export default function OrganizationView() {
       // FIXED MAPPING: Map the data correctly to display fields
       const formattedOrg = {
         id: data.organization.id,
+        record_number: data.organization.record_number,
         name: data.organization.name || "No name provided",
         phone: data.organization.contact_phone || "(Not provided)",
         website: data.organization.website || "https://example.com",
@@ -3302,7 +3304,7 @@ export default function OrganizationView() {
   const handleTogglePinnedRecord = () => {
     if (!organization) return;
     const key = buildPinnedKey("org", organization.id);
-    const label = organization.name || `Organization ${organization.id}`;
+    const label = organization.name || `Organization ${organization.record_number ?? organization.id}`;
     let url = `/dashboard/organizations/view?id=${organization.id}`;
     if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
     if (hmFilter) url += `&hm=${encodeURIComponent(hmFilter)}`;
@@ -3429,14 +3431,14 @@ export default function OrganizationView() {
       setOrganization((prev: any) =>
         prev
           ? {
-              ...prev,
+            ...prev,
+            website: normalized,
+            contact: {
+              ...(prev.contact || {}),
               website: normalized,
-              contact: {
-                ...(prev.contact || {}),
-                website: normalized,
-              },
-              customFields: returnedCustomFields,
-            }
+            },
+            customFields: returnedCustomFields,
+          }
           : prev
       );
 
@@ -3815,7 +3817,7 @@ export default function OrganizationView() {
             text: `Delete requested by ${currentUser?.name || "Unknown User"} – Pending payroll approval`,
             action: "Delete Request",
             about: organization
-              ? `${formatRecordId(organization.id, "organization")} ${organization.name}`
+              ? `${formatRecordId(organization.record_number ?? organization.id, "organization")} ${organization.name}`
               : "",
           }),
         }
@@ -3840,7 +3842,7 @@ export default function OrganizationView() {
           body: JSON.stringify({
             reason: deleteForm.reason.trim(),
             record_type: "organization",
-            record_number: formatRecordId(organization?.id, "organization"),
+            record_number: formatRecordId(organization?.record_number ?? organization?.id, "organization"),
             requested_by: currentUser?.id || currentUser?.name || "Unknown",
             requested_by_email: currentUser?.email || "",
             action_type: deleteActionType,
@@ -3910,7 +3912,7 @@ export default function OrganizationView() {
         body: JSON.stringify({
           reason: unarchiveReason.trim(),
           record_number: organization
-            ? `${formatRecordId(organization.id, "organization")} ${organization.name}`
+            ? `${formatRecordId(organization.record_number ?? organization.id, "organization")} ${organization.name}`
             : formatRecordId(organizationId, "organization"),
           requested_by: currentUser?.name || "Unknown",
           requested_by_email: currentUser?.email || "",
@@ -4303,9 +4305,9 @@ export default function OrganizationView() {
           {
             id: organization.id,
             type: "Organization",
-            display: `${formatRecordId(organization.id, "organization")} ${organization.name
+            display: `${formatRecordId(organization.record_number ?? organization.id, "organization")} ${organization.name
               }`,
-            value: formatRecordId(organization.id, "organization"),
+            value: formatRecordId(organization.record_number ?? organization.id, "organization"),
           },
         ]
         : [];
@@ -4314,7 +4316,7 @@ export default function OrganizationView() {
         text: "",
         action: "",
         about: organization
-          ? `${formatRecordId(organization.id, "organization")} ${organization.name
+          ? `${formatRecordId(organization.record_number ?? organization.id, "organization")} ${organization.name
           }`
           : "",
         aboutReferences: defaultAboutRef,
@@ -4355,9 +4357,10 @@ export default function OrganizationView() {
         const q = transferSearchQuery.trim().toLowerCase();
         const name = String(org?.name || "").toLowerCase();
         const idStr = org?.id !== undefined && org?.id !== null ? String(org.id) : "";
+        const recordNum = org?.record_number ?? org?.id;
         const recordId =
-          org?.id !== undefined && org?.id !== null
-            ? String(formatRecordId(org.id, "organization")).toLowerCase()
+          recordNum !== undefined && recordNum !== null
+            ? String(formatRecordId(recordNum, "organization")).toLowerCase()
             : "";
         return name.includes(q) || idStr.includes(q) || recordId.includes(q);
       });
@@ -4467,7 +4470,7 @@ export default function OrganizationView() {
             text: "Transfer requested",
             action: "Transfer Request",
             about: organization
-              ? `${formatRecordId(organization.id, "organization")} ${organization.name}`
+              ? `${formatRecordId(organization.record_number ?? organization.id, "organization")} ${organization.name}`
               : "",
           }),
         }
@@ -4493,7 +4496,7 @@ export default function OrganizationView() {
             text: "Transfer requested",
             action: "Transfer Request",
             about: organization
-              ? `${formatRecordId(organization.id, "organization")} ${organization.name}`
+              ? `${formatRecordId(organization.record_number ?? organization.id, "organization")} ${organization.name}`
               : "",
           }),
         }
@@ -4518,7 +4521,7 @@ export default function OrganizationView() {
           target_organization_id: transferForm.targetOrganizationId,
           requested_by: currentUser?.id || currentUser?.name || "Unknown",
           requested_by_email: currentUser?.email || "",
-          source_record_number: formatRecordId(organization?.id, "organization"),
+          source_record_number: formatRecordId(organization?.record_number ?? organization?.id, "organization"),
           target_record_number: formatRecordId(
             parseInt(transferForm.targetOrganizationId),
             "organization"
@@ -4588,24 +4591,24 @@ export default function OrganizationView() {
   const actionOptions = isArchived
     ? [{ label: "Unarchive", action: () => setShowUnarchiveModal(true) }]
     : [
-        { label: "Add Note", action: () => handleActionSelected("add-note") },
-        {
-          label: "Add Hiring Manager",
-          action: () => handleActionSelected("add-hiring-manager"),
-        },
-        { label: "Add Job", action: () => handleActionSelected("add-job") },
-        { label: "Add Task", action: () => handleActionSelected("add-task") },
-        {
-          label: "Add Tearsheet",
-          action: () => handleActionSelected("add-tearsheet"),
-        },
-        { label: "Transfer", action: () => handleActionSelected("transfer") },
-        {
-          label: getDeleteLabel(),
-          action: () => handleActionSelected("delete"),
-          disabled: isDeleteDisabled(),
-        },
-      ];
+      { label: "Add Note", action: () => handleActionSelected("add-note") },
+      {
+        label: "Add Hiring Manager",
+        action: () => handleActionSelected("add-hiring-manager"),
+      },
+      { label: "Add Job", action: () => handleActionSelected("add-job") },
+      { label: "Add Task", action: () => handleActionSelected("add-task") },
+      {
+        label: "Add Tearsheet",
+        action: () => handleActionSelected("add-tearsheet"),
+      },
+      { label: "Transfer", action: () => handleActionSelected("transfer") },
+      {
+        label: getDeleteLabel(),
+        action: () => handleActionSelected("delete"),
+        disabled: isDeleteDisabled(),
+      },
+    ];
 
   const tabs = [
     { id: "summary", label: "Summary" },
@@ -5146,7 +5149,7 @@ export default function OrganizationView() {
       </div>
     );
   }
-console.log("Archived_at", organization.archived_at)
+  console.log("Archived_at", organization.archived_at)
   return (
     <div className="bg-gray-200 min-h-screen p-2">
       {/* Header with company name and buttons */}
@@ -5156,14 +5159,14 @@ console.log("Archived_at", organization.archived_at)
             <HiOutlineOfficeBuilding size={24} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
-            {formatRecordId(organization.id, "organization")}{" "}
+            {formatRecordId(organization.record_number ?? organization.id, "organization")}{" "}
             {organization.name}
             {organization.archived_at && (
               <div className="ml-3">
                 {/* <span>Archived at</span> */}
                 <CountdownTimer archivedAt={organization.archived_at} />
               </div>
-            )} 
+            )}
           </h1>
         </div>
       </div>
@@ -5308,22 +5311,20 @@ console.log("Archived_at", organization.archived_at)
               return (
                 <button
                   key={action.id}
-                  className={`inline-flex items-center gap-2 px-4 py-1 rounded-full shadow font-medium border ${
-                    hasAny
+                  className={`inline-flex items-center gap-2 px-4 py-1 rounded-full shadow font-medium border ${hasAny
                       ? "border-green-500 bg-green-50 text-green-800"
                       : "border-gray-300 bg-white text-gray-700"
-                  }`}
+                    }`}
                   onClick={() => {
                     setNoteActionFilter("Client Visit");
                     setActiveTab("notes");
                   }}
                 >
                   <span
-                    className={`w-2.5 h-2.5 rounded-full border ${
-                      hasAny
+                    className={`w-2.5 h-2.5 rounded-full border ${hasAny
                         ? "bg-green-500 border-green-600"
                         : "bg-gray-200 border-gray-400"
-                    }`}
+                      }`}
                   />
                   <span>
                     {isLoadingSummaryCounts
@@ -5344,19 +5345,17 @@ console.log("Archived_at", organization.archived_at)
               return (
                 <button
                   key={action.id}
-                  className={`inline-flex items-center gap-2 px-4 py-1 rounded-full shadow font-medium border ${
-                    hasAny
+                  className={`inline-flex items-center gap-2 px-4 py-1 rounded-full shadow font-medium border ${hasAny
                       ? "border-green-500 bg-green-50 text-green-800"
                       : "border-gray-300 bg-white text-gray-700"
-                  }`}
+                    }`}
                   onClick={() => setActiveTab("jobs")}
                 >
                   <span
-                    className={`w-2.5 h-2.5 rounded-full border ${
-                      hasAny
+                    className={`w-2.5 h-2.5 rounded-full border ${hasAny
                         ? "bg-green-500 border-green-600"
                         : "bg-gray-200 border-gray-400"
-                    }`}
+                      }`}
                   />
                   <span>
                     {isLoadingJobs || isLoadingSummaryCounts
@@ -6345,113 +6344,35 @@ console.log("Archived_at", organization.archived_at)
               </button>
             </div>
             <div className="p-6">
-                <>
-                  <div className="mb-4">
-                    <h3 className="font-medium mb-3">
-                      Available Fields from Modify Page:
-                    </h3>
-                    <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
-                      {isLoadingFields ? (
-                        <div className="text-center py-4 text-gray-500">
-                          Loading fields...
-                        </div>
-                      ) : (() => {
-                        const visible = availableFields.filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden);
-                        const seenKeys = new Set<string>();
-                        const deduped = visible.filter((f: any) => {
-                          const key = String(f.field_key ?? f.api_name ?? f.field_name ?? f.id);
-                          if (seenKeys.has(key)) return false;
-                          seenKeys.add(key);
-                          return true;
-                        });
-                        return deduped.length > 0 ? (
-                          deduped.map((field: any) => {
-                            const fieldKey =
-                              field.field_key || field.api_name || field.field_name || field.id;
-                            const isVisible =
-                              visibleFields[editingPanel]?.includes(fieldKey) ||
-                              false;
-                            return (
-                              <div
-                                key={field.id || fieldKey}
-                                className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
-                              >
-                                <div className="flex items-center space-x-2">
-                                  <input
-                                    type="checkbox"
-                                    checked={isVisible}
-                                    onChange={() =>
-                                      toggleFieldVisibility(editingPanel, fieldKey)
-                                    }
-                                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                                  />
-                                  <label className="text-sm text-gray-700">
-                                    {field.field_label ||
-                                      field.field_name ||
-                                      fieldKey}
-                                  </label>
-                                </div>
-                                <span className="text-xs text-gray-500">
-                                  {field.field_type || "text"}
-                                </span>
-                              </div>
-                            );
-                          })
-                        ) : (
-                          <div className="text-center py-4 text-gray-500">
-                            <p>No custom fields available</p>
-                            <p className="text-xs mt-1">
-                              Fields from the modify page will appear here
-                            </p>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  </div>
-
-                  <div className="mb-4">
-                    <h3 className="font-medium mb-3">Standard Fields:</h3>
-                    <div className="space-y-2 border border-gray-200 rounded p-3">
-                      {(() => {
-                        const standardFieldsMap: Record<
-                          string,
-                          Array<{ key: string; label: string }>
-                        > = {
-                          contactInfo: [
-                            { key: "name", label: "Name" },
-                            { key: "nickname", label: "Nickname" },
-                            { key: "phone", label: "Phone" },
-                            { key: "address", label: "Address" },
-                            { key: "website", label: "Website" },
-                          ],
-                          about: [{ key: "about", label: "About" }],
-                          recentNotes: [{ key: "notes", label: "Notes" }],
-                          websiteJobs: [{ key: "jobs", label: "Jobs" }],
-                          ourJobs: [{ key: "jobs", label: "Jobs" }],
-                        };
-
-                        const availableKeys = new Set(
-                          (availableFields || [])
-                            .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
-                            .map((f: any) => String(f.field_key ?? f.api_name ?? f.field_name ?? f.id))
-                        );
-                        const fields = (standardFieldsMap[editingPanel] || []).filter(
-                          (f) => !availableKeys.has(f.key)
-                        );
-                        if (fields.length === 0) {
-                          return (
-                            <div className="text-sm text-gray-500 italic py-2">
-                              All standard fields are covered by custom fields above.
-                            </div>
-                          );
-                        }
-                        return fields.map((field) => {
+              <>
+                <div className="mb-4">
+                  <h3 className="font-medium mb-3">
+                    Available Fields from Modify Page:
+                  </h3>
+                  <div className="space-y-2 max-h-96 overflow-y-auto border border-gray-200 rounded p-3">
+                    {isLoadingFields ? (
+                      <div className="text-center py-4 text-gray-500">
+                        Loading fields...
+                      </div>
+                    ) : (() => {
+                      const visible = availableFields.filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden);
+                      const seenKeys = new Set<string>();
+                      const deduped = visible.filter((f: any) => {
+                        const key = String(f.field_key ?? f.api_name ?? f.field_name ?? f.id);
+                        if (seenKeys.has(key)) return false;
+                        seenKeys.add(key);
+                        return true;
+                      });
+                      return deduped.length > 0 ? (
+                        deduped.map((field: any) => {
+                          const fieldKey =
+                            field.field_key || field.api_name || field.field_name || field.id;
                           const isVisible =
-                            visibleFields[editingPanel]?.includes(field.key) ||
+                            visibleFields[editingPanel]?.includes(fieldKey) ||
                             false;
                           return (
                             <div
-                              key={field.key}
+                              key={field.id || fieldKey}
                               className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
                             >
                               <div className="flex items-center space-x-2">
@@ -6459,33 +6380,111 @@ console.log("Archived_at", organization.archived_at)
                                   type="checkbox"
                                   checked={isVisible}
                                   onChange={() =>
-                                    toggleFieldVisibility(editingPanel, field.key)
+                                    toggleFieldVisibility(editingPanel, fieldKey)
                                   }
                                   className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
                                 />
                                 <label className="text-sm text-gray-700">
-                                  {field.label}
+                                  {field.field_label ||
+                                    field.field_name ||
+                                    fieldKey}
                                 </label>
                               </div>
                               <span className="text-xs text-gray-500">
-                                standard
+                                {field.field_type || "text"}
                               </span>
                             </div>
                           );
-                        });
-                      })()}
-                    </div>
+                        })
+                      ) : (
+                        <div className="text-center py-4 text-gray-500">
+                          <p>No custom fields available</p>
+                          <p className="text-xs mt-1">
+                            Fields from the modify page will appear here
+                          </p>
+                        </div>
+                      );
+                    })()}
                   </div>
+                </div>
 
-                  <div className="flex justify-end space-x-2 pt-4 border-t">
-                    <button
-                      onClick={handleCloseEditModal}
-                      className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
-                    >
-                      Close
-                    </button>
+                <div className="mb-4">
+                  <h3 className="font-medium mb-3">Standard Fields:</h3>
+                  <div className="space-y-2 border border-gray-200 rounded p-3">
+                    {(() => {
+                      const standardFieldsMap: Record<
+                        string,
+                        Array<{ key: string; label: string }>
+                      > = {
+                        contactInfo: [
+                          { key: "name", label: "Name" },
+                          { key: "nickname", label: "Nickname" },
+                          { key: "phone", label: "Phone" },
+                          { key: "address", label: "Address" },
+                          { key: "website", label: "Website" },
+                        ],
+                        about: [{ key: "about", label: "About" }],
+                        recentNotes: [{ key: "notes", label: "Notes" }],
+                        websiteJobs: [{ key: "jobs", label: "Jobs" }],
+                        ourJobs: [{ key: "jobs", label: "Jobs" }],
+                      };
+
+                      const availableKeys = new Set(
+                        (availableFields || [])
+                          .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+                          .map((f: any) => String(f.field_key ?? f.api_name ?? f.field_name ?? f.id))
+                      );
+                      const fields = (standardFieldsMap[editingPanel] || []).filter(
+                        (f) => !availableKeys.has(f.key)
+                      );
+                      if (fields.length === 0) {
+                        return (
+                          <div className="text-sm text-gray-500 italic py-2">
+                            All standard fields are covered by custom fields above.
+                          </div>
+                        );
+                      }
+                      return fields.map((field) => {
+                        const isVisible =
+                          visibleFields[editingPanel]?.includes(field.key) ||
+                          false;
+                        return (
+                          <div
+                            key={field.key}
+                            className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+                          >
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="checkbox"
+                                checked={isVisible}
+                                onChange={() =>
+                                  toggleFieldVisibility(editingPanel, field.key)
+                                }
+                                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                              />
+                              <label className="text-sm text-gray-700">
+                                {field.label}
+                              </label>
+                            </div>
+                            <span className="text-xs text-gray-500">
+                              standard
+                            </span>
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
-                </>
+                </div>
+
+                <div className="flex justify-end space-x-2 pt-4 border-t">
+                  <button
+                    onClick={handleCloseEditModal}
+                    className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100"
+                  >
+                    Close
+                  </button>
+                </div>
+              </>
             </div>
           </div>
         </div>
@@ -6536,7 +6535,7 @@ console.log("Archived_at", organization.archived_at)
                 </label>
                 <p className="text-sm text-gray-900 font-medium">
                   {organization
-                    ? `${formatRecordId(organization.id, "organization")} ${organization.name}`
+                    ? `${formatRecordId(organization.record_number ?? organization.id, "organization")} ${organization.name}`
                     : "N/A"}
                 </p>
               </div>
@@ -6582,13 +6581,13 @@ console.log("Archived_at", organization.archived_at)
                                   ...prev,
                                   targetOrganizationId: String(org.id),
                                 }));
-                                setTransferSearchQuery(`${formatRecordId(org.id, "organization")} ${org.name || ""}`.trim());
+                                setTransferSearchQuery(`${formatRecordId(org.record_number ?? org.id, "organization")} ${org.name || ""}`.trim());
                                 setShowTransferDropdown(false);
                               }}
                               className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex flex-col"
                             >
                               <span className="text-sm font-medium text-gray-900">
-                                {formatRecordId(org.id, "organization")} {org.name}
+                                {formatRecordId(org.record_number ?? org.id, "organization")} {org.name}
                               </span>
                             </button>
                           ))
@@ -6666,7 +6665,7 @@ console.log("Archived_at", organization.archived_at)
         entityLabel="Organization"
         recordDisplay={
           organization
-            ? `${formatRecordId(organization.id, "organization")} ${organization.name}`
+            ? `${formatRecordId(organization.record_number ?? organization.id, "organization")} ${organization.name}`
             : "N/A"
         }
         reason={unarchiveReason}
@@ -6705,7 +6704,7 @@ console.log("Archived_at", organization.archived_at)
                 </label>
                 <p className="text-sm text-gray-900 font-medium">
                   {organization
-                    ? `${formatRecordId(organization.id, "organization")} ${organization.name}`
+                    ? `${formatRecordId(organization.record_number ?? organization.id, "organization")} ${organization.name}`
                     : "N/A"}
                 </p>
                 {deleteActionType === 'cascade' && (
@@ -6968,7 +6967,7 @@ console.log("Archived_at", organization.archived_at)
                               onClick={() => router.push(`/dashboard/organizations/view?id=${org.id}`)}
                               className="text-left flex-1 text-sm text-blue-600 hover:text-blue-800 hover:underline"
                             >
-                              <span className="font-medium">{formatRecordId(org.id, "organization")}</span>
+                              <span className="font-medium">{formatRecordId(org.record_number ?? org.id, "organization")}</span>
                               <span className="ml-2">{org.name}</span>
                             </button>
                           </div>

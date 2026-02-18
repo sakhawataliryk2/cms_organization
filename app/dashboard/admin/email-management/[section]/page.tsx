@@ -191,6 +191,8 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{sourceRecordNumber}}",
         "{{targetRecordNumber}}",
+        "{{sourceOrganizationNameLink}}",
+        "{{targetOrganizationNameLink}}",
         "{{requestDate}}",
         "{{approvalUrl}}",
         "{{denyUrl}}",
@@ -241,8 +243,8 @@ const SECTION_CONFIG: Record<
           `<p>A transfer request has been submitted:</p>` +
           `<ul>` +
           `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
-          `<li><strong>Source Organization:</strong> {{sourceRecordNumber}}</li>` +
-          `<li><strong>Target Organization:</strong> {{targetRecordNumber}}</li>` +
+          `<li><strong>Source Organization:</strong> {{sourceOrganizationNameLink}}</li>` +
+          `<li><strong>Target Organization:</strong> {{targetOrganizationNameLink}}</li>` +
           `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
           `</ul>` +
           `<p>Please review and approve or deny this transfer. Use the buttons below:</p>` +
