@@ -44,6 +44,7 @@ import {
 } from "react-icons/fi";
 import { HiOutlineOfficeBuilding } from "react-icons/hi";
 import { FaRegUserCircle } from "react-icons/fa";
+import { toast } from "sonner";
 
 interface User {
   name: string;
@@ -1340,7 +1341,7 @@ export default function DashboardNav() {
         </div>
 
         {/* Navigation links - always show all items, not filtered by search */}
-        <div className="flex-1 min-h-0">
+        <div className="flex-1 min-h-0 overflow-auto">
           {filteredNavItems.map((item) => (
             <Link
               key={item.path}
@@ -1360,7 +1361,7 @@ export default function DashboardNav() {
         </div>
 
         {/* T.B.I Button - Static, always visible */}
-        <div className="p-4 border-t border-slate-700 shrink-0">
+        <div className="p-4 shrink-0">
           <button
             type="button"
             className="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-bold text-2xl rounded transition-colors"
@@ -1373,17 +1374,50 @@ export default function DashboardNav() {
           </button>
         </div>
 
-        {/* Footer with "Upload CSV" button - always visible */}
-        <div className="p-4 border-t border-slate-700 shrink-0">
-          <div className="flex justify-between items-center">
-            <span className="text-blue-300 text-sm">Upload CSV</span>
+        {/* Footer with "Parse Data" drag-drop zone - always visible */}
+        <div
+          className="p-4 border-t border-slate-700 shrink-0"
+          onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.add('bg-slate-700/50'); }}
+          onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove('bg-slate-700/50'); }}
+          onDrop={async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            e.currentTarget.classList.remove('bg-slate-700/50');
+            const file = e.dataTransfer.files?.[0];
+            if (!file) return;
+            const ext = file.name.toLowerCase().split('.').pop();
+            if (ext !== 'csv') {
+              toast.error('Only CSV files are supported for data parsing.');
+              return;
+            }
+            try {
+              const reader = new FileReader();
+              reader.onload = () => {
+                const base64 = (reader.result as string)?.split(',')[1];
+                if (base64) {
+                  sessionStorage.setItem('adminParseDataPendingFile', JSON.stringify({ name: file.name, base64, type: file.type }));
+                  router.push('/dashboard/admin?upload=true');
+                  setIsSidebarOpen(false);
+                }
+              };
+              reader.readAsDataURL(file);
+            } catch {
+              toast.error('Failed to prepare file. Please try again.');
+            }
+          }}
+        >
+          <div className="flex justify-between items-center cursor-pointer">
+            <span className="text-blue-300 text-sm">Parse Data</span>
             <button
+              type="button"
               className="text-white bg-slate-700 p-1 rounded hover:bg-slate-600"
               onClick={() => { router.push('/dashboard/admin?upload=true'); setIsSidebarOpen(false); }}
+              aria-label="Open Parse Data"
             >
               <FiUpload size={16} />
             </button>
           </div>
+          <p className="text-xs text-slate-400 mt-1">Drop CSV here</p>
         </div>
       </div>
     </>
