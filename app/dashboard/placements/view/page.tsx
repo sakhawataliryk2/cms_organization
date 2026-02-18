@@ -2610,7 +2610,7 @@ export default function PlacementView() {
       handleEmailTimeCardApprovers();
     } else if (action === "add-note") {
       setShowAddNote(true);
-      setActiveTab("notes");
+      // setActiveTab("notes");
     }
   };
 

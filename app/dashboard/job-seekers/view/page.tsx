@@ -2921,7 +2921,7 @@ Best regards`;
       setShowTransferModal(true);
     } else if (action === "add-note") {
       setShowAddNote(true);
-      setActiveTab("notes");
+      // setActiveTab("notes");
     } else if (action === "add-task") {
       // Navigate to add task page with job seeker context
       if (jobSeekerId) {
