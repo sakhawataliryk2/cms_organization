@@ -239,14 +239,14 @@ export default function HiringManagerView() {
   const [noteForm, setNoteForm] = useState<NoteFormState>({
     text: "",
     action: "",
-    about: hiringManager ? `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName}` : "",
+    about: hiringManager ? `${formatRecordId(hiringManager.record_number ?? hiringManager.id, "hiringManager")} ${hiringManager.fullName}` : "",
     aboutReferences: hiringManager
       ? [
         {
           id: hiringManager.id,
           type: "Hiring Manager",
-          display: `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName}`,
-          value: formatRecordId(hiringManager.id, "hiringManager"),
+          display: `${formatRecordId(hiringManager.record_number ?? hiringManager.id, "hiringManager")} ${hiringManager.fullName}`,
+          value: formatRecordId(hiringManager.record_number ?? hiringManager.id, "hiringManager"),
         },
       ]
       : [],
@@ -600,7 +600,7 @@ export default function HiringManagerView() {
     const label =
       hiringManager.fullName ||
       hiringManager.name ||
-      `${formatRecordId(hiringManager.id, "hiringManager")}`;
+      `${formatRecordId(hiringManager.record_number ?? hiringManager.id, "hiringManager")}`;
     let url = `/dashboard/hiring-managers/view?id=${hiringManager.id}`;
     if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
 
@@ -1306,7 +1306,7 @@ export default function HiringManagerView() {
       // Update note form about field when hiring manager is loaded
       setNoteForm((prev) => ({
         ...prev,
-        about: `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName
+        about: `${formatRecordId(hiringManager.record_number ?? hiringManager.id, "hiringManager")} ${hiringManager.fullName
           }`,
       }));
     }
@@ -1618,6 +1618,7 @@ export default function HiringManagerView() {
       const hm = data.hiringManager;
       const formattedHiringManager = {
         id: hm.id || "Unknown ID",
+        record_number: hm.record_number,
         firstName: hm.first_name || "",
         lastName: hm.last_name || "",
         fullName:
@@ -2015,8 +2016,8 @@ export default function HiringManagerView() {
           suggestions.push({
             id: hm.id,
             type: "Hiring Manager",
-            display: `${formatRecordId(hm.id, "hiringManager")} ${name}`,
-            value: formatRecordId(hm.id, "hiringManager"),
+            display: `${formatRecordId(hm.record_number ?? hm.id, "hiringManager")} ${name}`,
+            value: formatRecordId(hm.record_number ?? hm.id, "hiringManager"),
           });
         });
       }
@@ -2265,8 +2266,8 @@ export default function HiringManagerView() {
           suggestions.push({
             id: hm.id,
             type: "Hiring Manager",
-            display: `${formatRecordId(hm.id, "hiringManager")} ${name}`,
-            value: formatRecordId(hm.id, "hiringManager"),
+            display: `${formatRecordId(hm.record_number ?? hm.id, "hiringManager")} ${name}`,
+            value: formatRecordId(hm.record_number ?? hm.id, "hiringManager"),
           });
         });
       }
@@ -2396,8 +2397,8 @@ export default function HiringManagerView() {
           {
             id: hiringManager.id,
             type: "Hiring Manager",
-            display: `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName}`,
-            value: formatRecordId(hiringManager.id, "hiringManager"),
+            display: `${formatRecordId(hiringManager.record_number ?? hiringManager.id, "hiringManager")} ${hiringManager.fullName}`,
+            value: formatRecordId(hiringManager.record_number ?? hiringManager.id, "hiringManager"),
           },
         ]
         : [];
@@ -2825,7 +2826,7 @@ export default function HiringManagerView() {
       const fullName = String(hm?.full_name || `${hm?.last_name || ""}, ${hm?.first_name || ""}`).toLowerCase();
       const idStr = hm?.id !== undefined && hm?.id !== null ? String(hm.id) : "";
       const recordId = hm?.id !== undefined && hm?.id !== null
-        ? String(formatRecordId(hm.id, "hiringManager")).toLowerCase()
+        ? String(formatRecordId(hm.record_number ?? hm.id, "hiringManager")).toLowerCase()
         : "";
       return fullName.includes(q) || idStr.includes(q) || recordId.includes(q);
     });
@@ -2917,7 +2918,7 @@ export default function HiringManagerView() {
           about_references: [{
             id: hiringManagerId,
             type: "Hiring Manager",
-            display: `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName}`,
+            display: `${formatRecordId(hiringManager.record_number ?? hiringManager.id, "hiringManager")} ${hiringManager.fullName}`,
           }],
         }),
       });
@@ -2936,7 +2937,7 @@ export default function HiringManagerView() {
           target_hiring_manager_id: targetId,
           requested_by: currentUser?.name || currentUser?.id || "Unknown",
           requested_by_email: currentUser?.email || "",
-          source_record_number: formatRecordId(Number(hiringManagerId), "hiringManager"),
+          source_record_number: formatRecordId(hiringManager?.record_number ?? Number(hiringManagerId), "hiringManager"),
           target_record_number: formatRecordId(targetId, "hiringManager"),
         }),
       });
@@ -3038,7 +3039,7 @@ export default function HiringManagerView() {
           body: JSON.stringify({
             reason: deleteForm.reason.trim(),
             record_type: "hiring_manager",
-            record_number: formatRecordId(hiringManager.id, "hiringManager"),
+            record_number: formatRecordId(hiringManager.record_number ?? hiringManager.id, "hiringManager"),
             requested_by: currentUser?.id || currentUser?.name || "Unknown",
             requested_by_email: currentUser?.email || "",
           }),
@@ -3088,7 +3089,7 @@ export default function HiringManagerView() {
         }
       }
       const recordDisplay = hiringManager
-        ? `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName || ""}`.trim()
+        ? `${formatRecordId(hiringManager.record_number ?? hiringManager.id, "hiringManager")} ${hiringManager.fullName || ""}`.trim()
         : formatRecordId(hiringManagerId, "hiringManager");
       const res = await fetch(`/api/hiring-managers/${hiringManagerId}/unarchive-request`, {
         method: "POST",
@@ -5148,7 +5149,7 @@ export default function HiringManagerView() {
                   </label>
                   <p className="text-sm text-gray-900 font-medium">
                     {hiringManager
-                      ? `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName}`
+                      ? `${formatRecordId(hiringManager.record_number ?? hiringManager.id, "hiringManager")} ${hiringManager.fullName}`
                       : "N/A"}
                   </p>
                 </div>
@@ -5196,13 +5197,13 @@ export default function HiringManagerView() {
                                       ...prev,
                                       targetHiringManagerId: String(hm.id),
                                     }));
-                                    setTransferSearchQuery(`${formatRecordId(hm.id, "hiringManager")} ${displayName}`.trim());
+                                    setTransferSearchQuery(`${formatRecordId(hm.record_number ?? hm.id, "hiringManager")} ${displayName}`.trim());
                                     setShowTransferDropdown(false);
                                   }}
                                   className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex flex-col"
                                 >
                                   <span className="text-sm font-medium text-gray-900">
-                                    {formatRecordId(hm.id, "hiringManager")} {displayName}
+                                    {formatRecordId(hm.record_number ?? hm.id, "hiringManager")} {displayName}
                                   </span>
                                 </button>
                               );
@@ -5278,7 +5279,7 @@ export default function HiringManagerView() {
         entityLabel="Hiring Manager"
         recordDisplay={
           hiringManager
-            ? `${formatRecordId(hiringManager.id, "hiringManager")} ${hiringManager.fullName || ""}`.trim()
+            ? `${formatRecordId(hiringManager.record_number ?? hiringManager.id, "hiringManager")} ${hiringManager.fullName || ""}`.trim()
             : formatRecordId(hiringManagerId ?? "", "hiringManager")
         }
         reason={unarchiveReason}

@@ -418,15 +418,15 @@ export default function JobSeekerView() {
     text: "",
     action: "",
     about: jobSeeker
-      ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
+      ? `${formatRecordId(jobSeeker.record_number ?? jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
       : "",
     aboutReferences: jobSeeker
       ? [
         {
           id: jobSeeker.id,
           type: "Job Seeker",
-          display: `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`,
-          value: formatRecordId(jobSeeker.id, "jobSeeker"),
+          display: `${formatRecordId(jobSeeker.record_number ?? jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`,
+          value: formatRecordId(jobSeeker.record_number ?? jobSeeker.id, "jobSeeker"),
         },
       ]
       : [],
@@ -1339,7 +1339,7 @@ Best regards`;
   const handleTogglePinnedRecord = () => {
     if (!jobSeeker) return;
     const key = buildPinnedKey("jobSeeker", jobSeeker.id);
-    const label = jobSeeker.fullName || `${formatRecordId(jobSeeker.id, "jobSeeker")}`;
+    const label = jobSeeker.fullName || `${formatRecordId(jobSeeker.record_number ?? jobSeeker.id, "jobSeeker")}`;
     let url = `/dashboard/job-seekers/view?id=${jobSeeker.id}`;
     if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
 
@@ -1382,7 +1382,7 @@ Best regards`;
       // Update note form about field when job seeker is loaded
       setNoteForm((prev) => ({
         ...prev,
-        about: `${jobSeeker.id} ${jobSeeker.fullName}`,
+        about: `${formatRecordId(jobSeeker.record_number ?? jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`,
       }));
       // Fetch documents when job seeker is loaded
       fetchDocuments(jobSeekerId);
@@ -2500,6 +2500,7 @@ Best regards`;
       // Format the job seeker data with default values for all fields
       const formattedJobSeeker = {
         id: jobSeekerData.id || "Unknown ID",
+        record_number: jobSeekerData.record_number,
         firstName: jobSeekerData.first_name || "",
         lastName: jobSeekerData.last_name || "",
         fullName:
@@ -2804,7 +2805,7 @@ Best regards`;
         text: "",
         action: "",
         about: jobSeeker
-          ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
+          ? `${formatRecordId(jobSeeker.record_number ?? jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName}`
           : "",
         aboutReferences: [], // ✅ required
         copyNote: "No",
@@ -3016,7 +3017,7 @@ Best regards`;
         body: JSON.stringify({
           reason: deleteForm.reason.trim(),
           record_type: "job_seeker",
-          record_number: formatRecordId(jobSeeker?.id, "jobSeeker"),
+          record_number: formatRecordId(jobSeeker?.record_number ?? jobSeeker?.id, "jobSeeker"),
           requested_by: currentUser?.name || currentUser?.id || "Unknown",
           requested_by_email: currentUser?.email || "",
         }),
@@ -3056,7 +3057,7 @@ Best regards`;
         }
       }
       const recordDisplay = jobSeeker
-        ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${(jobSeeker.first_name || "").trim()} ${(jobSeeker.last_name || "").trim()}`.trim() || formatRecordId(jobSeeker.id, "jobSeeker")
+        ? `${formatRecordId(jobSeeker.record_number ?? jobSeeker.id, "jobSeeker")} ${(jobSeeker.first_name || "").trim()} ${(jobSeeker.last_name || "").trim()}`.trim() || formatRecordId(jobSeeker.record_number ?? jobSeeker.id, "jobSeeker")
         : formatRecordId(jobSeekerId, "jobSeeker");
       const res = await fetch(`/api/job-seekers/${jobSeekerId}/unarchive-request`, {
         method: "POST",
@@ -3142,7 +3143,7 @@ Best regards`;
           const q = transferSearchQuery.trim().toLowerCase();
           const fullName = String(js?.full_name || `${js?.last_name || ""}, ${js?.first_name || ""}`).toLowerCase();
           const idStr = js?.id != null ? String(js.id) : "";
-          const recordId = js?.id != null ? String(formatRecordId(js.id, "jobSeeker")).toLowerCase() : "";
+          const recordId = (js?.record_number ?? js?.id) != null ? String(formatRecordId(js.record_number ?? js.id, "jobSeeker")).toLowerCase() : "";
           return fullName.includes(q) || idStr.includes(q) || recordId.includes(q);
         });
 
@@ -3187,7 +3188,7 @@ Best regards`;
           target_job_seeker_id: targetId,
           requested_by: currentUser?.name || currentUser?.id || "Unknown",
           requested_by_email: currentUser?.email || "",
-          source_record_number: formatRecordId(Number(jobSeekerId), "jobSeeker"),
+          source_record_number: formatRecordId(jobSeeker?.record_number ?? Number(jobSeekerId), "jobSeeker"),
           target_record_number: formatRecordId(targetId, "jobSeeker"),
         }),
       });
@@ -4323,7 +4324,7 @@ Best regards`;
             <FiUsers size={20} />
           </div>
           <h1 className="text-base sm:text-xl font-semibold text-gray-700 truncate min-w-0 flex flex-wrap items-center gap-x-3 gap-y-1">
-            {formatRecordId(jobSeeker.id, "jobSeeker")} {jobSeeker.fullName}
+            {formatRecordId(jobSeeker.record_number ?? jobSeeker.id, "jobSeeker")} {jobSeeker.fullName}
             {jobSeeker.archived_at && (
               <div className="shrink-0">
                 <CountdownTimer archivedAt={jobSeeker.archived_at} />
@@ -5969,7 +5970,7 @@ Best regards`;
         entityLabel="Job Seeker"
         recordDisplay={
           jobSeeker
-            ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${(jobSeeker.first_name || "").trim()} ${(jobSeeker.last_name || "").trim()}`.trim() || formatRecordId(jobSeeker.id, "jobSeeker")
+            ? `${formatRecordId(jobSeeker.record_number ?? jobSeeker.id, "jobSeeker")} ${(jobSeeker.first_name || "").trim()} ${(jobSeeker.last_name || "").trim()}`.trim() || formatRecordId(jobSeeker.record_number ?? jobSeeker.id, "jobSeeker")
             : "N/A"
         }
         reason={unarchiveReason}
@@ -6066,7 +6067,7 @@ Best regards`;
               <div className="bg-gray-50 p-4 rounded">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Source Job Seeker</label>
                 <p className="text-sm text-gray-900 font-medium">
-                  {jobSeeker ? `${formatRecordId(jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName || ""}` : "N/A"}
+                  {jobSeeker ? `${formatRecordId(jobSeeker.record_number ?? jobSeeker.id, "jobSeeker")} ${jobSeeker.fullName || ""}` : "N/A"}
                 </p>
               </div>
               <div>
@@ -6106,13 +6107,13 @@ Best regards`;
                               type="button"
                               onClick={() => {
                                 setTransferForm((prev) => ({ ...prev, targetJobSeekerId: String(js.id) }));
-                                setTransferSearchQuery(`${formatRecordId(js.id, "jobSeeker")} ${displayName}`.trim());
+                                setTransferSearchQuery(`${formatRecordId(js.record_number ?? js.id, "jobSeeker")} ${displayName}`.trim());
                                 setShowTransferDropdown(false);
                               }}
                               className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
                             >
                               <span className="text-sm font-medium text-gray-900">
-                                {formatRecordId(js.id, "jobSeeker")} {displayName}
+                                {formatRecordId(js.record_number ?? js.id, "jobSeeker")} {displayName}
                               </span>
                             </button>
                           );

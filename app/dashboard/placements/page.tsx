@@ -47,6 +47,7 @@ const FAVORITES_STORAGE_KEY = "placementsFavorites";
 
 interface Placement {
   id: string;
+  record_number?: number;
   job_seeker_id?: string;
   job_seeker_name?: string;
   job_id?: string;
@@ -691,10 +692,11 @@ export default function PlacementList() {
     if (searchTerm.trim() !== "") {
       const term = searchTerm.toLowerCase();
       result = result.filter((placement) => {
-        // ID search
+        // ID search and record_number
         const idMatch =
           String(placement.id).toLowerCase().includes(term) ||
-          `p${placement.id}`.toLowerCase().includes(term);
+          `p${placement.id}`.toLowerCase().includes(term) ||
+          String(placement.record_number ?? "").toLowerCase().includes(term);
 
         // Core fields
         const coreMatch =
@@ -1421,7 +1423,7 @@ export default function PlacementList() {
                     {/* Fixed ID */}
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="text-sm font-medium text-gray-900">
-                        P {placement.id}
+                        P {placement.record_number ?? placement.id}
                       </div>
                     </td>
 

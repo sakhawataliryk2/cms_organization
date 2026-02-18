@@ -30,6 +30,7 @@ import { matchesAdvancedValue } from "@/lib/advancedSearch";
 
 interface Task {
   id: string;
+  record_number?: number;
   title: string;
   description?: string;
   is_completed: boolean;
@@ -757,10 +758,11 @@ export default function TaskList() {
     if (searchTerm.trim() !== "") {
       const term = searchTerm.toLowerCase();
       result = result.filter((task) => {
-        // ID search (support "T123" or just "123")
+        // ID search (support "T123" or just "123") and record_number
         const idMatch =
           String(task.id).toLowerCase().includes(term) ||
-          `t${task.id}`.toLowerCase().includes(term);
+          `t${task.id}`.toLowerCase().includes(term) ||
+          String(task.record_number ?? "").toLowerCase().includes(term);
 
         // Core fields
         const coreMatch =
@@ -904,7 +906,7 @@ export default function TaskList() {
       headers.map(escapeCSV).join(','),
       ...selectedData.map((task) => {
         const row = [
-          `T ${task.id}`,
+          `T ${task.record_number ?? task.id}`,
           ...columnFields.map((key) => escapeCSV(getColumnValue(task, key)))
         ];
         return row.join(',');
@@ -1362,7 +1364,7 @@ export default function TaskList() {
 
                       {/* Fixed ID */}
                       <td className="px-6 py-4 text-black whitespace-nowrap">
-                        T {task?.id}
+                        T {task?.record_number ?? task?.id}
                       </td>
 
                       {/* Dynamic cells */}

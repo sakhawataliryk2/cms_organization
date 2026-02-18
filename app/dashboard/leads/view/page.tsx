@@ -250,14 +250,14 @@ export default function LeadView() {
   const [noteForm, setNoteForm] = useState({
     text: "",
     action: "",
-    about: lead ? `${formatRecordId(lead.id, "lead")} ${lead.name || lead.company_name || ""}` : "",
+    about: lead ? `${formatRecordId(lead.record_number ?? lead.id, "lead")} ${lead.name || lead.company_name || ""}` : "",
     aboutReferences: lead
       ? [
         {
           id: lead.id,
           type: "Lead",
-          display: `${formatRecordId(lead.id, "lead")} ${lead.name || lead.company_name || "Unnamed"}`,
-          value: formatRecordId(lead.id, "lead"),
+          display: `${formatRecordId(lead.record_number ?? lead.id, "lead")} ${lead.name || lead.company_name || "Unnamed"}`,
+          value: formatRecordId(lead.record_number ?? lead.id, "lead"),
         },
       ]
       : [],
@@ -1421,6 +1421,7 @@ export default function LeadView() {
       // Format the lead data
       const formattedLead = {
         id: data.lead.id,
+        record_number: data.lead.record_number,
         firstName: data.lead.first_name || "",
         lastName: data.lead.last_name || "",
         fullName: data.lead.full_name || `${data.lead.last_name || ""}, ${data.lead.first_name || ""}`,
@@ -2238,15 +2239,16 @@ export default function LeadView() {
                 lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 lead.company_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 lead.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                lead.id?.toString().includes(searchTerm)
+                lead.id?.toString().includes(searchTerm) ||
+                String(lead.record_number ?? "").includes(searchTerm)
             )
           : (data.leads || []);
         leads.forEach((lead: any) => {
           suggestions.push({
             id: lead.id,
             type: "Lead",
-            display: `${formatRecordId(lead.id, "lead")} ${lead.name || lead.company_name || "Unnamed"}`,
-            value: formatRecordId(lead.id, "lead"),
+            display: `${formatRecordId(lead.record_number ?? lead.id, "lead")} ${lead.name || lead.company_name || "Unnamed"}`,
+            value: formatRecordId(lead.record_number ?? lead.id, "lead"),
           });
         });
       }
@@ -2430,8 +2432,8 @@ export default function LeadView() {
         {
           id: lead.id,
           type: "Lead",
-          display: `${formatRecordId(lead.id, "lead")} ${lead.name || lead.company_name || "Unnamed"}`,
-          value: formatRecordId(lead.id, "lead"),
+          display: `${formatRecordId(lead.record_number ?? lead.id, "lead")} ${lead.name || lead.company_name || "Unnamed"}`,
+          value: formatRecordId(lead.record_number ?? lead.id, "lead"),
         },
       ];
       setNoteForm((prev) => ({
@@ -2543,7 +2545,7 @@ export default function LeadView() {
           body: JSON.stringify({
             reason: deleteForm.reason.trim(),
             record_type: "lead",
-            record_number: formatRecordId(lead?.id, "lead"),
+            record_number: formatRecordId(lead?.record_number ?? lead?.id, "lead"),
             requested_by: currentUser?.id || currentUser?.name || "Unknown",
             requested_by_email: currentUser?.email || "",
           }),
@@ -2605,7 +2607,7 @@ export default function LeadView() {
         }
       }
       const recordDisplay = lead
-        ? `${formatRecordId(lead.id, "lead")} ${(lead.first_name || "").trim()} ${(lead.last_name || "").trim()}`.trim() || lead.organization_name || formatRecordId(lead.id, "lead")
+        ? `${formatRecordId(lead.record_number ?? lead.id, "lead")} ${(lead.first_name || "").trim()} ${(lead.last_name || "").trim()}`.trim() || lead.organization_name || formatRecordId(lead.record_number ?? lead.id, "lead")
         : formatRecordId(leadId, "lead");
       const res = await fetch(`/api/leads/${leadId}/unarchive-request`, {
         method: "POST",
@@ -2728,8 +2730,8 @@ export default function LeadView() {
           {
             id: lead.id,
             type: "Lead",
-            display: `${formatRecordId(lead.id, "lead")} ${lead.name || lead.company_name || "Unnamed"}`,
-            value: formatRecordId(lead.id, "lead"),
+            display: `${formatRecordId(lead.record_number ?? lead.id, "lead")} ${lead.name || lead.company_name || "Unnamed"}`,
+            value: formatRecordId(lead.record_number ?? lead.id, "lead"),
           },
         ]
         : [];
@@ -2738,7 +2740,7 @@ export default function LeadView() {
         text: "",
         action: "",
         about: lead
-          ? `${formatRecordId(lead.id, "lead")} ${lead.name || lead.company_name || ""}`
+          ? `${formatRecordId(lead.record_number ?? lead.id, "lead")} ${lead.name || lead.company_name || ""}`
           : "",
         aboutReferences: defaultAboutRef,
         copyNote: "No",
@@ -4275,7 +4277,7 @@ export default function LeadView() {
         entityLabel="Lead"
         recordDisplay={
           lead
-            ? `${formatRecordId(lead.id, "lead")} ${(lead.first_name || "").trim()} ${(lead.last_name || "").trim()}`.trim() || lead.organization_name || "N/A"
+            ? `${formatRecordId(lead.record_number ?? lead.id, "lead")} ${(lead.first_name || "").trim()} ${(lead.last_name || "").trim()}`.trim() || lead.organization_name || "N/A"
             : "N/A"
         }
         reason={unarchiveReason}
@@ -4311,7 +4313,7 @@ export default function LeadView() {
                 </label>
                 <p className="text-sm text-gray-900 font-medium">
                   {lead
-                    ? `${formatRecordId(lead.id, "lead")} ${lead.first_name || ""} ${lead.last_name || ""}`.trim() || lead.organization_name || "N/A"
+                    ? `${formatRecordId(lead.record_number ?? lead.id, "lead")} ${lead.first_name || ""} ${lead.last_name || ""}`.trim() || lead.organization_name || "N/A"
                     : "N/A"}
                 </p>
               </div>

@@ -302,12 +302,17 @@ export default function AddNoteModal({
                 fetch("/api/hiring-managers", { headers }),
             ]);
 
-            const toSuggestion = (item: any, type: string, displayKey: string, formatKey: RecordType) => ({
-                id: item.id,
-                type,
-                display: `${formatRecordId(item.id, formatKey)} ${item[displayKey] || "Unnamed"}`,
-                value: formatRecordId(item.id, formatKey),
-            });
+            // Use record_number for display/search when available (matches rest of app)
+            const toSuggestion = (item: any, type: string, displayKey: string, formatKey: RecordType, displayNumber?: number | string | null) => {
+                const num = displayNumber ?? item.record_number ?? item.id;
+                const prefixLabel = formatRecordId(num, formatKey);
+                return {
+                    id: item.id,
+                    type,
+                    display: `${prefixLabel} ${item[displayKey] || "Unnamed"}`,
+                    value: prefixLabel,
+                };
+            };
 
             // Match search term against the same display string shown in the dropdown (so "J67", "67", "Accounting" all match "J67 Accounting")
             const matchesDisplay = (display: string) =>
@@ -340,7 +345,9 @@ export default function AddNoteModal({
                 const data = await jobSeekersRes.value.json();
                 const allJS = (data.jobSeekers || []).map((js: any) => {
                     const name = `${js.first_name || ""} ${js.last_name || ""}`.trim() || "Unnamed";
-                    return { id: js.id, type: "Job Seeker", display: `${formatRecordId(js.id, "jobSeeker")} ${name}`, value: formatRecordId(js.id, "jobSeeker") };
+                    const num = js.record_number ?? js.id;
+                    const prefixLabel = formatRecordId(num, "jobSeeker");
+                    return { id: js.id, type: "Job Seeker", display: `${prefixLabel} ${name}`, value: prefixLabel };
                 });
                 const jobSeekers = searchTerm ? allJS.filter((s: any) => matchesDisplay(s.display)) : allJS;
                 lists.push(jobSeekers);
@@ -371,12 +378,16 @@ export default function AddNoteModal({
             // Process placements
             if (placementsRes.status === "fulfilled" && placementsRes.value.ok) {
                 const data = await placementsRes.value.json();
-                const allPlacements = (data.placements || []).map((p: any) => ({
-                    id: p.id,
-                    type: "Placement",
-                    display: `${formatRecordId(p.id, "placement")} ${[p.jobSeekerName, p.jobTitle].filter(Boolean).join(" – ") || "Placement"}`,
-                    value: formatRecordId(p.id, "placement"),
-                }));
+                const allPlacements = (data.placements || []).map((p: any) => {
+                    const num = p.record_number ?? p.id;
+                    const prefixLabel = formatRecordId(num, "placement");
+                    return {
+                        id: p.id,
+                        type: "Placement",
+                        display: `${prefixLabel} ${[p.jobSeekerName, p.jobTitle].filter(Boolean).join(" – ") || "Placement"}`,
+                        value: prefixLabel,
+                    };
+                });
                 const placements = searchTerm ? allPlacements.filter((s: any) => matchesDisplay(s.display)) : allPlacements;
                 lists.push(placements);
             } else {
@@ -388,7 +399,9 @@ export default function AddNoteModal({
                 const data = await hiringManagersRes.value.json();
                 const allHM = (data.hiringManagers || []).map((hm: any) => {
                     const name = `${hm.first_name || ""} ${hm.last_name || ""}`.trim() || hm.full_name || "Unnamed";
-                    return { id: hm.id, type: "Hiring Manager", display: `${formatRecordId(hm.id, "hiringManager")} ${name}`, value: formatRecordId(hm.id, "hiringManager") };
+                    const num = hm.record_number ?? hm.id;
+                    const prefixLabel = formatRecordId(num, "hiringManager");
+                    return { id: hm.id, type: "Hiring Manager", display: `${prefixLabel} ${name}`, value: prefixLabel };
                 });
                 const hiringManagers = searchTerm ? allHM.filter((s: any) => matchesDisplay(s.display)) : allHM;
                 lists.push(hiringManagers);
@@ -529,36 +542,83 @@ export default function AddNoteModal({
                 fetch("/api/hiring-managers", { headers }),
             ]);
 
+            const toSuggestion = (item: any, type: string, displayKey: string, formatKey: RecordType) => {
+                const num = item.record_number ?? item.id;
+                const prefixLabel = formatRecordId(num, formatKey);
+                return {
+                    id: item.id,
+                    type,
+                    display: `${prefixLabel} ${item[displayKey] || "Unnamed"}`,
+                    value: prefixLabel,
+                };
+            };
+            const matchesDisplay = (display: string) =>
+                display.toLowerCase().includes(searchTerm.toLowerCase());
+
             const suggestions: any[] = [];
 
-            // Process all entity types (same logic as About field)
             if (jobsRes.status === "fulfilled" && jobsRes.value.ok) {
                 const data = await jobsRes.value.json();
-                const jobs = (data.jobs || []).filter(
-                    (job: any) =>
-                        job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        job.id?.toString().includes(searchTerm)
-                );
-                jobs.forEach((job: any) => {
-                    suggestions.push({
-                        id: job.id,
-                        type: "Job",
-                        display: `${formatRecordId(job.id, "job")} ${job.job_title || "Untitled"}`,
-                        value: formatRecordId(job.id, "job"),
-                    });
+                (data.jobs || []).forEach((job: any) => {
+                    const s = toSuggestion(job, "Job", "job_title", "job");
+                    if (matchesDisplay(s.display)) suggestions.push(s);
+                });
+            }
+            if (orgsRes.status === "fulfilled" && orgsRes.value.ok) {
+                const data = await orgsRes.value.json();
+                (data.organizations || []).forEach((org: any) => {
+                    const s = toSuggestion(org, "Organization", "name", "organization");
+                    if (matchesDisplay(s.display)) suggestions.push(s);
+                });
+            }
+            if (jobSeekersRes.status === "fulfilled" && jobSeekersRes.value.ok) {
+                const data = await jobSeekersRes.value.json();
+                (data.jobSeekers || []).forEach((js: any) => {
+                    const name = `${js.first_name || ""} ${js.last_name || ""}`.trim() || "Unnamed";
+                    const num = js.record_number ?? js.id;
+                    const prefixLabel = formatRecordId(num, "jobSeeker");
+                    const s = { id: js.id, type: "Job Seeker", display: `${prefixLabel} ${name}`, value: prefixLabel };
+                    if (matchesDisplay(s.display)) suggestions.push(s);
+                });
+            }
+            if (leadsRes.status === "fulfilled" && leadsRes.value.ok) {
+                const data = await leadsRes.value.json();
+                (data.leads || []).forEach((lead: any) => {
+                    const s = toSuggestion(lead, "Lead", "name", "lead");
+                    if (matchesDisplay(s.display)) suggestions.push(s);
+                });
+            }
+            if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
+                const data = await tasksRes.value.json();
+                (data.tasks || []).forEach((task: any) => {
+                    const s = toSuggestion(task, "Task", "title", "task");
+                    if (matchesDisplay(s.display)) suggestions.push(s);
+                });
+            }
+            if (placementsRes.status === "fulfilled" && placementsRes.value.ok) {
+                const data = await placementsRes.value.json();
+                (data.placements || []).forEach((p: any) => {
+                    const num = p.record_number ?? p.id;
+                    const prefixLabel = formatRecordId(num, "placement");
+                    const s = { id: p.id, type: "Placement", display: `${prefixLabel} ${[p.jobSeekerName, p.jobTitle].filter(Boolean).join(" – ") || "Placement"}`, value: prefixLabel };
+                    if (matchesDisplay(s.display)) suggestions.push(s);
+                });
+            }
+            if (hiringManagersRes.status === "fulfilled" && hiringManagersRes.value.ok) {
+                const data = await hiringManagersRes.value.json();
+                (data.hiringManagers || []).forEach((hm: any) => {
+                    const name = `${hm.first_name || ""} ${hm.last_name || ""}`.trim() || hm.full_name || "Unnamed";
+                    const num = hm.record_number ?? hm.id;
+                    const prefixLabel = formatRecordId(num, "hiringManager");
+                    const s = { id: hm.id, type: "Hiring Manager", display: `${prefixLabel} ${name}`, value: prefixLabel };
+                    if (matchesDisplay(s.display)) suggestions.push(s);
                 });
             }
 
-            // Similar processing for other entity types...
-            // (Including organizations, job seekers, leads, tasks, placements, hiring managers)
-
             // Filter out already selected references
-            const selectedIds = noteForm.additionalReferences.map((ref) => ref.id);
-            const filteredSuggestions = suggestions.filter(
-                (s) => !selectedIds.includes(s.id)
-            );
+            const selectedIds = new Set(noteForm.additionalReferences.map((ref) => String(ref.id)));
+            const filteredSuggestions = suggestions.filter((s) => !selectedIds.has(String(s.id)));
 
-            // Limit to top 10 suggestions
             setAdditionalRefSuggestions(filteredSuggestions.slice(0, 10));
         } catch (err) {
             console.error("Error searching additional references:", err);
