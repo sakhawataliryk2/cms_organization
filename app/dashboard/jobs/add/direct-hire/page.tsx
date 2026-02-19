@@ -153,9 +153,9 @@ function MultiValueSearchTagInput({
 
       {isOpen && filteredOptions.length > 0 && (
         <div className="absolute z-20 mt-1 w-full bg-white border border-gray-200 rounded shadow max-h-56 overflow-auto">
-          {filteredOptions.map((opt) => (
+          {filteredOptions.map((opt, idx) => (
             <button
-              key={opt}
+              key={`${String(opt)}-${idx}`}
               type="button"
               onClick={() => addValue(opt)}
               className="w-full text-left px-3 py-2 hover:bg-gray-50 text-sm text-gray-800"
@@ -590,35 +590,24 @@ export default function AddDirectHireJob() {
     fetchOrganizations();
   }, []);
 
-  // Set Field_3 when organizations load if organizationIdFromUrl is present
-  // This is a backup in case organizations load before the API call in prefill effect completes
+  // When organizationIdFromUrl is present, set Organization field to the ID only (no fetch, no name)
   useEffect(() => {
     if (jobId) return; // don't override edit mode
     if (!organizationIdFromUrl) return;
-    if (organizations.length === 0) return; // Wait for organizations to load
     if (customFieldsLoading || customFields.length === 0) return; // Wait for custom fields
 
-    // Find organization by ID
-    const foundOrg = organizations.find(
-      (org) => org.id.toString() === organizationIdFromUrl
-    );
-
-    if (foundOrg && foundOrg.name) {
-      const orgField = customFields.find((f) => f.field_label.toLowerCase() === "organization");
-      if (orgField) {
-        setCustomFieldValues((prev) => {
-          // Only set if not already set (don't override if already set by prefill effect or user)
-          if (prev[orgField.field_name]) return prev;
-          return {
-            ...prev,
-            Field_3: foundOrg.name,
-          };
-        });
-        setOrganizationName(foundOrg.name);
-        setCurrentOrganizationId(organizationIdFromUrl);
-      }
+    const orgField = customFields.find((f) => f.field_label.toLowerCase() === "organization");
+    if (orgField) {
+      setCustomFieldValues((prev) => {
+        if (prev[orgField.field_name] === organizationIdFromUrl) return prev;
+        return {
+          ...prev,
+          [orgField.field_name]: organizationIdFromUrl,
+        };
+      });
+      setCurrentOrganizationId(organizationIdFromUrl);
     }
-  }, [organizations, organizationIdFromUrl, jobId, customFieldsLoading, customFields, setCustomFieldValues]);
+  }, [organizationIdFromUrl, jobId, customFieldsLoading, customFields, setCustomFieldValues]);
 
   // Auto-populate Field_507 (Account Manager) with logged-in user's name
   useEffect(() => {
@@ -664,6 +653,24 @@ export default function AddDirectHireJob() {
     setCustomFieldValues,
   ]);
 
+  // Auto-fill Date Added with today when creating a new job (so it's not stored as empty)
+  useEffect(() => {
+    if (jobId || cloneFrom) return; // edit or clone: don't override
+    if (customFieldsLoading || customFields.length === 0) return;
+
+    const dateAddedField = customFields.find((f) => String(f.field_label || "").trim().toLowerCase() === "date added");
+    if (!dateAddedField) return;
+
+    const currentValue = customFieldValues[dateAddedField.field_name];
+    if (currentValue !== undefined && currentValue !== null && String(currentValue).trim() !== "") return;
+
+    const today = new Date().toISOString().split("T")[0];
+    setCustomFieldValues((prev) => ({
+      ...prev,
+      [dateAddedField.field_name]: today,
+    }));
+  }, [jobId, cloneFrom, customFields, customFieldsLoading, customFieldValues, setCustomFieldValues]);
+
   const organizationField = customFields.find((f) => f.field_label.toLowerCase() === "organization");
   // Sync currentOrganizationId with Organization field value when it changes
   useEffect(() => {
@@ -680,88 +687,28 @@ export default function AddDirectHireJob() {
     }
   }, [customFieldValues[organizationField?.field_name || ""], organizations, customFields, customFieldsLoading, currentOrganizationId]);
 
-  // Prefill organizationId from URL if provided (create mode only)
+  // Prefill Organization field from URL param with ID only (no fetch, value must be id per admin)
   useEffect(() => {
     if (jobId) return; // don't override edit mode
     if (!organizationIdFromUrl) return;
     if (hasPrefilledOrgRef.current) return;
-    if (formFields.length === 0) return;
     if (customFieldsLoading) return; // Wait for custom fields to load
     if (customFields.length === 0) return; // Wait for custom fields to be available
 
     hasPrefilledOrgRef.current = true;
-    // Set currentOrganizationId immediately so hiring manager fetch works
     setCurrentOrganizationId(organizationIdFromUrl);
 
-    // Fetch organization name and set both formFields and custom field Field_3
-    const fetchAndSetOrganization = async () => {
-      try {
-        const response = await fetch(`/api/organizations/${organizationIdFromUrl}`);
-        if (response.ok) {
-          const data = await response.json();
-          const orgName = data.organization?.name || "";
-          setOrganizationName(orgName);
-
-          // Set Field_3 (Organization custom field) if it exists
-          if (customFields.length > 0 && orgName) {
-            const orgField = customFields.find((f) => f.field_label.toLowerCase() === "organization");
-            if (orgField) {
-              setCustomFieldValues((prev) => {
-                // Only set if not already set (don't override user input)
-                if (prev[orgField.field_name]) return prev;
-                return {
-                  ...prev,
-                  [organizationField?.field_name || ""]: orgName,
-                };
-              });
-            }
-          }
-
-          // Also set the old formFields for backward compatibility
-          setFormFields((prev) =>
-            prev.map((f) =>
-              f.name === "organizationId"
-                ? { ...f, value: orgName || organizationIdFromUrl, locked: true }
-                : f
-            )
-          );
-        } else {
-          // If fetch fails, try to find organization in already-loaded organizations list
-          if (organizations.length > 0) {
-            const foundOrg = organizations.find(
-              (org) => org.id.toString() === organizationIdFromUrl
-            );
-            if (foundOrg && foundOrg.name) {
-              const orgField = customFields.find((f) => f.field_label.toLowerCase() === "organization");
-              if (orgField) {
-                setCustomFieldValues((prev) => {
-                  if (prev[orgField.field_name]) return prev;
-                  return {
-                    ...prev,
-                    [organizationField?.field_name || ""]: foundOrg.name,
-                  };
-                });
-              }
-              setOrganizationName(foundOrg.name);
-            }
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching organization:", error);
-        // Still set the organizationId even if fetch fails
-        setCurrentOrganizationId(organizationIdFromUrl);
-        setFormFields((prev) =>
-          prev.map((f) =>
-            f.name === "organizationId"
-              ? { ...f, value: organizationIdFromUrl, locked: true }
-              : f
-          )
-        );
-      }
-    };
-
-    fetchAndSetOrganization();
-  }, [organizationIdFromUrl, jobId, formFields.length, customFieldsLoading, customFields, organizations, setCustomFieldValues]);
+    const orgField = customFields.find((f) => f.field_label.toLowerCase() === "organization");
+    if (orgField) {
+      setCustomFieldValues((prev) => {
+        if (prev[orgField.field_name] === organizationIdFromUrl) return prev;
+        return {
+          ...prev,
+          [orgField.field_name]: organizationIdFromUrl,
+        };
+      });
+    }
+  }, [organizationIdFromUrl, jobId, customFieldsLoading, customFields, setCustomFieldValues]);
 
   // Prefill from lead when coming via Leads -> Convert (create mode only)
   useEffect(() => {
@@ -1100,53 +1047,61 @@ export default function AddDirectHireJob() {
         if (v !== undefined && v !== null) customFieldsForDB[k] = v;
       });
 
-      // 4) Map custom -> standard
+      // 4) Map only Job Title, Hiring Manager, Job Description for top-level payload (no hardcode for Status/Organization)
+      const jobTitleLabel = customFields.find((f) => /^job\s*title$/i.test(String(f.field_label || "")))?.field_label || "Job Title";
+      const titleLabel = customFields.find((f) => String(f.field_label || "").trim().toLowerCase() === "title")?.field_label;
       const mappedJobTitle =
-        customFieldsToSend["Job Title"] ||
-        customFieldsToSend["Title"] ||
+        customFieldsToSend[jobTitleLabel] ||
+        (titleLabel ? customFieldsToSend[titleLabel] : undefined) ||
         payload.jobTitle ||
         "";
 
+      const hiringManagerLabel = customFields.find((f) => String(f.field_label || "").toLowerCase().includes("hiring manager"))?.field_label || "Hiring Manager";
       const mappedHiringManager =
-        customFieldsToSend["Hiring Manager"] ||
+        customFieldsToSend[hiringManagerLabel] ||
         payload.hiringManager ||
         "";
 
+      const jobDescLabel = customFields.find((f) => /^job\s*description$/i.test(String(f.field_label || "")))?.field_label;
+      const descLabel = customFields.find((f) => String(f.field_label || "").trim().toLowerCase() === "description")?.field_label;
       const mappedJobDescription =
-        customFieldsToSend["Job Description"] ||
-        customFieldsToSend["Description"] ||
+        (jobDescLabel ? customFieldsToSend[jobDescLabel] : undefined) ||
+        (descLabel ? customFieldsToSend[descLabel] : undefined) ||
         payload.jobDescription ||
         "";
 
-      const mappedStatusRaw =
-        customFieldsToSend["Status"] || payload.status || "Open";
-      const allowedStatus = ["Open", "On Hold", "Filled", "Closed"];
-      const mappedStatus = allowedStatus.includes(mappedStatusRaw)
-        ? mappedStatusRaw
-        : "Open";
+      // Status and Organization: use form values only (no defaults, no overwrites). URL param only prefills the field; value is in customFieldsToSend.
+      const statusLabel = customFields.find((f) => String(f.field_label || "").trim().toLowerCase() === "status")?.field_label ?? "Status";
+      const orgLabel = customFields.find((f) => String(f.field_label || "").trim().toLowerCase() === "organization")?.field_label ?? "Organization";
+      const statusValue = customFieldsToSend[statusLabel] ?? payload.status ?? "";
+      const organizationValue = customFieldsToSend[orgLabel] ?? payload.organizationId ?? "";
 
-      // Use organizationId from URL if available, otherwise use form value
-      const finalOrganizationId = organizationIdFromUrl || payload.organizationId || "";
+      // Date Added: when creating a new job, default to today if form value is empty (so it's not stored as "")
+      const dateAddedLabel = customFields.find((f) => String(f.field_label || "").trim().toLowerCase() === "date added")?.field_label;
+      if (dateAddedLabel && !isEditMode) {
+        const dateAddedValue = customFieldsToSend[dateAddedLabel];
+        if (dateAddedValue === undefined || dateAddedValue === null || String(dateAddedValue).trim() === "") {
+          customFieldsForDB[dateAddedLabel] = new Date().toISOString().split("T")[0];
+        }
+      }
 
-      // Ensure all form fields (including mapped standard ones) are in custom_fields
-      customFieldsForDB["Job Title"] = mappedJobTitle;
-      customFieldsForDB["Hiring Manager"] = mappedHiringManager;
-      customFieldsForDB["Job Description"] = mappedJobDescription;
-      customFieldsForDB["Status"] = mappedStatus;
-      customFieldsForDB["Organization"] = finalOrganizationId;
+      // Overwrite only Job Title, Hiring Manager, Job Description in custom_fields (Status and Organization stay as form values from step 3)
+      const jobTitleKey = customFields.find((f) => /^job\s*title$/i.test(String(f.field_label || "")))?.field_label || jobTitleLabel;
+      customFieldsForDB[jobTitleKey] = mappedJobTitle;
+      customFieldsForDB[hiringManagerLabel] = mappedHiringManager;
+      if (jobDescLabel) customFieldsForDB[jobDescLabel] = mappedJobDescription;
+      else if (descLabel) customFieldsForDB[descLabel] = mappedJobDescription;
 
-      // 5) Final payload - include entityType for jobs-direct-hire
+      // 5) Final payload - Status and Organization from form only (no finalOrganizationId / no status default)
       const finalPayload: Record<string, any> = {
         ...payload,
         jobTitle: mappedJobTitle,
         jobType: "direct-hire",
         hiringManager: mappedHiringManager,
         jobDescription: mappedJobDescription,
-        status: mappedStatus,
-        organizationId: finalOrganizationId,
-        // Include entityType to scope this to jobs-direct-hire
+        status: statusValue,
+        organizationId: organizationValue,
         entityType: "jobs-direct-hire",
-        // Use snake_case custom_fields (all form fields included)
         custom_fields: customFieldsForDB,
       };
 

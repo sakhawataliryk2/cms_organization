@@ -1865,6 +1865,7 @@ export default function TaskView() {
                                             // Helper function to format values
                                             const formatValue = (val: any): string => {
                                                 if (val === null || val === undefined) return 'Empty';
+                                                if (typeof val === 'string' && val.trim() === '') return 'Empty';
                                                 if (typeof val === 'object') return JSON.stringify(val);
                                                 return String(val);
                                             };
