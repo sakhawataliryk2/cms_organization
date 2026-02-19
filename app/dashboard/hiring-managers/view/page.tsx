@@ -5010,7 +5010,7 @@ export default function HiringManagerView() {
                                 className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
                               />
                               <span className="text-sm text-gray-700">
-                                {user.name || user.email || `User #${user.id}`}
+                                {user.name || user.email || `${user.id}`}
                               </span>
                             </label>
                           ))

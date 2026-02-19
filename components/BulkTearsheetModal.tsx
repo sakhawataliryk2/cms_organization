@@ -9,6 +9,7 @@ type TearsheetEntityType =
   | 'job_seeker'
   | 'hiring_manager'
   | 'lead'
+  | 'placement'
   | 'task';
 
 const LINKED_API_PATH: Record<TearsheetEntityType, string> = {
@@ -17,6 +18,7 @@ const LINKED_API_PATH: Record<TearsheetEntityType, string> = {
   job_seeker: 'job-seeker',
   hiring_manager: 'hiring-manager',
   lead: 'lead',
+  placement: 'placement',
   task: 'task',
 };
 
@@ -43,6 +45,8 @@ function getAssociateBody(
       return { lead_id: id };
     case 'task':
       return { task_id: id };
+    case 'placement':
+      return { placement_id: id };
     default:
       console.warn(`Unknown entity type for tearsheet association: ${entityType} (normalized: ${normalizedType})`);
       return {};
