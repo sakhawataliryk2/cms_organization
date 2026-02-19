@@ -96,7 +96,7 @@ export async function GET(request: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        name: (name || "").trim() || `User #${id}`,
+        name: (name || "").trim() || `${id}`,
         id: String(id),
         type: normalizedType,
       });

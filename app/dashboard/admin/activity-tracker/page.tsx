@@ -514,7 +514,7 @@ export default function ActivityTrackerPage() {
                               tickFormatter={(v) => (v.length > 14 ? `${v.slice(0, 12)}…` : v)}
                             />
                             <Tooltip
-                              formatter={(value: number) => [value, "Count"]}
+                              formatter={(value: number | undefined) => [value ?? 0, "Count"]}
                               labelFormatter={(label) => `Action: ${label}`}
                               contentStyle={{ borderRadius: "8px", border: "1px solid #e5e7eb" }}
                             />
@@ -555,7 +555,7 @@ export default function ActivityTrackerPage() {
                               tickFormatter={(v) => (v.length > 14 ? `${v.slice(0, 12)}…` : v)}
                             />
                             <Tooltip
-                              formatter={(value: number) => [value, "Count"]}
+                              formatter={(value: number | undefined) => [value ?? 0, "Count"]}
                               labelFormatter={(label) => `Entity: ${label}`}
                               contentStyle={{ borderRadius: "8px", border: "1px solid #e5e7eb" }}
                             />
@@ -603,7 +603,7 @@ export default function ActivityTrackerPage() {
                           />
                           <YAxis tick={{ fontSize: 12 }} />
                           <Tooltip
-                            formatter={(value: number) => [value, "Activities"]}
+                            formatter={(value: number | undefined) => [value ?? 0, "Activities"]}
                             labelFormatter={(label) => `Date: ${label}`}
                             contentStyle={{ borderRadius: "8px", border: "1px solid #e5e7eb" }}
                           />
