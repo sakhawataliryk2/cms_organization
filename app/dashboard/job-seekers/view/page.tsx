@@ -298,6 +298,26 @@ function SortablePanel({ id, children, isOverlay = false }: { id: string; childr
 // Storage keys for Job Seeker Details and Overview – field lists come from admin (custom field definitions)
 const JOB_SEEKER_DETAILS_STORAGE_KEY = "jobSeekersJobSeekerDetailsFields";
 const OVERVIEW_STORAGE_KEY = "jobSeekersOverviewFields";
+const PAYROLL_INFO_STORAGE_KEY = "jobSeekersPayrollInfoFields";
+
+// Static payroll info field catalog and values (TBI: data will come from TBI later)
+const PAYROLL_INFO_FIELD_CATALOG: { key: string; label: string }[] = [
+  { key: "ytdRegularHoursPaid", label: "YTD Regular Hours Paid" },
+  { key: "ytdOtHoursPaid", label: "YTD OT Hours Paid" },
+  { key: "ytdSickTimeHoursPaid", label: "YTD Sick Time Hours Paid" },
+  { key: "lifetimeHoursWorked", label: "Lifetime Hours worked" },
+  { key: "firstDayPaid", label: "First Day Paid" },
+  { key: "mostRecentPayDate", label: "Most Recent Pay date" },
+];
+
+const PAYROLL_INFO_STATIC_VALUES: Record<string, string> = {
+  ytdRegularHoursPaid: "",
+  ytdOtHoursPaid: "",
+  ytdSickTimeHoursPaid: "",
+  lifetimeHoursWorked: "24",
+  firstDayPaid: "09/26/2021",
+  mostRecentPayDate: "09/26/2021",
+};
 
 const JOBSEEKER_VIEW_TAB_IDS = ["summary", "modify", "history", "notes", "docs", "references", "applications", "onboarding"];
 
@@ -468,10 +488,11 @@ export default function JobSeekerView() {
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
     if (typeof window === "undefined") {
-      return { resume: ["profile", "skills", "experience"], overview: [], jobSeekerDetails: [] };
+      return { resume: ["profile", "skills", "experience"], overview: [], jobSeekerDetails: [], payrollInfo: [] };
     }
     let overview: string[] = [];
     let jobSeekerDetails: string[] = [];
+    let payrollInfo: string[] = [];
     try {
       const o = localStorage.getItem(OVERVIEW_STORAGE_KEY);
       if (o) {
@@ -486,7 +507,14 @@ export default function JobSeekerView() {
         if (Array.isArray(parsed) && parsed.length > 0) jobSeekerDetails = Array.from(new Set(parsed));
       }
     } catch (_) { }
-    return { resume: ["profile", "skills", "experience"], overview, jobSeekerDetails };
+    try {
+      const p = localStorage.getItem(PAYROLL_INFO_STORAGE_KEY);
+      if (p) {
+        const parsed = JSON.parse(p);
+        if (Array.isArray(parsed) && parsed.length > 0) payrollInfo = Array.from(new Set(parsed));
+      }
+    } catch (_) { }
+    return { resume: ["profile", "skills", "experience"], overview, jobSeekerDetails, payrollInfo };
   });
 
   // ===== Summary layout state =====
@@ -495,7 +523,7 @@ export default function JobSeekerView() {
     right: string[];
   }>({
     left: ["resume", "jobSeekerDetails"],
-    right: ["overview", "recentNotes", "openTasks"],
+    right: ["overview", "payrollInfo", "recentNotes", "openTasks"],
   });
 
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -640,6 +668,10 @@ export default function JobSeekerView() {
   // Overview edit modal: order and visibility (synced when modal opens)
   const [modalOverviewOrder, setModalOverviewOrder] = useState<string[]>([]);
   const [modalOverviewVisible, setModalOverviewVisible] = useState<Record<string, boolean>>({});
+
+  // Payroll Info edit modal: order and visibility (synced when modal opens)
+  const [modalPayrollInfoOrder, setModalPayrollInfoOrder] = useState<string[]>([]);
+  const [modalPayrollInfoVisible, setModalPayrollInfoVisible] = useState<Record<string, boolean>>({});
 
   const [isResumeEditorOpen, setIsResumeEditorOpen] = useState(false);
   const [resumeDraft, setResumeDraft] = useState("");
@@ -861,6 +893,10 @@ export default function JobSeekerView() {
   const [availableJobSeekersForTransfer, setAvailableJobSeekersForTransfer] = useState<any[]>([]);
   const [isLoadingTransferTargets, setIsLoadingTransferTargets] = useState(false);
   const [isSubmittingTransfer, setIsSubmittingTransfer] = useState(false);
+
+  // Password Reset modal state
+  const [showPasswordResetModal, setShowPasswordResetModal] = useState(false);
+  const [isSubmittingPasswordReset, setIsSubmittingPasswordReset] = useState(false);
 
   // Onboarding send modal state
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
@@ -1199,7 +1235,7 @@ Best regards`;
 
 
 
-  // Initialize columns from localStorage or default
+  // Initialize columns from localStorage or default (merge in payrollInfo if missing for existing users)
   useEffect(() => {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem("jobSeekerSummaryColumns");
@@ -1207,6 +1243,13 @@ Best regards`;
         try {
           const parsed = JSON.parse(saved);
           if (parsed.left && Array.isArray(parsed.left) && parsed.right && Array.isArray(parsed.right)) {
+            const hasPayroll = parsed.left.includes("payrollInfo") || parsed.right.includes("payrollInfo");
+            if (!hasPayroll) {
+              parsed.right = [...parsed.right];
+              const overviewIdx = parsed.right.indexOf("overview");
+              if (overviewIdx !== -1) parsed.right.splice(overviewIdx + 1, 0, "payrollInfo");
+              else parsed.right.unshift("payrollInfo");
+            }
             setColumns(parsed);
           }
         } catch (e) {
@@ -1240,6 +1283,21 @@ Best regards`;
       const parsed = JSON.parse(saved);
       if (Array.isArray(parsed) && parsed.length > 0) {
         setVisibleFields((prev) => ({ ...prev, overview: parsed }));
+      }
+    } catch (_) {
+      /* keep default */
+    }
+  }, []);
+
+  // Initialize Payroll Info field order/visibility from localStorage (persists across all job seeker records)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const saved = localStorage.getItem(PAYROLL_INFO_STORAGE_KEY);
+    if (!saved) return;
+    try {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setVisibleFields((prev) => ({ ...prev, payrollInfo: parsed }));
       }
     } catch (_) {
       /* keep default */
@@ -1847,6 +1905,12 @@ Best regards`;
     return [...fromApi];
   }, [availableFields, jobSeeker?.customFields]);
 
+  // Payroll Info panel: static field catalog (TBI: data from API later)
+  const payrollInfoFieldCatalog = useMemo(
+    () => PAYROLL_INFO_FIELD_CATALOG.map((f) => ({ key: f.key, label: f.label })),
+    []
+  );
+
   // When catalog loads, if overview/jobSeekerDetails visible list is empty, default to all catalog keys
   useEffect(() => {
     const keys = jobSeekerDetailsFieldCatalog.map((f) => f.key);
@@ -1869,6 +1933,18 @@ Best regards`;
       });
     }
   }, [overviewFieldCatalog]);
+
+  // When Payroll Info catalog is ready, if visible list is empty, default to all keys
+  useEffect(() => {
+    const keys = payrollInfoFieldCatalog.map((f) => f.key);
+    if (keys.length > 0) {
+      setVisibleFields((prev) => {
+        const current = prev.payrollInfo || [];
+        if (current.length > 0) return prev;
+        return { ...prev, payrollInfo: keys };
+      });
+    }
+  }, [payrollInfoFieldCatalog]);
 
   // Sync Job Seeker Details modal state when opening edit for jobSeekerDetails
   useEffect(() => {
@@ -1907,6 +1983,25 @@ Best regards`;
       }, {} as Record<string, boolean>)
     );
   }, [editingPanel, visibleFields.overview, overviewFieldCatalog]);
+
+  // Sync Payroll Info modal state when opening edit for payrollInfo
+  useEffect(() => {
+    if (editingPanel !== "payrollInfo") return;
+    const current = visibleFields.payrollInfo || [];
+    const catalogKeys = payrollInfoFieldCatalog.map((f) => f.key);
+
+    const currentInCatalog = current.filter((k) => catalogKeys.includes(k));
+    const rest = catalogKeys.filter((k) => !current.includes(k));
+    const order = [...currentInCatalog, ...rest];
+
+    setModalPayrollInfoOrder(order);
+    setModalPayrollInfoVisible(
+      catalogKeys.reduce((acc, k) => {
+        acc[k] = current.includes(k);
+        return acc;
+      }, {} as Record<string, boolean>)
+    );
+  }, [editingPanel, visibleFields.payrollInfo, payrollInfoFieldCatalog]);
 
   // Handle edit panel click
   const handleEditPanel = (panelId: string) => {
@@ -1961,6 +2056,28 @@ Best regards`;
     setVisibleFields((prev) => ({ ...prev, overview: newOrder }));
     setEditingPanel(null);
   }, [modalOverviewOrder, modalOverviewVisible]);
+
+  // Payroll Info modal: drag end (reorder)
+  const handlePayrollInfoDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setModalPayrollInfoOrder((prev) => {
+      const oldIndex = prev.indexOf(active.id as string);
+      const newIndex = prev.indexOf(over.id as string);
+      if (oldIndex === -1 || newIndex === -1) return prev;
+      return arrayMove(prev, oldIndex, newIndex);
+    });
+  }, []);
+
+  // Payroll Info modal: save order/visibility and persist for all job seeker records
+  const handleSavePayrollInfoFields = useCallback(() => {
+    const newOrder = modalPayrollInfoOrder.filter((k) => modalPayrollInfoVisible[k] === true);
+    if (typeof window !== "undefined") {
+      localStorage.setItem(PAYROLL_INFO_STORAGE_KEY, JSON.stringify(newOrder));
+    }
+    setVisibleFields((prev) => ({ ...prev, payrollInfo: newOrder }));
+    setEditingPanel(null);
+  }, [modalPayrollInfoOrder, modalPayrollInfoVisible]);
 
   const openResumeEditor = () => {
     if (!jobSeeker) return;
@@ -2927,6 +3044,8 @@ Best regards`;
       // For recruiters to submit this job seeker to a job
       setActiveTab("applications");
       if (jobSeekerId) fetchApplications(jobSeekerId);
+    } else if (action === "password-reset") {
+      setShowPasswordResetModal(true);
     } 
   };
 
@@ -3034,6 +3153,53 @@ Best regards`;
       toast.error(err instanceof Error ? err.message : "Failed to submit delete request");
     } finally {
       setIsSubmittingDelete(false);
+    }
+  };
+
+  const handlePasswordResetSubmit = async () => {
+    if (!jobSeekerId) {
+      toast.error("Job seeker ID not found");
+      return;
+    }
+
+    if (!jobSeeker?.email || jobSeeker.email === "No email provided") {
+      toast.error(`Job seeker email not available: ${jobSeeker?.email || 'null'}`);
+      return;
+    }
+
+    setIsSubmittingPasswordReset(true);
+    try {
+      const response = await fetch(`/api/job-seekers/${jobSeekerId}/reset-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            "$1"
+          )}`,
+        },
+      });
+
+      const data = await response.json().catch(() => ({}));
+
+      if (!response.ok) {
+        // Show detailed error information if available
+        if (data.debug) {
+          console.error("Password reset debug info:", data.debug);
+          toast.error(`${data.message}. Debug: Email="${data.debug.jobSeekerEmail}", DataEmail="${data.debug.dataEmail}", RootEmail="${data.debug.rootEmail}"`);
+        } else {
+          throw new Error(data.message || "Failed to reset password");
+        }
+        return;
+      }
+
+      toast.success(data.message || "Password reset successfully! Login credentials have been sent via email.");
+      setShowPasswordResetModal(false);
+    } catch (err) {
+      console.error("Password reset error:", err);
+      toast.error(err instanceof Error ? err.message : "Failed to reset password");
+    } finally {
+      setIsSubmittingPasswordReset(false);
     }
   };
 
@@ -4164,6 +4330,38 @@ Best regards`;
     );
   };
 
+  const renderPayrollInfoPanel = () => {
+    const payrollKeys = visibleFields.payrollInfo || [];
+    const effectiveRows = payrollKeys.map((key) => {
+      const catalogEntry = payrollInfoFieldCatalog.find((f) => f.key === key);
+      return { key, label: catalogEntry?.label ?? key };
+    });
+    const getStaticValue = (key: string) => {
+      const v = PAYROLL_INFO_STATIC_VALUES[key];
+      return v !== undefined && v !== null && String(v).trim() !== "" ? String(v) : "-";
+    };
+
+    return (
+      <PanelWithHeader title="Payroll Info" onEdit={() => handleEditPanel("payrollInfo")}>
+        <div className="space-y-0 border border-gray-200 rounded">
+          {effectiveRows.map((row) => (
+            <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
+              <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
+              <div className="flex-1 p-2 text-sm">
+                <FieldValueRenderer
+                  value={getStaticValue(row.key)}
+                  fieldInfo={{ key: row.key, label: row.label }}
+                  emptyPlaceholder="-"
+                  clickable={false}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
   const renderRecentNotesPanel = () => (
     <PanelWithHeader title="Recent Notes:">
       <div className="p-2 border border-gray-200 rounded">
@@ -4246,6 +4444,7 @@ Best regards`;
     if (panelId === "resume") content = renderResumePanel();
     else if (panelId === "overview") content = renderOverviewPanel();
     else if (panelId === "jobSeekerDetails") content = renderJobSeekerDetailsPanel();
+    else if (panelId === "payrollInfo") content = renderPayrollInfoPanel();
     else if (panelId === "recentNotes") content = renderRecentNotesPanel();
     else if (panelId === "openTasks") content = renderOpenTasksPanel();
 
@@ -4255,7 +4454,7 @@ Best regards`;
         {content}
       </SortablePanel>
     );
-  }, [jobSeeker, visibleFields, notes, tasks, isLoadingTasks, tasksError]);
+  }, [jobSeeker, visibleFields, notes, tasks, isLoadingTasks, tasksError, payrollInfoFieldCatalog]);
 
   if (isLoading) {
     return <LoadingScreen message="Loading job seeker details..." />;
@@ -5455,7 +5654,23 @@ Best regards`;
           isSaveDisabled={modalOverviewOrder.filter((k) => modalOverviewVisible[k]).length === 0}
         />
       )}
-      {editingPanel && editingPanel !== "jobSeekerDetails" && editingPanel !== "overview" && (
+      {editingPanel === "payrollInfo" && (
+        <SortableFieldsEditModal
+          open={true}
+          onClose={handleCloseEditModal}
+          title="Edit Fields - Payroll Info"
+          description="Drag to reorder. Toggle visibility with the checkbox. Changes apply to all job seeker records."
+          order={modalPayrollInfoOrder}
+          visible={modalPayrollInfoVisible}
+          fieldCatalog={payrollInfoFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
+          onToggle={(key) => setModalPayrollInfoVisible((prev) => ({ ...prev, [key]: !prev[key] }))}
+          onDragEnd={handlePayrollInfoDragEnd}
+          onSave={handleSavePayrollInfoFields}
+          saveButtonText="Save"
+          isSaveDisabled={modalPayrollInfoOrder.filter((k) => modalPayrollInfoVisible[k]).length === 0}
+        />
+      )}
+      {editingPanel && editingPanel !== "jobSeekerDetails" && editingPanel !== "overview" && editingPanel !== "payrollInfo" && (
         <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
@@ -6015,6 +6230,67 @@ Best regards`;
                   {isSubmittingDelete ? "Submitting..." : "Submit Delete Request"}
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Password Reset Modal */}
+      {showPasswordResetModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
+            <div className="flex justify-between items-center p-4 border-b border-gray-200">
+              <h2 className="text-lg font-semibold">Reset Job Seeker Password</h2>
+              <button
+                onClick={() => setShowPasswordResetModal(false)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <span className="text-2xl font-bold">×</span>
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded p-4 text-sm text-blue-800">
+                <p className="font-medium mb-2">This will:</p>
+                <ul className="list-disc list-inside space-y-1 text-xs">
+                  <li>Generate a new temporary password and update the job seeker&apos;s password</li>
+                  <li>Send login credentials (Portal URL, email, temporary password) to:</li>
+                  <ul className="list-circle list-inside ml-4 mt-1">
+                    <li>• Record Owner</li>
+                    <li>• Onboarding@completestaffingsolutions.com</li>
+                    <li>• nt50616849@gmail.com</li>
+                    <li>• Job Seeker ({jobSeeker?.email})</li>
+                  </ul>
+                </ul>
+              </div>
+              
+              <div className="space-y-2">
+                <p className="text-sm text-gray-600">
+                  <strong>Job Seeker:</strong> {jobSeeker?.first_name} {jobSeeker?.last_name}
+                </p>
+                <p className="text-sm text-gray-600">
+                  <strong>Email:</strong> {jobSeeker?.email}
+                </p>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-800">
+                <strong>Important:</strong> The job seeker will be instructed to change their password after first login.
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 p-4 border-t border-gray-200">
+              <button
+                onClick={() => setShowPasswordResetModal(false)}
+                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                disabled={isSubmittingPasswordReset}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handlePasswordResetSubmit}
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
+                disabled={isSubmittingPasswordReset}
+              >
+                {isSubmittingPasswordReset ? "Sending..." : "Send Password Reset"}
+              </button>
             </div>
           </div>
         </div>
