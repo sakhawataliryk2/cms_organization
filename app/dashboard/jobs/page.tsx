@@ -796,7 +796,7 @@ export default function JobList() {
         method: 'GET',
         headers: {
           Authorization: `Bearer ${document.cookie.replace(
-            /(?:(?:^|.*;\\s*)token\\s*=\\s*([^;]*).*$)|^.*$/,
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
             "$1"
           )}`,
         },
@@ -821,6 +821,35 @@ export default function JobList() {
         error instanceof Error
           ? error.message
           : 'An error occurred while exporting jobs'
+      );
+    }
+  };
+
+  const testXMLFeedOut = async () => {
+    try {
+      const response = await fetch("/api/jobs/xml", {
+        method: "GET",
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch XML feed");
+      }
+
+      const xmlBlob = await response.blob();
+      const url = window.URL.createObjectURL(xmlBlob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `jobs-xml-feed-${new Date().toISOString().slice(0, 10)}.xml`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error("Error fetching XML feed:", error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "An error occurred while fetching XML feed"
       );
     }
   };
@@ -977,6 +1006,14 @@ export default function JobList() {
         </div>
 
         <div className="hidden md:flex space-x-4">
+          <div>
+            <button
+              onClick={testXMLFeedOut}
+              className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+            >
+              Test XML feed out
+            </button>
+          </div>
           <div ref={favoritesMenuRef} className="relative">
             <button
               onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)}
