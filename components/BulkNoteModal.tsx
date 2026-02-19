@@ -5,13 +5,14 @@ import { toast } from 'sonner';
 import Image from 'next/image';
 import { FiUserCheck, FiSearch } from 'react-icons/fi';
 import { HiOutlineUser } from 'react-icons/hi';
-import { formatRecordId } from '@/lib/recordIdFormatter';
+import { formatRecordId, type RecordType } from '@/lib/recordIdFormatter';
 
 interface BulkNoteModalProps {
     open: boolean;
     onClose: () => void;
     entityType: string;
-    entityIds: string[];
+    entityId: string;
+    entityDisplay?: string;
     onSuccess?: () => void;
 }
 
@@ -36,14 +37,20 @@ export default function BulkNoteModal({
     open,
     onClose,
     entityType,
-    entityIds,
+    entityId,
+    entityDisplay,
     onSuccess
 }: BulkNoteModalProps) {
     const [noteForm, setNoteForm] = useState<NoteFormState>({
         text: "",
         action: "",
-        about: "",
-        aboutReferences: [],
+        about: entityDisplay || "",
+        aboutReferences: entityDisplay ? [{
+            id: entityId,
+            type: entityType.charAt(0).toUpperCase() + entityType.slice(1),
+            display: entityDisplay,
+            value: entityDisplay,
+        }] : [],
         copyNote: "No",
         replaceGeneralContactComments: false,
         additionalReferences: [],
@@ -86,12 +93,18 @@ export default function BulkNoteModal({
         if (open) {
             fetchActionFields();
             fetchUsers();
-            // Reset form
+            // Reset form with entity info
+            const defaultAboutRef = entityDisplay ? [{
+                id: entityId,
+                type: entityType.charAt(0).toUpperCase() + entityType.slice(1),
+                display: entityDisplay,
+                value: entityDisplay,
+            }] : [];
             setNoteForm({
                 text: "",
                 action: "",
-                about: "",
-                aboutReferences: [],
+                about: entityDisplay || "",
+                aboutReferences: defaultAboutRef,
                 copyNote: "No",
                 replaceGeneralContactComments: false,
                 additionalReferences: [],
@@ -106,24 +119,26 @@ export default function BulkNoteModal({
             setShowAdditionalRefDropdown(false);
             setShowEmailDropdown(false);
         }
-    }, [open]);
+    }, [open, entityType, entityId, entityDisplay]);
 
-    // Close email notification dropdown when clicking outside
+    // Close dropdowns when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (
-                emailInputRef.current &&
-                !emailInputRef.current.contains(event.target as Node) &&
-                !(event.target as HTMLElement).closest("[data-email-dropdown]")
-            ) {
+            if (aboutInputRef.current && !aboutInputRef.current.contains(event.target as Node)) {
+                setShowAboutDropdown(false);
+            }
+            if (emailInputRef.current && !emailInputRef.current.contains(event.target as Node)) {
                 setShowEmailDropdown(false);
             }
+            if (additionalRefInputRef.current && !additionalRefInputRef.current.contains(event.target as Node)) {
+                setShowAdditionalRefDropdown(false);
+            }
         };
-        if (showEmailDropdown) {
+        if (showAboutDropdown || showEmailDropdown || showAdditionalRefDropdown) {
             document.addEventListener("mousedown", handleClickOutside);
             return () => document.removeEventListener("mousedown", handleClickOutside);
         }
-    }, [showEmailDropdown]);
+    }, [showAboutDropdown, showEmailDropdown, showAdditionalRefDropdown]);
 
     const fetchActionFields = async () => {
         setIsLoadingActionFields(true);
@@ -287,159 +302,135 @@ export default function BulkNoteModal({
                 fetch("/api/hiring-managers", { headers }),
             ]);
 
-            const suggestions: any[] = [];
+            // Use record_number for display/search when available (matches rest of app)
+            const toSuggestion = (item: any, type: string, displayKey: string, formatKey: RecordType, displayNumber?: number | string | null) => {
+                const num = displayNumber ?? item.record_number ?? item.id;
+                const prefixLabel = formatRecordId(num, formatKey);
+                return {
+                    id: item.id,
+                    type,
+                    display: `${prefixLabel} ${item[displayKey] || "Unnamed"}`,
+                    value: prefixLabel,
+                };
+            };
+
+            // Match search term against the same display string shown in the dropdown (so "J67", "67", "Accounting" all match "J67 Accounting")
+            const matchesDisplay = (display: string) =>
+                !searchTerm || display.toLowerCase().includes(searchTerm.toLowerCase());
+
+            const lists: any[][] = [];
 
             // Process jobs
             if (jobsRes.status === "fulfilled" && jobsRes.value.ok) {
                 const data = await jobsRes.value.json();
-                const jobs = searchTerm
-                    ? (data.jobs || []).filter(
-                        (job: any) =>
-                            job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            job.id?.toString().includes(searchTerm)
-                    )
-                    : (data.jobs || []);
-                jobs.forEach((job: any) => {
-                    suggestions.push({
-                        id: job.id,
-                        type: "Job",
-                        display: `${formatRecordId(job.id, "job")} ${job.job_title || "Untitled"}`,
-                        value: formatRecordId(job.id, "job"),
-                    });
-                });
+                const allJobs = (data.jobs || []).map((job: any) => toSuggestion(job, "Job", "job_title", "job"));
+                const jobs = searchTerm ? allJobs.filter((s: any) => matchesDisplay(s.display)) : allJobs;
+                lists.push(jobs);
+            } else {
+                lists.push([]);
             }
 
             // Process organizations
             if (orgsRes.status === "fulfilled" && orgsRes.value.ok) {
                 const data = await orgsRes.value.json();
-                const orgs = searchTerm
-                    ? (data.organizations || []).filter(
-                        (org: any) =>
-                            org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            org.id?.toString().includes(searchTerm)
-                    )
-                    : (data.organizations || []);
-                orgs.forEach((org: any) => {
-                    suggestions.push({
-                        id: org.id,
-                        type: "Organization",
-                        display: `${formatRecordId(org.id, "organization")} ${org.name || "Unnamed"}`,
-                        value: formatRecordId(org.id, "organization"),
-                    });
-                });
+                const allOrgs = (data.organizations || []).map((org: any) => toSuggestion(org, "Organization", "name", "organization"));
+                const orgs = searchTerm ? allOrgs.filter((s: any) => matchesDisplay(s.display)) : allOrgs;
+                lists.push(orgs);
+            } else {
+                lists.push([]);
             }
 
             // Process job seekers
             if (jobSeekersRes.status === "fulfilled" && jobSeekersRes.value.ok) {
                 const data = await jobSeekersRes.value.json();
-                const jobSeekers = searchTerm
-                    ? (data.jobSeekers || []).filter(
-                        (js: any) =>
-                            `${js.first_name || ""} ${js.last_name || ""}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            js.id?.toString().includes(searchTerm)
-                    )
-                    : (data.jobSeekers || []);
-                jobSeekers.forEach((js: any) => {
+                const allJS = (data.jobSeekers || []).map((js: any) => {
                     const name = `${js.first_name || ""} ${js.last_name || ""}`.trim() || "Unnamed";
-                    suggestions.push({
-                        id: js.id,
-                        type: "Job Seeker",
-                        display: `${formatRecordId(js.id, "jobSeeker")} ${name}`,
-                        value: formatRecordId(js.id, "jobSeeker"),
-                    });
+                    const num = js.record_number ?? js.id;
+                    const prefixLabel = formatRecordId(num, "jobSeeker");
+                    return { id: js.id, type: "Job Seeker", display: `${prefixLabel} ${name}`, value: prefixLabel };
                 });
+                const jobSeekers = searchTerm ? allJS.filter((s: any) => matchesDisplay(s.display)) : allJS;
+                lists.push(jobSeekers);
+            } else {
+                lists.push([]);
             }
 
             // Process leads
             if (leadsRes.status === "fulfilled" && leadsRes.value.ok) {
                 const data = await leadsRes.value.json();
-                const leads = searchTerm
-                    ? (data.leads || []).filter(
-                        (lead: any) =>
-                            lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            lead.id?.toString().includes(searchTerm)
-                    )
-                    : (data.leads || []);
-                leads.forEach((lead: any) => {
-                    suggestions.push({
-                        id: lead.id,
-                        type: "Lead",
-                        display: `${formatRecordId(lead.id, "lead")} ${lead.name || "Unnamed"}`,
-                        value: formatRecordId(lead.id, "lead"),
-                    });
-                });
+                const allLeads = (data.leads || []).map((lead: any) => toSuggestion(lead, "Lead", "name", "lead"));
+                const leads = searchTerm ? allLeads.filter((s: any) => matchesDisplay(s.display)) : allLeads;
+                lists.push(leads);
+            } else {
+                lists.push([]);
             }
 
             // Process tasks
             if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
                 const data = await tasksRes.value.json();
-                const tasks = searchTerm
-                    ? (data.tasks || []).filter(
-                        (task: any) =>
-                            task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            task.id?.toString().includes(searchTerm)
-                    )
-                    : (data.tasks || []);
-                tasks.forEach((task: any) => {
-                    suggestions.push({
-                        id: task.id,
-                        type: "Task",
-                        display: `${formatRecordId(task.id, "task")} ${task.title || "Untitled"}`,
-                        value: formatRecordId(task.id, "task"),
-                    });
-                });
+                const allTasks = (data.tasks || []).map((task: any) => toSuggestion(task, "Task", "title", "task"));
+                const tasks = searchTerm ? allTasks.filter((s: any) => matchesDisplay(s.display)) : allTasks;
+                lists.push(tasks);
+            } else {
+                lists.push([]);
             }
 
             // Process placements
             if (placementsRes.status === "fulfilled" && placementsRes.value.ok) {
                 const data = await placementsRes.value.json();
-                const placements = searchTerm
-                    ? (data.placements || []).filter(
-                        (placement: any) =>
-                            placement.id?.toString().includes(searchTerm)
-                    )
-                    : (data.placements || []);
-                placements.forEach((placement: any) => {
-                    suggestions.push({
-                        id: placement.id,
+                const allPlacements = (data.placements || []).map((p: any) => {
+                    const num = p.record_number ?? p.id;
+                    const prefixLabel = formatRecordId(num, "placement");
+                    return {
+                        id: p.id,
                         type: "Placement",
-                        display: `${formatRecordId(placement.id, "placement")} Placement`,
-                        value: formatRecordId(placement.id, "placement"),
-                    });
+                        display: `${prefixLabel} ${[p.jobSeekerName, p.jobTitle].filter(Boolean).join(" – ") || "Placement"}`,
+                        value: prefixLabel,
+                    };
                 });
+                const placements = searchTerm ? allPlacements.filter((s: any) => matchesDisplay(s.display)) : allPlacements;
+                lists.push(placements);
+            } else {
+                lists.push([]);
             }
 
             // Process hiring managers
             if (hiringManagersRes.status === "fulfilled" && hiringManagersRes.value.ok) {
                 const data = await hiringManagersRes.value.json();
-                const hiringManagers = searchTerm
-                    ? (data.hiringManagers || []).filter(
-                        (hm: any) => {
-                            const name = `${hm.first_name || ""} ${hm.last_name || ""}`.trim() || hm.full_name || "";
-                            return name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                                hm.id?.toString().includes(searchTerm);
-                        }
-                    )
-                    : (data.hiringManagers || []);
-                hiringManagers.forEach((hm: any) => {
+                const allHM = (data.hiringManagers || []).map((hm: any) => {
                     const name = `${hm.first_name || ""} ${hm.last_name || ""}`.trim() || hm.full_name || "Unnamed";
-                    suggestions.push({
-                        id: hm.id,
-                        type: "Hiring Manager",
-                        display: `${formatRecordId(hm.id, "hiringManager")} ${name}`,
-                        value: formatRecordId(hm.id, "hiringManager"),
-                    });
+                    const num = hm.record_number ?? hm.id;
+                    const prefixLabel = formatRecordId(num, "hiringManager");
+                    return { id: hm.id, type: "Hiring Manager", display: `${prefixLabel} ${name}`, value: prefixLabel };
                 });
+                const hiringManagers = searchTerm ? allHM.filter((s: any) => matchesDisplay(s.display)) : allHM;
+                lists.push(hiringManagers);
+            } else {
+                lists.push([]);
             }
 
-            // Filter out already selected references
-            const selectedIds = noteForm.aboutReferences.map((ref) => ref.id);
-            const filteredSuggestions = suggestions.filter(
-                (s) => !selectedIds.includes(s.id)
-            );
+            // Filter out already selected references (normalize to string for comparison)
+            const selectedIds = new Set(noteForm.aboutReferences.map((ref) => String(ref.id)));
+            const filteredLists = lists.map((list) => list.filter((s) => !selectedIds.has(String(s.id))));
 
-            // Limit to top 10 suggestions
-            setAboutSuggestions(filteredSuggestions.slice(0, 10));
+            // Interleave so we show a mix of all entity types (Job, Org, Job Seeker, Lead, Task, Placement, HM, ...)
+            const MAX_SUGGESTIONS = 100;
+            const interleaved: any[] = [];
+            let index = 0;
+            while (interleaved.length < MAX_SUGGESTIONS) {
+                let added = 0;
+                for (const list of filteredLists) {
+                    if (interleaved.length >= MAX_SUGGESTIONS) break;
+                    if (index < list.length) {
+                        interleaved.push(list[index]);
+                        added++;
+                    }
+                }
+                if (added === 0) break;
+                index++;
+            }
+
+            setAboutSuggestions(interleaved);
         } catch (err) {
             console.error("Error searching about references:", err);
             setAboutSuggestions([]);
@@ -551,144 +542,83 @@ export default function BulkNoteModal({
                 fetch("/api/hiring-managers", { headers }),
             ]);
 
+            const toSuggestion = (item: any, type: string, displayKey: string, formatKey: RecordType) => {
+                const num = item.record_number ?? item.id;
+                const prefixLabel = formatRecordId(num, formatKey);
+                return {
+                    id: item.id,
+                    type,
+                    display: `${prefixLabel} ${item[displayKey] || "Unnamed"}`,
+                    value: prefixLabel,
+                };
+            };
+            const matchesDisplay = (display: string) =>
+                display.toLowerCase().includes(searchTerm.toLowerCase());
+
             const suggestions: any[] = [];
 
-            // Process jobs
             if (jobsRes.status === "fulfilled" && jobsRes.value.ok) {
                 const data = await jobsRes.value.json();
-                const jobs = (data.jobs || []).filter(
-                    (job: any) =>
-                        job.job_title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        job.id?.toString().includes(searchTerm)
-                );
-                jobs.forEach((job: any) => {
-                    suggestions.push({
-                        id: job.id,
-                        type: "Job",
-                        display: `${formatRecordId(job.id, "job")} ${job.job_title || "Untitled"}`,
-                        value: formatRecordId(job.id, "job"),
-                    });
+                (data.jobs || []).forEach((job: any) => {
+                    const s = toSuggestion(job, "Job", "job_title", "job");
+                    if (matchesDisplay(s.display)) suggestions.push(s);
                 });
             }
-
-            // Process organizations
             if (orgsRes.status === "fulfilled" && orgsRes.value.ok) {
                 const data = await orgsRes.value.json();
-                const orgs = (data.organizations || []).filter(
-                    (org: any) =>
-                        org.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        org.id?.toString().includes(searchTerm)
-                );
-                orgs.forEach((org: any) => {
-                    suggestions.push({
-                        id: org.id,
-                        type: "Organization",
-                        display: `${formatRecordId(org.id, "organization")} ${org.name || "Unnamed"}`,
-                        value: formatRecordId(org.id, "organization"),
-                    });
+                (data.organizations || []).forEach((org: any) => {
+                    const s = toSuggestion(org, "Organization", "name", "organization");
+                    if (matchesDisplay(s.display)) suggestions.push(s);
                 });
             }
-
-            // Process job seekers
             if (jobSeekersRes.status === "fulfilled" && jobSeekersRes.value.ok) {
                 const data = await jobSeekersRes.value.json();
-                const jobSeekers = (data.jobSeekers || []).filter(
-                    (js: any) =>
-                        `${js.first_name || ""} ${js.last_name || ""}`.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        js.id?.toString().includes(searchTerm)
-                );
-                jobSeekers.forEach((js: any) => {
+                (data.jobSeekers || []).forEach((js: any) => {
                     const name = `${js.first_name || ""} ${js.last_name || ""}`.trim() || "Unnamed";
-                    suggestions.push({
-                        id: js.id,
-                        type: "Job Seeker",
-                        display: `${formatRecordId(js.id, "jobSeeker")} ${name}`,
-                        value: formatRecordId(js.id, "jobSeeker"),
-                    });
+                    const num = js.record_number ?? js.id;
+                    const prefixLabel = formatRecordId(num, "jobSeeker");
+                    const s = { id: js.id, type: "Job Seeker", display: `${prefixLabel} ${name}`, value: prefixLabel };
+                    if (matchesDisplay(s.display)) suggestions.push(s);
                 });
             }
-
-            // Process leads
             if (leadsRes.status === "fulfilled" && leadsRes.value.ok) {
                 const data = await leadsRes.value.json();
-                const leads = (data.leads || []).filter(
-                    (lead: any) =>
-                        lead.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        lead.id?.toString().includes(searchTerm)
-                );
-                leads.forEach((lead: any) => {
-                    suggestions.push({
-                        id: lead.id,
-                        type: "Lead",
-                        display: `${formatRecordId(lead.id, "lead")} ${lead.name || "Unnamed"}`,
-                        value: formatRecordId(lead.id, "lead"),
-                    });
+                (data.leads || []).forEach((lead: any) => {
+                    const s = toSuggestion(lead, "Lead", "name", "lead");
+                    if (matchesDisplay(s.display)) suggestions.push(s);
                 });
             }
-
-            // Process tasks
             if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
                 const data = await tasksRes.value.json();
-                const tasks = (data.tasks || []).filter(
-                    (task: any) =>
-                        task.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                        task.id?.toString().includes(searchTerm)
-                );
-                tasks.forEach((task: any) => {
-                    suggestions.push({
-                        id: task.id,
-                        type: "Task",
-                        display: `${formatRecordId(task.id, "task")} ${task.title || "Untitled"}`,
-                        value: formatRecordId(task.id, "task"),
-                    });
+                (data.tasks || []).forEach((task: any) => {
+                    const s = toSuggestion(task, "Task", "title", "task");
+                    if (matchesDisplay(s.display)) suggestions.push(s);
                 });
             }
-
-            // Process placements
             if (placementsRes.status === "fulfilled" && placementsRes.value.ok) {
                 const data = await placementsRes.value.json();
-                const placements = (data.placements || []).filter(
-                    (placement: any) =>
-                        placement.id?.toString().includes(searchTerm)
-                );
-                placements.forEach((placement: any) => {
-                    suggestions.push({
-                        id: placement.id,
-                        type: "Placement",
-                        display: `${formatRecordId(placement.id, "placement")} Placement`,
-                        value: formatRecordId(placement.id, "placement"),
-                    });
+                (data.placements || []).forEach((p: any) => {
+                    const num = p.record_number ?? p.id;
+                    const prefixLabel = formatRecordId(num, "placement");
+                    const s = { id: p.id, type: "Placement", display: `${prefixLabel} ${[p.jobSeekerName, p.jobTitle].filter(Boolean).join(" – ") || "Placement"}`, value: prefixLabel };
+                    if (matchesDisplay(s.display)) suggestions.push(s);
                 });
             }
-
-            // Process hiring managers
             if (hiringManagersRes.status === "fulfilled" && hiringManagersRes.value.ok) {
                 const data = await hiringManagersRes.value.json();
-                const hiringManagers = (data.hiringManagers || []).filter(
-                    (hm: any) => {
-                        const name = `${hm.first_name || ""} ${hm.last_name || ""}`.trim() || hm.full_name || "";
-                        return name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                            hm.id?.toString().includes(searchTerm);
-                    }
-                );
-                hiringManagers.forEach((hm: any) => {
+                (data.hiringManagers || []).forEach((hm: any) => {
                     const name = `${hm.first_name || ""} ${hm.last_name || ""}`.trim() || hm.full_name || "Unnamed";
-                    suggestions.push({
-                        id: hm.id,
-                        type: "Hiring Manager",
-                        display: `${formatRecordId(hm.id, "hiringManager")} ${name}`,
-                        value: formatRecordId(hm.id, "hiringManager"),
-                    });
+                    const num = hm.record_number ?? hm.id;
+                    const prefixLabel = formatRecordId(num, "hiringManager");
+                    const s = { id: hm.id, type: "Hiring Manager", display: `${prefixLabel} ${name}`, value: prefixLabel };
+                    if (matchesDisplay(s.display)) suggestions.push(s);
                 });
             }
 
             // Filter out already selected references
-            const selectedIds = noteForm.additionalReferences.map((ref) => ref.id);
-            const filteredSuggestions = suggestions.filter(
-                (s) => !selectedIds.includes(s.id)
-            );
+            const selectedIds = new Set(noteForm.additionalReferences.map((ref) => String(ref.id)));
+            const filteredSuggestions = suggestions.filter((s) => !selectedIds.has(String(s.id)));
 
-            // Limit to top 10 suggestions
             setAdditionalRefSuggestions(filteredSuggestions.slice(0, 10));
         } catch (err) {
             console.error("Error searching additional references:", err);
@@ -768,109 +698,43 @@ export default function BulkNoteModal({
                 value: ref.value,
             }));
 
-            // Add note to each entity
-            const results = {
-                successful: [] as string[],
-                failed: [] as string[],
-                errors: [] as Array<{ id: string; error: string }>
-            };
-
-            for (const id of entityIds) {
-                try {
-                    const response = await fetch(`/api/${apiPath}/${id}/notes`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            Authorization: `Bearer ${token}`
-                        },
-                        body: JSON.stringify({
-                            text: noteForm.text,
-                            action: noteForm.action,
-                            about: JSON.stringify(aboutData), // Send as structured JSON
-                            about_references: aboutData, // Also send as array for backend processing
-                            copy_note: noteForm.copyNote === "Yes",
-                            replace_general_contact_comments: noteForm.replaceGeneralContactComments,
-                            additional_references: noteForm.additionalReferences,
-                            schedule_next_action: noteForm.scheduleNextAction,
-                            email_notification: Array.isArray(noteForm.emailNotification) ? noteForm.emailNotification : (noteForm.emailNotification ? [noteForm.emailNotification] : []),
-                        })
-                    });
-
-                    if (response.ok) {
-                        results.successful.push(id);
-                    } else {
-                        const errorData = await response.json().catch(() => ({}));
-                        results.failed.push(id);
-                        results.errors.push({
-                            id,
-                            error: errorData.message || 'Failed to add note'
-                        });
-                    }
-                } catch (error) {
-                    results.failed.push(id);
-                    results.errors.push({
-                        id,
-                        error: error instanceof Error ? error.message : 'Failed to add note'
-                    });
-                }
-            }
-
-            if (results.failed.length > 0) {
-                const errorDetails = results.errors.map(e => `${e.id}: ${e.error}`).join(', ');
-                toast.error(`Some notes failed: ${errorDetails}`);
-            } else {
-                toast.success(`Added note to ${entityIds.length} record(s)`);
-            }
-
-            // Reset form
-            setNoteForm({
-                text: "",
-                action: "",
-                about: "",
-                aboutReferences: [],
-                copyNote: "No",
-                replaceGeneralContactComments: false,
-                additionalReferences: [],
-                scheduleNextAction: "None",
-                emailNotification: [],
+            const response = await fetch(`/api/${apiPath}/${entityId}/notes`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    text: noteForm.text,
+                    action: noteForm.action,
+                    about: aboutData,
+                    copy_note: noteForm.copyNote === 'Yes',
+                    replace_general_contact_comments: noteForm.replaceGeneralContactComments,
+                    additional_references: noteForm.additionalReferences,
+                    schedule_next_action: noteForm.scheduleNextAction,
+                    email_notification: noteForm.emailNotification
+                })
             });
-            setNoteFormErrors({});
-            setAboutSearchQuery("");
-            setAdditionalRefSearchQuery("");
-            setEmailSearchQuery("");
-            setShowAboutDropdown(false);
-            setShowAdditionalRefDropdown(false);
-            setShowEmailDropdown(false);
 
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.message || 'Failed to add note');
+            }
+
+            const data = await response.json();
+            toast.success('Note added successfully');
             onSuccess?.();
             onClose();
-        } catch (error) {
-            console.error('Error adding bulk notes:', error);
-            toast.error(error instanceof Error ? error.message : 'Failed to add notes');
+        } catch (err) {
+            console.error('Error adding note:', err);
+            toast.error(err instanceof Error ? err.message : 'An error occurred while adding the note');
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleClose = () => {
-        setNoteForm({
-            text: "",
-            action: "",
-            about: "",
-            aboutReferences: [],
-            copyNote: "No",
-            replaceGeneralContactComments: false,
-            additionalReferences: [],
-            scheduleNextAction: "None",
-            emailNotification: [],
-        });
+    const handleCloseModal = () => {
         setNoteFormErrors({});
-        setAboutSearchQuery("");
-        setAdditionalRefSearchQuery("");
-        setEmailSearchQuery("");
-        setShowAboutDropdown(false);
-        setShowAdditionalRefDropdown(false);
-        setShowEmailDropdown(false);
         onClose();
     };
 
@@ -879,22 +743,22 @@ export default function BulkNoteModal({
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+                {/* Header */}
                 <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
                     <div className="flex items-center space-x-2">
                         <Image src="/file.svg" alt="Note" width={20} height={20} />
                         <h2 className="text-lg font-semibold">Add Note</h2>
                     </div>
                     <button
-                        onClick={handleClose}
+                        onClick={handleCloseModal}
                         className="p-1 rounded hover:bg-gray-200"
                     >
                         <span className="text-2xl font-bold">×</span>
                     </button>
                 </div>
+
+                {/* Form Content */}
                 <div className="p-6">
-                    <p className="text-gray-600 mb-4 text-sm">
-                        Add a note to {entityIds.length} selected record(s)
-                    </p>
                     <div className="space-y-4">
                         {/* Note Text Area - Required */}
                         <div>
@@ -927,6 +791,7 @@ export default function BulkNoteModal({
                             )}
                         </div>
 
+                        {/* Action Field - Required */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                 Action {noteForm.action ? (
@@ -963,7 +828,7 @@ export default function BulkNoteModal({
                             )}
                         </div>
 
-                        {/* About Section - Required, Multiple References, Global Search */}
+                        {/* About/Reference Field - Required */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                 About / Reference{" "}
@@ -975,13 +840,12 @@ export default function BulkNoteModal({
                             </label>
                             <div className="relative" ref={aboutInputRef}>
                                 <div
-                                    className={`min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:outline-none pr-8 ${
-                                        noteFormErrors.about
+                                    className={`min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:outline-none pr-8 ${noteFormErrors.about
                                             ? "border-red-500 focus-within:ring-red-500"
                                             : "border-gray-300 focus-within:ring-blue-500"
-                                    }`}
+                                        }`}
                                 >
-                                    {/* Selected References Tags - Inside the input container */}
+                                    {/* Selected References Tags */}
                                     {noteForm.aboutReferences.map((ref, index) => (
                                         <span
                                             key={`${ref.type}-${ref.id}-${index}`}
@@ -999,8 +863,7 @@ export default function BulkNoteModal({
                                             </button>
                                         </span>
                                     ))}
-
-                                    {/* Search Input for References - Same field to add more */}
+                                    {/* Input field */}
                                     <input
                                         type="text"
                                         value={aboutSearchQuery}
@@ -1008,7 +871,6 @@ export default function BulkNoteModal({
                                             const value = e.target.value;
                                             setAboutSearchQuery(value);
                                             searchAboutReferences(value);
-                                            setShowAboutDropdown(true);
                                         }}
                                         onFocus={() => {
                                             setShowAboutDropdown(true);
@@ -1016,170 +878,113 @@ export default function BulkNoteModal({
                                                 searchAboutReferences("");
                                             }
                                         }}
-                                        placeholder={
-                                            noteForm.aboutReferences.length === 0
-                                                ? "Search and select records (e.g., Job, Lead, Placement, Organization, Hiring Manager)..."
-                                                : "Add more..."
-                                        }
-                                        className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
+                                        placeholder="Search for records to reference..."
+                                        className="flex-1 min-w-[120px] border-none outline-none bg-transparent"
                                     />
-                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
-                                        <FiSearch className="w-4 h-4" />
-                                    </span>
+                                    {/* Search icon */}
+                                    <FiSearch className="w-4 h-4 text-gray-400 pointer-events-none" />
                                 </div>
 
-                                {/* Validation Error */}
-                                {noteFormErrors.about && (
-                                    <p className="mt-1 text-sm text-red-500">
-                                        {noteFormErrors.about}
-                                    </p>
-                                )}
-
-                                {/* Suggestions Dropdown */}
+                                {/* Dropdown Suggestions */}
                                 {showAboutDropdown && (
-                                    <div
-                                        data-about-dropdown
-                                        className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
-                                    >
+                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto" data-about-dropdown>
                                         {isLoadingAboutSearch ? (
-                                            <div className="p-3 text-center text-gray-500 text-sm">
-                                                Searching...
-                                            </div>
+                                            <div className="p-3 text-gray-500 text-sm">Searching...</div>
                                         ) : aboutSuggestions.length > 0 ? (
-                                            aboutSuggestions.map((suggestion, idx) => (
-                                                <button
-                                                    key={`${suggestion.type}-${suggestion.id}-${idx}`}
-                                                    type="button"
+                                            aboutSuggestions.map((suggestion) => (
+                                                <div
+                                                    key={`${suggestion.type}-${suggestion.id}`}
                                                     onClick={() => handleAboutReferenceSelect(suggestion)}
-                                                    className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
+                                                    className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
                                                 >
-                                                    <FiUserCheck className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                                                    <div className="flex-1">
-                                                        <div className="text-sm font-medium text-gray-900">
-                                                            {suggestion.display}
-                                                        </div>
-                                                        <div className="text-xs text-gray-500">
-                                                            {suggestion.type}
-                                                        </div>
-                                                    </div>
-                                                </button>
+                                                    <HiOutlineUser className="w-4 h-4 text-gray-400" />
+                                                    <span className="text-sm">{suggestion.display}</span>
+                                                </div>
                                             ))
-                                        ) : aboutSearchQuery.trim().length > 0 ? (
-                                            <div className="p-3 text-center text-gray-500 text-sm">
-                                                No results found
-                                            </div>
                                         ) : (
-                                            <div className="p-3 text-center text-gray-500 text-sm">
-                                                Type to search or select from list
+                                            <div className="p-3 text-gray-500 text-sm">
+                                                {aboutSearchQuery.trim().length > 0
+                                                    ? "No results found"
+                                                    : "Type to search or select from list"}
                                             </div>
                                         )}
                                     </div>
                                 )}
                             </div>
+                            {noteFormErrors.about && (
+                                <p className="mt-1 text-sm text-red-500">{noteFormErrors.about}</p>
+                            )}
                         </div>
 
-                        {/* Additional References Section - Global Search */}
-
-
-                        {/* Email Notification Section - Search and add (matches MultiSelectLookupField design) */}
+                        {/* Email Notifications */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                 Email Notification
                             </label>
                             <div className="relative" ref={emailInputRef}>
-                                {isLoadingUsers ? (
-                                    <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50 min-h-[42px]">
-                                        Loading users...
-                                    </div>
-                                ) : (
-                                    <div className="min-h-[42px] flex flex-wrap items-center gap-2 p-2 border border-gray-300 rounded focus-within:ring-2 focus-within:outline-none focus-within:ring-blue-500 pr-8">
-                                        {/* Selected Users Tags - Inside the input container */}
-                                        {noteForm.emailNotification.map((val, index) => (
-                                            <span
-                                                key={val}
-                                                className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
+                                <div className="min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:ring-blue-500 focus-within:outline-none pr-8 border-gray-300">
+                                    {/* Selected Email Tags */}
+                                    {noteForm.emailNotification.map((email, index) => (
+                                        <span
+                                            key={email}
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-green-100 text-green-800 text-sm"
+                                        >
+                                            {email}
+                                            <button
+                                                type="button"
+                                                onClick={() => removeEmailNotification(email)}
+                                                className="hover:text-green-600 font-bold leading-none"
+                                                title="Remove"
                                             >
-                                                <HiOutlineUser className="w-4 h-4 flex-shrink-0" />
-                                                {val}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => removeEmailNotification(val)}
-                                                    className="hover:text-blue-600 font-bold leading-none"
-                                                    title="Remove"
-                                                >
-                                                    ×
-                                                </button>
-                                            </span>
-                                        ))}
-
-                                        {/* Search Input for Users - Same field to add more */}
-                                        <input
-                                            type="text"
-                                            value={emailSearchQuery}
-                                            onChange={(e) => {
-                                                const value = e.target.value;
-                                                setEmailSearchQuery(value);
-                                                setShowEmailDropdown(true);
-                                            }}
-                                            onFocus={() => setShowEmailDropdown(true)}
-                                            placeholder={
-                                                noteForm.emailNotification.length === 0
-                                                    ? "Search and add users to notify..."
-                                                    : "Add more..."
-                                            }
-                                            className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
-                                        />
-                                        <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none">
-                                            <FiSearch className="w-4 h-4" />
+                                                ×
+                                            </button>
                                         </span>
-                                    </div>
-                                )}
+                                    ))}
+                                    {/* Input field */}
+                                    <input
+                                        type="text"
+                                        value={emailSearchQuery}
+                                        onChange={(e) => setEmailSearchQuery(e.target.value)}
+                                        onFocus={() => setShowEmailDropdown(true)}
+                                        placeholder="Search users to notify..."
+                                        className="flex-1 min-w-[120px] border-none outline-none bg-transparent"
+                                    />
+                                    {/* Search icon */}
+                                    <FiSearch className="w-4 h-4 text-gray-400 pointer-events-none" />
+                                </div>
 
-                                {/* Suggestions Dropdown - same structure as About */}
-                                {showEmailDropdown && !isLoadingUsers && (
-                                    <div
-                                        data-email-dropdown
-                                        className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto"
-                                    >
-                                        {emailNotificationSuggestions.length > 0 ? (
-                                            emailNotificationSuggestions.slice(0, 10).map((user, idx) => (
-                                                <button
-                                                    key={user.id ?? idx}
-                                                    type="button"
+                                {/* Email Dropdown Suggestions */}
+                                {showEmailDropdown && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto" data-email-dropdown>
+                                        {isLoadingUsers ? (
+                                            <div className="p-3 text-gray-500 text-sm">Loading users...</div>
+                                        ) : emailNotificationSuggestions.length > 0 ? (
+                                            emailNotificationSuggestions.map((user) => (
+                                                <div
+                                                    key={user.id}
                                                     onClick={() => handleEmailNotificationSelect(user)}
-                                                    className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 flex items-center gap-2"
+                                                    className="px-3 py-2 hover:bg-gray-100 cursor-pointer flex items-center gap-2"
                                                 >
-                                                    <HiOutlineUser className="w-4 h-4 text-gray-500 flex-shrink-0" />
-                                                    <div className="flex-1">
-                                                        <div className="text-sm font-medium text-gray-900">
-                                                            {user.name || user.email}
-                                                        </div>
-                                                        {user.email && user.name && (
-                                                            <div className="text-xs text-gray-500">{user.email}</div>
-                                                        )}
+                                                    <HiOutlineUser className="w-4 h-4 text-gray-400" />
+                                                    <div>
+                                                        <div className="text-sm font-medium">{user.name}</div>
+                                                        <div className="text-xs text-gray-500">{user.email}</div>
                                                     </div>
-                                                </button>
+                                                </div>
                                             ))
                                         ) : (
-                                            <div className="p-3 text-center text-gray-500 text-sm">
-                                                {emailSearchQuery.trim().length >= 1
-                                                    ? "No matching users found"
-                                                    : "Type to search internal users"}
-                                            </div>
+                                            <div className="p-3 text-gray-500 text-sm">No users found</div>
                                         )}
                                     </div>
                                 )}
                             </div>
-                            <p className="mt-1 text-xs text-gray-500">
-                                Only internal system users are available for notification
-                            </p>
                         </div>
                     </div>
 
                     {/* Form Actions */}
                     <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
                         <button
-                            onClick={handleClose}
+                            onClick={handleCloseModal}
                             className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium"
                             disabled={isLoading}
                         >
@@ -1190,7 +995,7 @@ export default function BulkNoteModal({
                             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
                             disabled={isLoading || !noteForm.text.trim() || !noteForm.action || noteForm.aboutReferences.length === 0}
                         >
-                            {isLoading ? 'SAVING...' : 'SAVE'}
+                            {isLoading ? "SAVING..." : "SAVE"}
                         </button>
                     </div>
                 </div>

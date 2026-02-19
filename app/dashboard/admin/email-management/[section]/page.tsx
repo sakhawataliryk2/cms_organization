@@ -42,6 +42,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{organizationNameLink}}",
         "{{requestId}}",
         "{{reason}}",
         "{{requestDate}}",
@@ -62,6 +63,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{organizationNameLink}}",
         "{{reason}}",
         "{{requestDate}}",
         "{{approvalUrl}}",
@@ -125,6 +127,7 @@ const SECTION_CONFIG: Record<
           `<ul>` +
           `<li><strong>Request ID:</strong> {{requestId}} (the approval link uses this ID)</li>` +
           `<li><strong>Record (Job Seeker):</strong> {{recordNumber}}</li>` +
+          `<li><strong>Organization Name:</strong> {{organizationNameLink}}</li>` +
           `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
           `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
           `<li><strong>Reason:</strong> {{reason}}</li>` +
@@ -159,6 +162,7 @@ const SECTION_CONFIG: Record<
           `<h2>Unarchive Request (Job Seeker)</h2>` +
           `<p>An unarchive request has been submitted for the following record.</p>` +
           `<p><strong>Record:</strong> {{recordNumber}}</p>` +
+          `<p><strong>Organization Name:</strong> {{organizationNameLink}}</p>` +
           `<p><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</p>` +
           `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
           `<p><strong>Reason:</strong> {{reason}}</p>` +
@@ -202,6 +206,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{organizationNameLink}}",
         "{{reason}}",
         "{{requestDate}}",
         "{{approvalUrl}}",
@@ -259,6 +264,7 @@ const SECTION_CONFIG: Record<
           `<h2>Unarchive Request (Organization)</h2>` +
           `<p>An unarchive request has been submitted.</p>` +
           `<p><strong>Record:</strong> {{recordNumber}}</p>` +
+          `<p><strong>Organization Name:</strong> {{organizationNameLink}}</p>` +
           `<p><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</p>` +
           `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
           `<p><strong>Reason:</strong> {{reason}}</p>` +
@@ -279,6 +285,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{organizationNameLink}}",
         "{{requestId}}",
         "{{reason}}",
         "{{requestDate}}",
@@ -290,6 +297,8 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{sourceRecordNumber}}",
         "{{targetRecordNumber}}",
+        "{{sourceOrganizationNameLink}}",
+        "{{targetOrganizationNameLink}}",
         "{{requestDate}}",
         "{{approvalUrl}}",
         "{{denyUrl}}",
@@ -299,6 +308,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{organizationNameLink}}",
         "{{reason}}",
         "{{requestDate}}",
         "{{approvalUrl}}",
@@ -322,6 +332,7 @@ const SECTION_CONFIG: Record<
           `<ul>` +
           `<li><strong>Request ID:</strong> {{requestId}} (the approval link uses this ID)</li>` +
           `<li><strong>Record (Hiring Manager):</strong> {{recordNumber}}</li>` +
+          `<li><strong>Organization Name:</strong> {{organizationNameLink}}</li>` +
           `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
           `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
           `<li><strong>Reason:</strong> {{reason}}</li>` +
@@ -339,8 +350,8 @@ const SECTION_CONFIG: Record<
           `<p>A transfer request has been submitted (hiring manager context):</p>` +
           `<ul>` +
           `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
-          `<li><strong>Source Organization:</strong> {{sourceRecordNumber}}</li>` +
-          `<li><strong>Target Organization:</strong> {{targetRecordNumber}}</li>` +
+          `<li><strong>Source Organization:</strong> {{sourceOrganizationNameLink}}</li>` +
+          `<li><strong>Target Organization:</strong> {{targetOrganizationNameLink}}</li>` +
           `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
           `</ul>` +
           `<p>Please review and approve or deny this transfer. Use the buttons below:</p>` +
@@ -355,6 +366,7 @@ const SECTION_CONFIG: Record<
           `<h2>Unarchive Request (Hiring Manager)</h2>` +
           `<p>An unarchive request has been submitted.</p>` +
           `<p><strong>Record:</strong> {{recordNumber}}</p>` +
+          `<p><strong>Organization Name:</strong> {{organizationNameLink}}</p>` +
           `<p><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</p>` +
           `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
           `<p><strong>Reason:</strong> {{reason}}</p>` +
@@ -374,6 +386,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{organizationNameLink}}",
         "{{requestId}}",
         "{{reason}}",
         "{{requestDate}}",
@@ -385,6 +398,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{organizationNameLink}}",
         "{{reason}}",
         "{{requestDate}}",
         "{{approvalUrl}}",
@@ -407,6 +421,7 @@ const SECTION_CONFIG: Record<
           `<ul>` +
           `<li><strong>Request ID:</strong> {{requestId}} (the approval link uses this ID)</li>` +
           `<li><strong>Record (Job):</strong> {{recordNumber}}</li>` +
+          `<li><strong>Organization Name:</strong> {{organizationNameLink}}</li>` +
           `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
           `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
           `<li><strong>Reason:</strong> {{reason}}</li>` +
@@ -423,6 +438,7 @@ const SECTION_CONFIG: Record<
           `<h2>Unarchive Request (Job)</h2>` +
           `<p>An unarchive request has been submitted.</p>` +
           `<p><strong>Record:</strong> {{recordNumber}}</p>` +
+          `<p><strong>Organization Name:</strong> {{organizationNameLink}}</p>` +
           `<p><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</p>` +
           `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
           `<p><strong>Reason:</strong> {{reason}}</p>` +
@@ -442,6 +458,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{organizationNameLink}}",
         "{{requestId}}",
         "{{reason}}",
         "{{requestDate}}",
@@ -453,6 +470,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{organizationNameLink}}",
         "{{reason}}",
         "{{requestDate}}",
         "{{approvalUrl}}",
@@ -475,6 +493,7 @@ const SECTION_CONFIG: Record<
           `<ul>` +
           `<li><strong>Request ID:</strong> {{requestId}} (the approval link uses this ID)</li>` +
           `<li><strong>Record (Lead):</strong> {{recordNumber}}</li>` +
+          `<li><strong>Organization Name:</strong> {{organizationNameLink}}</li>` +
           `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
           `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
           `<li><strong>Reason:</strong> {{reason}}</li>` +
@@ -491,6 +510,7 @@ const SECTION_CONFIG: Record<
           `<h2>Unarchive Request (Lead)</h2>` +
           `<p>An unarchive request has been submitted.</p>` +
           `<p><strong>Record:</strong> {{recordNumber}}</p>` +
+          `<p><strong>Organization Name:</strong> {{organizationNameLink}}</p>` +
           `<p><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</p>` +
           `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
           `<p><strong>Reason:</strong> {{reason}}</p>` +
@@ -523,6 +543,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{organizationNameLink}}",
         "{{requestId}}",
         "{{reason}}",
         "{{requestDate}}",
@@ -534,6 +555,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{organizationNameLink}}",
         "{{reason}}",
         "{{requestDate}}",
         "{{approvalUrl}}",
@@ -575,6 +597,7 @@ const SECTION_CONFIG: Record<
           `<ul>` +
           `<li><strong>Request ID:</strong> {{requestId}} (the approval link uses this ID)</li>` +
           `<li><strong>Record (Task):</strong> {{recordNumber}}</li>` +
+          `<li><strong>Organization Name:</strong> {{organizationNameLink}}</li>` +
           `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
           `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
           `<li><strong>Reason:</strong> {{reason}}</li>` +
@@ -591,6 +614,7 @@ const SECTION_CONFIG: Record<
           `<h2>Unarchive Request (Task)</h2>` +
           `<p>An unarchive request has been submitted.</p>` +
           `<p><strong>Record:</strong> {{recordNumber}}</p>` +
+          `<p><strong>Organization Name:</strong> {{organizationNameLink}}</p>` +
           `<p><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</p>` +
           `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
           `<p><strong>Reason:</strong> {{reason}}</p>` +
@@ -610,6 +634,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{organizationNameLink}}",
         "{{requestId}}",
         "{{reason}}",
         "{{requestDate}}",
@@ -621,6 +646,7 @@ const SECTION_CONFIG: Record<
         "{{requestedByEmail}}",
         "{{recordType}}",
         "{{recordNumber}}",
+        "{{organizationNameLink}}",
         "{{reason}}",
         "{{requestDate}}",
         "{{approvalUrl}}",
@@ -643,6 +669,7 @@ const SECTION_CONFIG: Record<
           `<ul>` +
           `<li><strong>Request ID:</strong> {{requestId}} (the approval link uses this ID)</li>` +
           `<li><strong>Record (Placement):</strong> {{recordNumber}}</li>` +
+          `<li><strong>Organization Name:</strong> {{organizationNameLink}}</li>` +
           `<li><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</li>` +
           `<li><strong>Request Date:</strong> {{requestDate}}</li>` +
           `<li><strong>Reason:</strong> {{reason}}</li>` +
@@ -659,6 +686,7 @@ const SECTION_CONFIG: Record<
           `<h2>Unarchive Request (Placement)</h2>` +
           `<p>An unarchive request has been submitted.</p>` +
           `<p><strong>Record:</strong> {{recordNumber}}</p>` +
+          `<p><strong>Organization Name:</strong> {{organizationNameLink}}</p>` +
           `<p><strong>Requested By:</strong> {{requestedBy}} ({{requestedByEmail}})</p>` +
           `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
           `<p><strong>Reason:</strong> {{reason}}</p>` +
