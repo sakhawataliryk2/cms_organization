@@ -811,6 +811,8 @@ export default function HiringManagerView() {
               <FieldValueRenderer
                 value={value}
                 fieldInfo={fieldInfo}
+                allFields={customFieldDefs as any}
+                valuesRecord={customObj as any}
                 emptyPlaceholder="-"
                 clickable
               />

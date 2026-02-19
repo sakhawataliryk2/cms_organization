@@ -71,6 +71,182 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString(undefined, { dateStyle: "short" });
 }
 
+function humanizeLabel(key: string): string {
+  if (!key) return "";
+  const map: Record<string, string> = {
+    path: "Path",
+    title: "Title",
+    referrer: "Referrer",
+    viewportWidth: "Viewport width",
+    viewportHeight: "Viewport height",
+    queryParams: "Query params",
+    screenResolution: "Screen resolution",
+    url: "URL",
+    pathname: "Pathname",
+    tagName: "Element",
+    id: "Element ID",
+    text: "Text",
+    href: "Link",
+    fieldName: "Field name",
+    fieldLabel: "Field label",
+    oldValue: "Old value",
+    newValue: "New value",
+    changeType: "Change type",
+    changeReason: "Change reason",
+    timeOnPageSeconds: "Time on page (s)",
+    scrollDepthPercent: "Max scroll depth (%)",
+    clickCount: "Clicks",
+    formFills: "Form fills",
+  };
+  if (map[key]) return map[key];
+  return key
+    .replace(/[_-]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/\s+/g, " ")
+    .replace(/^./, (c) => c.toUpperCase());
+}
+
+function renderActivityDetails(activity: ActivityRecord): React.ReactNode {
+  if (!activity.metadata || typeof activity.metadata !== "object") {
+    return (
+      <span className="text-xs text-gray-400">
+        No structured details
+      </span>
+    );
+  }
+
+  const meta = activity.metadata as Record<string, unknown>;
+  const rows: { label: string; value: string }[] = [];
+
+  if (activity.action === "page_view") {
+    rows.push(
+      { label: "Path", value: String(meta.path ?? activity.entity_id ?? "—") },
+      { label: "Title", value: String(meta.title ?? "—") },
+      {
+        label: "Referrer",
+        value: meta.referrer ? String(meta.referrer) : "Direct / internal",
+      },
+      {
+        label: "Viewport",
+        value:
+          meta.viewportWidth && meta.viewportHeight
+            ? `${meta.viewportWidth} × ${meta.viewportHeight}`
+            : "—",
+      }
+    );
+  } else if (activity.action === "click") {
+    rows.push(
+      {
+        label: "Element",
+        value: String(meta.tagName ?? "—"),
+      },
+      {
+        label: "Element ID",
+        value: meta.id ? String(meta.id) : "—",
+      },
+      {
+        label: "Text",
+        value: meta.text ? String(meta.text) : "—",
+      },
+      {
+        label: "Link",
+        value: meta.href ? String(meta.href) : "—",
+      },
+      {
+        label: "Click count (session)",
+        value: meta.clickCount ? String(meta.clickCount) : "—",
+      }
+    );
+  } else if (activity.action === "field_change") {
+    rows.push(
+      {
+        label: "Field",
+        value: meta.fieldLabel
+          ? String(meta.fieldLabel)
+          : String(meta.fieldName ?? "—"),
+      },
+      {
+        label: "From",
+        value: meta.oldValue ? String(meta.oldValue) : "—",
+      },
+      {
+        label: "To",
+        value: meta.newValue ? String(meta.newValue) : "—",
+      }
+    );
+    if (meta.changeType) {
+      rows.push({
+        label: "Change type",
+        value: String(meta.changeType),
+      });
+    }
+    if (meta.changeReason) {
+      rows.push({
+        label: "Reason",
+        value: String(meta.changeReason),
+      });
+    }
+  } else if (activity.action === "engagement") {
+    rows.push(
+      {
+        label: "Time on page (s)",
+        value: meta.timeOnPageSeconds
+          ? String(meta.timeOnPageSeconds)
+          : "—",
+      },
+      {
+        label: "Max scroll depth (%)",
+        value: meta.scrollDepthPercent
+          ? String(meta.scrollDepthPercent)
+          : "—",
+      },
+      {
+        label: "Clicks (session)",
+        value: meta.clickCount ? String(meta.clickCount) : "—",
+      },
+      {
+        label: "Form fills (session)",
+        value: meta.formFills ? String(meta.formFills) : "—",
+      }
+    );
+  }
+
+  // Generic fallback for any remaining metadata keys
+  if (rows.length === 0) {
+    Object.entries(meta).forEach(([key, value]) => {
+      if (value == null) return;
+      rows.push({
+        label: humanizeLabel(key),
+        value:
+          typeof value === "object"
+            ? JSON.stringify(value)
+            : String(value),
+      });
+    });
+  }
+
+  if (!rows.length) {
+    return (
+      <span className="text-xs text-gray-400">
+        No details
+      </span>
+    );
+  }
+
+  return (
+    <dl className="space-y-1 text-xs text-gray-600">
+      {rows.map((row) => (
+        <div key={`${row.label}-${row.value}`} className="flex gap-2">
+          <dt className="w-28 shrink-0 font-medium text-gray-700">
+            {row.label}
+          </dt>
+          <dd className="flex-1 text-gray-600">{row.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export default function ActivityTrackerPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -687,9 +863,9 @@ export default function ActivityTrackerPage() {
                             </td>
                             <td className="px-4 py-3 max-w-xs">
                               {a.metadata ? (
-                                <pre className="text-xs bg-gray-50 rounded-lg p-2 border border-gray-100 overflow-x-auto whitespace-pre-wrap wrap-break-word font-mono text-gray-600">
-                                  {JSON.stringify(a.metadata, null, 2)}
-                                </pre>
+                                <div className="bg-gray-50 rounded-lg p-2 border border-gray-100">
+                                  {renderActivityDetails(a)}
+                                </div>
                               ) : (
                                 <span className="text-xs text-gray-400">
                                   —

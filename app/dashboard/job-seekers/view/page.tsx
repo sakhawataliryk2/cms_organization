@@ -4251,6 +4251,8 @@ Best regards`;
             <FieldValueRenderer
               value={fieldValue}
               fieldInfo={fieldInfo}
+              allFields={customFieldDefs as any}
+              valuesRecord={customObj as any}
               emptyPlaceholder="-"
               clickable
             />
@@ -4311,6 +4313,8 @@ Best regards`;
             <FieldValueRenderer
               value={fieldValue}
               fieldInfo={fieldInfo}
+              allFields={customFieldDefs as any}
+              valuesRecord={customObj as any}
               emptyPlaceholder="-"
               clickable
             />

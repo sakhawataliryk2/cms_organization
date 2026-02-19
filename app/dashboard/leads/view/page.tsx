@@ -998,6 +998,8 @@ export default function LeadView() {
                 <FieldValueRenderer
                   value={value}
                   fieldInfo={fieldInfo as any}
+                  allFields={customFieldDefs as any}
+                  valuesRecord={customObj as any}
                   emptyPlaceholder="-"
                   clickable
                 />
