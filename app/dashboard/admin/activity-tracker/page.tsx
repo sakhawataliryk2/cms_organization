@@ -3,7 +3,27 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { FiActivity, FiArrowLeft, FiDownload } from "react-icons/fi";
+import {
+  FiActivity,
+  FiArrowLeft,
+  FiDownload,
+  FiList,
+  FiBarChart2,
+  FiGrid,
+} from "react-icons/fi";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+  Legend,
+  AreaChart,
+  Area,
+} from "recharts";
 
 interface ActivityRecord {
   id: number;
@@ -13,7 +33,7 @@ interface ActivityRecord {
   entity_type: string | null;
   entity_id: string | null;
   entity_label: string | null;
-  metadata: any | null;
+  metadata: unknown | null;
   created_at: string;
 }
 
@@ -32,10 +52,30 @@ interface ActivityResponse {
   summary: SummaryRow[];
 }
 
+type TabId = "overview" | "activity" | "summary";
+
+const CHART_COLORS = [
+  "#3b82f6", "#8b5cf6", "#ec4899", "#f59e0b", "#10b981",
+  "#06b6d4", "#6366f1", "#ef4444", "#84cc16", "#14b8a6",
+];
+
+function formatDateTime(iso: string) {
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, {
+    dateStyle: "short",
+    timeStyle: "medium",
+  });
+}
+
+function formatDate(iso: string) {
+  return new Date(iso).toLocaleDateString(undefined, { dateStyle: "short" });
+}
+
 export default function ActivityTrackerPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const [activeTab, setActiveTab] = useState<TabId>("overview");
   const [userId, setUserId] = useState<string>("");
   const [startDate, setStartDate] = useState<string>("");
   const [endDate, setEndDate] = useState<string>("");
@@ -47,10 +87,8 @@ export default function ActivityTrackerPage() {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<ActivityResponse | null>(null);
 
-  // Load initial filters from URL (optional)
   useEffect(() => {
     if (!searchParams) return;
-
     const spUserId = searchParams.get("userId") || searchParams.get("user_id");
     const spStart = searchParams.get("start") || searchParams.get("startDate");
     const spEnd = searchParams.get("end") || searchParams.get("endDate");
@@ -58,7 +96,6 @@ export default function ActivityTrackerPage() {
     const spEntityType =
       searchParams.get("entityType") || searchParams.get("entity_type");
     const spPage = searchParams.get("page");
-
     if (spUserId) setUserId(spUserId);
     if (spStart) setStartDate(spStart);
     if (spEnd) setEndDate(spEnd);
@@ -71,7 +108,6 @@ export default function ActivityTrackerPage() {
     try {
       setIsLoading(true);
       setError(null);
-
       const params = new URLSearchParams();
       if (userId) params.set("userId", userId);
       if (startDate) params.set("start", startDate);
@@ -80,10 +116,10 @@ export default function ActivityTrackerPage() {
       if (entityTypeFilter) params.set("entityType", entityTypeFilter);
       params.set("page", String(pageToLoad));
 
-      // Update URL (without full navigation)
-      const qs = params.toString();
       router.replace(
-        qs ? `/dashboard/admin/activity-tracker?${qs}` : "/dashboard/admin/activity-tracker",
+        params.toString()
+          ? `/dashboard/admin/activity-tracker?${params.toString()}`
+          : "/dashboard/admin/activity-tracker",
         { scroll: false }
       );
 
@@ -91,33 +127,30 @@ export default function ActivityTrackerPage() {
         method: "GET",
         cache: "no-store",
       });
+      const json: unknown = await res.json();
 
-      const json: any = await res.json();
-
-      if (!res.ok || !json.success) {
-        throw new Error(json.message || "Failed to load activity");
+      if (!res.ok || !(json as ActivityResponse).success) {
+        throw new Error(
+          (json as { message?: string }).message || "Failed to load activity"
+        );
       }
-
       setData(json as ActivityResponse);
       setPage(pageToLoad);
-    } catch (err: any) {
-      console.error("Error loading activity:", err);
-      setError(err.message || "Failed to load activity");
+    } catch (err: unknown) {
+      setError(
+        err instanceof Error ? err.message : "Failed to load activity"
+      );
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Initial load
   useEffect(() => {
     fetchActivities(page);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleApplyFilters = () => {
-    fetchActivities(1);
-  };
-
+  const handleApplyFilters = () => fetchActivities(1);
   const handleClearFilters = () => {
     setUserId("");
     setStartDate("");
@@ -129,7 +162,7 @@ export default function ActivityTrackerPage() {
 
   const uniqueActions = useMemo(() => {
     const set = new Set<string>();
-    data?.activities.forEach((a) => {
+    data?.activities?.forEach((a) => {
       if (a.action) set.add(a.action);
     });
     return Array.from(set).sort();
@@ -137,19 +170,67 @@ export default function ActivityTrackerPage() {
 
   const uniqueEntityTypes = useMemo(() => {
     const set = new Set<string>();
-    data?.activities.forEach((a) => {
+    data?.activities?.forEach((a) => {
       if (a.entity_type) set.add(a.entity_type);
     });
     return Array.from(set).sort();
   }, [data]);
 
+  // Chart data for Recharts: by action (from summary)
+  const chartByAction = useMemo(() => {
+    if (!data?.summary?.length) return [];
+    const byAction = new Map<string, number>();
+    data.summary.forEach((row) => {
+      const prev = byAction.get(row.action) ?? 0;
+      byAction.set(row.action, prev + row.count);
+    });
+    return Array.from(byAction.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  }, [data]);
+
+  // Chart data for Recharts: by entity type (from summary)
+  const chartByEntityType = useMemo(() => {
+    if (!data?.summary?.length) return [];
+    const byType = new Map<string, number>();
+    data.summary.forEach((row) => {
+      const prev = byType.get(row.entity_type) ?? 0;
+      byType.set(row.entity_type, prev + row.count);
+    });
+    return Array.from(byType.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10);
+  }, [data]);
+
+  // Activity by day for Recharts (from current page activities)
+  const chartByDay = useMemo(() => {
+    if (!data?.activities?.length) return [];
+    const byDay = new Map<string, number>();
+    data.activities.forEach((a) => {
+      const day = a.created_at ? formatDate(a.created_at) : "";
+      if (day) byDay.set(day, (byDay.get(day) ?? 0) + 1);
+    });
+    return Array.from(byDay.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => new Date(a.name).getTime() - new Date(b.name).getTime())
+      .slice(-14);
+  }, [data]);
+
+  const uniqueUsersCount = useMemo(() => {
+    if (!data?.activities?.length) return 0;
+    const set = new Set(
+      data.activities.map((a) => a.user_id ?? a.user_name ?? "").filter(Boolean)
+    );
+    return set.size;
+  }, [data]);
+
   const handleExport = () => {
-    if (!data || !data.activities || data.activities.length === 0) {
+    if (!data?.activities?.length) {
       alert("No activity to export for current filters.");
       return;
     }
-
-    // Build CSV (Excel-compatible)
     const headers = [
       "Date/Time",
       "User ID",
@@ -160,7 +241,6 @@ export default function ActivityTrackerPage() {
       "Entity Label",
       "Metadata",
     ];
-
     const rows = data.activities.map((a) => [
       a.created_at,
       a.user_id ?? "",
@@ -171,325 +251,534 @@ export default function ActivityTrackerPage() {
       a.entity_label ?? "",
       a.metadata ? JSON.stringify(a.metadata) : "",
     ]);
-
-    const all = [headers, ...rows];
-
-    const csv = all
+    const csv = [headers, ...rows]
       .map((row) =>
         row
-          .map((value) => {
-            const v = String(value ?? "");
-            const escaped = v.replace(/"/g, '""');
-            return `"${escaped}"`;
-          })
+          .map((v) => `"${String(v ?? "").replace(/"/g, '""')}"`)
           .join(",")
       )
       .join("\n");
-
-    const BOM = "\uFEFF";
-    const blob = new Blob([BOM + csv], {
+    const blob = new Blob(["\uFEFF" + csv], {
       type: "text/csv;charset=utf-8;",
     });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    const startPart = startDate || "all";
-    const endPart = endDate || "all";
-    link.href = url;
-    link.download = `Activity_Tracker_${startPart}_${endPart}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `Activity_Tracker_${startDate || "all"}_${endDate || "all"}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
   const totalPages = useMemo(() => {
-    if (!data || !data.pageSize) return 1;
+    if (!data?.pageSize) return 1;
     return Math.max(1, Math.ceil((data.total || 0) / data.pageSize));
   }, [data]);
 
+  const tabs: { id: TabId; label: string; icon: React.ReactNode }[] = [
+    { id: "overview", label: "Overview", icon: <FiBarChart2 size={18} /> },
+    { id: "activity", label: "Activity list", icon: <FiList size={18} /> },
+    { id: "summary", label: "Summary", icon: <FiGrid size={18} /> },
+  ];
+
   return (
-    <div className="bg-gray-200 min-h-screen p-4 sm:p-8">
-      <div className="max-w-6xl mx-auto">
+    <div className="min-h-screen bg-gray-100 p-4 sm:p-6">
+      <div className="max-w-7xl mx-auto">
         <button
           onClick={() => router.push("/dashboard/admin")}
-          className="flex items-center gap-2 text-gray-700 hover:text-gray-900 mb-4 sm:mb-6"
+          className="flex items-center gap-2 text-gray-600 hover:text-gray-900 mb-6 transition-colors"
         >
           <FiArrowLeft size={20} />
           Back to Admin Center
         </button>
 
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6 mb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 sm:w-14 sm:h-14 bg-black flex items-center justify-center rounded-sm">
-                <FiActivity size={28} color="white" />
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          {/* Header */}
+          <div className="border-b border-gray-200 bg-gray-50/80 px-4 sm:px-6 py-5">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 bg-gray-900 flex items-center justify-center rounded-xl shadow">
+                  <FiActivity size={28} className="text-white" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold text-gray-900">
+                    Activity Tracker
+                  </h1>
+                  <p className="text-sm text-gray-500 mt-0.5">
+                    Internal user activity: pages, clicks, form fills, field
+                    changes. Last online = most recent activity.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-xl sm:text-2xl font-bold text-gray-800">
-                  Activity Tracker
-                </h1>
-                <p className="text-gray-500 text-xs sm:text-sm">
-                  Automatic tracking of internal users: pages visited, clicks, form fills, field changes, time on page, scroll depth, and session start/end. Last online = most recent activity time. Export to CSV.
-                </p>
-              </div>
+              <button
+                onClick={handleExport}
+                disabled={!data?.activities?.length}
+                className="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800 text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <FiDownload size={18} />
+                Export CSV
+              </button>
             </div>
-
-            <button
-              onClick={handleExport}
-              className="inline-flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm disabled:bg-gray-400 disabled:cursor-not-allowed"
-              disabled={!data || !data.activities || data.activities.length === 0}
-            >
-              <FiDownload size={16} />
-              Export CSV
-            </button>
           </div>
 
           {/* Filters */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                User ID (optional)
-              </label>
-              <input
-                type="text"
-                value={userId}
-                onChange={(e) => setUserId(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g. 1"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Start Date
-              </label>
-              <input
-                type="date"
-                value={startDate}
-                onChange={(e) => setStartDate(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                End Date
-              </label>
-              <input
-                type="date"
-                value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Action
-              </label>
-              <select
-                value={actionFilter}
-                onChange={(e) => setActionFilter(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">All Actions</option>
-                {uniqueActions.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Entity Type
-              </label>
-              <select
-                value={entityTypeFilter}
-                onChange={(e) => setEntityTypeFilter(e.target.value)}
-                className="w-full p-2 border border-gray-300 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">All Entity Types</option>
-                {uniqueEntityTypes.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 mb-2">
-            <button
-              onClick={handleApplyFilters}
-              className="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
-              disabled={isLoading}
-            >
-              Apply Filters
-            </button>
-            <button
-              onClick={handleClearFilters}
-              className="px-3 py-1.5 border border-gray-300 text-gray-700 rounded text-sm hover:bg-gray-100"
-              disabled={isLoading}
-            >
-              Clear
-            </button>
-            {isLoading && (
-              <span className="text-xs text-gray-500">Loading activity...</span>
-            )}
-            {data && (
-              <span className="text-xs text-gray-500">
-                {data.total} record{data.total === 1 ? "" : "s"}
-              </span>
-            )}
-          </div>
-
-          {error && (
-            <div className="mb-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">
-              {error}
-            </div>
-          )}
-
-          {/* Summary */}
-          {data && data.summary && data.summary.length > 0 && (
-            <div className="mb-4 border border-gray-200 rounded p-3 bg-gray-50">
-              <h2 className="text-xs font-semibold text-gray-700 uppercase tracking-wider mb-2">
-                Summary (by action & entity type)
-              </h2>
-              <div className="overflow-x-auto">
-                <table className="min-w-full text-xs">
-                  <thead>
-                    <tr className="bg-gray-100">
-                      <th className="px-2 py-1 text-left font-medium text-gray-700">
-                        Action
-                      </th>
-                      <th className="px-2 py-1 text-left font-medium text-gray-700">
-                        Entity Type
-                      </th>
-                      <th className="px-2 py-1 text-right font-medium text-gray-700">
-                        Count
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.summary.map((row) => (
-                      <tr key={`${row.action}-${row.entity_type}`} className="border-t">
-                        <td className="px-2 py-1 text-gray-800">{row.action}</td>
-                        <td className="px-2 py-1 text-gray-600">
-                          {row.entity_type}
-                        </td>
-                        <td className="px-2 py-1 text-right text-gray-800">
-                          {row.count}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+          <div className="px-4 sm:px-6 py-4 border-b border-gray-200 bg-white">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  User ID
+                </label>
+                <input
+                  type="text"
+                  value={userId}
+                  onChange={(e) => setUserId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                  placeholder="e.g. 1"
+                />
               </div>
-            </div>
-          )}
-
-          {/* Activity table */}
-          <div className="border border-gray-200 rounded overflow-x-auto bg-white">
-            {!data || !data.activities || data.activities.length === 0 ? (
-              <p className="p-4 text-sm text-gray-500 italic">
-                No activity found for the selected filters.
-              </p>
-            ) : (
-              <table className="min-w-full text-xs sm:text-sm">
-                <thead className="bg-gray-100">
-                  <tr>
-                    <th className="px-2 py-2 text-left font-medium text-gray-700">
-                      Date / Time
-                    </th>
-                    <th className="px-2 py-2 text-left font-medium text-gray-700">
-                      User
-                    </th>
-                    <th className="px-2 py-2 text-left font-medium text-gray-700">
-                      Action
-                    </th>
-                    <th className="px-2 py-2 text-left font-medium text-gray-700">
-                      Entity
-                    </th>
-                    <th className="px-2 py-2 text-left font-medium text-gray-700">
-                      Details
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.activities.map((a) => (
-                    <tr key={a.id} className="border-t hover:bg-gray-50">
-                      <td className="px-2 py-2 align-top text-gray-700 whitespace-nowrap">
-                        {a.created_at
-                          ? new Date(a.created_at).toLocaleString()
-                          : "-"}
-                      </td>
-                      <td className="px-2 py-2 align-top text-gray-700">
-                        <div className="text-xs sm:text-sm font-medium">
-                          {a.user_name || "Unknown"}
-                        </div>
-                        <div className="text-[11px] text-gray-500">
-                          ID: {a.user_id ?? "?"}
-                        </div>
-                      </td>
-                      <td className="px-2 py-2 align-top text-gray-700">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-medium">
-                          {a.action}
-                        </span>
-                        {a.entity_type && (
-                          <div className="text-[11px] text-gray-500 mt-1">
-                            {a.entity_type}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-2 py-2 align-top text-gray-700">
-                        {a.entity_label || a.entity_id || "-"}
-                      </td>
-                      <td className="px-2 py-2 align-top text-gray-600 max-w-xs">
-                        {a.metadata ? (
-                          <pre className="text-[11px] whitespace-pre-wrap break-normal bg-gray-50 rounded p-1 border border-gray-100">
-                            {JSON.stringify(a.metadata, null, 2)}
-                          </pre>
-                        ) : (
-                          <span className="text-[11px] text-gray-400">
-                            No details
-                          </span>
-                        )}
-                      </td>
-                    </tr>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Start date
+                </label>
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  End date
+                </label>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Action
+                </label>
+                <select
+                  value={actionFilter}
+                  onChange={(e) => setActionFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent"
+                >
+                  <option value="">All</option>
+                  {uniqueActions.map((a) => (
+                    <option key={a} value={a}>
+                      {a}
+                    </option>
                   ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-
-          {/* Pagination */}
-          {data && totalPages > 1 && (
-            <div className="flex items-center justify-between mt-3 text-xs sm:text-sm">
-              <span className="text-gray-500">
-                Page {page} of {totalPages}
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    const newPage = Math.max(1, page - 1);
-                    if (newPage !== page) fetchActivities(newPage);
-                  }}
-                  disabled={page <= 1 || isLoading}
-                  className="px-2 py-1 border border-gray-300 rounded disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-100"
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-600 mb-1">
+                  Entity type
+                </label>
+                <select
+                  value={entityTypeFilter}
+                  onChange={(e) => setEntityTypeFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-gray-900 focus:border-transparent"
                 >
-                  Previous
+                  <option value="">All</option>
+                  {uniqueEntityTypes.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-end gap-2">
+                <button
+                  onClick={handleApplyFilters}
+                  disabled={isLoading}
+                  className="flex-1 px-3 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 disabled:opacity-50"
+                >
+                  Apply
                 </button>
                 <button
-                  onClick={() => {
-                    const newPage = Math.min(totalPages, page + 1);
-                    if (newPage !== page) fetchActivities(newPage);
-                  }}
-                  disabled={page >= totalPages || isLoading}
-                  className="px-2 py-1 border border-gray-300 rounded disabled:bg-gray-100 disabled:text-gray-400 text-gray-700 hover:bg-gray-100"
+                  onClick={handleClearFilters}
+                  disabled={isLoading}
+                  className="px-3 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50"
                 >
-                  Next
+                  Clear
                 </button>
               </div>
             </div>
-          )}
+            <div className="mt-3 flex items-center gap-3 text-sm">
+              {isLoading && (
+                <span className="text-amber-600 font-medium">
+                  Loading…
+                </span>
+              )}
+              {data != null && (
+                <span className="text-gray-500">
+                  <strong className="text-gray-700">{data.total}</strong>{" "}
+                  record{data.total === 1 ? "" : "s"}
+                </span>
+              )}
+            </div>
+            {error && (
+              <div className="mt-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                {error}
+              </div>
+            )}
+          </div>
+
+          {/* Tabs */}
+          <div className="border-b border-gray-200">
+            <nav className="flex gap-1 px-4 sm:px-6" aria-label="Tabs">
+              {tabs.map((tab) => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`
+                    flex items-center gap-2 px-4 py-3 text-sm font-medium rounded-t-lg border-b-2 transition-colors
+                    ${
+                      activeTab === tab.id
+                        ? "border-gray-900 text-gray-900 bg-white"
+                        : "border-transparent text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                    }
+                  `}
+                >
+                  {tab.icon}
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+          </div>
+
+          {/* Tab content */}
+          <div className="p-4 sm:p-6">
+            {/* Overview */}
+            {activeTab === "overview" && (
+              <div className="space-y-8">
+                {/* Stat cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="bg-gray-50 rounded-xl border border-gray-200 p-5">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Total records
+                    </p>
+                    <p className="mt-1 text-3xl font-bold text-gray-900">
+                      {data?.total ?? 0}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl border border-gray-200 p-5">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Unique users (this page)
+                    </p>
+                    <p className="mt-1 text-3xl font-bold text-gray-900">
+                      {uniqueUsersCount}
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl border border-gray-200 p-5">
+                    <p className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Action types
+                    </p>
+                    <p className="mt-1 text-3xl font-bold text-gray-900">
+                      {uniqueActions.length}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Charts row - Recharts */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  <div className="bg-gray-50 rounded-xl border border-gray-200 p-5">
+                    <h3 className="text-sm font-semibold text-gray-800 mb-4">
+                      Activity by action
+                    </h3>
+                    {chartByAction.length === 0 ? (
+                      <p className="text-sm text-gray-500 italic">
+                        No data for current filters.
+                      </p>
+                    ) : (
+                      <div className="h-80">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={chartByAction}
+                            layout="vertical"
+                            margin={{ top: 5, right: 20, left: 80, bottom: 5 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                            <XAxis type="number" tick={{ fontSize: 12 }} />
+                            <YAxis
+                              type="category"
+                              dataKey="name"
+                              width={75}
+                              tick={{ fontSize: 11 }}
+                              tickFormatter={(v) => (v.length > 14 ? `${v.slice(0, 12)}…` : v)}
+                            />
+                            <Tooltip
+                              formatter={(value: number) => [value, "Count"]}
+                              labelFormatter={(label) => `Action: ${label}`}
+                              contentStyle={{ borderRadius: "8px", border: "1px solid #e5e7eb" }}
+                            />
+                            <Bar dataKey="count" name="Count" radius={[0, 4, 4, 0]}>
+                              {chartByAction.map((_, i) => (
+                                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bg-gray-50 rounded-xl border border-gray-200 p-5">
+                    <h3 className="text-sm font-semibold text-gray-800 mb-4">
+                      Activity by entity type
+                    </h3>
+                    {chartByEntityType.length === 0 ? (
+                      <p className="text-sm text-gray-500 italic">
+                        No data for current filters.
+                      </p>
+                    ) : (
+                      <div className="h-80">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart
+                            data={chartByEntityType}
+                            layout="vertical"
+                            margin={{ top: 5, right: 20, left: 80, bottom: 5 }}
+                          >
+                            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                            <XAxis type="number" tick={{ fontSize: 12 }} />
+                            <YAxis
+                              type="category"
+                              dataKey="name"
+                              width={75}
+                              tick={{ fontSize: 11 }}
+                              tickFormatter={(v) => (v.length > 14 ? `${v.slice(0, 12)}…` : v)}
+                            />
+                            <Tooltip
+                              formatter={(value: number) => [value, "Count"]}
+                              labelFormatter={(label) => `Entity: ${label}`}
+                              contentStyle={{ borderRadius: "8px", border: "1px solid #e5e7eb" }}
+                            />
+                            <Bar dataKey="count" name="Count" radius={[0, 4, 4, 0]}>
+                              {chartByEntityType.map((_, i) => (
+                                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="bg-gray-50 rounded-xl border border-gray-200 p-5">
+                  <h3 className="text-sm font-semibold text-gray-800 mb-4">
+                    Activity by day (current page)
+                  </h3>
+                  {chartByDay.length === 0 ? (
+                    <p className="text-sm text-gray-500 italic">
+                      No data for current filters.
+                    </p>
+                  ) : (
+                    <div className="h-72">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart
+                          data={chartByDay}
+                          margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                        >
+                          <defs>
+                            <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4} />
+                              <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                          <XAxis
+                            dataKey="name"
+                            tick={{ fontSize: 11 }}
+                            tickFormatter={(v) => {
+                              const d = new Date(v);
+                              return `${d.getMonth() + 1}/${d.getDate()}`;
+                            }}
+                          />
+                          <YAxis tick={{ fontSize: 12 }} />
+                          <Tooltip
+                            formatter={(value: number) => [value, "Activities"]}
+                            labelFormatter={(label) => `Date: ${label}`}
+                            contentStyle={{ borderRadius: "8px", border: "1px solid #e5e7eb" }}
+                          />
+                          <Legend />
+                          <Area
+                            type="monotone"
+                            dataKey="count"
+                            name="Activities"
+                            stroke="#3b82f6"
+                            strokeWidth={2}
+                            fill="url(#colorCount)"
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Activity list */}
+            {activeTab === "activity" && (
+              <div className="overflow-hidden rounded-xl border border-gray-200">
+                {!data?.activities?.length ? (
+                  <div className="p-12 text-center text-gray-500">
+                    No activity found for the selected filters.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Date / Time
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            User
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Action
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Entity
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Details
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {data.activities.map((a) => (
+                          <tr
+                            key={a.id}
+                            className="hover:bg-gray-50 transition-colors"
+                          >
+                            <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
+                              {a.created_at
+                                ? formatDateTime(a.created_at)
+                                : "—"}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="text-sm font-medium text-gray-900">
+                                {a.user_name || "Unknown"}
+                              </div>
+                              <div className="text-xs text-gray-500">
+                                ID: {a.user_id ?? "—"}
+                              </div>
+                            </td>
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-800">
+                                {a.action}
+                              </span>
+                              {a.entity_type && (
+                                <div className="text-xs text-gray-500 mt-1">
+                                  {a.entity_type}
+                                </div>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-700 max-w-[200px] truncate">
+                              {a.entity_label || a.entity_id || "—"}
+                            </td>
+                            <td className="px-4 py-3 max-w-xs">
+                              {a.metadata ? (
+                                <pre className="text-xs bg-gray-50 rounded-lg p-2 border border-gray-100 overflow-x-auto whitespace-pre-wrap wrap-break-word font-mono text-gray-600">
+                                  {JSON.stringify(a.metadata, null, 2)}
+                                </pre>
+                              ) : (
+                                <span className="text-xs text-gray-400">
+                                  —
+                                </span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {(data?.activities?.length ?? 0) > 0 && totalPages > 1 ? (
+                  <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+                    <span className="text-sm text-gray-600">
+                      Page {page} of {totalPages}
+                    </span>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => fetchActivities(Math.max(1, page - 1))}
+                        disabled={page <= 1 || isLoading}
+                        className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-white disabled:opacity-50"
+                      >
+                        Previous
+                      </button>
+                      <button
+                        onClick={() =>
+                          fetchActivities(Math.min(totalPages, page + 1))
+                        }
+                        disabled={page >= totalPages || isLoading}
+                        className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-white disabled:opacity-50"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            )}
+
+            {/* Summary table */}
+            {activeTab === "summary" && (
+              <div className="overflow-hidden rounded-xl border border-gray-200">
+                {!data?.summary?.length ? (
+                  <div className="p-12 text-center text-gray-500">
+                    No summary for the selected filters.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Action
+                          </th>
+                          <th className="px-4 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Entity type
+                          </th>
+                          <th className="px-4 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                            Count
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {data.summary.map((row, idx) => (
+                          <tr
+                            key={`${row.action}-${row.entity_type}`}
+                            className="hover:bg-gray-50 transition-colors"
+                          >
+                            <td className="px-4 py-3">
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-50 text-blue-800">
+                                {row.action}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-sm text-gray-700">
+                              {row.entity_type}
+                            </td>
+                            <td className="px-4 py-3 text-sm font-semibold text-gray-900 text-right">
+                              {row.count.toLocaleString()}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>
