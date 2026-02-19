@@ -1279,22 +1279,6 @@ export default function AddJobSeeker() {
                     (field.field_name?.includes("33") ||
                       field.field_name?.toLowerCase().includes("field_33")));
 
-                const isCertificationsField =
-                  field.field_name === "Field_34" ||
-                  field.field_name === "field_34" ||
-                  field.field_name?.toLowerCase() === "field_34" ||
-                  (field.field_label === "Certifications" &&
-                    (field.field_name?.includes("34") ||
-                      field.field_name?.toLowerCase().includes("field_34")));
-
-                const isSoftwaresField =
-                  field.field_name === "Field_35" ||
-                  field.field_name === "field_35" ||
-                  field.field_name?.toLowerCase() === "field_35" ||
-                  (field.field_label === "Softwares" &&
-                    (field.field_name?.includes("35") ||
-                      field.field_name?.toLowerCase().includes("field_35")));
-
                 const parseMultiValue = (val: any): string[] => {
                   if (!val) return [];
                   if (Array.isArray(val)) return val.filter((s) => s && s.trim());
@@ -1309,9 +1293,7 @@ export default function AddJobSeeker() {
 
                 const isMultiValueField =
                   isSkillsField ||
-                  isAdditionalSkillField ||
-                  isCertificationsField ||
-                  isSoftwaresField;
+                  isAdditionalSkillField;
                 const multiValueArray = isMultiValueField
                   ? parseMultiValue(fieldValue)
                   : [];
@@ -1358,11 +1340,7 @@ export default function AddJobSeeker() {
                               ? "Type a skill and press Enter"
                               : isAdditionalSkillField
                                 ? "Type an additional skill and press Enter"
-                                : isCertificationsField
-                                  ? "Type a certification and press Enter"
-                                  : isSoftwaresField
-                                    ? "Type a software and press Enter"
-                                    : "Type a value and press Enter"
+                                : "Type a value and press Enter"
                           }
                         />
                       ) : (

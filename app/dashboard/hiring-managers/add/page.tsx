@@ -485,9 +485,8 @@ export default function AddHiringManager() {
   }, [hiringManagerId, customFields, customFieldValues, organizationName, formData.organizationId, fetchOrganizationData]);
 
   // When organization data (phone, address) changes—e.g. after selecting a different org—
-  // overwrite the corresponding custom fields so they stay in sync.
-  // Do NOT overwrite the Organization/Company selector field with the name: that field holds the
-  // selected org ID; overwriting with the name breaks the dropdown (it reverts to "Select Organization").
+  // prefill the corresponding custom fields. Run only when org data changes, NOT when the user
+  // edits those fields (so Company Phone and Address remain editable after prefilled).
   useEffect(() => {
     if (customFields.length === 0 || hiringManagerId) return;
 
@@ -519,12 +518,10 @@ export default function AddHiringManager() {
 
     if (Object.keys(updates).length > 0) {
       Object.entries(updates).forEach(([fieldName, value]) => {
-        if (customFieldValues[fieldName] !== value) {
-          handleCustomFieldChange(fieldName, value);
-        }
+        handleCustomFieldChange(fieldName, value);
       });
     }
-  }, [customFields, organizationName, organizationPhone, organizationAddress, hiringManagerId, customFieldValues, handleCustomFieldChange]);
+  }, [customFields, organizationPhone, organizationAddress, hiringManagerId, handleCustomFieldChange]);
 
   // Handle prefilling from URL (existing logic preserved but ensuring it plays nice)
   useEffect(() => {

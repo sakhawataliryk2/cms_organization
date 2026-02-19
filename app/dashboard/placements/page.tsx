@@ -288,6 +288,7 @@ export default function PlacementList() {
   const [showAdvancedSearch, setShowAdvancedSearch] = useState(false);
   const advancedSearchButtonRef = useRef<HTMLButtonElement>(null);
   const [placements, setPlacements] = useState<Placement[]>([]);
+  console.log("Placements", placements)
   const [selectedPlacements, setSelectedPlacements] = useState<string[]>([]);
   const [selectAll, setSelectAll] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
