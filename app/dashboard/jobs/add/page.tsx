@@ -556,61 +556,6 @@ export default function AddJob() {
     [addressFields]
   );
 
-  // Calculate Client Bill Rate (Field_13) from Pay Rate (Field_11) and Mark-up % (Field_12 or Field_512)
-  const calculateClientBillRate = (payRate: string, markupPercent: string): string => {
-    const payRateNum = parseFloat(payRate);
-    const markupNum = parseFloat(markupPercent);
-
-    if (isNaN(payRateNum) || payRateNum <= 0) {
-      return "";
-    }
-
-    if (isNaN(markupNum) || markupNum < 0) {
-      return payRateNum.toString();
-    }
-
-    // Calculate: Client Bill Rate = Pay Rate * (1 + Mark-up % / 100)
-    const clientBillRate = payRateNum * (1 + markupNum / 100);
-    return clientBillRate.toFixed(2);
-  };
-
-  // Auto-calculate Field_13 (Client Bill Rate) when Field_11 (Pay Rate) or Field_12/Field_512 (Mark-up %) changes
-  useEffect(() => {
-    if (customFieldsLoading || customFields.length === 0) return;
-
-    const payRateField = customFields.find((f) => f.field_name === "Field_11");
-    const markupField = customFields.find((f) => f.field_name === "Field_12" || f.field_name === "Field_512");
-    const clientBillRateField = customFields.find((f) => f.field_name === "Field_13");
-
-    if (payRateField && markupField && clientBillRateField) {
-      const payRate = customFieldValues["Field_11"] || "";
-      const markupPercent = customFieldValues["Field_12"] || customFieldValues["Field_512"] || "";
-
-      if (payRate || markupPercent) {
-        const calculatedBillRate = calculateClientBillRate(payRate, markupPercent);
-        if (calculatedBillRate && calculatedBillRate !== (customFieldValues["Field_13"] || "")) {
-          setCustomFieldValues((prev) => ({
-            ...prev,
-            Field_13: calculatedBillRate,
-          }));
-        }
-      }
-    }
-  }, [
-    customFields,
-    customFieldsLoading,
-    customFieldValues["Field_11"],
-    customFieldValues["Field_12"],
-    customFieldValues["Field_512"],
-    setCustomFieldValues,
-  ]);
-
-  // Enhanced handleCustomFieldChange that triggers calculation for Field_11 and Field_12/Field_512
-  const handleCustomFieldChangeWithCalculation = (fieldName: string, value: string) => {
-    // Update the field value
-    handleCustomFieldChange(fieldName, value);
-  };
-
   // Initialize with default fields
   useEffect(() => {
     initializeFields();
@@ -1963,52 +1908,6 @@ export default function AddJob() {
                     }
 
                     const fieldValue = customFieldValues[field.field_name] || "";
-
-                    // Special handling for Field_11 (Pay Rate), Field_12/Field_512 (Mark-up %), and Field_13 (Client Bill Rate)
-                    // Field_13 is calculated from Field_11 and Field_12/Field_512
-                    if (field.field_name === "Field_11" || field.field_name === "Field_12" || field.field_name === "Field_512" || field.field_name === "Field_13") {
-                      const isCalculatedField = field.field_name === "Field_13";
-                      const payRateValue = customFieldValues["Field_11"] || "";
-                      const markupValue = customFieldValues["Field_12"] || customFieldValues["Field_512"] || "";
-                      const calculatedValue = calculateClientBillRate(payRateValue, markupValue);
-
-                      return (
-                        <div key={field.id} className="flex items-center mb-3">
-                          <label className="w-48 font-medium flex items-center">
-                            {field.field_label}:
-                            {field.is_required &&
-                              (isCustomFieldValueValid(field, fieldValue) ? (
-                                <span className="text-green-500 ml-1">✔</span>
-                              ) : (
-                                <span className="text-red-500 ml-1">*</span>
-                              ))}
-                            {isCalculatedField && (
-                              <span className="text-xs text-gray-500 ml-2">(Calculated)</span>
-                            )}
-                          </label>
-
-                          <div className="flex-1 relative">
-                            {isCalculatedField ? (
-                              // Field_13 is read-only and shows calculated value
-                              <input
-                                type="text"
-                                value={calculatedValue || fieldValue}
-                                readOnly
-                                className="w-full p-2 border-b border-gray-300 bg-gray-50 text-gray-700 cursor-not-allowed"
-                                placeholder="Auto-calculated"
-                              />
-                            ) : (
-                              // Field_11, Field_12, and Field_512 are editable
-                              <CustomFieldRenderer
-                                field={field}
-                                value={fieldValue}
-                                onChange={handleCustomFieldChangeWithCalculation}
-                              />
-                            )}
-                          </div>
-                        </div>
-                      );
-                    }
 
                     return (
                       <div key={field.id} className="flex items-center mb-3">
