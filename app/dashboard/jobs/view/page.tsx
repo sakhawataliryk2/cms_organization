@@ -299,9 +299,36 @@ function SortableColumnHeader({
 const DEFAULT_HEADER_FIELDS = ["phone", "website"];
 
 // Storage keys for Job Details, Details, Hiring Manager – field lists come from admin (custom field definitions)
-const JOB_DETAILS_STORAGE_KEY = "jobsJobDetailsFields";
-const DETAILS_STORAGE_KEY = "jobsDetailsFields";
 const HIRING_MANAGER_STORAGE_KEY = "jobsHiringManagerFields";
+
+// Resolve field-management entity and storage keys by job type (contract / direct-hire / executive-search)
+function getJobFieldManagementEntityType(job: any): "jobs" | "jobs-direct-hire" | "jobs-executive-search" {
+  const t = String(job?.jobType ?? "").toLowerCase().replace(/\s+/g, "-");
+  if (t === "direct-hire") return "jobs-direct-hire";
+  if (t === "executive-search") return "jobs-executive-search";
+  return "jobs";
+}
+
+function getJobHeaderConfigEntityType(job: any): string {
+  const t = String(job?.jobType ?? "").toLowerCase().replace(/\s+/g, "-");
+  if (t === "direct-hire") return "JOB_DIRECT_HIRE";
+  if (t === "executive-search") return "JOB_EXECUTIVE_SEARCH";
+  return "JOB";
+}
+
+function getJobDetailsStorageKey(job: any): string {
+  const entity = getJobFieldManagementEntityType(job);
+  if (entity === "jobs-direct-hire") return "jobsDirectHireJobDetailsFields";
+  if (entity === "jobs-executive-search") return "jobsExecutiveSearchJobDetailsFields";
+  return "jobsJobDetailsFields";
+}
+
+function getDetailsStorageKey(job: any): string {
+  const entity = getJobFieldManagementEntityType(job);
+  if (entity === "jobs-direct-hire") return "jobsDirectHireDetailsFields";
+  if (entity === "jobs-executive-search") return "jobsExecutiveSearchDetailsFields";
+  return "jobsDetailsFields";
+}
 
 const JOB_VIEW_TAB_IDS = ["summary", "applied", "modify", "history", "notes", "docs"];
 
@@ -1100,23 +1127,7 @@ export default function JobView() {
     if (typeof window === "undefined") {
       return { jobDetails: [], details: [], hiringManager: [], recentNotes: ["notes"] };
     }
-    let jobDetails: string[] = [];
-    let details: string[] = [];
     let hiringManager: string[] = [];
-    try {
-      const jd = localStorage.getItem(JOB_DETAILS_STORAGE_KEY);
-      if (jd) {
-        const parsed = JSON.parse(jd);
-        if (Array.isArray(parsed) && parsed.length > 0) jobDetails = Array.from(new Set(parsed));
-      }
-    } catch (_) { }
-    try {
-      const d = localStorage.getItem(DETAILS_STORAGE_KEY);
-      if (d) {
-        const parsed = JSON.parse(d);
-        if (Array.isArray(parsed) && parsed.length > 0) details = Array.from(new Set(parsed));
-      }
-    } catch (_) { }
     try {
       const hm = localStorage.getItem(HIRING_MANAGER_STORAGE_KEY);
       if (hm) {
@@ -1124,7 +1135,7 @@ export default function JobView() {
         if (Array.isArray(parsed) && parsed.length > 0) hiringManager = Array.from(new Set(parsed));
       }
     } catch (_) { }
-    return { jobDetails, details, hiringManager, recentNotes: ["notes"] };
+    return { jobDetails: [], details: [], hiringManager, recentNotes: ["notes"] };
   });
 
   // ===== Summary layout state =====
@@ -1183,33 +1194,34 @@ export default function JobView() {
     }
   }, []);
 
-  // Initialize Job Details field order/visibility from localStorage (persists across all job records)
+  // Initialize Job Details and Details field order/visibility from localStorage by job type (when job is loaded)
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = localStorage.getItem(JOB_DETAILS_STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        setVisibleFields((prev) => ({ ...prev, jobDetails: parsed }));
-      }
-    } catch (_) {
-      /* keep default */
-    }
-  }, []);
-
-  // Initialize Details and Hiring Manager field order from localStorage
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const savedDetails = localStorage.getItem(DETAILS_STORAGE_KEY);
-    if (savedDetails) {
+    if (typeof window === "undefined" || !job) return;
+    const jdKey = getJobDetailsStorageKey(job);
+    const dKey = getDetailsStorageKey(job);
+    setVisibleFields((prev) => {
+      let next = { ...prev };
       try {
-        const parsed = JSON.parse(savedDetails);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setVisibleFields((prev) => ({ ...prev, details: parsed }));
+        const jd = localStorage.getItem(jdKey);
+        if (jd) {
+          const parsed = JSON.parse(jd);
+          if (Array.isArray(parsed) && parsed.length > 0) next = { ...next, jobDetails: Array.from(new Set(parsed)) };
         }
       } catch (_) { }
-    }
+      try {
+        const d = localStorage.getItem(dKey);
+        if (d) {
+          const parsed = JSON.parse(d);
+          if (Array.isArray(parsed) && parsed.length > 0) next = { ...next, details: Array.from(new Set(parsed)) };
+        }
+      } catch (_) { }
+      return next;
+    });
+  }, [job]);
+
+  // Initialize Hiring Manager field order from localStorage (shared across job types)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
     const savedHm = localStorage.getItem(HIRING_MANAGER_STORAGE_KEY);
     if (savedHm) {
       try {
@@ -1422,7 +1434,7 @@ export default function JobView() {
       const fieldInfo = { key, label, fieldType: field?.field_type ?? field?.fieldType, lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
       return (
         <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+          <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
           <div className="flex-1 p-2">
             <FieldValueRenderer value={fieldValue} fieldInfo={fieldInfo} />
               </div>
@@ -1448,7 +1460,7 @@ export default function JobView() {
     const renderDetailsRow = (key: string) => {
       const label = detailsFieldCatalog.find((f) => f.key === key)?.label || key;
       const LabelCell = () => (
-        <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+        <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
       );
       switch (key) {
         // case "status":
@@ -1868,7 +1880,7 @@ export default function JobView() {
     setShowHeaderFieldModal,
     saveHeaderConfig,
   } = useHeaderConfig({
-    entityType: "JOB",
+    entityType: job ? getJobHeaderConfigEntityType(job) : "JOB",
     configType: "header",
     defaultFields: DEFAULT_HEADER_FIELDS,
   });
@@ -2063,15 +2075,17 @@ export default function JobView() {
     }
   }, [showAddNote]);
 
-  // Fetch action fields: use field500 (field_500/actions/action) when present, else all custom fields
+  // Fetch action fields by job type: use field500 (field_500/actions/action) when present, else all custom fields
   const fetchActionFields = async () => {
+    if (!job) return;
+    const entityType = getJobFieldManagementEntityType(job);
     setIsLoadingActionFields(true);
     try {
       const token = document.cookie.replace(
         /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
         "$1"
       );
-      const response = await fetch("/api/admin/field-management/jobs", {
+      const response = await fetch(`/api/admin/field-management/${entityType}`, {
         headers: {
           Authorization: `Bearer ${token}`,
         },
@@ -2476,11 +2490,13 @@ export default function JobView() {
     }));
   };
 
-  // Fetch available fields from modify page (custom fields)
+  // Fetch available fields from admin by job type (jobs / jobs-direct-hire / jobs-executive-search)
   const fetchAvailableFields = async () => {
+    if (!job) return;
+    const entityType = getJobFieldManagementEntityType(job);
     setIsLoadingFields(true);
     try {
-      const response = await fetch("/api/admin/field-management/jobs");
+      const response = await fetch(`/api/admin/field-management/${entityType}`);
       if (response.ok) {
         const data = await response.json();
         const fields = data.customFields || [];
@@ -2737,15 +2753,15 @@ export default function JobView() {
     });
   }, []);
 
-  // Job Details modal: save order/visibility and persist for all job records
+  // Job Details modal: save order/visibility and persist per job type
   const handleSaveJobDetailsFields = useCallback(() => {
     const newOrder = modalJobDetailsOrder.filter((k) => modalJobDetailsVisible[k]);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(JOB_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
+    if (typeof window !== "undefined" && job) {
+      localStorage.setItem(getJobDetailsStorageKey(job), JSON.stringify(newOrder));
     }
     setVisibleFields((prev) => ({ ...prev, jobDetails: newOrder }));
     setEditingPanel(null);
-  }, [modalJobDetailsOrder, modalJobDetailsVisible]);
+  }, [modalJobDetailsOrder, modalJobDetailsVisible, job]);
 
   const handleDetailsDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -2760,12 +2776,12 @@ export default function JobView() {
 
   const handleSaveDetailsFields = useCallback(() => {
     const newOrder = modalDetailsOrder.filter((k) => modalDetailsVisible[k]);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
+    if (typeof window !== "undefined" && job) {
+      localStorage.setItem(getDetailsStorageKey(job), JSON.stringify(newOrder));
     }
     setVisibleFields((prev) => ({ ...prev, details: newOrder }));
     setEditingPanel(null);
-  }, [modalDetailsOrder, modalDetailsVisible]);
+  }, [modalDetailsOrder, modalDetailsVisible, job]);
 
   const handleHiringManagerDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
@@ -4240,9 +4256,10 @@ export default function JobView() {
                       // Create a list of changes
                       const changes: React.ReactNode[] = [];
 
-                      // Helper function to format values
+                      // Helper function to format values (treat null/undefined/empty string as "Empty")
                       const formatValue = (val: any): string => {
                         if (val === null || val === undefined) return "Empty";
+                        if (typeof val === "string" && val.trim() === "") return "Empty";
                         if (typeof val === "object") return JSON.stringify(val);
                         return String(val);
                       };

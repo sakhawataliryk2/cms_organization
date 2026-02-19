@@ -788,7 +788,7 @@ export default function HiringManagerView() {
       };
       return (
         <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
-          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
+          <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
           <div className="flex-1 p-2 text-sm">
             {row.isStatus ? (
               <select
@@ -895,7 +895,7 @@ export default function HiringManagerView() {
       };
       return (
         <div key={row.key} className="flex border-b border-gray-200 last:border-b-0">
-          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
+          <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{row.label}:</div>
           <div className="flex-1 p-2 text-sm">
             <FieldValueRenderer
               value={value}
@@ -4062,6 +4062,7 @@ export default function HiringManagerView() {
                       // Helper function to format values
                       const formatValue = (val: any): string => {
                         if (val === null || val === undefined) return "Empty";
+                        if (typeof val === "string" && val.trim() === "") return "Empty";
                         if (typeof val === "object") return JSON.stringify(val);
                         return String(val);
                       };

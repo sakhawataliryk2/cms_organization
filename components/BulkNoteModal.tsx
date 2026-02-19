@@ -11,8 +11,7 @@ interface BulkNoteModalProps {
     open: boolean;
     onClose: () => void;
     entityType: string;
-    entityId: string;
-    entityDisplay?: string;
+    entityIds: string[];
     onSuccess?: () => void;
 }
 
@@ -37,20 +36,14 @@ export default function BulkNoteModal({
     open,
     onClose,
     entityType,
-    entityId,
-    entityDisplay,
+    entityIds,
     onSuccess
 }: BulkNoteModalProps) {
     const [noteForm, setNoteForm] = useState<NoteFormState>({
         text: "",
         action: "",
-        about: entityDisplay || "",
-        aboutReferences: entityDisplay ? [{
-            id: entityId,
-            type: entityType.charAt(0).toUpperCase() + entityType.slice(1),
-            display: entityDisplay,
-            value: entityDisplay,
-        }] : [],
+        about: "",
+        aboutReferences: [],
         copyNote: "No",
         replaceGeneralContactComments: false,
         additionalReferences: [],
@@ -93,18 +86,12 @@ export default function BulkNoteModal({
         if (open) {
             fetchActionFields();
             fetchUsers();
-            // Reset form with entity info
-            const defaultAboutRef = entityDisplay ? [{
-                id: entityId,
-                type: entityType.charAt(0).toUpperCase() + entityType.slice(1),
-                display: entityDisplay,
-                value: entityDisplay,
-            }] : [];
+            // Reset form
             setNoteForm({
                 text: "",
                 action: "",
-                about: entityDisplay || "",
-                aboutReferences: defaultAboutRef,
+                about: "",
+                aboutReferences: [],
                 copyNote: "No",
                 replaceGeneralContactComments: false,
                 additionalReferences: [],
@@ -119,7 +106,7 @@ export default function BulkNoteModal({
             setShowAdditionalRefDropdown(false);
             setShowEmailDropdown(false);
         }
-    }, [open, entityType, entityId, entityDisplay]);
+    }, [open]);
 
     // Close dropdowns when clicking outside
     useEffect(() => {
@@ -267,7 +254,7 @@ export default function BulkNoteModal({
         }
     };
 
-    // Search for references for About field - Global Search
+    // Search for references for About field - Global Search (matches AddNoteModal)
     const searchAboutReferences = async (query: string) => {
         setIsLoadingAboutSearch(true);
         setShowAboutDropdown(true);
@@ -283,7 +270,6 @@ export default function BulkNoteModal({
                 Authorization: `Bearer ${token}`,
             };
 
-            // Search across multiple entity types in parallel
             const [
                 jobsRes,
                 orgsRes,
@@ -302,7 +288,6 @@ export default function BulkNoteModal({
                 fetch("/api/hiring-managers", { headers }),
             ]);
 
-            // Use record_number for display/search when available (matches rest of app)
             const toSuggestion = (item: any, type: string, displayKey: string, formatKey: RecordType, displayNumber?: number | string | null) => {
                 const num = displayNumber ?? item.record_number ?? item.id;
                 const prefixLabel = formatRecordId(num, formatKey);
@@ -314,13 +299,11 @@ export default function BulkNoteModal({
                 };
             };
 
-            // Match search term against the same display string shown in the dropdown (so "J67", "67", "Accounting" all match "J67 Accounting")
             const matchesDisplay = (display: string) =>
                 !searchTerm || display.toLowerCase().includes(searchTerm.toLowerCase());
 
             const lists: any[][] = [];
 
-            // Process jobs
             if (jobsRes.status === "fulfilled" && jobsRes.value.ok) {
                 const data = await jobsRes.value.json();
                 const allJobs = (data.jobs || []).map((job: any) => toSuggestion(job, "Job", "job_title", "job"));
@@ -330,7 +313,6 @@ export default function BulkNoteModal({
                 lists.push([]);
             }
 
-            // Process organizations
             if (orgsRes.status === "fulfilled" && orgsRes.value.ok) {
                 const data = await orgsRes.value.json();
                 const allOrgs = (data.organizations || []).map((org: any) => toSuggestion(org, "Organization", "name", "organization"));
@@ -340,7 +322,6 @@ export default function BulkNoteModal({
                 lists.push([]);
             }
 
-            // Process job seekers
             if (jobSeekersRes.status === "fulfilled" && jobSeekersRes.value.ok) {
                 const data = await jobSeekersRes.value.json();
                 const allJS = (data.jobSeekers || []).map((js: any) => {
@@ -355,7 +336,6 @@ export default function BulkNoteModal({
                 lists.push([]);
             }
 
-            // Process leads
             if (leadsRes.status === "fulfilled" && leadsRes.value.ok) {
                 const data = await leadsRes.value.json();
                 const allLeads = (data.leads || []).map((lead: any) => toSuggestion(lead, "Lead", "name", "lead"));
@@ -365,7 +345,6 @@ export default function BulkNoteModal({
                 lists.push([]);
             }
 
-            // Process tasks
             if (tasksRes.status === "fulfilled" && tasksRes.value.ok) {
                 const data = await tasksRes.value.json();
                 const allTasks = (data.tasks || []).map((task: any) => toSuggestion(task, "Task", "title", "task"));
@@ -375,7 +354,6 @@ export default function BulkNoteModal({
                 lists.push([]);
             }
 
-            // Process placements
             if (placementsRes.status === "fulfilled" && placementsRes.value.ok) {
                 const data = await placementsRes.value.json();
                 const allPlacements = (data.placements || []).map((p: any) => {
@@ -394,7 +372,6 @@ export default function BulkNoteModal({
                 lists.push([]);
             }
 
-            // Process hiring managers
             if (hiringManagersRes.status === "fulfilled" && hiringManagersRes.value.ok) {
                 const data = await hiringManagersRes.value.json();
                 const allHM = (data.hiringManagers || []).map((hm: any) => {
@@ -409,11 +386,9 @@ export default function BulkNoteModal({
                 lists.push([]);
             }
 
-            // Filter out already selected references (normalize to string for comparison)
             const selectedIds = new Set(noteForm.aboutReferences.map((ref) => String(ref.id)));
             const filteredLists = lists.map((list) => list.filter((s) => !selectedIds.has(String(s.id))));
 
-            // Interleave so we show a mix of all entity types (Job, Org, Job Seeker, Lead, Task, Placement, HM, ...)
             const MAX_SUGGESTIONS = 100;
             const interleaved: any[] = [];
             let index = 0;
@@ -502,7 +477,7 @@ export default function BulkNoteModal({
         }));
     };
 
-    // Search for references for Additional References field - Global Search
+    // Search for references for Additional References field - Global Search (matches AddNoteModal)
     const searchAdditionalReferences = async (query: string) => {
         if (!query || query.trim().length < 2) {
             setAdditionalRefSuggestions([]);
@@ -523,7 +498,6 @@ export default function BulkNoteModal({
                 Authorization: `Bearer ${token}`,
             };
 
-            // Search across multiple entity types in parallel (same as About field)
             const [
                 jobsRes,
                 orgsRes,
@@ -615,7 +589,6 @@ export default function BulkNoteModal({
                 });
             }
 
-            // Filter out already selected references
             const selectedIds = new Set(noteForm.additionalReferences.map((ref) => String(ref.id)));
             const filteredSuggestions = suggestions.filter((s) => !selectedIds.has(String(s.id)));
 
@@ -698,43 +671,109 @@ export default function BulkNoteModal({
                 value: ref.value,
             }));
 
-            const response = await fetch(`/api/${apiPath}/${entityId}/notes`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    text: noteForm.text,
-                    action: noteForm.action,
-                    about: aboutData,
-                    copy_note: noteForm.copyNote === 'Yes',
-                    replace_general_contact_comments: noteForm.replaceGeneralContactComments,
-                    additional_references: noteForm.additionalReferences,
-                    schedule_next_action: noteForm.scheduleNextAction,
-                    email_notification: noteForm.emailNotification
-                })
-            });
+            // Add note to each entity
+            const results = {
+                successful: [] as string[],
+                failed: [] as string[],
+                errors: [] as Array<{ id: string; error: string }>
+            };
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Failed to add note');
+            for (const id of entityIds) {
+                try {
+                    const response = await fetch(`/api/${apiPath}/${id}/notes`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: `Bearer ${token}`
+                        },
+                        body: JSON.stringify({
+                            text: noteForm.text,
+                            action: noteForm.action,
+                            about: aboutData,
+                            about_references: aboutData,
+                            copy_note: noteForm.copyNote === "Yes",
+                            replace_general_contact_comments: noteForm.replaceGeneralContactComments,
+                            additional_references: noteForm.additionalReferences,
+                            schedule_next_action: noteForm.scheduleNextAction,
+                            email_notification: Array.isArray(noteForm.emailNotification) ? noteForm.emailNotification : (noteForm.emailNotification ? [noteForm.emailNotification] : []),
+                        })
+                    });
+
+                    if (response.ok) {
+                        results.successful.push(id);
+                    } else {
+                        const errorData = await response.json().catch(() => ({}));
+                        results.failed.push(id);
+                        results.errors.push({
+                            id,
+                            error: errorData.message || 'Failed to add note'
+                        });
+                    }
+                } catch (error) {
+                    results.failed.push(id);
+                    results.errors.push({
+                        id,
+                        error: error instanceof Error ? error.message : 'Failed to add note'
+                    });
+                }
             }
 
-            const data = await response.json();
-            toast.success('Note added successfully');
+            if (results.failed.length > 0) {
+                const errorDetails = results.errors.map(e => `${e.id}: ${e.error}`).join(', ');
+                toast.error(`Some notes failed: ${errorDetails}`);
+            } else {
+                toast.success(`Added note to ${entityIds.length} record(s)`);
+            }
+
+            // Reset form
+            setNoteForm({
+                text: "",
+                action: "",
+                about: "",
+                aboutReferences: [],
+                copyNote: "No",
+                replaceGeneralContactComments: false,
+                additionalReferences: [],
+                scheduleNextAction: "None",
+                emailNotification: [],
+            });
+            setNoteFormErrors({});
+            setAboutSearchQuery("");
+            setAdditionalRefSearchQuery("");
+            setEmailSearchQuery("");
+            setShowAboutDropdown(false);
+            setShowAdditionalRefDropdown(false);
+            setShowEmailDropdown(false);
+
             onSuccess?.();
             onClose();
-        } catch (err) {
-            console.error('Error adding note:', err);
-            toast.error(err instanceof Error ? err.message : 'An error occurred while adding the note');
+        } catch (error) {
+            console.error('Error adding bulk notes:', error);
+            toast.error(error instanceof Error ? error.message : 'Failed to add notes');
         } finally {
             setIsLoading(false);
         }
     };
 
-    const handleCloseModal = () => {
+    const handleClose = () => {
+        setNoteForm({
+            text: "",
+            action: "",
+            about: "",
+            aboutReferences: [],
+            copyNote: "No",
+            replaceGeneralContactComments: false,
+            additionalReferences: [],
+            scheduleNextAction: "None",
+            emailNotification: [],
+        });
         setNoteFormErrors({});
+        setAboutSearchQuery("");
+        setAdditionalRefSearchQuery("");
+        setEmailSearchQuery("");
+        setShowAboutDropdown(false);
+        setShowAdditionalRefDropdown(false);
+        setShowEmailDropdown(false);
         onClose();
     };
 
@@ -743,22 +782,22 @@ export default function BulkNoteModal({
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
             <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-                {/* Header */}
                 <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
                     <div className="flex items-center space-x-2">
                         <Image src="/file.svg" alt="Note" width={20} height={20} />
                         <h2 className="text-lg font-semibold">Add Note</h2>
                     </div>
                     <button
-                        onClick={handleCloseModal}
+                        onClick={handleClose}
                         className="p-1 rounded hover:bg-gray-200"
                     >
                         <span className="text-2xl font-bold">×</span>
                     </button>
                 </div>
-
-                {/* Form Content */}
                 <div className="p-6">
+                    <p className="text-gray-600 mb-4 text-sm">
+                        Add a note to {entityIds.length} selected record(s)
+                    </p>
                     <div className="space-y-4">
                         {/* Note Text Area - Required */}
                         <div>
@@ -791,7 +830,6 @@ export default function BulkNoteModal({
                             )}
                         </div>
 
-                        {/* Action Field - Required */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                 Action {noteForm.action ? (
@@ -828,7 +866,7 @@ export default function BulkNoteModal({
                             )}
                         </div>
 
-                        {/* About/Reference Field - Required */}
+                        {/* About Section - Required, Multiple References, Global Search */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                 About / Reference{" "}
@@ -840,12 +878,13 @@ export default function BulkNoteModal({
                             </label>
                             <div className="relative" ref={aboutInputRef}>
                                 <div
-                                    className={`min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:outline-none pr-8 ${noteFormErrors.about
+                                    className={`min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:outline-none pr-8 ${
+                                        noteFormErrors.about
                                             ? "border-red-500 focus-within:ring-red-500"
                                             : "border-gray-300 focus-within:ring-blue-500"
-                                        }`}
+                                    }`}
                                 >
-                                    {/* Selected References Tags */}
+                                    {/* Selected References Tags - Inside the input container */}
                                     {noteForm.aboutReferences.map((ref, index) => (
                                         <span
                                             key={`${ref.type}-${ref.id}-${index}`}
@@ -863,6 +902,7 @@ export default function BulkNoteModal({
                                             </button>
                                         </span>
                                     ))}
+
                                     {/* Input field */}
                                     <input
                                         type="text"
@@ -871,6 +911,7 @@ export default function BulkNoteModal({
                                             const value = e.target.value;
                                             setAboutSearchQuery(value);
                                             searchAboutReferences(value);
+                                            setShowAboutDropdown(true);
                                         }}
                                         onFocus={() => {
                                             setShowAboutDropdown(true);
@@ -884,6 +925,13 @@ export default function BulkNoteModal({
                                     {/* Search icon */}
                                     <FiSearch className="w-4 h-4 text-gray-400 pointer-events-none" />
                                 </div>
+
+                                {/* Validation Error */}
+                                {noteFormErrors.about && (
+                                    <p className="mt-1 text-sm text-red-500">
+                                        {noteFormErrors.about}
+                                    </p>
+                                )}
 
                                 {/* Dropdown Suggestions */}
                                 {showAboutDropdown && (
@@ -911,12 +959,12 @@ export default function BulkNoteModal({
                                     </div>
                                 )}
                             </div>
-                            {noteFormErrors.about && (
-                                <p className="mt-1 text-sm text-red-500">{noteFormErrors.about}</p>
-                            )}
                         </div>
 
-                        {/* Email Notifications */}
+                        {/* Additional References Section - Global Search */}
+
+
+                        {/* Email Notifications (matches AddNoteModal) */}
                         <div>
                             <label className="block text-sm font-medium text-gray-700 mb-1">
                                 Email Notification
@@ -924,7 +972,7 @@ export default function BulkNoteModal({
                             <div className="relative" ref={emailInputRef}>
                                 <div className="min-h-[42px] flex flex-wrap items-center gap-2 p-2 border rounded focus-within:ring-2 focus-within:ring-blue-500 focus-within:outline-none pr-8 border-gray-300">
                                     {/* Selected Email Tags */}
-                                    {noteForm.emailNotification.map((email, index) => (
+                                    {noteForm.emailNotification.map((email) => (
                                         <span
                                             key={email}
                                             className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-green-100 text-green-800 text-sm"
@@ -944,7 +992,10 @@ export default function BulkNoteModal({
                                     <input
                                         type="text"
                                         value={emailSearchQuery}
-                                        onChange={(e) => setEmailSearchQuery(e.target.value)}
+                                        onChange={(e) => {
+                                            setEmailSearchQuery(e.target.value);
+                                            setShowEmailDropdown(true);
+                                        }}
                                         onFocus={() => setShowEmailDropdown(true)}
                                         placeholder="Search users to notify..."
                                         className="flex-1 min-w-[120px] border-none outline-none bg-transparent"
@@ -984,7 +1035,7 @@ export default function BulkNoteModal({
                     {/* Form Actions */}
                     <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
                         <button
-                            onClick={handleCloseModal}
+                            onClick={handleClose}
                             className="px-4 py-2 border rounded text-gray-700 hover:bg-gray-100 font-medium"
                             disabled={isLoading}
                         >
@@ -995,7 +1046,7 @@ export default function BulkNoteModal({
                             className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
                             disabled={isLoading || !noteForm.text.trim() || !noteForm.action || noteForm.aboutReferences.length === 0}
                         >
-                            {isLoading ? "SAVING..." : "SAVE"}
+                            {isLoading ? 'SAVING...' : 'SAVE'}
                         </button>
                     </div>
                 </div>

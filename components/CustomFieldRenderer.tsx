@@ -478,11 +478,11 @@ export default function CustomFieldRenderer({
             className="w-full p-2 border border-gray-300 rounded"
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-              {normalizedOptions.map((option) => {
+              {normalizedOptions.map((option, idx) => {
                 const checked = selectedValues.includes(option);
                 return (
                   <label
-                    key={option}
+                    key={`${field.field_name}-${option}-${idx}`}
                     className="flex items-center gap-2 text-sm text-gray-800"
                   >
                     <input
@@ -507,8 +507,8 @@ export default function CustomFieldRenderer({
       return (
         <select {...fieldProps}>
           <option value="">Select an option</option>
-          {normalizedOptions.map((option) => (
-            <option key={option} value={option}>
+          {normalizedOptions.map((option, idx) => (
+            <option key={`${field.field_name}-${option}-${idx}`} value={option}>
               {option}
             </option>
           ))}
@@ -579,11 +579,11 @@ export default function CustomFieldRenderer({
             {normalizedOptions.length === 0 ? (
               <span className="text-sm text-gray-500">No options configured.</span>
             ) : (
-              normalizedOptions.map((option) => {
+              normalizedOptions.map((option, idx) => {
                 const checked = selectedValues.includes(option);
                 return (
                   <label
-                    key={option}
+                    key={`${field.field_name}-${option}-${idx}`}
                     className="flex items-center gap-3 text-sm text-gray-700 cursor-pointer select-none"
                   >
                     <input

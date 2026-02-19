@@ -2886,7 +2886,7 @@ Best regards`;
   };
 
   const handleActionSelected = async (action: string) => {
-    console.log(`Action selected: ${action}`);
+    // console.log(`Action selected: ${action}`);
     if (action === "edit") {
       handleEdit();
     } else if (action === "delete" && jobSeekerId) {
@@ -2927,7 +2927,7 @@ Best regards`;
       // For recruiters to submit this job seeker to a job
       setActiveTab("applications");
       if (jobSeekerId) fetchApplications(jobSeekerId);
-    }
+    } 
   };
 
   // Check for pending delete request
@@ -3490,6 +3490,7 @@ Best regards`;
     : [
         { label: "Add Note", action: () => setShowAddNote(true) },
         { label: "Send Email", action: () => handleActionSelected("email") },
+        { label: "Add Submission", action: () => handleActionSelected("add-submission") },
         { label: "Add Appointment", action: () => handleActionSelected("add-appointment") },
         { label: "Add Task", action: () => handleActionSelected("add-task") },
         { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
@@ -3881,6 +3882,7 @@ Best regards`;
                       // Helper function to format values
                       const formatValue = (val: any): string => {
                         if (val === null || val === undefined) return "Empty";
+                        if (typeof val === "string" && val.trim() === "") return "Empty";
                         if (typeof val === "object") return JSON.stringify(val);
                         return String(val);
                       };
@@ -4075,31 +4077,17 @@ Best regards`;
       const label = field?.field_label || field?.field_name || key;
       const fieldValue = value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
       const lookupType = (field?.lookup_type || field?.lookupType || "") as any;
+      const fieldInfo = { key, label, fieldType: field?.field_type ?? field?.fieldType, lookupType: field?.lookup_type ?? field?.lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
       return (
         <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
-          <div className="flex-1 p-2 text-sm">{
-            /\(\d{3}\)\s\d{3}-\d{4}/.test(fieldValue || "") ? (
-              <a href={`tel:${String(fieldValue)}`} className="text-blue-600 hover:underline">
-                {String(fieldValue)}
-              </a>
-            ) : String(fieldValue)?.includes("@") ? (
-              <a href={`mailto:${String(fieldValue)}`} className="text-blue-600 hover:underline">
-                {String(fieldValue)}
-              </a>
-            ) : String(fieldValue)?.startsWith("http") || String(fieldValue)?.startsWith("https") ? (
-              <a href={String(fieldValue)} className="text-blue-600 hover:underline">
-                {String(fieldValue)}
-              </a>
-            ) : lookupType && fieldValue ? (
-              <RecordNameResolver
-                id={String(fieldValue || "") || null}
-                type={lookupType as any}
-                clickable
-                fallback={String(fieldValue || "") || ""}
-              />) : (
-              String(fieldValue) || "-"
-            )}
+          <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+          <div className="flex-1 p-2 text-sm">
+            <FieldValueRenderer
+              value={fieldValue}
+              fieldInfo={fieldInfo}
+              emptyPlaceholder="-"
+              clickable
+            />
           </div>
           {/* </div> */}
         </div>
@@ -4149,31 +4137,17 @@ Best regards`;
       const label = field?.field_label || field?.field_name || key;
       const fieldValue = value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
       const lookupType = (field?.lookup_type || field?.lookupType || "") as any;
+      const fieldInfo = { key, label, fieldType: field?.field_type ?? field?.fieldType, lookupType: field?.lookup_type ?? field?.lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
       return (
         <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-          <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
-          <div className="flex-1 p-2 text-sm">{
-            /\(\d{3}\)\s\d{3}-\d{4}/.test(fieldValue || "") ? (
-              <a href={`tel:${String(fieldValue)}`} className="text-blue-600 hover:underline">
-                {String(fieldValue)}
-              </a>
-            ) : String(fieldValue)?.includes("@") ? (
-              <a href={`mailto:${String(fieldValue)}`} className="text-blue-600 hover:underline">
-                {String(fieldValue)}
-              </a>
-            ) : String(fieldValue)?.startsWith("http") || String(fieldValue)?.startsWith("https") ? (
-              <a href={String(fieldValue)} className="text-blue-600 hover:underline">
-                {String(fieldValue)}
-              </a>
-            ) : lookupType && fieldValue ? (
-              <RecordNameResolver
-                id={String(fieldValue || "") || null}
-                type={lookupType as any}
-                clickable
-                fallback={String(fieldValue || "") || ""}
-              />) : (
-              String(fieldValue) || "-"
-            )}
+          <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+          <div className="flex-1 p-2 text-sm">
+            <FieldValueRenderer
+              value={fieldValue}
+              fieldInfo={fieldInfo}
+              emptyPlaceholder="-"
+              clickable
+            />
           </div>
         </div>
       );
