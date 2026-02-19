@@ -170,9 +170,118 @@ function saveColumnLayout(viewKey: string, visibleOrder: string[]): void {
   }
 }
 
+const TBI_COLUMN_WIDTHS_KEY = "tbi-column-widths";
+const MIN_COLUMN_WIDTH = 60;
+const MAX_COLUMN_WIDTH = 500;
+
+function loadColumnWidths(viewKey: string, columns: string[]): Record<string, number> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(TBI_COLUMN_WIDTHS_KEY);
+    if (!raw) return {};
+    const data = JSON.parse(raw) as Record<string, Record<string, number>>;
+    const saved = data[viewKey];
+    if (!saved || typeof saved !== "object") return {};
+    const result: Record<string, number> = {};
+    for (const col of columns) {
+      const w = saved[col];
+      if (typeof w === "number" && w >= MIN_COLUMN_WIDTH && w <= MAX_COLUMN_WIDTH) {
+        result[col] = w;
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+function saveColumnWidths(viewKey: string, widths: Record<string, number>): void {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = localStorage.getItem(TBI_COLUMN_WIDTHS_KEY);
+    const data = (raw ? JSON.parse(raw) : {}) as Record<string, Record<string, number>>;
+    data[viewKey] = { ...(data[viewKey] || {}), ...widths };
+    localStorage.setItem(TBI_COLUMN_WIDTHS_KEY, JSON.stringify(data));
+  } catch {
+    // ignore
+  }
+}
+
 function escapeCsvValue(val: string): string {
   if (/[",\n\r]/.test(val)) return `"${val.replace(/"/g, '""')}"`;
   return val;
+}
+
+const RESIZE_STRIP_WIDTH = 8;
+const FIXED_LEFT_WIDTH = 30 + ACTIONS_CELL_WIDTH;
+
+function ColumnResizeOverlay({
+  columns,
+  getWidth,
+  onResize,
+  contentHeight,
+}: {
+  columns: string[];
+  getWidth: (header: string) => number;
+  onResize: (header: string, newWidth: number) => void;
+  contentHeight: number;
+}) {
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent, header: string) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const startX = e.clientX;
+      const startWidth = getWidth(header);
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const delta = moveEvent.clientX - startX;
+        const newWidth = Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, startWidth + delta));
+        onResize(header, newWidth);
+      };
+
+      const handleMouseUp = () => {
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [getWidth, onResize]
+  );
+
+  let left = FIXED_LEFT_WIDTH;
+  return (
+    <div
+      className="absolute top-0 left-0 right-0 pointer-events-none min-w-full"
+      style={{ height: contentHeight }}
+      aria-hidden
+    >
+      {columns.map((header, index) => {
+        const w = getWidth(header);
+        left += w;
+        const stripLeft = left - RESIZE_STRIP_WIDTH / 2;
+        return (
+          <div
+            key={`resize-${index}-${header}`}
+            role="separator"
+            aria-orientation="vertical"
+            className="absolute top-0 bottom-0 cursor-col-resize pointer-events-auto hover:bg-teal-400/30 active:bg-teal-400/50 z-10 transition-colors"
+            style={{
+              left: stripLeft,
+              width: RESIZE_STRIP_WIDTH,
+            }}
+            onMouseDown={(e) => handleMouseDown(e, header)}
+            title="Drag to resize column"
+          />
+        );
+      })}
+    </div>
+  );
 }
 
 type ColumnSortState = "asc" | "desc" | null;
@@ -185,6 +294,8 @@ function SortableHeaderCell({
   filterValue,
   onSort,
   onFilterChange,
+  width,
+  onResize,
 }: {
   id: string;
   header: string;
@@ -192,6 +303,8 @@ function SortableHeaderCell({
   filterValue: ColumnFilterState;
   onSort: () => void;
   onFilterChange: (value: string) => void;
+  width: number;
+  onResize?: (header: string, newWidth: number) => void;
 }) {
   const {
     attributes,
@@ -207,13 +320,47 @@ function SortableHeaderCell({
   const filterToggleRef = useRef<HTMLButtonElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const [filterPosition, setFilterPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const startXRef = useRef(0);
+  const startWidthRef = useRef(0);
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: isResizing ? "none" : transition,
     opacity: isDragging ? 0.5 : 1,
     ...(isDragging ? { willChange: "transform" as const } : {}),
   };
+
+  const handleResizeMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!onResize) return;
+      setIsResizing(true);
+      startXRef.current = e.clientX;
+      startWidthRef.current = width;
+
+      const handleMouseMove = (moveEvent: MouseEvent) => {
+        const delta = moveEvent.clientX - startXRef.current;
+        const newWidth = Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, startWidthRef.current + delta));
+        onResize(header, newWidth);
+      };
+
+      const handleMouseUp = () => {
+        setIsResizing(false);
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      };
+
+      document.addEventListener("mousemove", handleMouseMove);
+      document.addEventListener("mouseup", handleMouseUp);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [onResize, width, header]
+  );
 
   useEffect(() => {
     if (!showFilter || !filterToggleRef.current || !headerRef.current) {
@@ -246,10 +393,12 @@ function SortableHeaderCell({
     }
   }, [showFilter, id]);
 
+  const cellWidth = width ?? CELL_WIDTH;
+
   return (
     <div
       ref={(node) => { headerRef.current = node; setNodeRef(node); }}
-      style={{ ...style, width: CELL_WIDTH, minWidth: CELL_WIDTH, height: HEADER_HEIGHT }}
+      style={{ ...style, width: cellWidth, minWidth: cellWidth, height: HEADER_HEIGHT }}
       className="shrink-0 bg-teal-500 text-white px-2 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm shadow-sm gap-1 transition-transform duration-200 ease-out relative group"
     >
       <span className="flex-1 truncate text-center text-xs">{header}</span>
@@ -291,6 +440,17 @@ function SortableHeaderCell({
           <TbGripVertical size={14} />
         </span>
       </div>
+
+      {onResize && (
+        <div
+          role="separator"
+          aria-orientation="vertical"
+          onMouseDown={handleResizeMouseDown}
+          className="absolute top-0 right-0 w-1.5 h-full cursor-col-resize hover:bg-teal-300/50 active:bg-teal-300 z-10"
+          title="Drag to resize column"
+          style={{ touchAction: "none" }}
+        />
+      )}
 
       {showFilter && filterPosition && typeof document !== "undefined" && createPortal(
         <div
@@ -400,6 +560,35 @@ export default function TbiPage() {
     const visible = columnOrder.filter((h) => schemaColumns.includes(h));
     if (visible.length > 0) saveColumnLayout(viewKey, visible);
   }, [columnOrder]);
+
+  // Column widths per view (resizable; persisted to localStorage)
+  const [columnWidths, setColumnWidths] = useState<Record<string, Record<string, number>>>({});
+
+  const getColumnWidth = useCallback(
+    (header: string, vKey: string) => columnWidths[vKey]?.[header] ?? CELL_WIDTH,
+    [columnWidths]
+  );
+
+  const handleColumnResize = useCallback(
+    (vKey: string, header: string, newWidth: number) => {
+      setColumnWidths((prev) => {
+        const next = { ...prev, [vKey]: { ...(prev[vKey] || {}), [header]: newWidth } };
+        saveColumnWidths(vKey, next[vKey]!);
+        return next;
+      });
+    },
+    []
+  );
+
+  // Load column widths when view changes
+  useEffect(() => {
+    const vKey = selectedRow === "TimeSheets" ? "TimeSheets" : viewKey;
+    const cols = vKey === "TimeSheets"
+      ? [...TIMESHEETS_TABLE_COLUMNS_LIST]
+      : (columnHeadersMap[vKey] ?? defaultColumns);
+    const loaded = loadColumnWidths(vKey, cols);
+    setColumnWidths((prev) => ({ ...prev, [vKey]: loaded }));
+  }, [viewKey, selectedRow]);
 
   // Visible columns: only those in columnOrder that exist in current schema (keeps order)
   const columnHeaders = columnOrder.filter((h) => schemaColumns.includes(h));
@@ -569,14 +758,21 @@ export default function TbiPage() {
     }
   }, [timesheetsColumnOrder]);
 
+  const timesheetsColumnIds = useMemo(
+    () => timesheetsColumnOrder.map((_, i) => `ts-col-${i}`),
+    [timesheetsColumnOrder]
+  );
+
   const handleTimeSheetsColumnDragEnd = useCallback((event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const oldIndex = timesheetsColumnOrder.indexOf(String(active.id));
-    const newIndex = timesheetsColumnOrder.indexOf(String(over.id));
+    const activeStr = String(active.id);
+    const overStr = String(over.id);
+    const oldIndex = timesheetsColumnIds.indexOf(activeStr);
+    const newIndex = timesheetsColumnIds.indexOf(overStr);
     if (oldIndex === -1 || newIndex === -1) return;
     setTimesheetsColumnOrder((prev) => arrayMove(prev, oldIndex, newIndex));
-  }, [timesheetsColumnOrder]);
+  }, [timesheetsColumnIds]);
 
   useEffect(() => {
     if (selectedRow !== "Organization") {
@@ -954,25 +1150,25 @@ export default function TbiPage() {
               </div>
               <div className="p-4 border-b border-gray-200">
                 <div className="text-sm font-medium text-gray-700 mb-2">SELECT TIME PERIOD BY</div>
-                <div className="flex flex-col gap-1">
+                <div className="flex">
                   <button
                     type="button"
                     onClick={() => setTimePeriod("week")}
-                    className={`px-3 py-2 text-sm font-medium rounded text-left ${timePeriod === "week" ? "bg-blue-600 text-white" : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                    className={`px-3 py-2 text-sm font-medium text-left ${timePeriod === "week" ? "bg-blue-600 text-white" : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"}`}
                   >
                     Week
                   </button>
                   <button
                     type="button"
                     onClick={() => setTimePeriod("customRange")}
-                    className={`px-3 py-2 text-sm font-medium rounded text-left ${timePeriod === "customRange" ? "bg-blue-600 text-white" : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                    className={`whitespace-nowrap px-3  py-2 text-sm font-medium text-left ${timePeriod === "customRange" ? "bg-blue-600 text-white" : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"}`}
                   >
                     Custom Range
                   </button>
                   <button
                     type="button"
                     onClick={() => setTimePeriod("all")}
-                    className={`px-3 py-2 text-sm font-medium rounded text-left ${timePeriod === "all" ? "bg-blue-600 text-white" : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"}`}
+                    className={`px-3 flex-1 py-2 text-sm font-medium text-left ${timePeriod === "all" ? "bg-blue-600 text-white" : "bg-white border border-gray-300 text-gray-700 hover:bg-gray-50"}`}
                   >
                     All
                   </button>
@@ -1043,13 +1239,13 @@ export default function TbiPage() {
                 </div>
               )}
               {!timesheetsLoading && (
-                <div className="inline-block min-w-full min-h-full">
+                <div className="relative inline-block min-w-full min-h-full">
                   <DndContext
                     collisionDetection={closestCenter}
                     onDragEnd={handleTimeSheetsColumnDragEnd}
                     modifiers={[restrictToHorizontalAxis]}
                   >
-                    <SortableContext items={timesheetsColumnOrder} strategy={horizontalListSortingStrategy}>
+                    <SortableContext items={timesheetsColumnIds} strategy={horizontalListSortingStrategy}>
                       <div className="flex sticky top-0 z-20">
                         <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: HEADER_HEIGHT }}>
                           #
@@ -1060,10 +1256,10 @@ export default function TbiPage() {
                         >
                           Actions
                         </div>
-                        {timesheetsColumnOrder.map((header) => (
+                        {timesheetsColumnOrder.map((header, tsColIndex) => (
                           <SortableHeaderCell
-                            key={header}
-                            id={header}
+                            key={timesheetsColumnIds[tsColIndex]}
+                            id={timesheetsColumnIds[tsColIndex]}
                             header={header}
                             sortState={timesheetsColumnSorts[header] || null}
                             filterValue={timesheetsColumnFilters[header] || null}
@@ -1091,6 +1287,8 @@ export default function TbiPage() {
                                 return { ...prev, [header]: val };
                               });
                             }}
+                            width={getColumnWidth(header, "TimeSheets")}
+                            onResize={(h, w) => handleColumnResize("TimeSheets", h, w)}
                           />
                         ))}
                       </div>
@@ -1124,26 +1322,35 @@ export default function TbiPage() {
                               aria-label={`Select row ${rowIndex + 1}`}
                             />
                           </div>
-                          {timesheetsColumnOrder.map((col) => (
-                            <div
-                              key={col}
-                              className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center text-sm select-none text-left px-1 ${isRowSelected ? "bg-teal-200 ring-1 ring-teal-500" : rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
-                              style={{ width: CELL_WIDTH, minWidth: CELL_WIDTH, height: ROW_HEIGHT }}
-                            >
-                              <span className="truncate w-full text-center">{String(row[col] ?? "") || "\u00A0"}</span>
-                            </div>
-                          ))}
+                          {timesheetsColumnOrder.map((col, colIndex) => {
+                            const colW = getColumnWidth(col, "TimeSheets");
+                            return (
+                              <div
+                                key={`ts-cell-${colIndex}-${col}`}
+                                className={`shrink-0 border-r border-b border-gray-400 flex items-center justify-center text-sm select-none text-left px-1 ${isRowSelected ? "bg-teal-200 ring-1 ring-teal-500" : rowIndex % 2 === 0 ? "bg-white" : "bg-gray-50"}`}
+                                style={{ width: colW, minWidth: colW, height: ROW_HEIGHT }}
+                              >
+                                <span className="truncate w-full text-center">{String(row[col] ?? "") || "\u00A0"}</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       );
                     })
                   )}
+                  <ColumnResizeOverlay
+                    columns={timesheetsColumnOrder}
+                    getWidth={(h) => getColumnWidth(h, "TimeSheets")}
+                    onResize={(h, w) => handleColumnResize("TimeSheets", h, w)}
+                    contentHeight={HEADER_HEIGHT + timesheetsRows.length * ROW_HEIGHT}
+                  />
                 </div>
               )}
             </div>
           </div>
         ) : (
           <div className="flex-1 min-w-0 overflow-auto bg-white">
-            <div className="inline-block min-w-full min-h-full">
+            <div className="relative inline-block min-w-full min-h-full">
               {/* Sticky column headers row – draggable to reorder */}
               <DndContext
                 collisionDetection={closestCenter}
@@ -1179,6 +1386,8 @@ export default function TbiPage() {
                           filterValue={columnFilters[header] || null}
                           onSort={() => handleColumnSort(header)}
                           onFilterChange={(val) => handleColumnFilter(header, val)}
+                          width={getColumnWidth(header, viewKey)}
+                          onResize={(h, w) => handleColumnResize(viewKey, h, w)}
                         />
                       );
                     })}
@@ -1242,6 +1451,7 @@ export default function TbiPage() {
                       </div>
                       {columnHeaders.map((header, colIndex) => {
                         const cellValue = org ? getOrgCellValue(org, header) : "";
+                        const colW = getColumnWidth(header, viewKey);
                         return (
                           <div
                             key={colIndex}
@@ -1251,7 +1461,7 @@ export default function TbiPage() {
                                 ? "bg-white"
                                 : "bg-gray-50"
                               }`}
-                            style={{ width: CELL_WIDTH, minWidth: CELL_WIDTH, height: ROW_HEIGHT }}
+                            style={{ width: colW, minWidth: colW, height: ROW_HEIGHT }}
                           >
                             <span className="truncate w-full text-center">{cellValue || "\u00A0"}</span>
                           </div>
@@ -1261,6 +1471,12 @@ export default function TbiPage() {
                   );
                 });
               })()}
+              <ColumnResizeOverlay
+                columns={columnHeaders}
+                getWidth={(h) => getColumnWidth(h, viewKey)}
+                onResize={(h, w) => handleColumnResize(viewKey, h, w)}
+                contentHeight={HEADER_HEIGHT + DATA_ROW_COUNT * ROW_HEIGHT}
+              />
             </div>
           </div>
         )}
@@ -1303,11 +1519,11 @@ export default function TbiPage() {
               Show or hide columns for this view. Your choices are saved automatically.
             </p>
             <div className="overflow-y-auto flex-1 min-h-0 py-2">
-              {schemaColumns.map((header) => {
+              {schemaColumns.map((header, index) => {
                 const isVisible = columnHeaders.includes(header);
                 return (
                   <label
-                    key={header}
+                    key={`col-opt-${index}-${header}`}
                     className="flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 cursor-pointer text-sm text-gray-800"
                   >
                     <input
