@@ -3387,13 +3387,6 @@ export default function OrganizationView() {
         "$1"
       );
 
-      // Preserve all existing custom fields and update Organization Website label
-      const currentCustomFields = organization?.customFields || {};
-      const updatedCustomFields = {
-        ...currentCustomFields,
-        "Organization Website": normalized,
-      };
-
       const response = await fetch(`/api/organizations/${organizationId}`, {
         method: "PUT",
         headers: {
@@ -3402,7 +3395,6 @@ export default function OrganizationView() {
         },
         body: JSON.stringify({
           website: normalized,
-          custom_fields: updatedCustomFields,
         }),
       });
 
@@ -3412,20 +3404,6 @@ export default function OrganizationView() {
       }
 
       const data = await response.json().catch(() => ({}));
-
-      // Parse custom_fields from response if present
-      let returnedCustomFields = updatedCustomFields;
-      const apiOrg = (data as any).organization;
-      if (apiOrg?.custom_fields) {
-        try {
-          returnedCustomFields =
-            typeof apiOrg.custom_fields === "string"
-              ? JSON.parse(apiOrg.custom_fields)
-              : apiOrg.custom_fields;
-        } catch {
-          // ignore parse error and keep updatedCustomFields
-        }
-      }
 
       // Update local organization state
       setOrganization((prev: any) =>
@@ -3437,7 +3415,6 @@ export default function OrganizationView() {
               ...(prev.contact || {}),
               website: normalized,
             },
-            customFields: returnedCustomFields,
           }
           : prev
       );
