@@ -3116,22 +3116,15 @@ export default function HiringManagerView() {
     }
   };
 
-  // Handle password reset
+  // Handle password reset: generate temp password, update backend, send email to Record Owner, payroll@..., and Hiring Manager
   const handlePasswordReset = async () => {
     if (!hiringManagerId) {
       toast.error("Hiring Manager ID is missing");
       return;
     }
 
-    if (!passwordResetForm.email.trim()) {
-      toast.error("Please enter an email address");
-      return;
-    }
-
-    // Validate email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(passwordResetForm.email.trim())) {
-      toast.error("Please enter a valid email address");
+    if (!hiringManager?.email || hiringManager.email === "No email provided" || hiringManager.email === "(Not provided)") {
+      toast.error("Hiring manager email not available on this record.");
       return;
     }
 
@@ -3148,21 +3141,17 @@ export default function HiringManagerView() {
               "$1"
             )}`,
           },
-          body: JSON.stringify({
-            email: passwordResetForm.email.trim(),
-            send_email: passwordResetForm.sendEmail,
-          }),
+          body: JSON.stringify({}),
         }
       );
 
+      const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const errorData = await response
-          .json()
-          .catch(() => ({ message: "Failed to reset password" }));
-        throw new Error(errorData.message || "Failed to reset password");
+        throw new Error(data.message || "Failed to reset password");
       }
 
-      toast.success("Password reset processed successfully. An email has been sent if requested.");
+      toast.success(data.message || "Password reset successfully. Login credentials have been sent to the Record Owner, payroll@completestaffingsolutions.com, and the Hiring Manager.");
       setShowPasswordResetModal(false);
       setPasswordResetForm({ email: "", sendEmail: true });
     } catch (err) {
@@ -5401,9 +5390,8 @@ export default function HiringManagerView() {
         showPasswordResetModal && (
           <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50">
             <div className="bg-white rounded shadow-xl max-w-md w-full mx-4">
-              {/* Header */}
               <div className="flex justify-between items-center p-4 border-b border-gray-200">
-                <h2 className="text-lg font-semibold">Password Reset</h2>
+                <h2 className="text-lg font-semibold">Reset Hiring Manager Password</h2>
                 <button
                   onClick={() => {
                     setShowPasswordResetModal(false);
@@ -5414,58 +5402,32 @@ export default function HiringManagerView() {
                   <span className="text-2xl font-bold">×</span>
                 </button>
               </div>
-
-              {/* Form Content */}
-              <div className="p-6 space-y-6">
-                {/* Email Address */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    <span className="text-red-500 mr-1">•</span>
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    value={passwordResetForm.email}
-                    onChange={(e) =>
-                      setPasswordResetForm((prev) => ({
-                        ...prev,
-                        email: e.target.value,
-                      }))
-                    }
-                    placeholder="Enter email address for password reset"
-                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    required
-                  />
+              <div className="p-6 space-y-4">
+                <div className="bg-blue-50 border border-blue-200 rounded p-4 text-sm text-blue-800">
+                  <p className="font-medium mb-2">This will:</p>
+                  <ul className="list-disc list-inside space-y-1 text-xs">
+                    <li>Generate a new temporary password and update the hiring manager&apos;s password</li>
+                    <li>Send login credentials (Portal URL, email, temporary password) to:</li>
+                    <ul className="list-circle list-inside ml-4 mt-1">
+                      <li>• Record Owner</li>
+                      <li>• payroll@completestaffingsolutions.com</li>
+                      <li>• Hiring Manager ({hiringManager?.email})</li>
+                    </ul>
+                  </ul>
                 </div>
-
-                {/* Send Email Checkbox */}
-                <div className="flex items-center space-x-2">
-                  <input
-                    type="checkbox"
-                    checked={passwordResetForm.sendEmail}
-                    onChange={(e) =>
-                      setPasswordResetForm((prev) => ({
-                        ...prev,
-                        sendEmail: e.target.checked,
-                      }))
-                    }
-                    className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
-                  />
-                  <label className="text-sm text-gray-700">
-                    Send password reset email to the user
-                  </label>
-                </div>
-
-                {/* Info Box */}
-                <div className="bg-blue-50 border border-blue-200 rounded p-4">
-                  <p className="text-sm text-blue-800">
-                    <strong>Note:</strong> A new password will be generated and sent to the email address provided if "Send email" is checked.
+                <div className="space-y-2">
+                  <p className="text-sm text-gray-600">
+                    <strong>Hiring Manager:</strong> {hiringManager?.firstName} {hiringManager?.lastName}
+                  </p>
+                  <p className="text-sm text-gray-600">
+                    <strong>Email:</strong> {hiringManager?.email}
                   </p>
                 </div>
+                <div className="bg-amber-50 border border-amber-200 rounded p-3 text-xs text-amber-800">
+                  <strong>Important:</strong> The hiring manager will be instructed to change their password after first login.
+                </div>
               </div>
-
-              {/* Footer Buttons */}
-              <div className="flex justify-end space-x-2 p-4 border-t border-gray-200">
+              <div className="flex justify-end gap-2 p-4 border-t border-gray-200">
                 <button
                   onClick={() => {
                     setShowPasswordResetModal(false);
@@ -5479,22 +5441,12 @@ export default function HiringManagerView() {
                 <button
                   onClick={handlePasswordReset}
                   className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 font-medium disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center"
-                  disabled={isSubmittingPasswordReset || !passwordResetForm.email.trim()}
+                  disabled={isSubmittingPasswordReset || !hiringManager?.email || hiringManager.email === "No email provided" || hiringManager.email === "(Not provided)"}
                 >
-                  {isSubmittingPasswordReset ? "PROCESSING..." : "RESET PASSWORD"}
+                  {isSubmittingPasswordReset ? "Sending..." : "Send Password Reset"}
                   {!isSubmittingPasswordReset && (
-                    <svg
-                      className="w-4 h-4 ml-2"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M5 13l4 4L19 7"
-                      />
+                    <svg className="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
                   )}
                 </button>

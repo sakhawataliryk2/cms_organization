@@ -220,7 +220,7 @@ export default function SortableFieldsEditModal({
               <SortableContext items={filteredOrder} strategy={verticalListSortingStrategy}>
                 <div
                   className="space-y-2 overflow-y-auto border border-gray-200 rounded p-3"
-                  style={{ maxHeight: listMaxHeight }}
+                  style={{ maxHeight: "50vh" }}
                 >
                   {isLoading && fieldCatalog.length === 0 ? (
                     <div className="text-center py-4 text-gray-500">Loading fields...</div>
@@ -252,7 +252,7 @@ export default function SortableFieldsEditModal({
                   />
                 ) : null}
               </DragOverlay>
-              <div className="absolute bottom-0 left-0 right-0 flex justify-end gap-2 pt-4 border-t border-gray-300 mt-4 bg-white">
+              <div className="flex justify-end gap-2 pt-4 border-t border-gray-300 mt-4 bg-white">
                 {onReset && (
                   <button
                     type="button"

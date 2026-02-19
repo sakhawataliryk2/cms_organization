@@ -1445,7 +1445,6 @@ export default function JobList() {
           isSaveDisabled={isSavingColumns}
           onReset={() => setColumnFields(columnsCatalog.map((c) => c.key))}
           resetButtonText="Reset"
-          listMaxHeight="60vh"
         />
       )}
       {/* Save Favorite Modal */}
