@@ -53,6 +53,15 @@ export default function BulkActionsButton({
                                      label === 'open/close' || label === 'open close';
                           });
 
+    // For placements, allow ownership bulk action even if the Owner field
+    // is not explicitly returned from field-management. We fallback to a
+    // virtual Owner field that maps to the placements "Owner" custom field.
+    const placementOwnerFieldFallback = entityType === 'placement' && !ownerField
+        ? { field_label: 'Owner', field_name: 'owner' }
+        : null;
+
+    const effectiveOwnerField: any = ownerField || placementOwnerFieldFallback;
+
     const handleSuccess = () => {
         setShowOwnershipModal(false);
         setShowStatusModal(false);
@@ -283,7 +292,7 @@ export default function BulkActionsButton({
     };
 
     const actionOptions = [
-        ...(ownerField ? [{
+        ...(effectiveOwnerField ? [{
             label: 'Manage Ownership',
             action: () => setShowOwnershipModal(true),
             disabled: false
@@ -358,13 +367,13 @@ export default function BulkActionsButton({
                 buttonClassName="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-2"
             />
 
-            {showOwnershipModal && ownerField && (
+            {showOwnershipModal && effectiveOwnerField && (
                 <BulkOwnershipModal
                     open={showOwnershipModal}
                     onClose={() => setShowOwnershipModal(false)}
                     entityType={entityType}
                     entityIds={entityIds}
-                    fieldLabel={ownerField.field_label || 'Owner'}
+                    fieldLabel={effectiveOwnerField.field_label || 'Owner'}
                     onSuccess={handleSuccess}
                 />
             )}

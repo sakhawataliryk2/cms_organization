@@ -1436,7 +1436,12 @@ export default function JobView() {
         <div key={key} className="flex border-b border-gray-200 last:border-b-0">
           <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
           <div className="flex-1 p-2">
-            <FieldValueRenderer value={fieldValue} fieldInfo={fieldInfo} />
+            <FieldValueRenderer
+              value={fieldValue}
+              fieldInfo={fieldInfo}
+              allFields={customFieldDefs as any}
+              valuesRecord={customObj as any}
+            />
               </div>
         </div>
       );
@@ -1530,7 +1535,12 @@ export default function JobView() {
             <div key={key} className="flex border-b border-gray-200 last:border-b-0">
               <LabelCell />
               <div className="flex-1 p-2">
-                <FieldValueRenderer value={fieldValue} fieldInfo={fieldInfo as any} />
+                <FieldValueRenderer
+                  value={fieldValue}
+                  fieldInfo={fieldInfo as any}
+                  allFields={customFieldDefs as any}
+                  valuesRecord={job.customFields as any}
+                />
               </div>
             </div>
           );

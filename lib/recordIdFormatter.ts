@@ -21,7 +21,7 @@ export type RecordType = keyof typeof RECORD_PREFIXES;
 export function formatRecordId(id: number | string | null | undefined, type: RecordType): string {
     if (!id && id !== 0) return '';
     const prefix = RECORD_PREFIXES[type];
-    return `${prefix}${id}`;
+    return `${prefix} ${id}`;
 }
 
 /** Types that use business record_number for display (prefix + '-' + number) */

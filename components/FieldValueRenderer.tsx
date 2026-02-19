@@ -30,6 +30,10 @@ export interface FieldValueRendererProps {
   statusVariant?: "default" | "archived" | "deletion" | "blue" | "gray";
   forceRenderAsStatus?: boolean;
   lookupFallback?: string;
+  /** Optional: all custom fields for this record (used for Full Address fallback) */
+  allFields?: Array<{ field_label?: string; field_name?: string } & Record<string, any>>;
+  /** Optional: full values record for this entity (used for Full Address fallback) */
+  valuesRecord?: Record<string, any>;
 }
 
 function formatToMMDDYYYY(value: string): string {
@@ -97,11 +101,72 @@ export default function FieldValueRenderer({
   statusVariant = "default",
   forceRenderAsStatus = false,
   lookupFallback,
+  allFields,
+  valuesRecord,
 }: FieldValueRendererProps) {
   const fieldType = (fieldInfo?.fieldType ?? "").toLowerCase();
   const label = (fieldInfo?.label || "").toLowerCase();
 
-  const raw = value != null && value !== "" ? String(value).trim() : "";
+  const rawOriginal = value != null && value !== "" ? String(value).trim() : "";
+  let raw = rawOriginal;
+
+  // Full Address fallback: if this is a Full Address field but its own value is empty/placeholder,
+  // try to auto-combine Address, Address 2, City, State, Zip from the full values record.
+  let autoCombinedAddress: string | null = null;
+
+  // We intentionally use the original (non-lowercased) label so the matcher can normalize itself.
+  const originalLabel = fieldInfo?.label;
+
+  if (
+    isAddressField(originalLabel) &&
+    (rawOriginal === "" ||
+      rawOriginal === "-" ||
+      rawOriginal === "N/A" ||
+      rawOriginal === emptyPlaceholder)
+  ) {
+    if (Array.isArray(allFields) && valuesRecord && typeof valuesRecord === "object") {
+      const normalize = (s: string) => (s || "").toLowerCase().trim();
+
+      const findAddressField = (labels: string[]) =>
+        allFields.find((f) => labels.some((l) => normalize(f.field_label || "") === normalize(l)));
+
+      const addressField = findAddressField(["address", "address1"]);
+      const address2Field = findAddressField(["address2", "address 2"]);
+      const cityField = findAddressField(["city"]);
+      const stateField = findAddressField(["state"]);
+      const zipField = findAddressField(["zip", "zip code", "postal code"]);
+
+      const getVal = (fld?: { field_name?: string; field_label?: string }) => {
+        if (!fld) return "";
+        const nameKey = fld.field_name;
+        const labelKey = fld.field_label;
+
+        if (nameKey && Object.prototype.hasOwnProperty.call(valuesRecord, nameKey)) {
+          return String(valuesRecord[nameKey] ?? "").trim();
+        }
+        if (labelKey && Object.prototype.hasOwnProperty.call(valuesRecord, labelKey)) {
+          return String(valuesRecord[labelKey] ?? "").trim();
+        }
+        return "";
+      };
+
+      const address = getVal(addressField);
+      const address2 = getVal(address2Field);
+      const city = getVal(cityField);
+      const state = getVal(stateField);
+      const zip = getVal(zipField);
+
+      const cityState = [city, state].filter(Boolean).join(", ");
+      const combinedParts = [address, address2, cityState, zip].filter(Boolean);
+      const combined = combinedParts.join(", ");
+
+      if (combined) {
+        autoCombinedAddress = combined;
+        raw = combined;
+      }
+    }
+  }
+
   const isEmpty = raw === "";
   const str = isEmpty ? emptyPlaceholder : raw;
 

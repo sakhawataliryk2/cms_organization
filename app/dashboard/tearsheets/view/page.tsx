@@ -46,7 +46,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-const TEARSHEET_VIEW_TAB_IDS = ["overview", "organizations", "hiring-managers", "jobs", "leads", "tasks"];
+const TEARSHEET_VIEW_TAB_IDS = ["overview", "organizations", "hiring-managers", "jobs", "leads", "tasks", "placements"];
 
 type ColumnSortState = "asc" | "desc" | null;
 type ColumnFilterState = string | null;
@@ -374,6 +374,7 @@ export default function TearsheetView() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
+  const [placements, setPlacements] = useState<any[]>([]);
   const [isLoadingTabData, setIsLoadingTabData] = useState(false);
 
   // Column configuration for tab tables
@@ -401,6 +402,11 @@ export default function TearsheetView() {
   const [taskColumnSorts, setTaskColumnSorts] = useState<Record<string, ColumnSortState>>({});
   const [taskColumnFilters, setTaskColumnFilters] = useState<Record<string, ColumnFilterState>>({});
   const [taskSearchTerm, setTaskSearchTerm] = useState("");
+
+  const [placementColumnFields, setPlacementColumnFields] = useState<string[]>(["id", "job_seeker", "job", "status"]);
+  const [placementColumnSorts, setPlacementColumnSorts] = useState<Record<string, ColumnSortState>>({});
+  const [placementColumnFilters, setPlacementColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+  const [placementSearchTerm, setPlacementSearchTerm] = useState("");
 
   // Panel editing state
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
@@ -624,6 +630,10 @@ export default function TearsheetView() {
           case "tasks":
             endpoint = `/api/tearsheets/${tearsheetId}/records?type=tasks`;
             setter = (data: any) => setTasks(data.records || []);
+            break;
+          case "placements":
+            endpoint = `/api/tearsheets/${tearsheetId}/records?type=placements`;
+            setter = (data: any) => setPlacements(data.records || []);
             break;
           default:
             return;
@@ -1050,6 +1060,7 @@ export default function TearsheetView() {
                 else if (activeTab === "jobs") setJobSearchTerm(e.target.value);
                 else if (activeTab === "leads") setLeadSearchTerm(e.target.value);
                 else if (activeTab === "tasks") setTaskSearchTerm(e.target.value);
+                else if (activeTab === "placements") setPlacementSearchTerm(e.target.value);
               }}
             />
           </div>
@@ -1071,6 +1082,9 @@ export default function TearsheetView() {
                 } else if (activeTab === "tasks") {
                   setTaskSearchTerm("");
                   setTaskColumnFilters({});
+                } else if (activeTab === "placements") {
+                  setPlacementSearchTerm("");
+                  setPlacementColumnFilters({});
                 }
               }}
               className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 flex items-center gap-2"
@@ -1093,6 +1107,7 @@ export default function TearsheetView() {
                 else if (activeTab === "jobs") setJobColumnFields(arrayMove(columnFields, oldIndex, newIndex));
                 else if (activeTab === "leads") setLeadColumnFields(arrayMove(columnFields, oldIndex, newIndex));
                 else if (activeTab === "tasks") setTaskColumnFields(arrayMove(columnFields, oldIndex, newIndex));
+                else if (activeTab === "placements") setPlacementColumnFields(arrayMove(columnFields, oldIndex, newIndex));
               }
             }
           }}>
@@ -1174,6 +1189,7 @@ export default function TearsheetView() {
     { id: "jobs", label: "Jobs" },
     { id: "leads", label: "Leads" },
     { id: "tasks", label: "Tasks" },
+    { id: "placements", label: "Placements" },
   ];
 
   return (
@@ -1375,12 +1391,12 @@ export default function TearsheetView() {
           setOrgColumnSorts,
           setOrgColumnFilters,
           (row, key) => {
-            if (key === "id") return row.id;
+            if (key === "id") return formatRecordId(row.record_number ?? row.id, "organization");
             if (key === "name") return row.name;
             return row[key] || "-";
           },
           (key) => {
-            if (key === "id") return "ID";
+            if (key === "id") return "Record #";
             if (key === "name") return "Name";
             return key;
           },
@@ -1397,14 +1413,14 @@ export default function TearsheetView() {
           setHmColumnSorts,
           setHmColumnFilters,
           (row, key) => {
-            if (key === "id") return row.id;
+            if (key === "id") return formatRecordId(row.record_number ?? row.id, "hiringManager");
             if (key === "name") return row.name;
             if (key === "email") return row.email;
             if (key === "organization") return row.organization || "-";
             return row[key] || "-";
           },
           (key) => {
-            if (key === "id") return "ID";
+            if (key === "id") return "Record #";
             if (key === "name") return "Name";
             if (key === "email") return "Email";
             if (key === "organization") return "Organization";
@@ -1423,13 +1439,13 @@ export default function TearsheetView() {
           setJobColumnSorts,
           setJobColumnFilters,
           (row, key) => {
-            if (key === "id") return row.id;
+            if (key === "id") return formatRecordId(row.record_number ?? row.id, "job");
             if (key === "title") return row.name;
             if (key === "organization") return row.company || "-";
             return row[key] || "-";
           },
           (key) => {
-            if (key === "id") return "ID";
+            if (key === "id") return "Record #";
             if (key === "title") return "Title";
             if (key === "organization") return "Organization";
             return key;
@@ -1447,13 +1463,13 @@ export default function TearsheetView() {
           setLeadColumnSorts,
           setLeadColumnFilters,
           (row, key) => {
-            if (key === "id") return row.id;
+            if (key === "id") return formatRecordId(row.record_number ?? row.id, "lead");
             if (key === "name") return row.name;
             if (key === "email") return row.email || "-";
             return row[key] || "-";
           },
           (key) => {
-            if (key === "id") return "ID";
+            if (key === "id") return "Record #";
             if (key === "name") return "Name";
             if (key === "email") return "Email";
             return key;
@@ -1471,7 +1487,7 @@ export default function TearsheetView() {
           setTaskColumnSorts,
           setTaskColumnFilters,
           (row, key) => {
-            if (key === "id") return row.id;
+            if (key === "id") return formatRecordId(row.record_number ?? row.id, "task");
             if (key === "name") return row.name || row.title || "-";
             if (key === "status") return row.status || "-";
             if (key === "priority") return row.priority || "-";
@@ -1481,7 +1497,7 @@ export default function TearsheetView() {
             return row[key] || "-";
           },
           (key) => {
-            if (key === "id") return "ID";
+            if (key === "id") return "Record #";
             if (key === "name") return "Title";
             if (key === "status") return "Status";
             if (key === "priority") return "Priority";
@@ -1492,6 +1508,32 @@ export default function TearsheetView() {
           },
           () => "text",
           (row) => router.push(`/dashboard/tasks/view?id=${row.id}`)
+        )}
+
+        {activeTab === "placements" && renderTable(
+          placements,
+          placementColumnFields,
+          placementColumnSorts,
+          placementColumnFilters,
+          placementSearchTerm,
+          setPlacementColumnSorts,
+          setPlacementColumnFilters,
+          (row, key) => {
+            if (key === "id") return formatRecordId(row.record_number ?? row.id, "placement");
+            if (key === "job_seeker") return row.job_seeker_name || row.jobSeekerName || row.candidate_name || "-";
+            if (key === "job") return row.job_title || row.jobTitle || row.job_name || "-";
+            if (key === "status") return row.status || row.stage || "-";
+            return row[key] || "-";
+          },
+          (key) => {
+            if (key === "id") return "Record #";
+            if (key === "job_seeker") return "Job Seeker";
+            if (key === "job") return "Job";
+            if (key === "status") return "Status";
+            return key;
+          },
+          () => "text",
+          (row) => router.push(`/dashboard/placements/view?id=${row.id}`)
         )}
       </div>
 

@@ -3511,6 +3511,8 @@ export default function PlacementView() {
                 <FieldValueRenderer
                   value={fieldValue}
                   fieldInfo={fieldInfo}
+                  allFields={availableFields as any}
+                  valuesRecord={placement.customFields as any}
                   emptyPlaceholder="-"
                   clickable
                 />
@@ -3571,6 +3573,8 @@ export default function PlacementView() {
                 <FieldValueRenderer
                   value={fieldValue}
                   fieldInfo={fieldInfo}
+                  allFields={customFieldDefs as any}
+                  valuesRecord={placement.customFields as any}
                   emptyPlaceholder="-"
                   clickable
                 />
