@@ -46,7 +46,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-const TEARSHEET_VIEW_TAB_IDS = ["overview", "organizations", "hiring-managers", "jobs", "leads", "tasks", "placements"];
+const TEARSHEET_VIEW_TAB_IDS = ["overview", "organizations", "hiring-managers", "jobs", "job-seekers", "leads", "tasks", "placements"];
 
 type ColumnSortState = "asc" | "desc" | null;
 type ColumnFilterState = string | null;
@@ -372,6 +372,7 @@ export default function TearsheetView() {
   const [organizations, setOrganizations] = useState<any[]>([]);
   const [hiringManagers, setHiringManagers] = useState<any[]>([]);
   const [jobs, setJobs] = useState<any[]>([]);
+  const [jobSeekers, setJobSeekers] = useState<any[]>([]);
   const [leads, setLeads] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
   const [placements, setPlacements] = useState<any[]>([]);
@@ -392,6 +393,11 @@ export default function TearsheetView() {
   const [jobColumnSorts, setJobColumnSorts] = useState<Record<string, ColumnSortState>>({});
   const [jobColumnFilters, setJobColumnFilters] = useState<Record<string, ColumnFilterState>>({});
   const [jobSearchTerm, setJobSearchTerm] = useState("");
+
+  const [jobSeekerColumnFields, setJobSeekerColumnFields] = useState<string[]>(["id", "name", "email"]);
+  const [jobSeekerColumnSorts, setJobSeekerColumnSorts] = useState<Record<string, ColumnSortState>>({});
+  const [jobSeekerColumnFilters, setJobSeekerColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+  const [jobSeekerSearchTerm, setJobSeekerSearchTerm] = useState("");
 
   const [leadColumnFields, setLeadColumnFields] = useState<string[]>(["id", "name", "email"]);
   const [leadColumnSorts, setLeadColumnSorts] = useState<Record<string, ColumnSortState>>({});
@@ -622,6 +628,10 @@ export default function TearsheetView() {
           case "jobs":
             endpoint = `/api/tearsheets/${tearsheetId}/records?type=jobs`;
             setter = (data: any) => setJobs(data.records || []);
+            break;
+          case "job-seekers":
+            endpoint = `/api/tearsheets/${tearsheetId}/records?type=job_seekers`;
+            setter = (data: any) => setJobSeekers(data.records || []);
             break;
           case "leads":
             endpoint = `/api/tearsheets/${tearsheetId}/records?type=leads`;
@@ -1058,6 +1068,7 @@ export default function TearsheetView() {
                 if (activeTab === "organizations") setOrgSearchTerm(e.target.value);
                 else if (activeTab === "hiring-managers") setHmSearchTerm(e.target.value);
                 else if (activeTab === "jobs") setJobSearchTerm(e.target.value);
+                else if (activeTab === "job-seekers") setJobSeekerSearchTerm(e.target.value);
                 else if (activeTab === "leads") setLeadSearchTerm(e.target.value);
                 else if (activeTab === "tasks") setTaskSearchTerm(e.target.value);
                 else if (activeTab === "placements") setPlacementSearchTerm(e.target.value);
@@ -1076,6 +1087,9 @@ export default function TearsheetView() {
                 } else if (activeTab === "jobs") {
                   setJobSearchTerm("");
                   setJobColumnFilters({});
+                } else if (activeTab === "job-seekers") {
+                  setJobSeekerSearchTerm("");
+                  setJobSeekerColumnFilters({});
                 } else if (activeTab === "leads") {
                   setLeadSearchTerm("");
                   setLeadColumnFilters({});
@@ -1105,6 +1119,7 @@ export default function TearsheetView() {
                 if (activeTab === "organizations") setOrgColumnFields(arrayMove(columnFields, oldIndex, newIndex));
                 else if (activeTab === "hiring-managers") setHmColumnFields(arrayMove(columnFields, oldIndex, newIndex));
                 else if (activeTab === "jobs") setJobColumnFields(arrayMove(columnFields, oldIndex, newIndex));
+                  else if (activeTab === "job-seekers") setJobSeekerColumnFields(arrayMove(columnFields, oldIndex, newIndex));
                 else if (activeTab === "leads") setLeadColumnFields(arrayMove(columnFields, oldIndex, newIndex));
                 else if (activeTab === "tasks") setTaskColumnFields(arrayMove(columnFields, oldIndex, newIndex));
                 else if (activeTab === "placements") setPlacementColumnFields(arrayMove(columnFields, oldIndex, newIndex));
@@ -1187,6 +1202,7 @@ export default function TearsheetView() {
     { id: "organizations", label: "Organizations" },
     { id: "hiring-managers", label: "Hiring Managers" },
     { id: "jobs", label: "Jobs" },
+    { id: "job-seekers", label: "Job Seekers" },
     { id: "leads", label: "Leads" },
     { id: "tasks", label: "Tasks" },
     { id: "placements", label: "Placements" },
@@ -1452,6 +1468,30 @@ export default function TearsheetView() {
           },
           () => "text",
           (row) => router.push(`/dashboard/jobs/view?id=${row.id}`)
+        )}
+
+        {activeTab === "job-seekers" && renderTable(
+          jobSeekers,
+          jobSeekerColumnFields,
+          jobSeekerColumnSorts,
+          jobSeekerColumnFilters,
+          jobSeekerSearchTerm,
+          setJobSeekerColumnSorts,
+          setJobSeekerColumnFilters,
+          (row, key) => {
+            if (key === "id") return formatRecordId(row.record_number ?? row.id, "jobSeeker");
+            if (key === "name") return row.name;
+            if (key === "email") return row.email || "-";
+            return row[key] || "-";
+          },
+          (key) => {
+            if (key === "id") return "Record #";
+            if (key === "name") return "Name";
+            if (key === "email") return "Email";
+            return key;
+          },
+          () => "text",
+          (row) => router.push(`/dashboard/job-seekers/view?id=${row.id}`)
         )}
 
         {activeTab === "leads" && renderTable(
