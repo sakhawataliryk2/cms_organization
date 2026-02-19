@@ -475,7 +475,37 @@ export default function AddDirectHireJob() {
     fetchHiringManagers();
   }, [needHiringManagerOptions, currentOrganizationId, organizationIdFromUrl]);
 
-  // Calculate Client Bill Rate (Field_13) from Pay Rate (Field_11) and Mark-up % (Field_12 or Field_512)
+  // Normalize label for matching admin-defined labels (case-insensitive, trim, collapse spaces)
+  const normalizeLabel = (s: string) =>
+    (s ?? "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+
+  // Resolve Pay Rate, Mark-up %, and Client Bill Rate fields by admin center label (not hardcoded field_name)
+  const billRateFieldRefs = useMemo(() => {
+    if (!customFields.length) return { payRateField: null, markupField: null, clientBillRateField: null };
+    const payRateLabels = ["pay rate", "pay rate:"];
+    const markupLabels = ["mark-up %", "mark-up %:", "mark-up", "mark up %", "markup %", "markup"];
+    const clientBillRateLabels = ["client bill rate", "client bill rate:"];
+    const findByLabel = (labels: string[]) =>
+      customFields.find((f) => {
+        const L = normalizeLabel((f as any).field_label ?? (f as any).fieldLabel ?? "");
+        return labels.some((l) => L === l || L === l.replace(":", ""));
+      }) ?? null;
+    return {
+      payRateField: findByLabel(payRateLabels),
+      markupField: findByLabel(markupLabels),
+      clientBillRateField: findByLabel(clientBillRateLabels),
+    };
+  }, [customFields]);
+
+  const { payRateField, markupField, clientBillRateField } = billRateFieldRefs;
+  const payRateFieldName = payRateField?.field_name ?? "";
+  const markupFieldName = markupField?.field_name ?? "";
+  const clientBillRateFieldName = clientBillRateField?.field_name ?? "";
+
+  // Calculate Client Bill Rate from Pay Rate and Mark-up % (formula)
   const calculateClientBillRate = (payRate: string, markupPercent: string): string => {
     const payRateNum = parseFloat(payRate);
     const markupNum = parseFloat(markupPercent);
@@ -493,34 +523,33 @@ export default function AddDirectHireJob() {
     return clientBillRate.toFixed(2);
   };
 
-  // Auto-calculate Field_13 (Client Bill Rate) when Field_11 (Pay Rate) or Field_12/Field_512 (Mark-up %) changes
+  // Auto-calculate Client Bill Rate field (by admin label) when Pay Rate or Mark-up % (by admin label) changes
   useEffect(() => {
     if (customFieldsLoading || customFields.length === 0) return;
+    if (!payRateFieldName || !clientBillRateFieldName) return;
 
-    const payRateField = customFields.find((f) => f.field_name === "Field_11");
-    const markupField = customFields.find((f) => f.field_name === "Field_12" || f.field_name === "Field_512");
-    const clientBillRateField = customFields.find((f) => f.field_name === "Field_13");
+    const payRate = customFieldValues[payRateFieldName] ?? "";
+    const markupPercent = markupFieldName ? (customFieldValues[markupFieldName] ?? "") : "";
 
-    if (payRateField && markupField && clientBillRateField) {
-      const payRate = customFieldValues["Field_11"] || "";
-      const markupPercent = customFieldValues["Field_12"] || customFieldValues["Field_512"] || "";
-
-      if (payRate || markupPercent) {
-        const calculatedBillRate = calculateClientBillRate(payRate, markupPercent);
-        if (calculatedBillRate && calculatedBillRate !== (customFieldValues["Field_13"] || "")) {
-          setCustomFieldValues((prev) => ({
-            ...prev,
-            Field_13: calculatedBillRate,
-          }));
-        }
+    if (payRate || markupPercent) {
+      const calculatedBillRate = calculateClientBillRate(payRate, markupPercent);
+      const current = customFieldValues[clientBillRateFieldName] ?? "";
+      if (calculatedBillRate && calculatedBillRate !== current) {
+        setCustomFieldValues((prev) => ({
+          ...prev,
+          [clientBillRateFieldName]: calculatedBillRate,
+        }));
       }
     }
   }, [
     customFields,
     customFieldsLoading,
-    customFieldValues["Field_11"],
-    customFieldValues["Field_12"],
-    customFieldValues["Field_512"],
+    payRateFieldName,
+    markupFieldName,
+    clientBillRateFieldName,
+    customFieldValues[payRateFieldName],
+    customFieldValues[markupFieldName],
+    customFieldValues[clientBillRateFieldName],
     setCustomFieldValues,
   ]);
 
@@ -1381,11 +1410,15 @@ export default function AddDirectHireJob() {
                       );
                     }
 
-                    // Special handling for Field_11 (Pay Rate), Field_12/Field_512 (Mark-up %), and Field_13 (Client Bill Rate)
-                    if (field.field_name === "Field_11" || field.field_name === "Field_12" || field.field_name === "Field_512" || field.field_name === "Field_13") {
-                      const isCalculatedField = field.field_name === "Field_13";
-                      const payRateValue = customFieldValues["Field_11"] || "";
-                      const markupValue = customFieldValues["Field_12"] || customFieldValues["Field_512"] || "";
+                    // Special handling for Pay Rate, Mark-up %, and Client Bill Rate (identified by admin center labels)
+                    const isPayRateOrMarkupOrClientBill =
+                      field.field_name === payRateFieldName ||
+                      field.field_name === markupFieldName ||
+                      field.field_name === clientBillRateFieldName;
+                    if (isPayRateOrMarkupOrClientBill) {
+                      const isCalculatedField = field.field_name === clientBillRateFieldName;
+                      const payRateValue = payRateFieldName ? (customFieldValues[payRateFieldName] ?? "") : "";
+                      const markupValue = markupFieldName ? (customFieldValues[markupFieldName] ?? "") : "";
                       const calculatedValue = calculateClientBillRate(payRateValue, markupValue);
 
                       return (
@@ -1405,7 +1438,6 @@ export default function AddDirectHireJob() {
 
                           <div className="flex-1 relative">
                             {isCalculatedField ? (
-                              // Field_13 is read-only and shows calculated value
                               <input
                                 type="text"
                                 value={calculatedValue || fieldValue}
@@ -1414,7 +1446,6 @@ export default function AddDirectHireJob() {
                                 placeholder="Auto-calculated"
                               />
                             ) : (
-                              // Field_11, Field_12, and Field_512 are editable
                               <CustomFieldRenderer
                                 field={field}
                                 allFields={customFields}
