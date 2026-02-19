@@ -229,7 +229,7 @@ export default function ActivityTrackerPage() {
                   Activity Tracker
                 </h1>
                 <p className="text-gray-500 text-xs sm:text-sm">
-                  Per-person activity overview and exportable CSV
+                  Automatic tracking of internal users: pages visited, clicks, form fills, field changes, time on page, scroll depth, and session start/end. Last online = most recent activity time. Export to CSV.
                 </p>
               </div>
             </div>

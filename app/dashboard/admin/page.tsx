@@ -1247,12 +1247,6 @@ export default function AdminCenter() {
             name: 'Activity Tracker',
             icon: <FiActivity size={50} color="white" />,
             path: '/dashboard/admin/activity-tracker'
-        },
-        {
-            id: 'analytics',
-            name: 'Analytics Dashboard',
-            icon: <FiActivity size={50} color="white" />,
-            path: '/dashboard/admin/analytics'
         }
     ];
 
