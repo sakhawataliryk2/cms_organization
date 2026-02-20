@@ -5,6 +5,7 @@ import React, { useState, useEffect } from 'react';
 interface LookupOption {
   id: string;
   name: string;
+  record_number: string;
   [key: string]: any;
 }
 
@@ -48,7 +49,7 @@ export default function LookupField({
       }
 
       const data = await response.json();
-      
+      console.log(data);
       // Handle different response structures
       let fetchedOptions: LookupOption[] = [];
 
@@ -63,35 +64,40 @@ export default function LookupField({
           .filter(isNotArchived)
           .map((org: any) => ({
             id: org.id.toString(),
-            name: org.name
+            name: org.name,
+            record_number: org.record_number || ''
           }));
       } else if (lookupType === 'hiring-managers') {
         fetchedOptions = (data.hiringManagers || [])
           .filter(isNotArchived)
           .map((hm: any) => ({
             id: hm.id.toString(),
-            name: hm.full_name || `${hm.first_name} ${hm.last_name}`
+            name: hm.full_name || `${hm.first_name} ${hm.last_name}`,
+            record_number: hm.record_number || ''
           }));
       } else if (lookupType === 'job-seekers') {
         fetchedOptions = (data.jobSeekers || [])
           .filter(isNotArchived)
           .map((js: any) => ({
             id: js.id.toString(),
-            name: js.full_name || `${js.first_name} ${js.last_name}`
+            name: js.full_name || `${js.first_name} ${js.last_name}`,
+            record_number: js.record_number || ''
           }));
       } else if (lookupType === 'jobs') {
         fetchedOptions = (data.jobs || [])
           .filter(isNotArchived)
           .map((job: any) => ({
             id: job.id.toString(),
-            name: job.job_title
+            name: job.job_title,
+            record_number: job.record_number || ''
           }));
       } else if (lookupType === 'owner') {
         fetchedOptions = (data.users || [])
           .filter(isNotArchived)
           .map((user: any) => ({
             id: user.id.toString(),
-            name: user.name || user.email || ''
+            name: user.name || user.email || '',
+            record_number: user.record_number || ''
           }));
       }
 
@@ -129,11 +135,15 @@ export default function LookupField({
       disabled={disabled}
     >
       <option value="">{placeholder}</option>
-      {options.map((option) => (
-        <option key={option.id} value={option.id}>
-          {option.name}
-        </option>
-      ))}
+      {options.map((option) => {
+        const prefix = lookupType === 'organizations' ? 'O' : lookupType === 'hiring-managers' ? 'HM' : lookupType === 'job-seekers' ? 'JS' : lookupType === 'jobs' ? 'J' : lookupType === 'owner' ? 'U' : '';
+        const label = option.record_number ? `${prefix}${option.record_number} - ${option.name}` : option.name;
+        return (
+          <option key={option.id} value={option.id}>
+            {label}
+          </option>
+        );
+      })}
     </select>
   );
 }
