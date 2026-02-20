@@ -2925,8 +2925,9 @@ export default function PlacementView() {
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold">Placement Notes</h2>
           <button
-            onClick={() => setShowAddNote(true)}
-            className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-sm"
+            onClick={() => !isArchived && setShowAddNote(true)}
+            disabled={isArchived}
+            className={`px-3 py-1 rounded text-sm ${isArchived ? "bg-gray-400 text-gray-200 cursor-not-allowed" : "bg-blue-500 text-white hover:bg-blue-600"}`}
           >
             Add Note
           </button>
@@ -4077,7 +4078,11 @@ export default function PlacementView() {
               disabled={tabDisabled}
               onClick={() => {
                 if (tabDisabled) return;
-                setActiveTab(tab.id);
+                if (isModifyTab) {
+                  handleModifyClick();
+                } else {
+                  setActiveTab(tab.id);
+                }
               }}
             >
               {tab.label}

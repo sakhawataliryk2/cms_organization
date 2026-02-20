@@ -20,10 +20,6 @@ import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import CountdownTimer from "@/components/CountdownTimer";
 import BulkActionsButton from "@/components/BulkActionsButton";
-import BulkOwnershipModal from "@/components/BulkOwnershipModal";
-import BulkStatusModal from "@/components/BulkStatusModal";
-import BulkTearsheetModal from "@/components/BulkTearsheetModal";
-import BulkNoteModal from "@/components/BulkNoteModal";
 import { toast } from "sonner";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import AdvancedSearchPanel, {
@@ -294,13 +290,8 @@ export default function PlacementList() {
   const [error, setError] = useState<string | null>(null);
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
-  
-  // Individual row action modals state
-  const [showOwnershipModal, setShowOwnershipModal] = useState(false);
-  const [showStatusModal, setShowStatusModal] = useState(false);
-  const [showTearsheetModal, setShowTearsheetModal] = useState(false);
-  const [showNoteModal, setShowNoteModal] = useState(false);
-  const [selectedPlacementId, setSelectedPlacementId] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Per-column sorting state
   const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
@@ -806,29 +797,7 @@ export default function PlacementList() {
     return result;
   }, [placements, searchTerm, columnFilters, columnSorts, advancedSearchCriteria]);
 
-  // Find custom field definitions for actions
-  const findFieldByLabel = (label: string) => {
-    return availableFields.find(f => {
-      const fieldLabel = (f.field_label || '').toLowerCase();
-      const fieldName = (f.field_name || '').toLowerCase();
-      const searchLabel = label.toLowerCase();
-      return fieldLabel === searchLabel || fieldName === searchLabel;
-    });
-  };
-
-  const ownerField = findFieldByLabel('Owner');
-  const statusField = findFieldByLabel('Status');
-
-  const handleIndividualActionSuccess = () => {
-    fetchPlacements();
-    setSelectedPlacementId(null);
-    setShowOwnershipModal(false);
-    setShowStatusModal(false);
-    setShowTearsheetModal(false);
-    setShowNoteModal(false);
-  };
-
-  // Email handlers for single placement
+  // Email handlers for single placement (kept for potential bulk or future use)
   const handleEmailCandidates = async (placementId: string) => {
     const emailSet = new Set<string>();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
@@ -1044,6 +1013,24 @@ export default function PlacementList() {
     router.push(`/dashboard/placements/view?id=${id}`);
   };
 
+  const handleDeletePlacement = async (placementId: string) => {
+    if (!window.confirm("Are you sure you want to permanently delete this placement?")) return;
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      const response = await fetch(`/api/placements/${placementId}`, { method: "DELETE" });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || "Failed to delete placement");
+      }
+      await fetchPlacements();
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "An error occurred while deleting");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleAddPlacement = () => {
     router.push("/dashboard/placements/add");
   };
@@ -1132,13 +1119,25 @@ export default function PlacementList() {
     return <LoadingScreen message="Loading archived placements..." />;
   }
 
+  if (isDeleting) {
+    return <LoadingScreen message="Deleting placement..." />;
+  }
+
   return (
     <div className="bg-white rounded-lg shadow">
-      {/* Header */}
-      <div className="flex justify-between items-center p-4 border-b border-gray-200">
-        <h1 className="text-xl font-bold">Archived Placements</h1>
+      {/* Header - responsive: same layout as organizations archived */}
+      <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center">
+        <div className="flex justify-between items-center gap-4">
+          <h1 className="text-xl font-bold">Archived Placements</h1>
+          <button
+            onClick={handleBackToPlacements}
+            className="md:hidden px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center shrink-0 bg-white"
+          >
+            Back to Placements
+          </button>
+        </div>
 
-        <div className="flex space-x-4">
+        <div className="hidden md:flex items-center space-x-4">
           {selectedPlacements.length > 0 && (
             <BulkActionsButton
               selectedCount={selectedPlacements.length}
@@ -1154,7 +1153,6 @@ export default function PlacementList() {
             />
           )}
 
-          {/* Favorites Dropdown */}
           <div className="relative">
             <button
               onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)}
@@ -1190,9 +1188,12 @@ export default function PlacementList() {
                     favorites.map((fav) => (
                       <div
                         key={fav.id}
-                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""
-                          }`}
-                        onClick={() => applyFavorite(fav)}
+                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""}`}
+                        onClick={() => {
+                          setSelectedFavoriteId(fav.id);
+                          applyFavorite(fav);
+                          setFavoritesMenuOpen(false);
+                        }}
                       >
                         <span className="text-sm text-gray-700 truncate flex-1">
                           {fav.name}
@@ -1212,17 +1213,93 @@ export default function PlacementList() {
             )}
           </div>
 
-          {/* Columns button (same like Tasks) */}
           <button
             onClick={() => setShowColumnModal(true)}
             className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
           >
             Columns
           </button>
-
           <button
             onClick={handleBackToPlacements}
             className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
+          >
+            Back to Placements
+          </button>
+        </div>
+
+        {/* Mobile: Favorites - full width */}
+        <div className="w-full md:hidden">
+          <div className="relative">
+            <button
+              onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)}
+              className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-between gap-2 bg-white"
+            >
+              <span className="flex items-center gap-2">
+                <FiStar className={selectedFavoriteId ? "text-yellow-400 fill-current" : "text-gray-400"} />
+                <span className="truncate">
+                  {selectedFavoriteId
+                    ? favorites.find((f) => f.id === selectedFavoriteId)?.name || "Favorites"
+                    : "Favorites"}
+                </span>
+              </span>
+              <FiChevronDown className="shrink-0" />
+            </button>
+            {favoritesMenuOpen && (
+              <div className="absolute left-0 right-0 top-full mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                <div className="p-2 border-b border-gray-100">
+                  <button
+                    onClick={handleOpenSaveFavoriteModal}
+                    className="w-full text-left px-3 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-md transition-colors font-medium flex items-center gap-2"
+                  >
+                    <FiStar className="text-blue-500" />
+                    Save Current Search
+                  </button>
+                </div>
+                <div className="max-h-60 overflow-y-auto py-1">
+                  {favorites.length === 0 ? (
+                    <p className="text-xs text-gray-400 text-center py-4">No saved favorites yet</p>
+                  ) : (
+                    favorites.map((fav) => (
+                      <div
+                        key={fav.id}
+                        className={`group flex items-center justify-between px-3 py-2 hover:bg-gray-50 cursor-pointer ${selectedFavoriteId === fav.id ? "bg-blue-50" : ""}`}
+                        onClick={() => {
+                          setSelectedFavoriteId(fav.id);
+                          applyFavorite(fav);
+                          setFavoritesMenuOpen(false);
+                        }}
+                      >
+                        <span className="text-sm text-gray-700 truncate flex-1">{fav.name}</span>
+                        <button
+                          onClick={(e) => handleDeleteFavorite(fav.id, e)}
+                          className="text-gray-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-1"
+                          title="Delete favorite"
+                        >
+                          <FiX size={14} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Mobile: Columns - full width */}
+        <div className="w-full md:hidden">
+          <button
+            onClick={() => setShowColumnModal(true)}
+            className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center"
+          >
+            Columns
+          </button>
+        </div>
+        {/* Mobile: Back to Placements - full width */}
+        <div className="w-full md:hidden">
+          <button
+            onClick={handleBackToPlacements}
+            className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center"
           >
             Back to Placements
           </button>
@@ -1236,6 +1313,12 @@ export default function PlacementList() {
         </div>
       )}
 
+      {/* Delete error message */}
+      {deleteError && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 m-4 rounded">
+          <p>{deleteError}</p>
+        </div>
+      )}
 
       {/* Search */}
       <div className="p-4 border-b border-gray-200">
@@ -1309,9 +1392,9 @@ export default function PlacementList() {
         anchorEl={advancedSearchButtonRef.current}
       />
 
-      {/* Placements Table */}
-      <div className="overflow-x-auto">
-        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+      <div className="w-full max-w-full overflow-x-hidden">
+        <div className="overflow-x-auto">
+          <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <table className="min-w-full divide-y divide-gray-200">
             <thead className="bg-gray-50">
               <tr>
@@ -1406,60 +1489,18 @@ export default function PlacementList() {
                         disabled
                         options={[
                           { label: "View", action: () => handleViewPlacement(placement.id) },
-                          ...(ownerField ? [{
-                            label: "Change Ownership",
-                            action: () => {
-                              setSelectedPlacementId(placement.id);
-                              setShowOwnershipModal(true);
-                            },
-                          }] : []),
-                          ...(statusField ? [{
-                            label: "Change Status",
-                            action: () => {
-                              setSelectedPlacementId(placement.id);
-                              setShowStatusModal(true);
-                            },
-                          }] : []),
                           {
-                            label: "Add Note",
-                            action: () => {
-                              setSelectedPlacementId(placement.id);
-                              setShowNoteModal(true);
-                            },
-                          },
-                          {
-                            label: "Add To TearSheet",
-                            action: () => {
-                              setSelectedPlacementId(placement.id);
-                              setShowTearsheetModal(true);
-                            },
-                          },
-                          {
-                            label: "Create Task",
-                            action: () => {
-                              router.push(`/dashboard/tasks/add?relatedEntity=placement&relatedEntityId=${placement.id}`);
-                            },
-                          },
-                          {
-                            label: "Email Candidates",
-                            action: () => handleEmailCandidates(placement.id),
-                          },
-                          {
-                            label: "Email Billing Contacts",
-                            action: () => handleEmailBillingContacts(placement.id),
-                          },
-                          {
-                            label: "Email Approvers",
-                            action: () => handleEmailApprovers(placement.id),
+                            label: "Delete",
+                            action: () => handleDeletePlacement(placement.id),
                           },
                         ]}
                       />
                     </td>
 
                     {/* Fixed ID */}
-                    <td className="px-6 py-4 whitespace-nowrap">
+                    <td className="px-6 py-4 text-black whitespace-nowrap">
                       <div className="flex flex-col gap-1">
-                        <span className="text-sm font-medium text-gray-900">P {placement.record_number ?? placement.id}</span>
+                        <span>P {placement.record_number ?? placement.id}</span>
                         {placement.archived_at && (
                           <CountdownTimer archivedAt={placement.archived_at} />
                         )}
@@ -1505,7 +1546,8 @@ export default function PlacementList() {
               )}
             </tbody>
           </table>
-        </DndContext>
+          </DndContext>
+        </div>
       </div>
 
       {/* Pagination */}
@@ -1694,62 +1736,6 @@ export default function PlacementList() {
         </div>
       )}
 
-      {/* Individual row action modals */}
-      {showOwnershipModal && ownerField && selectedPlacementId && (
-        <BulkOwnershipModal
-          open={showOwnershipModal}
-          onClose={() => {
-            setShowOwnershipModal(false);
-            setSelectedPlacementId(null);
-          }}
-          entityType="placement"
-          entityIds={[selectedPlacementId]}
-          fieldLabel={ownerField.field_label || 'Owner'}
-          onSuccess={handleIndividualActionSuccess}
-        />
-      )}
-
-      {showStatusModal && statusField && selectedPlacementId && (
-        <BulkStatusModal
-          open={showStatusModal}
-          onClose={() => {
-            setShowStatusModal(false);
-            setSelectedPlacementId(null);
-          }}
-          entityType="placement"
-          entityIds={[selectedPlacementId]}
-          fieldLabel={statusField.field_label || 'Status'}
-          options={statusField.options || []}
-          availableFields={availableFields}
-          onSuccess={handleIndividualActionSuccess}
-        />
-      )}
-
-      {showTearsheetModal && selectedPlacementId && (
-        <BulkTearsheetModal
-          open={showTearsheetModal}
-          onClose={() => {
-            setShowTearsheetModal(false);
-            setSelectedPlacementId(null);
-          }}
-          entityType="placement"
-          entityIds={[selectedPlacementId]}
-          onSuccess={handleIndividualActionSuccess}
-        />
-      )}
-
-      {showNoteModal && selectedPlacementId && (
-        <BulkNoteModal
-          open={showNoteModal}
-          onClose={() => {
-            setShowNoteModal(false);
-            setSelectedPlacementId(null);
-          }}
-          entityType="placement"
-          entityIds={[selectedPlacementId]}
-          onSuccess={handleIndividualActionSuccess}
-        />
-      )}
     </div>
   );
 }
