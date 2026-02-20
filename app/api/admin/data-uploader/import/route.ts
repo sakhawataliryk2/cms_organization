@@ -84,15 +84,39 @@ const ORGANIZATION_NAME_ALTERNATIVES = [
     'Company Name', 'Organization Name', 'Name', 'field_1', 'Field_1', 'field1', 'Field1',
 ];
 
-function recordToBackendPayload(entityType: string, record: Record<string, any>): Record<string, any> {
+function recordToBackendPayload(
+    entityType: string,
+    record: Record<string, any>,
+    fieldNameToLabel?: Record<string, string>
+): Record<string, any> {
     const mapping = FIELD_NAME_TO_BACKEND[entityType];
     if (!mapping) return record;
     const out: Record<string, any> = {};
+    const customFields: Record<string, any> = {};
+
     for (const [key, value] of Object.entries(record)) {
         if (value === undefined || value === '') continue;
-        const backendKey = mapping[key] ?? key;
-        out[backendKey] = value;
+        const backendKey = mapping[key];
+        if (backendKey !== undefined) {
+            // Standard field: put at top level (use backend key, e.g. firstName)
+            if (backendKey === 'custom_fields') {
+                // Merge existing custom_fields from record into our customFields
+                const existing = typeof value === 'object' && value !== null && !Array.isArray(value) ? value : {};
+                Object.assign(customFields, existing);
+            } else {
+                out[backendKey] = value;
+            }
+        } else {
+            // Custom field (not in mapping): store by field_label so DB matches rest of app
+            const labelKey = fieldNameToLabel?.[key] ?? key;
+            customFields[labelKey] = value;
+        }
     }
+
+    if (Object.keys(customFields).length > 0) {
+        out.custom_fields = customFields;
+    }
+
     // For organizations: if "name" is missing, try common alternative keys (custom fields may use different names)
     if (entityType === 'organizations') {
         const nameVal = out['name'];
@@ -123,7 +147,7 @@ export async function POST(request: NextRequest) {
         }
 
         const body = await request.json();
-        const { entityType, records, options } = body;
+        const { entityType, records, options, fieldNameToLabel } = body;
 
         if (!entityType || !records || !Array.isArray(records)) {
             return NextResponse.json(
@@ -170,8 +194,8 @@ export async function POST(request: NextRequest) {
             const errors: string[] = [];
 
             try {
-                // Convert field_name keys to backend-expected keys (e.g. first_name -> firstName)
-                const payload = recordToBackendPayload(entityType, record);
+                // Convert field_name keys to backend-expected keys; custom fields stored by field_label
+                const payload = recordToBackendPayload(entityType, record, fieldNameToLabel);
 
                 // Determine unique identifier field (backend key) for find-existing
                 let uniqueField = 'email';

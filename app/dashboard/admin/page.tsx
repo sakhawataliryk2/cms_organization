@@ -1028,6 +1028,12 @@ export default function AdminCenter() {
 
         const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
 
+        // Map field_name -> field_label so import API stores custom fields by field_label (not field_name)
+        const fieldNameToLabel: Record<string, string> = {};
+        uploadModuleFields.forEach((f: CustomFieldDefinition) => {
+            if (f.field_name && f.field_label) fieldNameToLabel[f.field_name] = f.field_label;
+        });
+
         try {
             const response = await fetch('/api/admin/data-uploader/import', {
                 method: 'POST',
@@ -1038,6 +1044,7 @@ export default function AdminCenter() {
                 body: JSON.stringify({
                     entityType: selectedUploadModule,
                     records: recordsToSend,
+                    fieldNameToLabel: Object.keys(fieldNameToLabel).length > 0 ? fieldNameToLabel : undefined,
                     options: {
                         updateExisting: uploadUpdateExisting,
                         skipDuplicates: false,
