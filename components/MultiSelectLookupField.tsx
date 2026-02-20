@@ -5,6 +5,7 @@ import React, { useState, useEffect, useRef } from 'react';
 interface LookupOption {
   id: string;
   name: string;
+  record_number: string;
   [key: string]: any;
 }
 
@@ -49,6 +50,7 @@ export default function MultiSelectLookupField({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const selectedIds = normalizeValue(value);
+  
 
   useEffect(() => {
     fetchOptions();
@@ -81,13 +83,15 @@ export default function MultiSelectLookupField({
           .map((org: any) => ({
             id: org.id.toString(),
             name: org.name,
-          }));
+            record_number: org.record_number || ''
+            }));
       } else if (lookupType === 'hiring-managers') {
         fetchedOptions = (data.hiringManagers || [])
           .filter(isNotArchived)
           .map((hm: any) => ({
             id: hm.id.toString(),
             name: hm.full_name || `${hm.first_name} ${hm.last_name}`,
+            record_number: hm.record_number || ''
           }));
       } else if (lookupType === 'job-seekers') {
         fetchedOptions = (data.jobSeekers || [])
@@ -95,6 +99,7 @@ export default function MultiSelectLookupField({
           .map((js: any) => ({
             id: js.id.toString(),
             name: js.full_name || `${js.first_name} ${js.last_name}`,
+            record_number: js.record_number || ''
           }));
       } else if (lookupType === 'jobs') {
         fetchedOptions = (data.jobs || [])
@@ -102,6 +107,7 @@ export default function MultiSelectLookupField({
           .map((job: any) => ({
             id: job.id.toString(),
             name: job.job_title,
+            record_number: job.record_number || ''
           }));
       } else if (lookupType === 'owner') {
         fetchedOptions = (data.users || [])
@@ -109,6 +115,7 @@ export default function MultiSelectLookupField({
           .map((user: any) => ({
             id: user.id.toString(),
             name: user.name || user.email || '',
+            record_number: user.record_number || ''
           }));
       }
       setOptions(fetchedOptions);

@@ -461,7 +461,7 @@ export default function CustomFieldRenderer({
 
     // Combine city and state
     const cityState = [city, state].filter(Boolean).join(", ");
-    
+
     // Combine all parts: Address, Address 2, City/State, Zip
     const combinedParts = [address, address2, cityState, zip].filter(Boolean);
     const autoCombinedAddress = combinedParts.join(", ");
@@ -979,51 +979,7 @@ export default function CustomFieldRenderer({
           />
         </div>
       );
-
-    // case "number":
-    //   return (
-    //     <input
-    //       {...fieldProps}
-    //       type="number"
-    //       min="2000"
-    //       max="2100"
-    //       maxLength={4}
-    //       onInput={(e) => {
-    //         const target = e.target as HTMLInputElement;
-    //         if (target.value.length > 4) {
-    //           target.value = target.value.slice(0, 4);
-    //         }
-    //       }}
-    //     />
-    //   );
     case "date": {
-
-      // Common display value (mm/dd/yyyy)
-      // const todayDefault = () => {
-      //   const today = new Date();
-      //   const m = String(today.getMonth() + 1).padStart(2, "0");
-      //   const d = String(today.getDate()).padStart(2, "0");
-      //   const y = today.getFullYear();
-      //   return `${m}/${d}/${y}`;
-      // };
-      // const displayReadOnlyValue = value ? formatDateToMMDDYYYY(String(value)) : todayDefault();
-
-      // if (isDateAddedField) {
-      //   return (
-      //     <div className="relative flex items-center">
-      //       <input
-      //         id={field.field_name}
-      //         type="text"
-      //         value={displayReadOnlyValue}
-      //         readOnly
-      //         className={`${className} bg-gray-100 cursor-not-allowed`}
-      //       />
-      //       <FiLock className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500" />
-      //     </div>
-      //   );
-      // }
-
-      // Calendar popup state
       // Calendar popup state
       const [showCalendar, setShowCalendar] = React.useState(false);
       const [currentMonth, setCurrentMonth] = React.useState(new Date());
@@ -1191,6 +1147,9 @@ export default function CustomFieldRenderer({
               type="text"
               value={displayValue}
               onChange={handleDateChange}
+              onFocus={() => {
+                if (!readOnly && !isDisabledByDependency) setShowCalendar(true);
+              }}
               placeholder="mm/dd/yyyy"
               className={`${className} flex-1 min-w-0 pr-10 ${readOnly || isDisabledByDependency ? "bg-gray-50 text-gray-600 cursor-not-allowed" : ""}`}
               required={field.is_required}
@@ -1859,7 +1818,7 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
             setCustomFields(sortedFields);
           }
         })
-        .catch(() => {});
+        .catch(() => { });
       return;
     }
     try {
