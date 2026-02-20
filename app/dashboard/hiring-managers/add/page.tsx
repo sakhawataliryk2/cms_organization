@@ -523,7 +523,9 @@ export default function AddHiringManager() {
     }
   }, [customFields, organizationPhone, organizationAddress, hiringManagerId, handleCustomFieldChange]);
 
-  // Handle prefilling from URL (existing logic preserved but ensuring it plays nice)
+  // Handle prefilling from URL (existing logic preserved but ensuring it plays nice).
+  // Intentionally omit customFieldValues from deps so that when the user clears phone/address
+  // we don't re-run and re-fill; prefill only runs when org data (e.g. organizationPhone) first loads.
   useEffect(() => {
     if (customFields.length === 0 || !organizationIdFromUrl || hasPrefilledOrgRef.current === false) return;
     if (hiringManagerId) return; // Don't auto-populate in edit mode
@@ -546,7 +548,7 @@ export default function AddHiringManager() {
         }
       }
 
-      // Company Phone fields (URL case)
+      // Company Phone fields (URL case) - only prefill when currently empty so user can leave blank
       if (
         (fieldLabel.includes("company phone") ||
           fieldLabel.includes("company phone number") ||
@@ -557,7 +559,7 @@ export default function AddHiringManager() {
         updates[field.field_name] = organizationPhone;
       }
 
-      // Organization Address fields (URL case)
+      // Organization Address fields (URL case) - only prefill when currently empty so user can leave blank
       if (
         (fieldLabel.includes("organization address") ||
           fieldLabel.includes("company address") ||
@@ -576,7 +578,8 @@ export default function AddHiringManager() {
         }
       });
     }
-  }, [customFields, organizationName, organizationPhone, organizationAddress, organizationIdFromUrl, hiringManagerId, customFieldValues, handleCustomFieldChange]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- customFieldValues omitted so clearing phone/address doesn't re-trigger prefill
+  }, [customFields, organizationName, organizationPhone, organizationAddress, organizationIdFromUrl, hiringManagerId, handleCustomFieldChange]);
 
   // Sync formData -> custom fields only when formData changes (e.g. user edited a standard form input).
   // Do NOT depend on customFieldValues: when user edits a custom field, this effect must not re-run

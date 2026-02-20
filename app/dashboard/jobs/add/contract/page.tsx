@@ -376,20 +376,21 @@ export default function AddJob() {
   // Handle job type selection and redirect
   const handleJobTypeSelect = (type: string) => {
     setSelectedJobType(type);
-    // Build query string preserving existing params
+    // Preserve all params from URL and state when switching type
     const params = new URLSearchParams();
     if (leadId) params.append("leadId", leadId);
     if (organizationIdFromUrl) params.append("organizationId", organizationIdFromUrl);
+    const hmId = hiringManagerIdFromUrl?.trim() || hiringManagerValue?.trim() || "";
+    if (hmId) params.append("hiringManagerId", hmId);
     const queryString = params.toString();
     const query = queryString ? `?${queryString}` : "";
 
-    //  based on selected type
     if (type === "direct-hire") {
       router.push(`/dashboard/jobs/add/direct-hire${query}`);
     } else if (type === "executive-search") {
       router.push(`/dashboard/jobs/add/executive-search${query}`);
     } else if (type === "contract") {
-      router.push(`/dashboard/jobs/add/contract${queryString ? `?${queryString}` : ""}`);
+      router.push(`/dashboard/jobs/add/contract${query}`);
     }
   };
 
