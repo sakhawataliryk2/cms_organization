@@ -105,6 +105,9 @@ export default function CustomFieldRenderer({
   // Track if we've auto-populated the date to prevent infinite loops
   const hasAutoFilledRef = React.useRef(false);
 
+  // Store last selection for phone input so we can handle replace (select + type) correctly
+  const phoneSelectionRef = React.useRef({ start: 0, end: 0 });
+
   // Helper function to convert YYYY-MM-DD to mm/dd/yyyy
   const formatDateToMMDDYYYY = React.useCallback((dateStr: string): string => {
     if (!dateStr || dateStr.trim() === "") return "";
@@ -294,47 +297,47 @@ export default function CustomFieldRenderer({
     return limited;
   };
 
+  // Count digits in str before character position (exclusive)
+  const countDigitsBefore = (str: string, position: number): number => {
+    let count = 0;
+    for (let i = 0; i < position && i < str.length; i++) {
+      if (/\d/.test(str[i])) count++;
+    }
+    return count;
+  };
+
   // Handle phone number input changes with cursor position preservation
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.target.value;
-    const cursorPosition = e.target.selectionStart || 0;
     const oldValue = value || "";
-    
-    // Count digits in old and new values to detect if user is adding or deleting
+    const { start: prevStart, end: prevEnd } = phoneSelectionRef.current;
+
+    // Count digits in old and new values
     const oldDigits = oldValue.replace(/\D/g, "");
     const newDigits = input.replace(/\D/g, "");
     const isAdding = newDigits.length > oldDigits.length;
     const isDeleting = newDigits.length < oldDigits.length;
-    
-    // Count how many digits are before the cursor in the old value
-    const beforeCursor = oldValue.substring(0, cursorPosition);
-    const digitsBeforeCursor = beforeCursor.replace(/\D/g, "").length;
-    
+    const hadSelection = prevEnd > prevStart;
+
+    // When user replaced a selection, use selection start; otherwise use cursor position (prevStart === prevEnd)
+    const oldCursorOrSelectionStart = prevStart;
+    const digitsBeforeCursor = countDigitsBefore(oldValue, oldCursorOrSelectionStart);
+    const selectedDigitCount = hadSelection
+      ? countDigitsBefore(oldValue, prevEnd) - countDigitsBefore(oldValue, prevStart)
+      : 0;
+
     // Format the new value
     const formatted = formatPhoneNumber(input);
-    
+
     let newCursorPosition = formatted.length;
-    
-    if (isDeleting) {
-      // When deleting, maintain cursor position relative to digit count
-      let digitCount = 0;
-      for (let i = 0; i < formatted.length; i++) {
-        if (/\d/.test(formatted[i])) {
-          digitCount++;
-          if (digitCount === digitsBeforeCursor) {
-            newCursorPosition = i + 1;
-            break;
-          }
-        }
-      }
-      // If deleting at the start
-      if (digitsBeforeCursor === 0 && formatted.length > 0 && formatted[0] === '(') {
-        newCursorPosition = 1;
-      }
-    } else if (isAdding) {
-      // When adding, advance cursor to after the newly added digit
-      // Count digits in the formatted string up to where we should be
-      const targetDigitCount = digitsBeforeCursor + 1; // One more digit than before
+
+    if (hadSelection && (isAdding || isDeleting || selectedDigitCount > 0)) {
+      // Replace: user selected a range and typed. Cursor should be after the replacement.
+      const digitsTyped = newDigits.length - oldDigits.length + selectedDigitCount;
+      const targetDigitCount = Math.min(
+        Math.max(0, digitsBeforeCursor + digitsTyped),
+        newDigits.length
+      );
       let digitCount = 0;
       for (let i = 0; i < formatted.length; i++) {
         if (/\d/.test(formatted[i])) {
@@ -345,12 +348,43 @@ export default function CustomFieldRenderer({
           }
         }
       }
-      // If we've reached max digits, put cursor at end
+      if (targetDigitCount === 0 && formatted.length > 0 && formatted[0] === "(") {
+        newCursorPosition = 1;
+      }
+    } else if (isDeleting) {
+      // Deleting: we removed the digit that was at/before the cursor, so place cursor after (digitsBeforeCursor - 1)
+      const targetDigitCount = Math.max(0, digitsBeforeCursor - 1);
+      let digitCount = 0;
+      for (let i = 0; i < formatted.length; i++) {
+        if (/\d/.test(formatted[i])) {
+          digitCount++;
+          if (digitCount === targetDigitCount) {
+            newCursorPosition = i + 1;
+            break;
+          }
+        }
+      }
+      if (targetDigitCount === 0 && formatted.length > 0 && formatted[0] === "(") {
+        newCursorPosition = 1;
+      }
+    } else if (isAdding) {
+      // Adding: cursor after the new digit(s)
+      const targetDigitCount = digitsBeforeCursor + 1;
+      let digitCount = 0;
+      for (let i = 0; i < formatted.length; i++) {
+        if (/\d/.test(formatted[i])) {
+          digitCount++;
+          if (digitCount === targetDigitCount) {
+            newCursorPosition = i + 1;
+            break;
+          }
+        }
+      }
       if (newDigits.length >= 10) {
         newCursorPosition = formatted.length;
       }
     } else {
-      // No change in digit count (e.g., replacing a digit), maintain relative position
+      // Same digit count (e.g. replace one digit with one)
       let digitCount = 0;
       for (let i = 0; i < formatted.length; i++) {
         if (/\d/.test(formatted[i])) {
@@ -362,13 +396,22 @@ export default function CustomFieldRenderer({
         }
       }
     }
-    
+
     onChange(field.field_name, formatted);
-    
-    // Restore cursor position after React updates
+
     requestAnimationFrame(() => {
-      e.target.setSelectionRange(newCursorPosition, newCursorPosition);
+      const el = e.target;
+      el.setSelectionRange(newCursorPosition, newCursorPosition);
+      phoneSelectionRef.current = { start: newCursorPosition, end: newCursorPosition };
     });
+  };
+
+  const handlePhoneSelect = (e: React.SyntheticEvent<HTMLInputElement>) => {
+    const target = e.target as HTMLInputElement;
+    phoneSelectionRef.current = {
+      start: target.selectionStart ?? 0,
+      end: target.selectionEnd ?? 0,
+    };
   };
 
   const fieldProps = {
@@ -1366,6 +1409,7 @@ export default function CustomFieldRenderer({
           {...fieldProps}
           type="tel"
           onChange={handlePhoneChange}
+          onSelect={handlePhoneSelect}
           maxLength={14} // (000) 000-0000 = 14 characters
           title="Phone number will be automatically formatted as (000) 000-0000"
         />
