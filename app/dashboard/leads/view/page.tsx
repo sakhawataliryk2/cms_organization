@@ -409,7 +409,7 @@ export default function LeadView() {
   const handleTogglePinnedRecord = () => {
     if (!lead) return;
     const key = buildPinnedKey("lead", lead.id);
-    const label = lead.fullName || String(lead.id);
+    const label = lead.fullName || formatRecordId(lead.record_number ?? lead.id, "lead");
     let url = `/dashboard/leads/view?id=${lead.id}`;
     if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
 
@@ -3301,7 +3301,7 @@ export default function LeadView() {
             <FiTarget size={20} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700 flex flex-wrap items-center gap-x-3 gap-y-1">
-            L {lead.id} {lead.fullName}
+            {formatRecordId(lead.record_number ?? lead.id, "lead")} {lead.fullName}
             {lead.archived_at && (
               <div className="ml-3">
                 <CountdownTimer archivedAt={lead.archived_at} />
