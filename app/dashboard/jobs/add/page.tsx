@@ -66,6 +66,8 @@ function MultiValueSearchTagInput({
   const [inputValue, setInputValue] = useState("");
   const [isOpen, setIsOpen] = useState(false);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const searchParams = useSearchParams() ?? new URLSearchParams();
+  const organizationIdFromUrl = searchParams.get("organizationId");
 
   const filteredOptions = useMemo(() => {
     const q = inputValue.trim().toLowerCase();
@@ -206,6 +208,8 @@ function HiringManagerSearchSelect({
   const [highlightIndex, setHighlightIndex] = useState(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const searchParams = useSearchParams() ?? new URLSearchParams();
+  const organizationIdFromUrl = searchParams.get("organizationId");
 
   const selectedOption = options.find((o) => String(o.id) === value);
   const displayValue = selectedOption?.name ?? "";
@@ -323,8 +327,9 @@ function HiringManagerSearchSelect({
             // {
             filteredOptions.length === 0 ? (
               <div className="px-3 py-4 text-sm text-gray-500 text-center">
-                No hiring managers match your search
-              </div>
+                No hiring managers match your search. {" "}
+                <a href={`/dashboard/hiring-managers/add?organizationId=${organizationIdFromUrl}`} className="underline text-blue-500 hover:text-blue-700">Add a new hiring manager</a>
+                </div>
             ) : (
               filteredOptions.map((opt, idx) => (
                 <button
@@ -380,16 +385,28 @@ export default function AddJob() {
   >([]);
   const [isHiringManagerOptionsLoading, setIsHiringManagerOptionsLoading] = useState(false);
   const [orgHmStepCompleted, setOrgHmStepCompleted] = useState(false);
+  // When jobs entity has no Hiring Manager custom field, we still show HM step and store selection here for URL
+  const [orgFlowHmId, setOrgFlowHmId] = useState("");
 
-  // Handle job type selection and redirect
+  // Handle job type selection and redirect — preserve all params from URL and state
   const handleJobTypeSelect = (type: string) => {
     setSelectedJobType(type);
 
-    // Build query string preserving existing params (incl. hiringManagerId from org flow)
+    // Preserve params from URL first, then fall back to state (so params never disappear)
+    const orgId =
+      searchParams.get("organizationId") ||
+      searchParams.get("organization_id") ||
+      organizationIdFromUrl;
+    const hmId =
+      searchParams.get("hiringManagerId")?.trim() ||
+      hiringManagerValue?.trim() ||
+      "";
+    const lead = searchParams.get("leadId") || searchParams.get("lead_id") || leadId;
+
     const params = new URLSearchParams();
-    if (leadId) params.append("leadId", leadId);
-    if (organizationIdFromUrl) params.append("organizationId", organizationIdFromUrl);
-    if (hiringManagerValue?.trim()) params.append("hiringManagerId", hiringManagerValue);
+    if (orgId) params.set("organizationId", orgId);
+    if (hmId) params.set("hiringManagerId", hmId);
+    if (lead) params.set("leadId", lead);
     const queryString = params.toString();
     const query = queryString ? `?${queryString}` : "";
 
@@ -399,7 +416,7 @@ export default function AddJob() {
     } else if (type === "executive-search") {
       router.push(`/dashboard/jobs/add/executive-search${query}`);
     } else if (type === "contract") {
-      router.push(`/dashboard/jobs/add/contract${queryString ? `?${queryString}` : ""}`);
+      router.push(`/dashboard/jobs/add/contract${query}`);
     }
   };
 
@@ -1445,10 +1462,22 @@ export default function AddJob() {
   }, [customFieldValues, isEditMode, hiringManagerCustomField, hiringManagerValue, validateCustomFields]);
 
   // From organization view: first step — select Hiring Manager (inline, no modal), then type selection
+  // Only block on custom fields loading; if no Hiring Manager field exists, still show HM step using orgFlowHmId so user is not stuck
   if (showOrgHmFirstStep) {
-    if (customFieldsLoading || !hiringManagerCustomField) {
+    if (customFieldsLoading) {
       return <LoadingScreen message="Loading..." />;
     }
+    const hmValueForStep = hiringManagerCustomField ? hiringManagerValue : orgFlowHmId;
+    const handleHmStepContinue = () => {
+      const hmIdToSave = hiringManagerCustomField ? hiringManagerValue : orgFlowHmId;
+      if (organizationIdFromUrl && hmIdToSave?.trim()) {
+        const params = new URLSearchParams();
+        params.set("organizationId", organizationIdFromUrl);
+        params.set("hiringManagerId", hmIdToSave.trim());
+        router.replace(`/dashboard/jobs/add?${params.toString()}`, { scroll: false });
+      }
+      setOrgHmStepCompleted(true);
+    };
     return (
       <div className="mx-auto py-4 px-4 sm:py-8 sm:px-6">
         <div className="bg-white rounded-lg shadow p-4 sm:p-6">
@@ -1485,19 +1514,22 @@ export default function AddJob() {
               <label className="w-48 font-medium shrink-0">Hiring Manager:</label>
               <div className="flex-1">
                 <HiringManagerSearchSelect
-                  value={hiringManagerValue}
+                  value={hmValueForStep}
                   options={hiringManagerOptions}
                   onChange={(id, opt) => {
-                    if (!hiringManagerCustomField) return;
-                    setCustomFieldValues((prev) => ({
-                      ...prev,
-                      [hiringManagerCustomField.field_name]: id,
-                    }));
-                    setFormFields((prev) =>
-                      prev.map((f) =>
-                        f.name === "hiringManager" ? { ...f, value: opt.name } : f
-                      )
-                    );
+                    if (hiringManagerCustomField) {
+                      setCustomFieldValues((prev) => ({
+                        ...prev,
+                        [hiringManagerCustomField.field_name]: id,
+                      }));
+                      setFormFields((prev) =>
+                        prev.map((f) =>
+                          f.name === "hiringManager" ? { ...f, value: opt.name } : f
+                        )
+                      );
+                    } else {
+                      setOrgFlowHmId(id);
+                    }
                   }}
                   placeholder="Search or select Hiring Manager"
                   loading={isHiringManagerOptionsLoading}
@@ -1514,9 +1546,9 @@ export default function AddJob() {
               </button>
               <button
                 type="button"
-                disabled={!hiringManagerValue?.trim()}
-                onClick={() => setOrgHmStepCompleted(true)}
-                className={`px-4 py-2 rounded text-white ${!hiringManagerValue?.trim()
+                disabled={!hmValueForStep?.trim()}
+                onClick={handleHmStepContinue}
+                className={`px-4 py-2 rounded text-white ${!hmValueForStep?.trim()
                   ? "bg-gray-300 cursor-not-allowed"
                   : "bg-blue-500 hover:bg-blue-600"
                   }`}
