@@ -720,6 +720,71 @@ export default function AddJob() {
     }
   }, [customFieldValues["Field_3"], organizations, customFields, customFieldsLoading, currentOrganizationId]);
 
+  // When selected organization changes (from URL or from form), fetch org and auto-fill address; address stays editable
+  useEffect(() => {
+    if (!currentOrganizationId || addressFields.length === 0) return;
+
+    const fetchOrgAndPrefillAddress = async () => {
+      try {
+        const response = await fetch(`/api/organizations/${currentOrganizationId}`);
+        if (!response.ok) return;
+        const data = await response.json();
+        const org = data.organization;
+        if (!org) return;
+
+        const orgAddress: {
+          address?: string;
+          address2?: string;
+          city?: string;
+          state?: string;
+          zip?: string;
+        } = {};
+
+        if (org.address) {
+          orgAddress.address = String(org.address);
+        }
+
+        if (org.custom_fields) {
+          let orgCustomFields: Record<string, any> = {};
+          try {
+            orgCustomFields =
+              typeof org.custom_fields === "string"
+                ? JSON.parse(org.custom_fields)
+                : org.custom_fields;
+          } catch (e) {
+            console.error("Error parsing organization custom_fields for address prefill:", e);
+          }
+          Object.entries(orgCustomFields).forEach(([label, value]) => {
+            const role = getAddressRoleFromLabel(label);
+            if (!role) return;
+            if (orgAddress[role]) return;
+            if (value === undefined || value === null) return;
+            const v = String(value).trim();
+            if (!v) return;
+            orgAddress[role] = v;
+          });
+        }
+
+        setCustomFieldValues((prev) => {
+          const next = { ...prev };
+          addressFields.forEach((addrField) => {
+            const role = getAddressRoleFromLabel(addrField.field_label);
+            if (!role) return;
+            const value = orgAddress[role];
+            if (value != null && String(value).trim() !== "") {
+              next[addrField.field_name] = value;
+            }
+          });
+          return next;
+        });
+      } catch (e) {
+        console.error("Error fetching organization for address prefill:", e);
+      }
+    };
+
+    fetchOrgAndPrefillAddress();
+  }, [currentOrganizationId, addressFields, setCustomFieldValues]);
+
   // Prefill organizationId from URL if provided (create mode only)
   useEffect(() => {
     if (jobId) return; // don't override edit mode
@@ -743,61 +808,7 @@ export default function AddJob() {
           const org = data.organization;
           setOrganizationName(orgName);
 
-          // Build a canonical organization address object from org + org.custom_fields
-          const orgAddress: {
-            address?: string;
-            address2?: string;
-            city?: string;
-            state?: string;
-            zip?: string;
-          } = {};
-
-          if (org?.address) {
-            orgAddress.address = String(org.address);
-          }
-
-          if (org?.custom_fields) {
-            let orgCustomFields: Record<string, any> = {};
-            try {
-              orgCustomFields =
-                typeof org.custom_fields === "string"
-                  ? JSON.parse(org.custom_fields)
-                  : org.custom_fields;
-            } catch (e) {
-              console.error("Error parsing organization custom_fields for address prefill:", e);
-            }
-
-            Object.entries(orgCustomFields).forEach(([label, value]) => {
-              const role = getAddressRoleFromLabel(label);
-              if (!role) return;
-              if (orgAddress[role]) return;
-              if (value === undefined || value === null) return;
-              const v = String(value).trim();
-              if (!v) return;
-              orgAddress[role] = v;
-            });
-          }
-
-          // Prefill address custom fields for this job from the canonical organization address
-          if (addressFields.length > 0) {
-            setCustomFieldValues((prev) => {
-              const next = { ...prev };
-
-              addressFields.forEach((addrField) => {
-                // Do not overwrite if user or other logic already set a value
-                if (next[addrField.field_name]) return;
-
-                const role = getAddressRoleFromLabel(addrField.field_label);
-                if (!role) return;
-                const value = orgAddress[role];
-                if (value && String(value).trim() !== "") {
-                  next[addrField.field_name] = value;
-                }
-              });
-
-              return next;
-            });
-          }
+          // Address is prefilled by the "when selected organization changes" effect below
 
           // Set Field_3 (Organization custom field) if it exists
           // Use the organization name (which matches the dropdown option values)
