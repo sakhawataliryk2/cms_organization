@@ -25,6 +25,7 @@ import {
 import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import CountdownTimer from "@/components/CountdownTimer";
+import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 
 interface Organization {
   id: string;
@@ -524,6 +525,16 @@ export default function ArchivedOrganizationsList() {
     }
     setColumnFields((prev) => (prev.length === 0 ? catalogKeys : prev));
   }, [columnsCatalog]);
+
+  const orgCatalogKeys = useMemo(() => columnsCatalog.map((c) => c.key), [columnsCatalog]);
+  const columnOrderForModal = useMemo(
+    () => [...columnFields, ...orgCatalogKeys.filter((k) => !columnFields.includes(k))],
+    [columnFields, orgCatalogKeys]
+  );
+  const columnVisibleForModal = useMemo(
+    () => Object.fromEntries(orgCatalogKeys.map((k) => [k, columnFields.includes(k)])),
+    [columnFields, orgCatalogKeys]
+  );
 
   const getColumnLabel = (key: string) =>
     columnsCatalog.find((c) => c.key === key)?.label || key;
@@ -1369,141 +1380,37 @@ export default function ArchivedOrganizationsList() {
       </div>
 
       {/* Column Customization Modal */}
-      {showColumnModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-3xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">Customize Columns</h2>
-              <button
-                onClick={() => setShowColumnModal(false)}
-                className="p-1 rounded hover:bg-gray-200"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
-
-            <div className="p-6 grid grid-cols-2 gap-6">
-              {/* Available */}
-              <div>
-                <h3 className="font-medium mb-3">Available Columns</h3>
-
-                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
-                  {columnsCatalog.map((c) => {
-                    const checked = columnFields.includes(c.key);
-                    return (
-                      <label
-                        key={c.key}
-                        className="flex items-center gap-2 p-2 hover:bg-gray-50 rounded cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={() => {
-                            setColumnFields((prev) => {
-                              if (prev.includes(c.key))
-                                return prev.filter((x) => x !== c.key);
-                              return [...prev, c.key];
-                            });
-                          }}
-                          className="w-4 h-4"
-                        />
-                        <span className="text-sm text-gray-800">{c.label}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Order */}
-              <div>
-                <h3 className="font-medium mb-3">Column Order</h3>
-                <div className="border rounded p-3 max-h-[60vh] overflow-auto space-y-2">
-                  {columnFields.length === 0 ? (
-                    <div className="text-sm text-gray-500 italic">
-                      No columns selected
-                    </div>
-                  ) : (
-                    columnFields.map((key, idx) => (
-                      <div
-                        key={key}
-                        className="flex items-center justify-between p-2 border rounded"
-                      >
-                        <div className="text-sm font-medium">
-                          {getColumnLabel(key)}
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
-                            disabled={idx === 0}
-                            onClick={() => {
-                              setColumnFields((prev) => {
-                                const copy = [...prev];
-                                [copy[idx - 1], copy[idx]] = [
-                                  copy[idx],
-                                  copy[idx - 1],
-                                ];
-                                return copy;
-                              });
-                            }}
-                          >
-                            ↑
-                          </button>
-                          <button
-                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-40"
-                            disabled={idx === columnFields.length - 1}
-                            onClick={() => {
-                              setColumnFields((prev) => {
-                                const copy = [...prev];
-                                [copy[idx], copy[idx + 1]] = [
-                                  copy[idx + 1],
-                                  copy[idx],
-                                ];
-                                return copy;
-                              });
-                            }}
-                          >
-                            ↓
-                          </button>
-                          <button
-                            className="px-2 py-1 border rounded text-xs hover:bg-gray-50"
-                            onClick={() =>
-                              setColumnFields((prev) =>
-                                prev.filter((x) => x !== key)
-                              )
-                            }
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <div className="flex justify-end gap-2 mt-4">
-                  <button
-                    className="px-4 py-2 border rounded hover:bg-gray-50"
-                    onClick={() => setColumnFields(columnsCatalog.map((c) => c.key))}
-                  >
-                    Reset
-                  </button>
-                  <button
-                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                    disabled={isSavingColumns}
-                    onClick={async () => {
-                      const ok = await saveColumnConfig();
-                      if (ok) setShowColumnModal(false);
-                    }}
-                  >
-                    Done
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <SortableFieldsEditModal
+        open={showColumnModal}
+        onClose={() => setShowColumnModal(false)}
+        title="Customize Columns"
+        order={columnOrderForModal}
+        visible={columnVisibleForModal}
+        fieldCatalog={columnsCatalog.map((c) => ({ key: c.key, label: c.label }))}
+        onToggle={(key) =>
+          setColumnFields((prev) =>
+            prev.includes(key) ? prev.filter((x) => x !== key) : [...prev, key]
+          )
+        }
+        onDragEnd={(event) => {
+          const { active, over } = event;
+          if (!over || active.id === over.id) return;
+          const order = columnOrderForModal;
+          const oldIndex = order.indexOf(active.id as string);
+          const newIndex = order.indexOf(over.id as string);
+          if (oldIndex === -1 || newIndex === -1) return;
+          const newOrder = arrayMove(order, oldIndex, newIndex);
+          setColumnFields(newOrder.filter((k) => columnFields.includes(k)));
+        }}
+        onSave={async () => {
+          const ok = await saveColumnConfig();
+          if (ok) setShowColumnModal(false);
+        }}
+        isSaveDisabled={!!isSavingColumns}
+        saveButtonText="Done"
+        onReset={() => setColumnFields(columnsCatalog.map((c) => c.key))}
+        resetButtonText="Reset"
+      />
 
       {/* Save Favorite Modal */}
       {showSaveFavoriteModal && (
