@@ -616,8 +616,7 @@ export default function AddHiringManager() {
       Object.entries(fieldMappings).forEach(([formKey, labels]) => {
         if (labels.includes(fieldLabel)) {
           const formValue = formData[formKey as keyof typeof formData];
-          // Sync both non-empty and empty so user can clear phone/address and it stays cleared
-          if (formValue !== undefined && formValue !== null) {
+          if (formValue !== undefined && formValue !== null && formValue !== "") {
             newValue = formValue;
           }
         }
@@ -632,64 +631,6 @@ export default function AddHiringManager() {
       }
     });
   }, [formData, customFields, setCustomFieldValues]);
-
-  // Sync custom field values (Phone, Address, etc.) back to formData so that when user
-  // clears the phone/address in the custom form, formData stays in sync and the
-  // formData->custom sync above won’t refill from stale formData (e.g. org prefill).
-  useEffect(() => {
-    if (customFields.length === 0) return;
-
-    const fieldMappings: Record<string, string[]> = {
-      firstName: ["First Name", "First", "FName"],
-      lastName: ["Last Name", "Last", "LName"],
-      email: ["Email", "Email 1", "Email Address", "E-mail"],
-      email2: ["Email 2"],
-      phone: ["Phone", "Phone Number", "Telephone"],
-      mobilePhone: ["Mobile Phone", "Mobile", "Cell Phone"],
-      directLine: ["Direct Line"],
-      companyPhone: ["Company Phone", "Contact Phone", "Main Phone"],
-      status: ["Status", "Current Status"],
-      title: ["Title", "Job Title", "Position"],
-      department: ["Department", "Dept"],
-      reportsTo: ["Reports To", "Manager"],
-      owner: ["Owner", "Assigned To", "Assigned Owner"],
-      secondaryOwners: ["Secondary Owners", "Secondary Owner"],
-      address: ["Address", "Street Address", "Address 1"],
-      address2: ["Address 2", "Suite", "Apt", "Apartment", "Floor"],
-      city: ["City"],
-      state: ["State"],
-      zipCode: ["ZIP Code", "Zip", "ZipCode", "Postal Code"],
-      linkedinUrl: ["LinkedIn URL", "LinkedIn", "LinkedIn Profile"],
-      nickname: ["Nickname", "Nick Name"],
-      lastContactDate: ["Last Contact Date", "Last Contact"],
-    };
-
-    const updates: Partial<typeof formData> = {};
-    customFields.forEach((field) => {
-      const fieldLabel = field.field_label;
-      Object.entries(fieldMappings).forEach(([formKey, labels]) => {
-        if (labels.includes(fieldLabel)) {
-          const customVal = customFieldValues[field.field_name];
-          const value = customVal === undefined || customVal === null ? "" : String(customVal);
-          (updates as any)[formKey] = value;
-        }
-      });
-    });
-
-    if (Object.keys(updates).length > 0) {
-      setFormData((prev) => {
-        let changed = false;
-        for (const k of Object.keys(updates) as (keyof typeof formData)[]) {
-          if (prev[k] !== (updates as any)[k]) {
-            changed = true;
-            break;
-          }
-        }
-        if (!changed) return prev;
-        return { ...prev, ...updates };
-      });
-    }
-  }, [customFields, customFieldValues]);
 
   // const validateForm = () => {
 
