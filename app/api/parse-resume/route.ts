@@ -5,7 +5,9 @@ import { extractTextFromFile, isResumeFile } from "@/lib/resumeTextExtract";
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "stepfun/step-3.5-flash:free";
 
-const SYSTEM_PROMPT = `You are a resume parsing engine.
+type CustomFieldDef = { field_name: string; field_label?: string | null; is_hidden?: boolean };
+
+const BASE_SYSTEM_PROMPT = `You are a resume parsing engine.
 Your task is to extract structured candidate information from resume text and return ONLY valid JSON.
 
 Rules:
@@ -19,13 +21,51 @@ Rules:
 - Never guess.
 - Only extract information present in the text.
 
-Return JSON in this exact structure:
+ADDRESS PARSING (important):
+- When you see a location or full address, split it into components:
+  - "address": street address (line 1 only, e.g. "123 Main St").
+  - "address_2": second line if present (apartment, suite, floor, unit, building).
+  - "city": city name only.
+  - "state": state (prefer 2-letter US code, e.g. "CA").
+  - "zip": ZIP or postal code only.
+- If only one line is given (e.g. "San Francisco, CA"), put city in "city", state in "state", leave "address" empty or put the full string in "address" only if it looks like a street.
+- Do not put the entire address in a single field; always try to split into address, city, state, zip.`;
+
+function buildSystemPrompt(customFields: CustomFieldDef[]): string {
+  const customFieldEntries =
+    customFields.length > 0
+      ? customFields
+          .filter((f) => !f.is_hidden && f.field_name)
+          .map(
+            (f) =>
+              `    "${f.field_name}": ""  // value for: ${(f.field_label || f.field_name).replace(/"/g, "'")}`
+          )
+          .join(",\n")
+      : "";
+
+  const customBlock =
+    customFieldEntries.length > 0
+      ? `,
+  "custom_fields": {
+${customFieldEntries}
+  }`
+      : "";
+
+  return `${BASE_SYSTEM_PROMPT}
+
+Return JSON in this exact structure (use exact keys; put extracted value for each custom_fields key):
 {
   "full_name": "",
   "first_name": "",
   "last_name": "",
   "email": "",
   "phone": "",
+  "mobile_phone": "",
+  "address": "",
+  "address_2": "",
+  "city": "",
+  "state": "",
+  "zip": "",
   "location": "",
   "linkedin": "",
   "portfolio": "",
@@ -47,9 +87,10 @@ Return JSON in this exact structure:
       "end_date": "",
       "description": ""
     }
-  ]
+  ]${customBlock}
 }
 If a section does not exist, return an empty array.`;
+}
 
 export interface ParsedResume {
   full_name: string;
@@ -57,6 +98,15 @@ export interface ParsedResume {
   last_name: string;
   email: string;
   phone: string;
+  mobile_phone: string;
+  /** Street address (line 1) */
+  address: string;
+  /** Address line 2 (apt, suite, etc.) */
+  address_2: string;
+  city: string;
+  state: string;
+  zip: string;
+  /** Fallback full location if not split */
   location: string;
   linkedin: string;
   portfolio: string;
@@ -71,6 +121,8 @@ export interface ParsedResume {
     end_date: string;
     description: string;
   }>;
+  /** Values keyed by admin field_name for custom fields */
+  custom_fields?: Record<string, string>;
 }
 
 function toStr(v: unknown): string {
@@ -86,9 +138,20 @@ function toStrArray(v: unknown): string[] {
   return [];
 }
 
-function parseAiJson(raw: string): ParsedResume | null {
+function toCustomFieldsRecord(v: unknown): Record<string, string> {
+  if (v == null || typeof v !== "object") return {};
+  const out: Record<string, string> = {};
+  for (const [k, val] of Object.entries(v)) {
+    if (typeof k === "string" && val != null) out[k] = toStr(val);
+  }
+  return out;
+}
+
+function parseAiJson(
+  raw: string,
+  customFieldNames: string[]
+): ParsedResume | null {
   let text = raw.trim();
-  // Strip markdown code block if present
   const codeMatch = text.match(/^```(?:json)?\s*([\s\S]*?)```\s*$/m);
   if (codeMatch) text = codeMatch[1].trim();
   try {
@@ -109,13 +172,39 @@ function parseAiJson(raw: string): ParsedResume | null {
           description: toStr(w?.description),
         }))
       : [];
+
+    let address = toStr(obj.address);
+    let address_2 = toStr(obj.address_2);
+    let city = toStr(obj.city);
+    let state = toStr(obj.state);
+    let zip = toStr(obj.zip);
+    let location = toStr(obj.location);
+    if (!address && !city && !state && !zip && location) {
+      address = location;
+    }
+
+    const custom_fields: Record<string, string> = {};
+    const rawCustom = obj.custom_fields;
+    if (rawCustom && typeof rawCustom === "object") {
+      const parsed = toCustomFieldsRecord(rawCustom);
+      for (const name of customFieldNames) {
+        if (parsed[name] !== undefined) custom_fields[name] = parsed[name];
+      }
+    }
+
     return {
       full_name: toStr(obj.full_name),
       first_name: toStr(obj.first_name),
       last_name: toStr(obj.last_name),
       email: toStr(obj.email),
       phone: toStr(obj.phone),
-      location: toStr(obj.location),
+      mobile_phone: toStr(obj.mobile_phone),
+      address,
+      address_2,
+      city,
+      state,
+      zip,
+      location,
       linkedin: toStr(obj.linkedin),
       portfolio: toStr(obj.portfolio),
       current_job_title: toStr(obj.current_job_title),
@@ -123,16 +212,47 @@ function parseAiJson(raw: string): ParsedResume | null {
       skills: toStrArray(obj.skills),
       education,
       work_experience,
+      custom_fields: Object.keys(custom_fields).length > 0 ? custom_fields : undefined,
     };
   } catch {
     return null;
   }
 }
 
-async function callOpenRouter(extractedText: string): Promise<string> {
+async function fetchJobSeekerCustomFields(
+  token: string
+): Promise<CustomFieldDef[]> {
+  const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
+  const res = await fetch(
+    `${apiUrl}/api/custom-fields/entity/job-seekers`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  const list = data?.customFields ?? data?.data ?? [];
+  return Array.isArray(list)
+    ? list.filter(
+        (f: unknown) =>
+          f && typeof f === "object" && typeof (f as CustomFieldDef).field_name === "string"
+      )
+    : [];
+}
+
+async function callOpenRouter(
+  extractedText: string,
+  systemPrompt: string
+): Promise<string> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
-    throw new Error("OPENROUTER_API_KEY is not set. Add it to .env to use AI resume parsing.");
+    throw new Error(
+      "OPENROUTER_API_KEY is not set. Add it to .env to use AI resume parsing."
+    );
   }
 
   const res = await fetch(OPENROUTER_URL, {
@@ -145,14 +265,13 @@ async function callOpenRouter(extractedText: string): Promise<string> {
     body: JSON.stringify({
       model: MODEL,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         {
           role: "user",
           content: `Extract structured information from the following resume text:\n\n${extractedText}`,
         },
       ],
       temperature: 0,
-      // StepFun does not support response_format.json_object; prompt enforces JSON-only output
     }),
   });
 
@@ -175,7 +294,7 @@ async function callOpenRouter(extractedText: string): Promise<string> {
  * POST /api/parse-resume
  * Body: multipart/form-data with "file" (PDF, DOCX, or TXT).
  * Returns { success: true, parsed: ParsedResume } or { success: false, message }.
- * Never auto-saves; frontend maps parsed data into the add form for review.
+ * Parsed shape includes address (street), address_2, city, state, zip and custom_fields from admin.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -215,13 +334,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let rawContent = await callOpenRouter(text);
-    let parsed = parseAiJson(rawContent);
+    const customFields = await fetchJobSeekerCustomFields(token);
+    const systemPrompt = buildSystemPrompt(customFields);
+    const customFieldNames = customFields
+      .filter((f) => !f.is_hidden && f.field_name)
+      .map((f) => f.field_name);
 
-    // Retry once if JSON parsing failed (e.g. model added commentary)
+    let rawContent = await callOpenRouter(text, systemPrompt);
+    let parsed = parseAiJson(rawContent, customFieldNames);
+
     if (!parsed) {
-      rawContent = await callOpenRouter(text);
-      parsed = parseAiJson(rawContent);
+      rawContent = await callOpenRouter(text, systemPrompt);
+      parsed = parseAiJson(rawContent, customFieldNames);
     }
 
     if (!parsed) {

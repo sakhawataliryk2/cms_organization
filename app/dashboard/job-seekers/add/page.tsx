@@ -84,7 +84,13 @@ interface ParsedResume {
   last_name: string;
   email: string;
   phone: string;
-  location: string;
+  mobile_phone?: string;
+  address?: string;
+  address_2?: string;
+  city?: string;
+  state?: string;
+  zip?: string;
+  location?: string;
   linkedin: string;
   portfolio: string;
   current_job_title: string;
@@ -98,6 +104,7 @@ interface ParsedResume {
     end_date: string;
     description: string;
   }>;
+  custom_fields?: Record<string, string>;
 }
 
 // Labels that receive the same value from parsed resume (for custom field mapping)
@@ -105,7 +112,12 @@ const LABELS_FOR_FIRST_NAME = ["First Name", "First", "FName"];
 const LABELS_FOR_LAST_NAME = ["Last Name", "Last", "LName"];
 const LABELS_FOR_EMAIL = ["Email", "Email 1", "Email Address", "E-mail"];
 const LABELS_FOR_PHONE = ["Phone", "Phone Number", "Telephone"];
+const LABELS_FOR_MOBILE = ["Mobile Phone", "Mobile", "Cell Phone"];
 const LABELS_FOR_ADDRESS = ["Address", "Street Address", "Address 1"];
+const LABELS_FOR_ADDRESS_2 = ["Address 2", "Suite", "Apt", "Apartment", "Floor"];
+const LABELS_FOR_CITY = ["City"];
+const LABELS_FOR_STATE = ["State"];
+const LABELS_FOR_ZIP = ["ZIP Code", "ZIP", "Zip Code", "Postal Code"];
 const LABELS_FOR_TITLE = ["Title", "Job Title", "Position"];
 const LABELS_FOR_RESUME_TEXT = ["Resume Text", "Resume", "CV"];
 const LABELS_FOR_SKILLS = ["Skills", "Skill Set", "Technical Skills"];
@@ -147,7 +159,16 @@ function applyParsedResumeToForm(
   LABELS_FOR_LAST_NAME.forEach((l) => (valueByLabel[l] = parsed.last_name || ""));
   LABELS_FOR_EMAIL.forEach((l) => (valueByLabel[l] = parsed.email || ""));
   LABELS_FOR_PHONE.forEach((l) => (valueByLabel[l] = parsed.phone || ""));
-  LABELS_FOR_ADDRESS.forEach((l) => (valueByLabel[l] = parsed.location || ""));
+  LABELS_FOR_MOBILE.forEach((l) => (valueByLabel[l] = parsed.mobile_phone || ""));
+  const addr = parsed.address || parsed.location || "";
+  const city = parsed.city || "";
+  const state = parsed.state || "";
+  const zip = parsed.zip || "";
+  LABELS_FOR_ADDRESS.forEach((l) => (valueByLabel[l] = addr));
+  LABELS_FOR_ADDRESS_2.forEach((l) => (valueByLabel[l] = parsed.address_2 || ""));
+  LABELS_FOR_CITY.forEach((l) => (valueByLabel[l] = city));
+  LABELS_FOR_STATE.forEach((l) => (valueByLabel[l] = state));
+  LABELS_FOR_ZIP.forEach((l) => (valueByLabel[l] = zip));
   LABELS_FOR_TITLE.forEach((l) => (valueByLabel[l] = parsed.current_job_title || ""));
   LABELS_FOR_RESUME_TEXT.forEach((l) => (valueByLabel[l] = resumeText));
   LABELS_FOR_SKILLS.forEach((l) => (valueByLabel[l] = skillsStr));
@@ -163,13 +184,22 @@ function applyParsedResumeToForm(
     return next;
   };
 
+  const streetAddr = parsed.address || parsed.location || "";
+  const parsedCity = parsed.city || "";
+  const parsedState = parsed.state || "";
+  const parsedZip = parsed.zip || "";
+
   setFormFields((prev) => {
     let next = prev;
     next = updateField(next, "firstName", parsed.first_name || "");
     next = updateField(next, "lastName", parsed.last_name || "");
     next = updateField(next, "email", parsed.email || "");
     next = updateField(next, "phone", parsed.phone || "");
-    next = updateField(next, "address", parsed.location || "");
+    next = updateField(next, "mobilePhone", parsed.mobile_phone || "");
+    next = updateField(next, "address", streetAddr);
+    next = updateField(next, "city", parsedCity);
+    next = updateField(next, "state", parsedState);
+    next = updateField(next, "zip", parsedZip);
     next = updateField(next, "title", parsed.current_job_title || "");
     next = updateField(next, "resumeText", resumeText);
     next = updateField(next, "skills", skillsStr);
@@ -179,9 +209,11 @@ function applyParsedResumeToForm(
   setCustomFieldValues((prev) => {
     const next = { ...prev };
     for (const field of customFields) {
-      const label = field.field_label;
-      if (label && valueByLabel[label] !== undefined) {
-        next[field.field_name] = valueByLabel[label];
+      const byName = parsed.custom_fields?.[field.field_name];
+      if (byName !== undefined && byName !== "") {
+        next[field.field_name] = byName;
+      } else if (field.field_label && valueByLabel[field.field_label] !== undefined) {
+        next[field.field_name] = valueByLabel[field.field_label];
       }
     }
     return next;
