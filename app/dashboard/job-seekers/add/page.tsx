@@ -352,7 +352,7 @@ export default function AddJobSeeker() {
     [addressFields]
   );
 
-  // Initialize with default fields
+  // Initialize with default fields only once; never overwrite existing form data (fixes left column reset)
   useEffect(() => {
     // Get current user from cookies
     const userCookie = document.cookie.replace(
@@ -371,8 +371,10 @@ export default function AddJobSeeker() {
     // Fetch active users for owner dropdown
     fetchActiveUsers();
 
-    // Initialize form fields with locked last contact date
-    setFormFields([
+    // Only set initial form fields when form is still empty; never overwrite user-entered data
+    setFormFields((prev) => {
+      if (prev.length > 0) return prev;
+      return [
       {
         id: "firstName",
         name: "firstName",
@@ -549,7 +551,8 @@ export default function AddJobSeeker() {
         value: "",
         locked: true, // This field is now locked and auto-updated
       },
-    ]);
+    ];
+    });
   }, []);
 
   // Fetch active users
@@ -932,8 +935,14 @@ export default function AddJobSeeker() {
           const formValue = formFieldValues[matchingFormFieldId];
           const currentCustomValue =
             updatedCustomFields[customField.field_name];
+          const formIsEmpty = formValue === "" || formValue == null;
+          const customHasValue =
+            currentCustomValue !== undefined &&
+            currentCustomValue !== "" &&
+            String(currentCustomValue).trim() !== "";
 
-          // Only update if value has changed
+          // Never overwrite left-column (custom) data with empty form values when user typed only in left/custom fields then in Resume Text
+          if (formIsEmpty && customHasValue) return;
           if (currentCustomValue !== formValue) {
             updatedCustomFields[customField.field_name] = formValue;
             hasChanges = true;
@@ -1028,22 +1037,17 @@ export default function AddJobSeeker() {
   //     }
   // };
 
-  // Handle input change
+  // Handle input change – use functional update so we never overwrite with stale formFields (fixes left column reset when editing Resume Text)
   const handleChange = (id: string, value: string) => {
-    // Don't allow changes to locked fields
-    const field = formFields.find((f) => f.id === id);
-    if (field?.locked) return;
-
-    setFormFields(
-      formFields.map((field) => (field.id === id ? { ...field, value } : field))
-    );
+    setFormFields((prev) => {
+      const field = prev.find((f) => f.id === id);
+      if (field?.locked) return prev;
+      return prev.map((f) => (f.id === id ? { ...f, value } : f));
+    });
   };
 
-  // Upload PDF → extract text → AI parse → map to form (no auto-save; recruiter reviews)
-  // The same file is stored and auto-uploaded to Docs after save as first_name-resume.ext
-  const handleParseResume = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Shared: run AI parse on a file and apply to form (used by file input and by sidebar PDF drop)
+  const parseResumeWithFile = async (file: File) => {
     const ext = (file.name.toLowerCase().split(".").pop() || "").toLowerCase();
     if (!["pdf", "docx", "txt"].includes(ext)) {
       setParseResumeError("Use PDF, DOCX, or TXT.");
@@ -1078,7 +1082,6 @@ export default function AddJobSeeker() {
         setCustomFieldValues,
         customFields
       );
-      // Keep the file so it can be uploaded to Docs after save (first_name-resume.ext)
       setResumeFile(file);
       if (parseResumeInputRef.current) parseResumeInputRef.current.value = "";
     } catch (err) {
@@ -1087,6 +1090,37 @@ export default function AddJobSeeker() {
       setIsParsingResume(false);
     }
   };
+
+  // Upload PDF → extract text → AI parse → map to form (no auto-save; recruiter reviews)
+  const handleParseResume = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await parseResumeWithFile(file);
+  };
+
+  // When opened from sidebar with a PDF (parseResume=1 + jobSeekerAddParsePendingFile), auto-run parse
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (searchParams.get("parseResume") !== "1") return;
+    if (customFieldsLoading) return;
+    const raw = sessionStorage.getItem("jobSeekerAddParsePendingFile");
+    if (!raw) return;
+    sessionStorage.removeItem("jobSeekerAddParsePendingFile");
+    router.replace("/dashboard/job-seekers/add", { scroll: false });
+    try {
+      const { name, base64, type } = JSON.parse(raw);
+      const binary = atob(base64);
+      const arr = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+      const blob = new Blob([arr], { type: type || "application/pdf" });
+      const file = new File([blob], name, { type: blob.type });
+      parseResumeWithFile(file);
+    } catch (err) {
+      console.error("Sidebar PDF parse:", err);
+      setParseResumeError("Failed to load dropped PDF. Try uploading again.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams.get("parseResume"), customFieldsLoading]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
