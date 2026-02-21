@@ -164,7 +164,7 @@ export default function Login() {
   return (
     <div className="flex h-screen">
       {/* Blue sidebar */}
-      <div className="w-60 bg-blue-500"></div>
+      {/* <div className="w-60 bg-blue-500"></div> */}
 
       {/* Main content */}
       <div className="flex-1 flex flex-col items-center justify-center px-8">

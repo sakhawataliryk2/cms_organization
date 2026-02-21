@@ -6,10 +6,10 @@ import { renderAsync } from "docx-preview";
 import "react-pdf/dist/Page/AnnotationLayer.css";
 import "react-pdf/dist/Page/TextLayer.css";
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url
-).toString();
+// Set PDF.js worker via CDN to avoid Next.js ESM bundling issues with pdf.worker.min.mjs
+if (typeof window !== "undefined") {
+  pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
+}
 
 type DocumentViewerProps = {
   filePath: string;

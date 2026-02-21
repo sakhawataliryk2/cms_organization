@@ -1385,9 +1385,11 @@ export default function DashboardNav() {
             e.currentTarget.classList.remove('bg-slate-700/50');
             const file = e.dataTransfer.files?.[0];
             if (!file) return;
-            const ext = file.name.toLowerCase().split('.').pop();
-            if (ext !== 'csv') {
-              toast.error('Only CSV files are supported for data parsing.');
+            const ext = (file.name.toLowerCase().split('.').pop() || '').toLowerCase();
+            const isCsvOrExcel = ext === 'csv' || ext === 'xlsx' || ext === 'xls';
+            const isResumeDoc = ['pdf', 'doc', 'docx', 'txt', 'rtf'].includes(ext);
+            if (!isCsvOrExcel && !isResumeDoc) {
+              toast.error('Use CSV/Excel for bulk data, or PDF/DOC/DOCX/TXT/RTF for resume parsing (Job Seekers).');
               return;
             }
             try {
@@ -1395,7 +1397,12 @@ export default function DashboardNav() {
               reader.onload = () => {
                 const base64 = (reader.result as string)?.split(',')[1];
                 if (base64) {
-                  sessionStorage.setItem('adminParseDataPendingFile', JSON.stringify({ name: file.name, base64, type: file.type }));
+                  sessionStorage.setItem('adminParseDataPendingFile', JSON.stringify({
+                    name: file.name,
+                    base64,
+                    type: file.type,
+                    isResume: isResumeDoc,
+                  }));
                   router.push('/dashboard/admin?upload=true');
                   setIsSidebarOpen(false);
                 }
@@ -1417,7 +1424,7 @@ export default function DashboardNav() {
               <FiUpload size={16} />
             </button>
           </div>
-          <p className="text-xs text-slate-400 mt-1">Drop CSV here</p>
+          <p className="text-xs text-slate-400 mt-1">Drop CSV/Excel or resume (PDF)</p>
         </div>
       </div>
     </>

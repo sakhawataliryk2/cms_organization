@@ -512,7 +512,7 @@ export default function AddPlacement() {
             <p className="font-medium">This job&apos;s type doesn&apos;t match a Contract placement.</p>
             <p className="text-sm mt-1">Please choose another job or contact your administrator to update the job type.</p>
           </div>
-          <Link href="/dashboard/placements/add" className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+          <Link href="/dashboard/placements/add" className="inline-flex items-center gap-4 px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
             Back to Job Selection
           </Link>
         </div>
@@ -529,7 +529,7 @@ export default function AddPlacement() {
             <button onClick={handleGoBack} className="text-gray-500 hover:text-gray-700 text-2xl font-bold">X</button>
           </div>
           <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-red-800 mb-4">{jobFetchError}</div>
-          <Link href="/dashboard/placements/add" className="inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+          <Link href="/dashboard/placements/add" className="inline-flex items-center gap-4 px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
             Back to Job Selection
           </Link>
         </div>
@@ -549,15 +549,15 @@ export default function AddPlacement() {
     <div className="mx-auto py-4 px-4 sm:py-8 sm:px-6">
       <div className="bg-white rounded-lg shadow p-4 sm:p-6 relative">
         <div className="flex justify-between items-center border-b pb-4 mb-6 flex-wrap gap-2">
-          <div className="flex items-center">
+          <div className="flex items-center gap-4">
             <Image src="/window.svg" alt="Placement" width={24} height={24} className="mr-2" />
             <h1 className="text-xl font-bold">{isEditMode ? "Edit" : "Add"} Placement Contract</h1>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-4 gap-6">
             {jobIdFromUrl && !isEditMode && (
               <Link
                 href="/dashboard/placements/add"
-                className="inline-flex items-center px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                className="inline-flex items-center gap-4 px-3 py-1.5 border border-gray-300 rounded-md text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
               >
                 Back to Job Selection
               </Link>
@@ -637,15 +637,9 @@ export default function AddPlacement() {
                 if (isFullAddressField) return null;
 
                 return (
-                  <div key={field.id} className="flex items-center">
+                  <div key={field.id} className="flex items-center gap-4">
                     <label className="w-48 font-medium shrink-0">
                       {field.field_label}
-                      {(field.is_required) &&
-                        (isCustomFieldValueValid(field, fieldValue) ? (
-                          <span className="text-green-500 ml-1">✔</span>
-                        ) : (
-                          <span className="text-red-500 ml-1">*</span>
-                        ))}
                     </label>
                     <div className="flex-1">
                       <CustomFieldRenderer
@@ -654,6 +648,13 @@ export default function AddPlacement() {
                         allFields={customFields}
                         values={customFieldValues}
                         onChange={handlePlacementFieldChange}
+                        validationIndicator={
+                          field.is_required
+                            ? isCustomFieldValueValid(field, fieldValue)
+                              ? "valid"
+                              : "required"
+                            : undefined
+                        }
                       />
                     </div>
                   </div>

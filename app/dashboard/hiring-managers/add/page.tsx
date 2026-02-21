@@ -868,7 +868,7 @@ export default function AddHiringManager() {
       <div className="bg-white rounded-lg shadow p-4 sm:p-6 relative">
         {/* Header with X button */}
         <div className="flex justify-between items-center border-b pb-4 mb-6">
-          <div className="flex items-center">
+          <div className="flex items-center gap-4">
             <Image
               src="/globe.svg"
               alt="Hiring Manager"
@@ -925,7 +925,7 @@ export default function AddHiringManager() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* <div className="grid grid-cols-1 gap-4">
             
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">First Name:</label>
               <div className="flex-1 relative">
                 <input
@@ -942,7 +942,7 @@ export default function AddHiringManager() {
               </div>
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Last Name:</label>
               <div className="flex-1 relative">
                 <input
@@ -959,7 +959,7 @@ export default function AddHiringManager() {
               </div>
             </div>
           
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Status:</label>
               <div className="flex-1 relative">
                 <select
@@ -988,7 +988,7 @@ export default function AddHiringManager() {
               </div>
             </div>
             
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Nickname:</label>
               <input
                 type="text"
@@ -999,7 +999,7 @@ export default function AddHiringManager() {
               />
             </div>
         
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Title:</label>
               <div className="flex-1 relative">
                 <input
@@ -1016,7 +1016,7 @@ export default function AddHiringManager() {
               </div>
             </div>
             
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Organization:</label>
               <div className="flex-1 relative">
                 <input
@@ -1039,7 +1039,7 @@ export default function AddHiringManager() {
               </div>
             </div>
             
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Department:</label>
               <div className="flex-1 relative">
                 <select
@@ -1071,7 +1071,7 @@ export default function AddHiringManager() {
               </div>
             </div>
             
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Reports to:</label>
               <div className="flex-1 relative">
                 <input
@@ -1092,7 +1092,7 @@ export default function AddHiringManager() {
               </div>
             </div>
            
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Owner:</label>
               <div className="flex-1 relative">
                 <select
@@ -1120,7 +1120,7 @@ export default function AddHiringManager() {
               </div>
             </div>
             
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Secondary Owners:</label>
               <div className="flex-1 relative">
                 <input
@@ -1158,7 +1158,7 @@ export default function AddHiringManager() {
             </div>
 
             
-            <div className="flex items-center mt-4">
+            <div className="flex items-center gap-4 mt-4">
               <label className="w-48 font-medium">Email 1:</label>
               <div className="flex-1 relative">
                 <input
@@ -1176,7 +1176,7 @@ export default function AddHiringManager() {
             </div>
 
             
-            <div className="flex items-center mt-4">
+            <div className="flex items-center gap-4 mt-4">
               <label className="w-48 font-medium">Email 2:</label>
               <input
                 type="email"
@@ -1188,7 +1188,7 @@ export default function AddHiringManager() {
             </div>
 
             
-            <div className="flex items-center mt-4">
+            <div className="flex items-center gap-4 mt-4">
               <label className="w-48 font-medium">Phone:</label>
               <input
                 type="tel"
@@ -1201,7 +1201,7 @@ export default function AddHiringManager() {
             </div>
 
             
-            <div className="flex items-center mt-4">
+            <div className="flex items-center gap-4 mt-4">
               <label className="w-48 font-medium">Mobile Phone:</label>
               <input
                 type="tel"
@@ -1214,7 +1214,7 @@ export default function AddHiringManager() {
             </div>
 
             
-            <div className="flex items-center mt-4">
+            <div className="flex items-center gap-4 mt-4">
               <label className="w-48 font-medium">Direct Line:</label>
               <input
                 type="tel"
@@ -1227,7 +1227,7 @@ export default function AddHiringManager() {
             </div>
 
            
-            <div className="flex items-center mt-4">
+            <div className="flex items-center gap-4 mt-4">
               <label className="w-48 font-medium">LinkedIn URL:</label>
               <input
                 type="url"
@@ -1240,7 +1240,7 @@ export default function AddHiringManager() {
             </div>
 
            
-            <div className="flex items-center mt-4">
+            <div className="flex items-center gap-4 mt-4">
               <label className="w-48 font-medium">Address:</label>
               <textarea
                 name="address"
@@ -1268,9 +1268,9 @@ export default function AddHiringManager() {
                   return (
                     <div
                       key="address-group"
-                      className="address-underline flex items-start mb-3"
+                      className="address-underline flex items-start gap-4 mb-3"
                     >
-                      <label className="w-48 font-medium flex items-center mt-4">
+                      <label className="w-48 font-medium flex items-center gap-4 mt-4">
                         Address:
                       </label>
 
@@ -1314,16 +1314,9 @@ export default function AddHiringManager() {
                 const fieldValue = customFieldValues[field.field_name] || "";
 
                 return (
-                  <div key={field.id} className="flex items-center mt-4">
+                  <div key={field.id} className="flex items-center gap-4 mt-4">
                     <label className="w-48 font-medium flex items-center">
                       {field.field_label}:
-                      {/* Show indicator for required fields */}
-                      {field.is_required &&
-                        (isCustomFieldValueValid(field, fieldValue) ? (
-                          <span className="text-green-500 ml-1">✔</span>
-                        ) : (
-                          <span className="text-red-500 ml-1">*</span>
-                        ))}
                     </label>
                     <div className="flex-1 relative">
                       {shouldBeReadOnly ? (
@@ -1343,6 +1336,13 @@ export default function AddHiringManager() {
                           values={customFieldValues}
                           onChange={handleCustomFieldChange}
                           className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                          validationIndicator={
+                            field.is_required
+                              ? isCustomFieldValueValid(field, fieldValue)
+                                ? "valid"
+                                : "required"
+                              : undefined
+                          }
                         />
                       )}
                     </div>

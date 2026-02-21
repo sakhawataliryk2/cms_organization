@@ -1268,17 +1268,11 @@ export default function AddTask() {
                     : [];
 
                   return (
-                    <div key={field.id} className="flex items-center gap-2">
+                    <div key={field.id} className="flex items-center gap-4">
                       <label className="w-48 font-medium">
                         {field.field_label}:
-                        {field.is_required &&
-                          (isCustomFieldValueValid(field, fieldValue) ? (
-                            <span className="text-green-500 ml-1">✔</span>
-                          ) : (
-                            <span className="text-red-500 ml-1">*</span>
-                          ))}
                       </label>
-                      <div className="flex-1 relative flex items-center gap-2" ref={isAssignedField ? assignedToDropdownRef : undefined}>
+                      <div className="flex-1 relative flex items-center gap-4" ref={isAssignedField ? assignedToDropdownRef : undefined}>
                         {isAssignedField ? (
                           <>
                             <input
@@ -1334,6 +1328,13 @@ export default function AddTask() {
                             values={customFieldValues}
                             onChange={handleCustomFieldChange}
                             className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
+                            validationIndicator={
+                              field.is_required
+                                ? isCustomFieldValueValid(field, fieldValue)
+                                  ? "valid"
+                                  : "required"
+                                : undefined
+                            }
                           />
                         )}
                       </div>
