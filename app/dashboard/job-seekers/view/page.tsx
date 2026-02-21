@@ -32,6 +32,7 @@ import { toast } from "sonner";
 import AddTearsheetModal from "@/components/AddTearsheetModal";
 import SortableFieldsEditModal from "@/components/SortableFieldsEditModal";
 import AddNoteModal from "@/components/AddNoteModal";
+import SubmissionFormModal from "@/components/SubmissionFormModal";
 // Drag and drop imports
 import {
   DndContext,
@@ -372,6 +373,14 @@ export default function JobSeekerView() {
     "web_submissions" | "submissions" | "client_submissions"
   >("web_submissions");
 
+  // Applications table: column order, sort, filter, pagination (same pattern as overview tables)
+  const APPLICATIONS_TABLE_COLUMN_KEYS = ["job", "organization", "status", "submission_source", "created_at", "created_by"] as const;
+  const [applicationsColumnOrder, setApplicationsColumnOrder] = useState<string[]>(() => [...APPLICATIONS_TABLE_COLUMN_KEYS]);
+  const [applicationsColumnSorts, setApplicationsColumnSorts] = useState<Record<string, ColumnSortState>>({});
+  const [applicationsColumnFilters, setApplicationsColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+  const [applicationsPage, setApplicationsPage] = useState(1);
+  const [applicationsPageSize, setApplicationsPageSize] = useState(10);
+
   const fetchApplications = async (id: string) => {
     setIsLoadingApplications(true);
     setApplicationsError(null);
@@ -403,6 +412,66 @@ export default function JobSeekerView() {
       setIsLoadingApplications(false);
     }
   };
+
+  // Applications table: get raw value for sort/filter
+  const getApplicationColumnValue = useCallback((app: any, columnKey: string): string | number => {
+    switch (columnKey) {
+      case "job":
+        return app?.job_title ?? app?.job_id ?? "";
+      case "organization":
+        return app?.organization_name ?? app?.client_name ?? app?.organization_id ?? "";
+      case "status":
+        return app?.status ?? "";
+      case "submission_source":
+        return app?.submission_source ?? app?.submissionSource ?? "";
+      case "created_at":
+        return app?.created_at ? new Date(app.created_at).getTime() : 0;
+      case "created_by":
+        return (app as any)?.created_by_name ?? app?.created_by ?? "";
+      default:
+        return (app as any)?.[columnKey] ?? "";
+    }
+  }, []);
+
+  const handleApplicationsColumnSort = useCallback((columnKey: string) => {
+    setApplicationsColumnSorts((prev) => {
+      const current = prev[columnKey];
+      if (current === "asc") return { ...prev, [columnKey]: "desc" };
+      if (current === "desc") {
+        const next = { ...prev };
+        delete next[columnKey];
+        return next;
+      }
+      return { ...prev, [columnKey]: "asc" };
+    });
+    setApplicationsPage(1);
+  }, []);
+
+  const handleApplicationsColumnFilter = useCallback((columnKey: string, value: string) => {
+    setApplicationsColumnFilters((prev) => {
+      if (!value || value.trim() === "") {
+        const next = { ...prev };
+        delete next[columnKey];
+        return next;
+      }
+      return { ...prev, [columnKey]: value };
+    });
+    setApplicationsPage(1);
+  }, []);
+
+  const handleApplicationsDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = applicationsColumnOrder.indexOf(active.id as string);
+    const newIndex = applicationsColumnOrder.indexOf(over.id as string);
+    if (oldIndex !== -1 && newIndex !== -1) {
+      setApplicationsColumnOrder(arrayMove(applicationsColumnOrder, oldIndex, newIndex));
+    }
+  }, [applicationsColumnOrder]);
+
+  useEffect(() => {
+    setApplicationsPage(1);
+  }, [applicationsView]);
 
   // Add states for job seeker data
   const [jobSeeker, setJobSeeker] = useState<any>(null);
@@ -856,6 +925,12 @@ export default function JobSeekerView() {
   const [selectedDocument, setSelectedDocument] = useState<any>(null);
 
   const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
+
+  // Submission form modal (submit candidate to job)
+  const [showSubmissionModal, setShowSubmissionModal] = useState(false);
+  const [currentUserName, setCurrentUserName] = useState("");
+  const [currentUserEmail, setCurrentUserEmail] = useState("");
+  const [applicationForInterview, setApplicationForInterview] = useState<any | null>(null);
 
   // Calendar appointment modal state
   const [showAppointmentModal, setShowAppointmentModal] = useState(false);
@@ -1419,12 +1494,29 @@ Best regards`;
     return () => window.removeEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
   }, [jobSeeker]);
 
+  // Current user name and email from cookie (for submission form "Added By" and notification emails)
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const raw = document.cookie.replace(/(?:(?:^|.*;\s*)user\s*=\s*([^;]*).*$)|^.*$/, "$1");
+    if (!raw) return;
+    try {
+      const u = JSON.parse(decodeURIComponent(raw));
+      setCurrentUserName(u?.name || u?.email || "");
+      setCurrentUserEmail(u?.email || "");
+    } catch { /* ignore */ }
+  }, []);
+
   // Fetch job seeker when component mounts
   useEffect(() => {
     if (jobSeekerId) {
       fetchJobSeeker(jobSeekerId);
     }
   }, [jobSeekerId]);
+
+  // Refetch notes when Submission modal opens so Prescreen tip and counts are up to date
+  useEffect(() => {
+    if (showSubmissionModal && jobSeekerId) fetchNotes(jobSeekerId);
+  }, [showSubmissionModal, jobSeekerId]);
 
   // Fetch references when references tab is active
   useEffect(() => {
@@ -1841,6 +1933,7 @@ Best regards`;
         } else {
           // Fallback default actions (same as organization)
           setActionFields([
+            { id: 'Pre-Screen', field_label: 'Pre-Screen', field_name: 'Pre-Screen' },
             { id: 'Outbound Call', field_label: 'Outbound Call', field_name: 'Outbound Call' },
             { id: 'Inbound Call', field_label: 'Inbound Call', field_name: 'Inbound Call' },
             { id: 'Left Message', field_label: 'Left Message', field_name: 'Left Message' },
@@ -3041,9 +3134,11 @@ Best regards`;
         }));
       }
     } else if (action === "add-submission") {
-      // For recruiters to submit this job seeker to a job
-      setActiveTab("applications");
-      if (jobSeekerId) fetchApplications(jobSeekerId);
+      if (jobSeekerId) {
+        fetchNotes(jobSeekerId);
+        fetchApplications(jobSeekerId);
+      }
+      setShowSubmissionModal(true);
     } else if (action === "password-reset") {
       setShowPasswordResetModal(true);
     } 
@@ -3088,18 +3183,6 @@ Best regards`;
   useEffect(() => {
     if (deleteFromUrl === "true" && !showDeleteModal) {
       setShowDeleteModal(true);
-      // Remove the delete parameter from URL after opening modal
-      const params = new URLSearchParams(searchParams.toString());
-      params.delete("delete");
-      router.replace(`?${params.toString()}`, { scroll: false });
-    }
-  }, [deleteFromUrl, showDeleteModal, searchParams, router]);
-
-  // Check for delete parameter in URL to open delete modal
-  useEffect(() => {
-    if (deleteFromUrl === "true" && !showDeleteModal) {
-      setShowDeleteModal(true);
-      // Remove the delete parameter from URL after opening modal
       const params = new URLSearchParams(searchParams.toString());
       params.delete("delete");
       router.replace(`?${params.toString()}`, { scroll: false });
@@ -3408,6 +3491,7 @@ Best regards`;
           location: appointmentForm.location,
           duration: appointmentForm.duration,
           jobSeekerId: jobSeekerId,
+          jobId: applicationForInterview?.job_id || undefined,
           client: jobSeeker?.fullName || jobSeeker?.name || "",
           attendees: appointmentForm.attendees,
           sendInvites: appointmentForm.sendInvites,
@@ -3467,6 +3551,17 @@ Best regards`;
       }
 
       toast.success("Appointment created successfully!");
+      if (applicationForInterview && jobSeekerId) {
+        try {
+          const patchRes = await fetch(`/api/job-seekers/${jobSeekerId}/applications/${applicationForInterview.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}` },
+            body: JSON.stringify({ status: "Interview" }),
+          });
+          if (patchRes.ok) fetchApplications(jobSeekerId);
+        } catch (_) { /* ignore */ }
+      }
+      setApplicationForInterview(null);
       setShowAppointmentModal(false);
       setAppointmentForm({
         date: "",
@@ -3703,6 +3798,11 @@ Best regards`;
   const getQuickTabCount = (tabId: string): number => {
     const cf = jobSeeker?.customFields || {};
     if (tabId === "prescreen") {
+      const fromNotes = notes.filter((n) => {
+        const actionOrType = String((n as any).action ?? (n as any).note_type ?? "").trim().toLowerCase();
+        return /pre\s*screen|prescreen/.test(actionOrType);
+      }).length;
+      if (fromNotes > 0) return fromNotes;
       return getCustomFieldRecordCount(
         cf.prescreen ?? cf.prescreens ?? cf.preScreen ?? cf.preScreens
       );
@@ -5177,6 +5277,13 @@ Best regards`;
                   <h2 className="text-lg font-semibold">Applications</h2>
                   <div className="flex items-center gap-2">
                     <button
+                      onClick={() => setShowSubmissionModal(true)}
+                      className="px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm"
+                      disabled={!jobSeekerId}
+                    >
+                      Add Submission
+                    </button>
+                    <button
                       onClick={() => jobSeekerId && fetchApplications(jobSeekerId)}
                       className="px-3 py-1 bg-gray-100 border border-gray-300 rounded text-xs"
                       disabled={!jobSeekerId || isLoadingApplications}
@@ -5235,42 +5342,222 @@ Best regards`;
                       );
                     }
 
+                    const statusOptions = Array.from(
+                      new Set(filtered.map((a) => a?.status).filter(Boolean))
+                    )
+                      .sort()
+                      .map((s) => ({ label: String(s), value: String(s) }));
+
+                    const applicationsColumnConfig: Record<string, { label: string; filterType: "text" | "select" | "number"; filterOptions?: { label: string; value: string }[] }> = {
+                      job: { label: "Job", filterType: "text" },
+                      organization: { label: "Organization / Client", filterType: "text" },
+                      status: { label: "Status", filterType: "select", filterOptions: statusOptions },
+                      submission_source: { label: "Submission Source", filterType: "text" },
+                      created_at: { label: "Created At", filterType: "text" },
+                      created_by: { label: "Created By", filterType: "text" },
+                    };
+
+                    let filteredAndSorted = [...filtered];
+                    Object.entries(applicationsColumnFilters).forEach(([columnKey, filterValue]) => {
+                      if (!filterValue || filterValue.trim() === "") return;
+                      const cfg = applicationsColumnConfig[columnKey];
+                      const isSelect = cfg?.filterType === "select";
+                      filteredAndSorted = filteredAndSorted.filter((app) => {
+                        const raw = getApplicationColumnValue(app, columnKey);
+                        const valueStr = String(raw).toLowerCase();
+                        const filterStr = String(filterValue).toLowerCase();
+                        return isSelect ? valueStr === filterStr : valueStr.includes(filterStr);
+                      });
+                    });
+
+                    const activeSort = Object.entries(applicationsColumnSorts).find(([, dir]) => dir !== null);
+                    if (activeSort?.length === 2) {
+                      const [sortKey, sortDir] = activeSort;
+                      filteredAndSorted.sort((a, b) => {
+                        const aVal = getApplicationColumnValue(a, sortKey);
+                        const bVal = getApplicationColumnValue(b, sortKey);
+                        const aNum = typeof aVal === "number" ? aVal : Number(aVal);
+                        const bNum = typeof bVal === "number" ? bVal : Number(bVal);
+                        let cmp = 0;
+                        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
+                          cmp = aNum - bNum;
+                        } else {
+                          cmp = String(aVal ?? "").localeCompare(String(bVal ?? ""), undefined, { numeric: true, sensitivity: "base" });
+                        }
+                        return sortDir === "asc" ? cmp : -cmp;
+                      });
+                    }
+
+                    const totalRows = filteredAndSorted.length;
+                    const totalPages = Math.max(1, Math.ceil(totalRows / applicationsPageSize));
+                    const page = Math.min(Math.max(1, applicationsPage), totalPages);
+                    const start = (page - 1) * applicationsPageSize;
+                    const paginatedRows = filteredAndSorted.slice(start, start + applicationsPageSize);
+
+                    const getStatusBadgeClass = (status: string) => {
+                      const s = (status || "").toLowerCase();
+                      if (s === "submitted") return "bg-blue-100 text-blue-800 border-blue-200";
+                      if (s === "client submission") return "bg-indigo-100 text-indigo-800 border-indigo-200";
+                      if (s === "interview") return "bg-amber-100 text-amber-800 border-amber-200";
+                      if (s === "rejected") return "bg-red-100 text-red-800 border-red-200";
+                      if (s === "placed") return "bg-green-100 text-green-800 border-green-200";
+                      return "bg-gray-100 text-gray-700 border-gray-200";
+                    };
+
+                    const renderAppCell = (app: any, columnKey: string) => {
+                      switch (columnKey) {
+                        case "job":
+                          return app.job_id != null && app.job_id !== "" ? (
+                            <RecordNameResolver id={app.job_id} type="job" clickable fallback={app.job_title || `#${app.job_id}`} />
+                          ) : (app.job_title || "—");
+                        case "organization":
+                          return app.organization_id != null && app.organization_id !== "" ? (
+                            <RecordNameResolver id={app.organization_id} type="organization" clickable fallback={app.organization_name || app.client_name || "—"} />
+                          ) : (app.organization_name || app.client_name || "—");
+                        case "status":
+                          return (
+                            <span className={`inline-flex px-2 py-0.5 rounded text-xs font-medium border ${getStatusBadgeClass(app.status || "")}`}>
+                              {app.status || "—"}
+                            </span>
+                          );
+                        case "submission_source":
+                          return app.submission_source || app.submissionSource || "—";
+                        case "created_at":
+                          return app.created_at ? new Date(app.created_at).toLocaleString() : "—";
+                        case "created_by":
+                          return app.created_by != null && app.created_by !== "" ? (
+                            (app as { created_by_name?: string }).created_by_name ? (
+                              (app as { created_by_name: string }).created_by_name
+                            ) : (
+                              <RecordNameResolver id={app.created_by} type="owner" fallback="—" />
+                            )
+                          ) : "—";
+                        default:
+                          return "—";
+                      }
+                    };
+
                     return (
                       <div className="overflow-x-auto border rounded">
-                        <table className="w-full border-collapse">
-                          <thead>
-                            <tr className="bg-gray-100 border-b">
-                              <th className="text-left p-3 font-medium">Job</th>
-                              <th className="text-left p-3 font-medium">Organization / Client</th>
-                              <th className="text-left p-3 font-medium">Status</th>
-                              <th className="text-left p-3 font-medium">Created At</th>
-                              <th className="text-left p-3 font-medium">Created By</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {filtered.map((app) => (
-                              <tr key={app.id} className="border-b hover:bg-gray-50">
-                                <td className="p-3 text-sm text-gray-900">
-                                  {app.job_title || app.job_id || "-"}
-                                </td>
-                                <td className="p-3 text-sm text-gray-700">
-                                  {app.organization_name || app.client_name || "-"}
-                                </td>
-                                <td className="p-3 text-sm text-gray-700">
-                                  {app.status || "-"}
-                                </td>
-                                <td className="p-3 text-sm text-gray-700">
-                                  {app.created_at
-                                    ? new Date(app.created_at).toLocaleString()
-                                    : "-"}
-                                </td>
-                                <td className="p-3 text-sm text-gray-700">
-                                  {app.created_by || "-"}
-                                </td>
+                        <DndContext collisionDetection={closestCorners} onDragEnd={handleApplicationsDragEnd}>
+                          <table className="min-w-full divide-y divide-gray-200 w-full border-collapse">
+                            <thead className="bg-gray-50">
+                              <tr>
+                                <SortableContext items={applicationsColumnOrder} strategy={horizontalListSortingStrategy}>
+                                  {applicationsColumnOrder.map((columnKey) => {
+                                    const cfg = applicationsColumnConfig[columnKey];
+                                    if (!cfg) return null;
+                                    return (
+                                      <SortableColumnHeader
+                                        key={columnKey}
+                                        id={columnKey}
+                                        columnKey={columnKey}
+                                        label={cfg.label}
+                                        sortState={applicationsColumnSorts[columnKey] ?? null}
+                                        filterValue={applicationsColumnFilters[columnKey] ?? null}
+                                        onSort={() => handleApplicationsColumnSort(columnKey)}
+                                        onFilterChange={(value) => handleApplicationsColumnFilter(columnKey, value)}
+                                        filterType={cfg.filterType}
+                                        filterOptions={cfg.filterOptions}
+                                      />
+                                    );
+                                  })}
+                                </SortableContext>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200">
+                                  Actions
+                                </th>
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                            </thead>
+                            <tbody className="bg-white divide-y divide-gray-200">
+                              {paginatedRows.map((app) => {
+                                const canScheduleInterview = (app.status === "Client Submission" || app.status === "Submitted") && app.id;
+                                return (
+                                  <tr key={app.id} className="hover:bg-gray-50">
+                                    {applicationsColumnOrder.map((columnKey) => (
+                                      <td key={columnKey} className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
+                                        {renderAppCell(app, columnKey)}
+                                      </td>
+                                    ))}
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
+                                      {canScheduleInterview ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setApplicationForInterview(app);
+                                            setAppointmentForm((prev) => ({
+                                              ...prev,
+                                              type: "Interview",
+                                              description: prev.description || `Interview for ${app.job_title || "position"}`,
+                                              attendees: jobSeeker?.email && jobSeeker.email !== "No email provided"
+                                                ? [jobSeeker.email]
+                                                : prev.attendees,
+                                              sendInvites: true,
+                                            }));
+                                            setShowAppointmentModal(true);
+                                          }}
+                                          className="text-blue-600 hover:underline font-medium"
+                                        >
+                                          Schedule Interview
+                                        </button>
+                                      ) : (
+                                        <span className="text-gray-400">—</span>
+                                      )}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </DndContext>
+                        {/* Pagination */}
+                        <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 bg-gray-50">
+                          <div className="flex items-center gap-4">
+                            <p className="text-sm text-gray-700">
+                              Showing <span className="font-medium">{totalRows === 0 ? 0 : start + 1}</span> to{" "}
+                              <span className="font-medium">{Math.min(start + applicationsPageSize, totalRows)}</span> of{" "}
+                              <span className="font-medium">{totalRows}</span> results
+                            </p>
+                            <select
+                              value={applicationsPageSize}
+                              onChange={(e) => {
+                                setApplicationsPageSize(Number(e.target.value));
+                                setApplicationsPage(1);
+                              }}
+                              className="text-sm border border-gray-300 rounded px-2 py-1"
+                            >
+                              {[10, 25, 50, 100].map((n) => (
+                                <option key={n} value={n}>{n} per page</option>
+                              ))}
+                            </select>
+                          </div>
+                          <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px" aria-label="Pagination">
+                            <button
+                              type="button"
+                              disabled={page <= 1}
+                              onClick={() => setApplicationsPage((p) => Math.max(1, p - 1))}
+                              className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <span className="sr-only">Previous</span>
+                              <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" />
+                              </svg>
+                            </button>
+                            <span className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700">
+                              Page {page} of {totalPages}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={page >= totalPages}
+                              onClick={() => setApplicationsPage((p) => Math.min(totalPages, p + 1))}
+                              className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <span className="sr-only">Next</span>
+                              <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fillRule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clipRule="evenodd" />
+                              </svg>
+                            </button>
+                          </nav>
+                        </div>
                       </div>
                     );
                   })()
@@ -5890,11 +6177,12 @@ Best regards`;
       {/* Add Appointment Modal */}
       {showAppointmentModal && (
         <div className="fixed inset-0 bg-black/50 bg-opacity-50 flex items-center justify-center z-50 overflow-y-auto">
-          <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8">
-            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+          <div className="relative flex flex-col max-h-[80vh] bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8">
+            <div className="bg-gray-100 p-4 border-b flex justify-between items-center shrink-0">
               <h2 className="text-lg font-semibold">Create Calendar Appointment</h2>
               <button
                 onClick={() => {
+                  setApplicationForInterview(null);
                   setShowAppointmentModal(false);
                   setAppointmentForm({
                     date: "",
@@ -5912,7 +6200,7 @@ Best regards`;
                 <span className="text-2xl font-bold">×</span>
               </button>
             </div>
-            <div className="p-6 space-y-4">
+            <div className="p-6 space-y-4 overflow-y-auto flex-1 min-h-0">
               {/* Date */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -6115,9 +6403,10 @@ Best regards`;
               </div>
             </div>
 
-            <div className="flex justify-end space-x-2 p-4 border-t">
+            <div className="flex justify-end space-x-2 p-4 border-t bg-white shrink-0 rounded-b">
               <button
                 onClick={() => {
+                  setApplicationForInterview(null);
                   setShowAppointmentModal(false);
                   setAppointmentForm({
                     date: "",
@@ -6412,6 +6701,28 @@ Best regards`;
         onClose={() => setShowAddTearsheetModal(false)}
         entityType="job_seeker"
         entityId={jobSeekerId || ""}
+      />
+
+      <SubmissionFormModal
+        open={showSubmissionModal}
+        onClose={() => setShowSubmissionModal(false)}
+        jobSeekerId={jobSeekerId || ""}
+        jobSeekerName={jobSeeker?.fullName || ""}
+        jobSeekerRecordId={jobSeeker ? formatRecordId(jobSeeker.record_number ?? jobSeeker.id, "jobSeeker") : undefined}
+        documents={documents}
+        currentUserName={currentUserName}
+        currentUserEmail={currentUserEmail}
+        hasPrescreenNote={notes.some((n) => {
+          const actionOrType = String((n as any).action ?? (n as any).note_type ?? "").trim().toLowerCase();
+          return /pre\s*screen|prescreen/.test(actionOrType);
+        })}
+        onSuccess={() => {
+          if (jobSeekerId) {
+            fetchApplications(jobSeekerId);
+            fetchNotes(jobSeekerId);
+            fetchHistory(jobSeekerId);
+          }
+        }}
       />
 
       {showAddNote && jobSeeker && (
