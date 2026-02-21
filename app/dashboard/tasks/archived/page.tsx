@@ -997,7 +997,7 @@ export default function ArchivedTasksList() {
                   : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
               }`}
             >
-              Advanced
+              Filters
             </button>
             {(searchTerm ||
               Object.keys(columnFilters).length > 0 ||
