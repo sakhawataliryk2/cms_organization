@@ -27,19 +27,10 @@ export async function extractTextFromFile(file: File): Promise<string> {
   }
 
   if (ext === "pdf") {
-    const mod = await import("pdf-parse");
-    const PDFParse = (mod as { PDFParse?: new (opts: { data: Buffer }) => { getText(): Promise<{ text?: string }> } }).PDFParse;
-    if (PDFParse && typeof PDFParse === "function") {
-      const parser = new PDFParse({ data: buffer });
-      const result = await parser.getText();
-      return result?.text || "";
-    }
-    const legacyPdfParse = (mod as { default?: (buf: Buffer) => Promise<{ text?: string }> }).default;
-    if (typeof legacyPdfParse === "function") {
-      const data = await legacyPdfParse(buffer);
-      return data?.text || "";
-    }
-    throw new Error("pdf-parse: could not find PDFParse class or default function.");
+    const { extractText, getDocumentProxy } = await import("unpdf");
+    const pdf = await getDocumentProxy(new Uint8Array(buffer));
+    const { text } = await extractText(pdf, { mergePages: true });
+    return text ?? "";
   }
 
   if (ext === "docx") {
