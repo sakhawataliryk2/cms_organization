@@ -1396,16 +1396,28 @@ export default function DashboardNav() {
               const reader = new FileReader();
               reader.onload = () => {
                 const base64 = (reader.result as string)?.split(',')[1];
-                if (base64) {
-                  sessionStorage.setItem('adminParseDataPendingFile', JSON.stringify({
+                if (!base64) return;
+                // PDF: go directly to Job Seekers add and auto-start AI resume parsing
+                if (ext === 'pdf') {
+                  sessionStorage.setItem('jobSeekerAddParsePendingFile', JSON.stringify({
                     name: file.name,
                     base64,
-                    type: file.type,
-                    isResume: isResumeDoc,
+                    type: file.type || 'application/pdf',
                   }));
-                  router.push('/dashboard/admin?upload=true');
+                  router.push('/dashboard/job-seekers/add?parseResume=1');
                   setIsSidebarOpen(false);
+                  toast.success('Opening Job Seekers add to parse resume…');
+                  return;
                 }
+                // CSV/Excel or other resume doc: admin center upload flow
+                sessionStorage.setItem('adminParseDataPendingFile', JSON.stringify({
+                  name: file.name,
+                  base64,
+                  type: file.type,
+                  isResume: isResumeDoc,
+                }));
+                router.push('/dashboard/admin?upload=true');
+                setIsSidebarOpen(false);
               };
               reader.readAsDataURL(file);
             } catch {
