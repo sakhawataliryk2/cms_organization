@@ -29,6 +29,58 @@ export interface CustomFieldRendererContext {
   organizationId?: string;
 }
 
+/** Renders * (required) or ✔ (valid) before the input when provided by parent */
+function ValidationIndicator({ type }: { type: "required" | "valid" }) {
+  return (
+    <span
+      className={`shrink-0 text-sm font-semibold ${type === "required" ? "text-red-500" : "text-green-500"}`}
+      aria-hidden
+    >
+      {type === "required" ? "*" : "✔"}
+    </span>
+  );
+}
+
+/** Wraps content with optional validation indicator before the input */
+function withValidationWrapper(
+  content: React.ReactNode,
+  validationIndicator?: "required" | "valid"
+): React.ReactNode {
+  if (!validationIndicator) return content;
+  return (
+    <div className="flex items-center gap-3 w-full">
+      <ValidationIndicator type={validationIndicator} />
+      <div className="flex-1 min-w-0">{content}</div>
+    </div>
+  );
+}
+
+/** Clear (X) button for text/number inputs */
+function ClearButton({
+  onClick,
+  disabled,
+  className = "right-2 top-1/2 -translate-y-1/2",
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={`absolute ${className} text-gray-400 hover:text-gray-600 focus:outline-none disabled:opacity-50`}
+      aria-label="Clear"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18" />
+        <line x1="6" y1="6" x2="18" y2="18" />
+      </svg>
+    </button>
+  );
+}
+
 interface CustomFieldRendererProps {
   field: CustomFieldDefinition;
   value: any;
@@ -41,6 +93,8 @@ interface CustomFieldRendererProps {
   values?: Record<string, any>;
   /** Optional context (e.g. organizationId) for lookup filtering */
   context?: CustomFieldRendererContext;
+  /** When set, render * (required) or ✔ (valid) before the input instead of next to the label */
+  validationIndicator?: "required" | "valid";
 }
 
 export default function CustomFieldRenderer({
@@ -52,6 +106,7 @@ export default function CustomFieldRenderer({
   allFields = [],
   values: valuesRecord,
   context,
+  validationIndicator,
 }: CustomFieldRendererProps) {
   const readOnly = Boolean((field as any).is_read_only);
 
@@ -497,12 +552,18 @@ export default function CustomFieldRenderer({
 
   switch (field.field_type) {
     case "textarea":
-      return (
-        <textarea
-          {...fieldProps}
-          className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
-          rows={textareaRows}
-        />
+      return withValidationWrapper(
+        <div className="relative w-full">
+          <textarea
+            {...fieldProps}
+            className="w-full p-2 pr-8 border border-gray-300 rounded focus:outline-none focus:border-blue-500"
+            rows={textareaRows}
+          />
+          {(value ?? "") !== "" && !readOnly && (
+            <ClearButton onClick={() => onChange(field.field_name, "")} className="right-2 top-2" />
+          )}
+        </div>,
+        validationIndicator
       );
     case "select":
       if (isCredentialsMultiSelect) {
@@ -515,7 +576,7 @@ export default function CustomFieldRenderer({
               .filter(Boolean)
             : [];
 
-        return (
+        return withValidationWrapper(
           <div
             id={field.field_name}
             className="w-full p-2 border border-gray-300 rounded"
@@ -544,10 +605,11 @@ export default function CustomFieldRenderer({
                 );
               })}
             </div>
-          </div>
+          </div>,
+          validationIndicator
         );
       }
-      return (
+      return withValidationWrapper(
         <select {...fieldProps}>
           <option value="">Select an option</option>
           {normalizedOptions.map((option, idx) => (
@@ -555,11 +617,12 @@ export default function CustomFieldRenderer({
               {option}
             </option>
           ))}
-        </select>
+        </select>,
+        validationIndicator
       );
     case "radio":
-      return (
-        <div className="space-y-2">
+      return withValidationWrapper(
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           {normalizedOptions.length === 0 ? (
             <div className="text-sm text-red-500">
               No options configured for this field.
@@ -568,7 +631,7 @@ export default function CustomFieldRenderer({
             normalizedOptions.map((option) => (
               <label
                 key={`${field.field_name}-${option}`}
-                className="flex items-center space-x-2 text-sm"
+                className="flex items-center gap-2 text-sm cursor-pointer"
               >
                 <input
                   type="radio"
@@ -582,7 +645,8 @@ export default function CustomFieldRenderer({
               </label>
             ))
           )}
-        </div>
+        </div>,
+        validationIndicator
       );
     case "checkbox":
       return (
@@ -752,47 +816,45 @@ export default function CustomFieldRenderer({
               ? ""
               : String(value);
 
-        return (
-          <input
-            {...salaryFieldProps}
-            type="text" // Text so we can add "$" & commas
-            value={displayValue}
-            onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
-              let inputValue = e.target.value.replace(/[^0-9.]/g, ""); // Remove non-numeric except decimal
-
-              // Handle multiple decimal points
-              const decimalCount = (inputValue.match(/\./g) || []).length;
-              if (decimalCount > 1) {
-                inputValue = inputValue.substring(
-                  0,
-                  inputValue.lastIndexOf(".")
-                );
-              }
-
-              // Limit decimal places to 2
-              if (inputValue.includes(".")) {
-                const parts = inputValue.split(".");
-                if (parts[1] && parts[1].length > 2) {
-                  inputValue = parts[0] + "." + parts[1].substring(0, 2);
+        return withValidationWrapper(
+          <div className="relative w-full">
+            <input
+              {...salaryFieldProps}
+              type="text"
+              value={displayValue}
+              className={`${className} pr-8`}
+              onChange={(e: React.ChangeEvent<HTMLInputElement>) => {
+                let inputValue = e.target.value.replace(/[^0-9.]/g, "");
+                const decimalCount = (inputValue.match(/\./g) || []).length;
+                if (decimalCount > 1) {
+                  inputValue = inputValue.substring(0, inputValue.lastIndexOf("."));
                 }
-              }
-
-              // Store raw string while typing so backspace/editing works; only convert to number on blur
-              onChange(field.field_name, inputValue === "" ? "" : inputValue);
-            }}
-            onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
-              const inputValue = e.target.value.replace(/[^0-9.]/g, "");
-              if (inputValue === "") {
-                onChange(field.field_name, "");
-                return;
-              }
-              const number = parseFloat(inputValue);
-              if (!Number.isNaN(number)) {
-                onChange(field.field_name, number);
-              }
-            }}
-            placeholder="$XX,XXX.XX"
-          />
+                if (inputValue.includes(".")) {
+                  const parts = inputValue.split(".");
+                  if (parts[1] && parts[1].length > 2) {
+                    inputValue = parts[0] + "." + parts[1].substring(0, 2);
+                  }
+                }
+                onChange(field.field_name, inputValue === "" ? "" : inputValue);
+              }}
+              onBlur={(e: React.FocusEvent<HTMLInputElement>) => {
+                const inputValue = e.target.value.replace(/[^0-9.]/g, "");
+                if (inputValue === "") {
+                  onChange(field.field_name, "");
+                  return;
+                }
+                const number = parseFloat(inputValue);
+                if (!Number.isNaN(number)) {
+                  onChange(field.field_name, number);
+                }
+              }}
+              placeholder="$XX,XXX.XX"
+            />
+            {(displayValue !== "" && displayValue !== undefined) && !readOnly && (
+              <ClearButton onClick={() => onChange(field.field_name, "")} />
+            )}
+          </div>,
+          validationIndicator
         );
       }
 
@@ -804,26 +866,28 @@ export default function CustomFieldRenderer({
         field.field_name?.toLowerCase().includes("zip");
 
       if (isZipCodeFieldNumber) {
-        // ZIP codes should be treated as text (not number) to preserve leading zeros
-        // Must be exactly 5 digits
-        return (
-          <input
-            id={field.field_name}
-            type="text"
-            inputMode="numeric"
-            maxLength={5}
-            value={value ?? ""}
-            onChange={(e) => {
-              // Only allow digits, max 5 characters
-              const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 5);
-              e.target.value = digitsOnly;
-              // Store as string to preserve leading zeros
-              onChange(field.field_name, digitsOnly);
-            }}
-            placeholder={field.placeholder || "12345"}
-            required={field.is_required}
-            className={className}
-          />
+        return withValidationWrapper(
+          <div className="relative w-full">
+            <input
+              id={field.field_name}
+              type="text"
+              inputMode="numeric"
+              maxLength={5}
+              value={value ?? ""}
+              onChange={(e) => {
+                const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 5);
+                e.target.value = digitsOnly;
+                onChange(field.field_name, digitsOnly);
+              }}
+              placeholder={field.placeholder || "12345"}
+              required={field.is_required}
+              className={`${className} pr-8`}
+            />
+            {(value ?? "") !== "" && !readOnly && (
+              <ClearButton onClick={() => onChange(field.field_name, "")} />
+            )}
+          </div>,
+          validationIndicator
         );
       }
 
@@ -843,80 +907,95 @@ export default function CustomFieldRenderer({
         field.field_name?.toLowerCase().includes("oasis");
 
       if (isYearField) {
-        // Year fields: 2000-2100, max 4 digits
-        return (
-          <input
-            {...fieldProps}
-            type="number"
-            min="2000"
-            max="2100"
-            maxLength={4}
-            onInput={(e) => {
-              const target = e.target as HTMLInputElement;
-              if (target.value.length > 4) {
-                target.value = target.value.slice(0, 4);
-              }
-            }}
-          />
+        return withValidationWrapper(
+          <div className="relative w-full">
+            <input
+              {...fieldProps}
+              type="number"
+              min="2000"
+              max="2100"
+              maxLength={4}
+              className={`${fieldProps.className} pr-8`}
+              onInput={(e) => {
+                const target = e.target as HTMLInputElement;
+                if (target.value.length > 4) {
+                  target.value = target.value.slice(0, 4);
+                }
+              }}
+            />
+            {(value ?? "") !== "" && !readOnly && (
+              <ClearButton onClick={() => onChange(field.field_name, "")} />
+            )}
+          </div>,
+          validationIndicator
         );
       }
 
       if (isNonNegativeField) {
-        // Fields that allow values >= 0: Number of Employees, Offices, Oasis Key
-        return (
-          <input
-            {...fieldProps}
-            type="number"
-            min="0"
-            step="1"
-            onChange={(e) => {
-              const numValue = parseFloat(e.target.value);
-              if (e.target.value !== "" && !isNaN(numValue)) {
-                if (numValue < 0) {
-                  // Set validation error for negative values
+        return withValidationWrapper(
+          <div className="relative w-full">
+            <input
+              {...fieldProps}
+              type="number"
+              min="0"
+              step="1"
+              className={`${fieldProps.className} pr-8`}
+              onChange={(e) => {
+                const numValue = parseFloat(e.target.value);
+                if (e.target.value !== "" && !isNaN(numValue)) {
+                  if (numValue < 0) {
+                    e.target.setCustomValidity("Value must be 0 or greater");
+                    e.target.classList.add("border-red-500");
+                  } else {
+                    e.target.setCustomValidity("");
+                    e.target.classList.remove("border-red-500");
+                  }
+                } else {
+                  e.target.setCustomValidity("");
+                  e.target.classList.remove("border-red-500");
+                }
+                fieldProps.onChange(e);
+              }}
+              onBlur={(e) => {
+                const numValue = parseFloat(e.target.value);
+                if (e.target.value !== "" && !isNaN(numValue) && numValue < 0) {
                   e.target.setCustomValidity("Value must be 0 or greater");
                   e.target.classList.add("border-red-500");
                 } else {
                   e.target.setCustomValidity("");
                   e.target.classList.remove("border-red-500");
                 }
-              } else {
-                e.target.setCustomValidity("");
-                e.target.classList.remove("border-red-500");
-              }
-              fieldProps.onChange(e);
-            }}
-            onBlur={(e) => {
-              const numValue = parseFloat(e.target.value);
-              if (e.target.value !== "" && !isNaN(numValue) && numValue < 0) {
-                e.target.setCustomValidity("Value must be 0 or greater");
-                e.target.classList.add("border-red-500");
-              } else {
-                e.target.setCustomValidity("");
-                e.target.classList.remove("border-red-500");
-              }
-            }}
-          />
+              }}
+            />
+            {(value ?? "") !== "" && value !== undefined && !readOnly && (
+              <ClearButton onClick={() => onChange(field.field_name, "")} />
+            )}
+          </div>,
+          validationIndicator
         );
       }
 
-      // Default number field (no special restrictions)
-      return (
-        <input
-          {...fieldProps}
-          type="number"
-        />
+      return withValidationWrapper(
+        <div className="relative w-full">
+          <input
+            {...fieldProps}
+            type="number"
+            className={`${fieldProps.className} pr-8`}
+          />
+          {(value ?? "") !== "" && value !== undefined && !readOnly && (
+            <ClearButton onClick={() => onChange(field.field_name, "")} />
+          )}
+        </div>,
+        validationIndicator
       );
     }
 
     case "percentage":
-      return (
+      return withValidationWrapper(
         <div className="relative w-full">
-          {/* % sign (static) */}
           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 select-none">
             %
           </span>
-
           <input
             id={field.field_name}
             type="number"
@@ -926,42 +1005,25 @@ export default function CustomFieldRenderer({
             value={value ?? ""}
             onChange={(e) => {
               const inputValue = e.target.value;
-
-              // Allow empty value
               if (inputValue === "") {
                 onChange(field.field_name, "");
                 return;
               }
-
-              // Parse the number
               const numValue = parseFloat(inputValue);
-
-              // Check if valid number
-              if (isNaN(numValue)) {
-                return; // Don't update if invalid
-              }
-
-              // Enforce range: 0 to 100
+              if (isNaN(numValue)) return;
               if (numValue < 0) {
                 onChange(field.field_name, "0");
                 return;
               }
-
               if (numValue > 100) {
                 onChange(field.field_name, "100");
                 return;
               }
-
-              // Valid value within range
               onChange(field.field_name, numValue.toString());
             }}
             onBlur={(e) => {
-              // Ensure value is within range on blur
               const inputValue = e.target.value;
-              if (inputValue === "") {
-                return;
-              }
-
+              if (inputValue === "") return;
               const numValue = parseFloat(inputValue);
               if (!isNaN(numValue)) {
                 if (numValue < 0) {
@@ -977,7 +1039,11 @@ export default function CustomFieldRenderer({
             required={field.is_required}
             className={`${className} pr-8`}
           />
-        </div>
+          {(value ?? "") !== "" && value !== undefined && !readOnly && (
+            <ClearButton onClick={() => onChange(field.field_name, "")} className="right-7 top-1/2 -translate-y-1/2" />
+          )}
+        </div>,
+        validationIndicator
       );
     case "date": {
       // Calendar popup state
@@ -1361,57 +1427,63 @@ export default function CustomFieldRenderer({
     // case "date":
     //   return <input {...fieldProps} type="date" />;
     case "email":
-      return <input {...fieldProps} type="email" />;
+      return withValidationWrapper(
+        <div className="relative w-full">
+          <input {...fieldProps} type="email" className={`${fieldProps.className} pr-8`} />
+          {(value ?? "") !== "" && !readOnly && (
+            <ClearButton onClick={() => onChange(field.field_name, "")} />
+          )}
+        </div>,
+        validationIndicator
+      );
     case "phone":
-      return (
-        <input
-          {...fieldProps}
-          type="tel"
-          onChange={handlePhoneChange}
-          onSelect={handlePhoneSelect}
-          maxLength={14} // (000) 000-0000 = 14 characters
-          title="Phone number will be automatically formatted as (000) 000-0000"
-        />
+      return withValidationWrapper(
+        <div className="relative w-full">
+          <input
+            {...fieldProps}
+            type="tel"
+            className={`${fieldProps.className} pr-8`}
+            onChange={handlePhoneChange}
+            onSelect={handlePhoneSelect}
+            maxLength={14}
+            title="Phone number will be automatically formatted as (000) 000-0000"
+          />
+          {(value ?? "") !== "" && !readOnly && (
+            <ClearButton onClick={() => onChange(field.field_name, "")} />
+          )}
+        </div>,
+        validationIndicator
       );
     case "currency":
-      return (
+      return withValidationWrapper(
         <div className="relative w-full">
-          {/* $ sign (static) */}
           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 select-none">
             $
           </span>
-
           <input
             id={field.field_name}
             type="text"
             inputMode="decimal"
             value={value ?? ""}
             onChange={(e) => {
-              // Allow only digits + one dot, max 2 decimals
-              let v = e.target.value;
-
-              // remove everything except digits and dot
-              v = v.replace(/[^0-9.]/g, "");
-
-              // allow only one dot
+              let v = e.target.value.replace(/[^0-9.]/g, "");
               const parts = v.split(".");
-              if (parts.length > 2) {
-                v = parts[0] + "." + parts.slice(1).join("");
-              }
-
-              // limit to 2 decimals
+              if (parts.length > 2) v = parts[0] + "." + parts.slice(1).join("");
               if (v.includes(".")) {
                 const [intPart, decPart] = v.split(".");
                 v = intPart + "." + (decPart ?? "").slice(0, 2);
               }
-
               onChange(field.field_name, v);
             }}
             placeholder={field.placeholder || "0.00"}
             required={field.is_required}
-            className={`${className} pl-8`}
+            className={`${className} pl-8 pr-8`}
           />
-        </div>
+          {(value ?? "") !== "" && !readOnly && (
+            <ClearButton onClick={() => onChange(field.field_name, "")} />
+          )}
+        </div>,
+        validationIndicator
       );
 
     case "file":
@@ -1492,8 +1564,8 @@ export default function CustomFieldRenderer({
         field.field_name?.toLowerCase().includes("zip") ||
         field.field_name?.toLowerCase().includes("postal");
 
-      return (
-        <div style={{ position: "relative", width: "100%" }}>
+      return withValidationWrapper(
+        <div className="relative w-full">
           <input
             {...fieldProps}
             type="text"
@@ -1504,7 +1576,6 @@ export default function CustomFieldRenderer({
             inputMode={isZipCodeField ? "numeric" : "text"}
             onChange={(e) => {
               if (isZipCodeField) {
-                // Only allow digits, max 5 characters
                 const digitsOnly = e.target.value.replace(/\D/g, "").slice(0, 5);
                 e.target.value = digitsOnly;
                 onChange(field.field_name, digitsOnly);
@@ -1512,41 +1583,13 @@ export default function CustomFieldRenderer({
                 fieldProps.onChange(e);
               }
             }}
-            style={{ paddingRight: "25px" }} // thoda space right pe icon ke liye
+            className={`${className} pr-8`}
           />
-
-          {/* Show check icon for Job Title field (by label, not field_name) */}
-          {field.field_label?.toLowerCase().includes("job title") &&
-            (value && value.trim() !== "" ? (
-              <span
-                style={{
-                  color: "green",
-                  position: "absolute",
-                  right: "8px",
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  fontSize: "16px",
-                  fontWeight: "bold",
-                }}
-              >
-                ✔
-              </span>
-            ) : (
-              <span
-                style={{
-                  color: "red",
-                  position: "absolute",
-                  right: "8px",
-                  top: "50%",
-                  transform: "translateY(-50%)",
-                  fontSize: "18px",
-                  fontWeight: "bold",
-                }}
-              >
-                *
-              </span>
-            ))}
-        </div>
+          {(value ?? "") !== "" && !readOnly && (
+            <ClearButton onClick={() => onChange(field.field_name, "")} />
+          )}
+        </div>,
+        validationIndicator
       );
   }
 }

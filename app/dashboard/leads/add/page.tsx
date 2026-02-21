@@ -580,7 +580,7 @@ export default function AddLead() {
       <div className="bg-white rounded-lg shadow p-4 sm:p-6 relative">
         {/* Header with X button */}
         <div className="flex justify-between items-center border-b pb-4 mb-6">
-          <div className="flex items-center">
+          <div className="flex items-center gap-4">
             <Image
               src="/globe.svg"
               alt="Lead"
@@ -613,7 +613,7 @@ export default function AddLead() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
             
-            {/* <div className="flex items-center">
+            {/* <div className="flex items-center gap-4">
               <label className="w-48 font-medium">First Name:</label>
               <div className="flex-1 relative">
                 <input
@@ -631,7 +631,7 @@ export default function AddLead() {
             </div> */}
 
             
-            {/* <div className="flex items-center">
+            {/* <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Last Name:</label>
               <div className="flex-1 relative">
                 <input
@@ -649,7 +649,7 @@ export default function AddLead() {
             </div>
 
             
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Status:</label>
               <div className="flex-1 relative">
                 <select
@@ -681,7 +681,7 @@ export default function AddLead() {
             </div>
 
             
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Nickname:</label>
               <input
                 type="text"
@@ -693,7 +693,7 @@ export default function AddLead() {
             </div>
 
             
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Title:</label>
               <input
                 type="text"
@@ -705,7 +705,7 @@ export default function AddLead() {
             </div>
 
             
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Organization:</label>
               <div className="flex-1 relative">
                 <input
@@ -728,7 +728,7 @@ export default function AddLead() {
             </div>
 
            
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Department:</label>
               <div className="flex-1 relative">
                 <select
@@ -761,7 +761,7 @@ export default function AddLead() {
             </div>
 
             
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Reports to:</label>
               <div className="flex-1 relative">
                 <input
@@ -783,7 +783,7 @@ export default function AddLead() {
             </div>
 
             
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Owner:</label>
               <div className="flex-1 relative">
                 <select
@@ -812,7 +812,7 @@ export default function AddLead() {
             </div>
 
             
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Secondary Owners:</label>
               <div className="flex-1 relative">
                 <input
@@ -955,15 +955,9 @@ export default function AddLead() {
                 const fieldValue = customFieldValues[field.field_name] || "";
 
                 return (
-                  <div key={field.id} className="flex items-center mb-3">
+                  <div key={field.id} className="flex items-center gap-4 mb-3">
                     <label className="w-48 font-medium flex items-center">
                       {field.field_label}:
-                      {field.is_required &&
-                        (isCustomFieldValueValid(field, fieldValue) ? (
-                          <span className="text-green-500 ml-1">✔</span>
-                        ) : (
-                          <span className="text-red-500 ml-1">*</span>
-                        ))}
                     </label>
 
                     <div className="flex-1 relative">
@@ -973,6 +967,13 @@ export default function AddLead() {
                         onChange={handleCustomFieldChange}
                         allFields={customFields}
                         values={customFieldValues}
+                        validationIndicator={
+                          field.is_required
+                            ? isCustomFieldValueValid(field, fieldValue)
+                              ? "valid"
+                              : "required"
+                            : undefined
+                        }
                       />
                     </div>
                   </div>

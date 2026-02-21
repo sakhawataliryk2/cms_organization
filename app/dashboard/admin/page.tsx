@@ -114,22 +114,96 @@ export default function AdminCenter() {
     const [parseProgress, setParseProgress] = useState(0);
     const csvFileInputRef = useRef<HTMLInputElement>(null);
 
+    // Convert APYHub/SharpAPI resume parse result to one row with label-style keys for job-seeker auto-mapping
+    const resumeResultToRow = (result: Record<string, any>): Record<string, string> => {
+        const nameParts = (result.candidate_name || '').trim().split(/\s+/);
+        const firstName = nameParts[0] ?? '';
+        const lastName = nameParts.slice(1).join(' ') ?? '';
+        const positions = Array.isArray(result.positions) ? result.positions : [];
+        const primary = positions[0] || {};
+        const skillsArr = primary.skills ?? result.skills ?? [];
+        const skills = Array.isArray(skillsArr) ? skillsArr.join(', ') : String(skillsArr || '');
+        const edu = Array.isArray(result.education_qualifications) ? result.education_qualifications : [];
+        const eduText = edu.map((e: any) => [e.school_name, e.degree_type, e.specialization_subjects].filter(Boolean).join(' – ')).join('; ');
+        const jobDetails = positions.map((p: any) => (p.job_details || `${p.position_name || ''} at ${p.company_name || ''}`).trim()).filter(Boolean).join('\n');
+        const resumeText = [jobDetails, eduText].filter(Boolean).join('\n\n') || '';
+        return {
+            'First Name': firstName,
+            'Last Name': lastName,
+            'Email': (result.candidate_email ?? '').trim(),
+            'Phone': (result.candidate_phone ?? '').trim(),
+            'Address': (result.candidate_address ?? '').trim(),
+            'Title': (primary.position_name ?? '').trim(),
+            'Current Organization': (primary.company_name ?? '').trim(),
+            'Skills': skills.trim(),
+            'Resume Text': resumeText.trim(),
+        };
+    };
+
     // Auto-open upload modal if ?upload=true query parameter is present
     useEffect(() => {
         const shouldOpenUpload = searchParams.get('upload') === 'true';
         if (shouldOpenUpload) {
-            // Always reset module selection so user must choose module first (especially for drag-drop flow)
             setSelectedUploadModule('');
             const pending = typeof window !== 'undefined' ? sessionStorage.getItem('adminParseDataPendingFile') : null;
             if (pending) {
                 try {
-                    const { name, base64, type } = JSON.parse(pending);
+                    const { name, base64, type, isResume } = JSON.parse(pending);
                     sessionStorage.removeItem('adminParseDataPendingFile');
                     const binary = atob(base64);
                     const arr = new Uint8Array(binary.length);
                     for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
                     const blob = new Blob([arr], { type: type || 'text/csv' });
                     const file = new File([blob], name, { type: blob.type });
+
+                    if (isResume) {
+                        // Resume parsing (Job Seekers only): call APYHub via our API, then map result to one row
+                        setSelectedUploadModule('job-seekers');
+                        setIsParsingCsv(true);
+                        setParseProgress(0);
+                        const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, '$1');
+                        (async () => {
+                            try {
+                                setParseProgress(20);
+                                const form = new FormData();
+                                form.append('file', file);
+                                const res = await fetch('/api/admin/parse-resume', {
+                                    method: 'POST',
+                                    headers: { Authorization: `Bearer ${token}` },
+                                    body: form,
+                                });
+                                const data = await res.json();
+                                if (!res.ok || !data.result) {
+                                    toast.error(data.message || 'Resume parsing failed.');
+                                    setIsParsingCsv(false);
+                                    setParseProgress(0);
+                                    return;
+                                }
+                                setParseProgress(90);
+                                const raw = resumeResultToRow(data.result);
+                                const headers = Object.keys(raw);
+                                setCsvHeaders(headers);
+                                setParsedData([{ raw, mapped: {}, errors: [], rowNumber: 1 }]);
+                                setUploadFile(file);
+                                setParseProgress(100);
+                                toast.success('Resume parsed. Map fields and upload to Job Seekers.');
+                            } catch (e) {
+                                console.error(e);
+                                toast.error(e instanceof Error ? e.message : 'Resume parsing failed.');
+                            } finally {
+                                setIsParsingCsv(false);
+                                setParseProgress(0);
+                            }
+                        })();
+                        setShowUploadModal(true);
+                        setUploadProgress({ current: 0, total: 0 });
+                        setUploadResults(null);
+                        setValidationErrors([]);
+                        setCurrentStep('select');
+                        router.replace('/dashboard/admin', { scroll: false });
+                        return;
+                    }
+
                     setIsParsingCsv(true);
                     setParseProgress(0);
                     file.text().then((text) => {

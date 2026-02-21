@@ -1266,7 +1266,7 @@ export default function AddOrganization() {
       <div className="bg-white rounded-lg shadow p-4 sm:p-6 relative">
         {/* Header with X button */}
         <div className="flex justify-between items-center border-b pb-4 mb-6">
-          <div className="flex items-center">
+          <div className="flex items-center gap-4">
             <Image
               src="/window.svg"
               alt="Organization"
@@ -1278,7 +1278,7 @@ export default function AddOrganization() {
               {isEditMode ? "Edit" : "Add"} Organization
             </h1>
           </div>
-          <div className="flex items-center space-x-4">
+          <div className="flex items-center gap-4 space-x-4">
             {/* <button
               onClick={() =>
                 router.push(
@@ -1309,7 +1309,7 @@ export default function AddOrganization() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
             {/* Standard Organization Fields */}
-            {/* <div className="flex items-center">
+            {/* <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Organization Name:</label>
               <div className="flex-1 relative">
                 <input
@@ -1326,7 +1326,7 @@ export default function AddOrganization() {
               </div>
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Nicknames:</label>
               <input
                 type="text"
@@ -1338,7 +1338,7 @@ export default function AddOrganization() {
               />
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Parent Organization:</label>
               <div className="flex-1 relative">
                 <input
@@ -1360,7 +1360,7 @@ export default function AddOrganization() {
               </div>
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Organization Website:</label>
               <div className="flex-1 relative">
                 <input
@@ -1378,7 +1378,7 @@ export default function AddOrganization() {
               </div>
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Contact Phone:</label>
               <div className="flex-1">
                 <input
@@ -1392,7 +1392,7 @@ export default function AddOrganization() {
               </div>
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Address:</label>
               <div className="flex-1">
                 <input
@@ -1406,7 +1406,7 @@ export default function AddOrganization() {
               </div>
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Status:</label>
               <select
                 name="status"
@@ -1420,7 +1420,7 @@ export default function AddOrganization() {
               </select>
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">
                 Contract Signed on File:
               </label>
@@ -1435,7 +1435,7 @@ export default function AddOrganization() {
               </select>
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Contract Signed By:</label>
               <div className="flex-1 relative">
                 <input
@@ -1457,7 +1457,7 @@ export default function AddOrganization() {
               </div>
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Date Contract Signed:</label>
               <div className="flex-1 relative">
                 <input
@@ -1478,7 +1478,7 @@ export default function AddOrganization() {
               </div>
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Year Founded:</label>
               <input
                 type="text"
@@ -1490,7 +1490,7 @@ export default function AddOrganization() {
               />
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium align-top mt-2">
                 Organization Overview:
               </label>
@@ -1510,7 +1510,7 @@ export default function AddOrganization() {
               </div>
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium">Standard Perm Fee (%):</label>
               <div className="flex-1 relative">
                 <input
@@ -1528,7 +1528,7 @@ export default function AddOrganization() {
               </div>
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium"># of Employees:</label>
               <input
                 type="number"
@@ -1541,7 +1541,7 @@ export default function AddOrganization() {
               />
             </div>
 
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <label className="w-48 font-medium"># of Offices:</label>
               <input
                 type="number"
@@ -1574,9 +1574,9 @@ export default function AddOrganization() {
                     return (
                       <div
                         key="address-group"
-                        className="address-underline flex items-start mb-3"
+                        className="address-underline flex items-start gap-4 mb-3"
                       >
-                        <label className="w-48 font-medium flex items-center mt-4">
+                        <label className="w-48 font-medium flex items-center gap-4 mt-4">
                           Address:
                         </label>
 
@@ -1823,16 +1823,9 @@ export default function AddOrganization() {
                   //   return true;
                   // };
                   return (
-                    <div key={field.id} className="flex items-center mb-3">
-                      <label className="w-48 font-medium flex items-center">
+                    <div key={field.id} className="flex items-center gap-4 mb-3">
+                      <label className="w-48 font-medium flex items-center gap-4">
                         {field.field_label}:
-                        {/* Show indicator for required fields OR conditionally required fields */}
-                        {(field.is_required || isContractSignedByRequired) &&
-                          (isCustomFieldValueValid(field, fieldValue) ? (
-                            <span className="text-green-500 ml-1">✔</span>
-                          ) : (
-                            <span className="text-red-500 ml-1">*</span>
-                          ))}
                       </label>
 
                       <div className="flex-1 relative">
@@ -1889,6 +1882,13 @@ export default function AddOrganization() {
                             onChange={handleCustomFieldChange}
                             allFields={customFields}
                             values={customFieldValues}
+                            validationIndicator={
+                              field.is_required || isContractSignedByRequired
+                                ? isCustomFieldValueValid(field, fieldValue)
+                                  ? "valid"
+                                  : "required"
+                                : undefined
+                            }
                           />
                         )}
                       </div>
@@ -1896,7 +1896,7 @@ export default function AddOrganization() {
                   );
 
                   // return (
-                  //   <div key={field.id} className="flex items-center">
+                  //   <div key={field.id} className="flex items-center gap-4">
                   //     <label className="w-48 font-medium">
                   //       {field.field_label}:
                   //       {field.is_required && (

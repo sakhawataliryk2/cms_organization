@@ -1214,7 +1214,7 @@ export default function AddExecutiveSearchJob() {
           <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 gap-4">
             {/* {!isEditMode && hiringManagerCustomField && !(organizationIdFromUrl && hiringManagerIdFromUrl) && (
-              <div className="flex items-center mb-3">
+              <div className="flex items-center gap-4 mb-3">
                 <label className="w-48 font-medium flex items-center">
                   Hiring Manager:
                 </label>
@@ -1240,7 +1240,7 @@ export default function AddExecutiveSearchJob() {
               </div>
             )} */}
             {/* {isEditMode && (
-              <div className="flex items-center mb-3">
+              <div className="flex items-center gap-4 mb-3">
                 <label className="w-48 font-medium flex items-center">
                   Hiring Manager:
                 </label>
@@ -1275,15 +1275,9 @@ export default function AddExecutiveSearchJob() {
                   const fieldValue = customFieldValues[field.field_name] || "";
 
                   return (
-                    <div key={field.id} className="flex items-center mb-3">
+                    <div key={field.id} className="flex items-center gap-4 mb-3">
                       <label className="w-48 font-medium flex items-center">
                         {field.field_label}:
-                        {field.is_required &&
-                          (isCustomFieldValueValid(field, fieldValue) ? (
-                            <span className="text-green-500 ml-1">✔</span>
-                          ) : (
-                            <span className="text-red-500 ml-1">*</span>
-                          ))}
                       </label>
 
                       <div className="flex-1 relative">
@@ -1294,6 +1288,13 @@ export default function AddExecutiveSearchJob() {
                           allFields={customFields}
                           values={customFieldValues}
                           context={{ organizationId: currentOrganizationId || organizationIdFromUrl || "" }}
+                          validationIndicator={
+                            field.is_required
+                              ? isCustomFieldValueValid(field, fieldValue)
+                                ? "valid"
+                                : "required"
+                              : undefined
+                          }
                         />
                       </div>
                     </div>

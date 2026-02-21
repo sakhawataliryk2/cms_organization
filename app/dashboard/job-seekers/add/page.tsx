@@ -77,6 +77,117 @@ const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
   "Date Added": "dateAdded", "Date Created": "dateAdded",
 };
 
+// Parsed resume shape from POST /api/parse-resume (AI)
+interface ParsedResume {
+  full_name: string;
+  first_name: string;
+  last_name: string;
+  email: string;
+  phone: string;
+  location: string;
+  linkedin: string;
+  portfolio: string;
+  current_job_title: string;
+  total_experience_years: string;
+  skills: string[];
+  education: Array<{ degree: string; institution: string; year: string }>;
+  work_experience: Array<{
+    company: string;
+    job_title: string;
+    start_date: string;
+    end_date: string;
+    description: string;
+  }>;
+}
+
+// Labels that receive the same value from parsed resume (for custom field mapping)
+const LABELS_FOR_FIRST_NAME = ["First Name", "First", "FName"];
+const LABELS_FOR_LAST_NAME = ["Last Name", "Last", "LName"];
+const LABELS_FOR_EMAIL = ["Email", "Email 1", "Email Address", "E-mail"];
+const LABELS_FOR_PHONE = ["Phone", "Phone Number", "Telephone"];
+const LABELS_FOR_ADDRESS = ["Address", "Street Address", "Address 1"];
+const LABELS_FOR_TITLE = ["Title", "Job Title", "Position"];
+const LABELS_FOR_RESUME_TEXT = ["Resume Text", "Resume", "CV"];
+const LABELS_FOR_SKILLS = ["Skills", "Skill Set", "Technical Skills"];
+const LABELS_FOR_LINKEDIN = ["LinkedIn", "LinkedIn URL"];
+const LABELS_FOR_PORTFOLIO = ["Portfolio", "Portfolio URL"];
+const LABELS_FOR_EXPERIENCE_YEARS = ["Years of Experience", "Total Experience", "Experience (Years)"];
+
+function formatResumeSections(parsed: ParsedResume): string {
+  const parts: string[] = [];
+  if (parsed.education?.length) {
+    parts.push("EDUCATION\n" + parsed.education.map((e) => {
+      const line = [e.degree, e.institution, e.year].filter(Boolean).join(" – ");
+      return line || "";
+    }).filter(Boolean).join("\n"));
+  }
+  if (parsed.work_experience?.length) {
+    parts.push("EXPERIENCE\n" + parsed.work_experience.map((w) => {
+      const header = [w.job_title, w.company].filter(Boolean).join(" at ");
+      const dates = [w.start_date, w.end_date].filter(Boolean).join(" – ");
+      const lines = [header, dates, w.description].filter(Boolean);
+      return lines.join("\n");
+    }).filter(Boolean).join("\n\n"));
+  }
+  return parts.join("\n\n");
+}
+
+function applyParsedResumeToForm(
+  parsed: ParsedResume,
+  setFormFields: React.Dispatch<React.SetStateAction<FormField[]>>,
+  setCustomFieldValues: (values: React.SetStateAction<Record<string, any>>) => void,
+  customFields: Array<{ field_name: string; field_label?: string | null }>
+): void {
+  const resumeText = formatResumeSections(parsed);
+  const skillsStr = Array.isArray(parsed.skills) ? parsed.skills.join(", ") : "";
+
+  // Value by label: each label that should get a value from parsed resume
+  const valueByLabel: Record<string, string> = {};
+  LABELS_FOR_FIRST_NAME.forEach((l) => (valueByLabel[l] = parsed.first_name || ""));
+  LABELS_FOR_LAST_NAME.forEach((l) => (valueByLabel[l] = parsed.last_name || ""));
+  LABELS_FOR_EMAIL.forEach((l) => (valueByLabel[l] = parsed.email || ""));
+  LABELS_FOR_PHONE.forEach((l) => (valueByLabel[l] = parsed.phone || ""));
+  LABELS_FOR_ADDRESS.forEach((l) => (valueByLabel[l] = parsed.location || ""));
+  LABELS_FOR_TITLE.forEach((l) => (valueByLabel[l] = parsed.current_job_title || ""));
+  LABELS_FOR_RESUME_TEXT.forEach((l) => (valueByLabel[l] = resumeText));
+  LABELS_FOR_SKILLS.forEach((l) => (valueByLabel[l] = skillsStr));
+  LABELS_FOR_LINKEDIN.forEach((l) => (valueByLabel[l] = parsed.linkedin || ""));
+  LABELS_FOR_PORTFOLIO.forEach((l) => (valueByLabel[l] = parsed.portfolio || ""));
+  LABELS_FOR_EXPERIENCE_YEARS.forEach((l) => (valueByLabel[l] = parsed.total_experience_years || ""));
+
+  const updateField = (arr: FormField[], id: string, value: string): FormField[] => {
+    const idx = arr.findIndex((f) => f.id === id);
+    if (idx === -1) return arr;
+    const next = [...arr];
+    next[idx] = { ...next[idx], value };
+    return next;
+  };
+
+  setFormFields((prev) => {
+    let next = prev;
+    next = updateField(next, "firstName", parsed.first_name || "");
+    next = updateField(next, "lastName", parsed.last_name || "");
+    next = updateField(next, "email", parsed.email || "");
+    next = updateField(next, "phone", parsed.phone || "");
+    next = updateField(next, "address", parsed.location || "");
+    next = updateField(next, "title", parsed.current_job_title || "");
+    next = updateField(next, "resumeText", resumeText);
+    next = updateField(next, "skills", skillsStr);
+    return next;
+  });
+
+  setCustomFieldValues((prev) => {
+    const next = { ...prev };
+    for (const field of customFields) {
+      const label = field.field_label;
+      if (label && valueByLabel[label] !== undefined) {
+        next[field.field_name] = valueByLabel[label];
+      }
+    }
+    return next;
+  });
+}
+
 // Multi-value tag input component for Skills field
 interface MultiValueTagInputProps {
   values: string[];
@@ -158,6 +269,11 @@ export default function AddJobSeeker() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [activeUsers, setActiveUsers] = useState<User[]>([]);
   const hasFetchedRef = useRef(false); // Track if we've already fetched job seeker data
+
+  // Parse resume from PDF (AI): upload → extract text → OpenRouter → map to form
+  const [isParsingResume, setIsParsingResume] = useState(false);
+  const [parseResumeError, setParseResumeError] = useState<string | null>(null);
+  const parseResumeInputRef = useRef<HTMLInputElement>(null);
 
   // Email and address validation states
   const [emailValidation, setEmailValidation] = useState<{
@@ -891,10 +1007,52 @@ export default function AddJobSeeker() {
     );
   };
 
-  // Handle file selection
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      setResumeFile(e.target.files[0]);
+  // Upload PDF → extract text → AI parse → map to form (no auto-save; recruiter reviews)
+  // The same file is stored and auto-uploaded to Docs after save as first_name-resume.ext
+  const handleParseResume = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ext = (file.name.toLowerCase().split(".").pop() || "").toLowerCase();
+    if (!["pdf", "docx", "txt"].includes(ext)) {
+      setParseResumeError("Use PDF, DOCX, or TXT.");
+      return;
+    }
+    setParseResumeError(null);
+    setIsParsingResume(true);
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      const res = await fetch("/api/parse-resume", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setParseResumeError(data.message || "Parse failed.");
+        return;
+      }
+      if (!data.success || !data.parsed) {
+        setParseResumeError("Invalid response. Enter candidate manually.");
+        return;
+      }
+      applyParsedResumeToForm(
+        data.parsed as ParsedResume,
+        setFormFields,
+        setCustomFieldValues,
+        customFields
+      );
+      // Keep the file so it can be uploaded to Docs after save (first_name-resume.ext)
+      setResumeFile(file);
+      if (parseResumeInputRef.current) parseResumeInputRef.current.value = "";
+    } catch (err) {
+      setParseResumeError(err instanceof Error ? err.message : "Parse failed.");
+    } finally {
+      setIsParsingResume(false);
     }
   };
 
@@ -1114,6 +1272,41 @@ export default function AddJobSeeker() {
         : data.jobSeeker
           ? data.jobSeeker.id
           : null;
+
+      // If a resume file was selected/parsed, upload it to the job seeker's Docs tab as first_name-resume.ext
+      if (resultId && resumeFile) {
+        const firstName = (apiData.firstName || "").trim();
+        const firstWord = firstName.split(/\s+/)[0] || "resume";
+        const safeName = firstWord.replace(/[^a-zA-Z0-9-]/g, "") || "resume";
+        const ext = resumeFile.name.toLowerCase().split(".").pop() || "pdf";
+        const documentName = `${safeName}-resume.${ext}`;
+
+        const uploadFormData = new FormData();
+        uploadFormData.set("file", resumeFile);
+        uploadFormData.set("document_name", documentName);
+        uploadFormData.set("document_type", "Resume");
+
+        try {
+          const uploadRes = await fetch(`/api/job-seekers/${resultId}/documents/upload`, {
+            method: "POST",
+            headers: { Authorization: `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}` },
+            body: uploadFormData,
+          });
+          if (!uploadRes.ok) {
+            const uploadData = await uploadRes.json().catch(() => ({}));
+            console.warn("Resume upload to Docs failed:", uploadData.message || uploadRes.statusText);
+            setError(`Job seeker saved, but resume upload failed: ${uploadData.message || "Please add the resume from the Docs tab."}`);
+            setIsSubmitting(false);
+            return;
+          }
+        } catch (uploadErr) {
+          console.warn("Resume upload error:", uploadErr);
+          setError("Job seeker saved, but resume upload failed. You can add it from the Docs tab.");
+          setIsSubmitting(false);
+          return;
+        }
+      }
+
       if (resultId) {
         router.push("/dashboard/job-seekers/view?id=" + resultId);
       } else {
@@ -1209,8 +1402,36 @@ export default function AddJobSeeker() {
           </div>
         )}
 
+        {/* Parse from PDF (AI) – only in add mode; never auto-save, recruiter reviews */}
+        {!isEditMode && (
+          <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
+            <h2 className="text-sm font-semibold text-gray-700 mb-2">
+              Parse from resume (PDF / DOCX / TXT)
+            </h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Upload a file to extract text and fill the form via AI. You can review and edit before saving.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                ref={parseResumeInputRef}
+                type="file"
+                accept=".pdf,.docx,.txt"
+                onChange={handleParseResume}
+                disabled={isParsingResume}
+                className="text-sm text-gray-600 file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+              {isParsingResume && (
+                <span className="text-sm text-gray-500">Parsing…</span>
+              )}
+            </div>
+            {parseResumeError && (
+              <p className="mt-2 text-sm text-red-600">{parseResumeError}</p>
+            )}
+          </div>
+        )}
+
         {/* Form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="relative space-y-4">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {(() => {
               const renderCustomFieldRow = (field: any) => {
@@ -1299,15 +1520,9 @@ export default function AddJobSeeker() {
                   : [];
 
                 return (
-                  <div key={field.id} className="flex items-center mb-3">
+                  <div key={field.id} className="flex items-center gap-4 mb-3">
                     <label className="w-48 font-medium flex items-center">
                       {field.field_label}:
-                      {field.is_required &&
-                        (isCustomFieldValueValid(field, fieldValue) ? (
-                          <span className="text-green-500 ml-1">✔</span>
-                        ) : (
-                          <span className="text-red-500 ml-1">*</span>
-                        ))}
                     </label>
 
                     <div className="flex-1 relative">
@@ -1348,6 +1563,13 @@ export default function AddJobSeeker() {
                           field={field}
                           value={fieldValue}
                           onChange={handleCustomFieldChange}
+                          validationIndicator={
+                            field.is_required
+                              ? isCustomFieldValueValid(field, fieldValue)
+                                ? "valid"
+                                : "required"
+                              : undefined
+                          }
                         />
                       )}
                     </div>
@@ -1563,8 +1785,8 @@ export default function AddJobSeeker() {
             </div>
           )}
 
-          {/* Form Buttons */}
-          <div className="flex justify-end space-x-4 mt-8">
+          {/* Form Buttons – sticky to form card like Organizations / HM add */}
+          <div className="sticky bottom-0 left-0 right-0 z-10 -mx-4 -mb-4 px-4 py-4 sm:-mx-6 sm:-mb-6 sm:px-6 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.08)] flex justify-end space-x-4">
             <button
               type="button"
               onClick={handleGoBack}

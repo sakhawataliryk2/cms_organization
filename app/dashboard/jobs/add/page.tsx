@@ -1482,7 +1482,7 @@ export default function AddJob() {
       <div className="mx-auto py-4 px-4 sm:py-8 sm:px-6">
         <div className="bg-white rounded-lg shadow p-4 sm:p-6">
           <div className="flex justify-between items-center border-b border-red-600 pb-4 mb-6">
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <div className="bg-red-100 border border-red-300 p-2 mr-3">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -1569,7 +1569,7 @@ export default function AddJob() {
         <div className="bg-white rounded-lg shadow p-4 sm:p-6">
           {/* Header */}
           <div className="flex justify-between items-center border-b border-red-600 pb-4 mb-6">
-            <div className="flex items-center">
+            <div className="flex items-center gap-4">
               <div className="bg-red-100 border border-red-300 p-2 mr-3">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -1608,7 +1608,7 @@ export default function AddJob() {
                   : "border-blue-200 hover:border-blue-300"
                   }`}
               >
-                <div className="flex items-center">
+                <div className="flex items-center gap-4">
                   <input
                     type="radio"
                     name="jobType"
@@ -1630,7 +1630,7 @@ export default function AddJob() {
                   : "border-blue-200 hover:border-blue-300"
                   }`}
               >
-                <div className="flex items-center">
+                <div className="flex items-center gap-4">
                   <input
                     type="radio"
                     name="jobType"
@@ -1654,7 +1654,7 @@ export default function AddJob() {
                   : "border-blue-200 hover:border-blue-300"
                   }`}
               >
-                <div className="flex items-center">
+                <div className="flex items-center gap-4">
                   <input
                     type="radio"
                     name="jobType"
@@ -1709,7 +1709,7 @@ export default function AddJob() {
       <div className="bg-white rounded-lg shadow p-4 sm:p-6 relative">
         {/* Header with X button */}
         <div className="flex justify-between items-center border-b pb-4 mb-6">
-          <div className="flex items-center">
+          <div className="flex items-center gap-4">
             <Image
               src="/window.svg"
               alt="Job"
@@ -1750,7 +1750,7 @@ export default function AddJob() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 gap-4">
               {!isEditMode && hiringManagerCustomField && !(organizationIdFromUrl && hiringManagerIdFromUrl) && (
-                <div className="flex items-center mb-3">
+                <div className="flex items-center gap-4 mb-3">
                   <label className="w-48 font-medium flex items-center">
                     Hiring Manager:
                   </label>
@@ -1776,7 +1776,7 @@ export default function AddJob() {
                 </div>
               )}
               {isEditMode && (
-                <div className="flex items-center mb-3">
+                <div className="flex items-center gap-4 mb-3">
                   <label className="w-48 font-medium flex items-center">
                     Hiring Manager:
                   </label>
@@ -1798,7 +1798,7 @@ export default function AddJob() {
               {/* {formFields
                             .filter(field => field.visible)
                             .map((field, index) => (
-                                <div key={field.id} className="flex items-center">
+                                <div key={field.id} className="flex items-center gap-4">
             
             <label className="w-48 font-medium">
                                         {field.label}:
@@ -1942,15 +1942,9 @@ export default function AddJob() {
                     const fieldValue = customFieldValues[field.field_name] || "";
 
                     return (
-                      <div key={field.id} className="flex items-center mb-3">
+                      <div key={field.id} className="flex items-center gap-4 mb-3">
                         <label className="w-48 font-medium flex items-center">
                           {field.field_label}:
-                          {field.is_required &&
-                            (isCustomFieldValueValid(field, fieldValue) ? (
-                              <span className="text-green-500 ml-1">✔</span>
-                            ) : (
-                              <span className="text-red-500 ml-1">*</span>
-                            ))}
                         </label>
 
                         <div className="flex-1 relative">
@@ -1961,13 +1955,20 @@ export default function AddJob() {
                             allFields={customFields}
                             values={customFieldValues}
                             context={{ organizationId: currentOrganizationId || organizationIdFromUrl || "" }}
+                            validationIndicator={
+                              field.is_required
+                                ? isCustomFieldValueValid(field, fieldValue)
+                                  ? "valid"
+                                  : "required"
+                                : undefined
+                            }
                           />
                         </div>
                       </div>
                     );
 
                     // return (
-                    //   <div key={field.id} className="flex items-center">
+                    //   <div key={field.id} className="flex items-center gap-4">
                     //     <label className="w-48 font-medium">
                     //       {field.field_label}:
                     //       {field.is_required && (

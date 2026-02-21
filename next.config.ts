@@ -2,6 +2,8 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* config options here */
+  // Do not bundle pdf-parse/pdfjs-dist on server; they load from node_modules so the PDF worker resolves
+  serverExternalPackages: ["pdf-parse", "pdfjs-dist"],
   experimental: {
     serverActions: {
       // Allow document uploads up to 10MB (must match backend multer limit)
