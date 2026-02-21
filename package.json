@@ -26,7 +26,7 @@
     "jszip": "^3.10.1",
     "mammoth": "^1.11.0",
     "next": "15.0.5",
-    "pdf-parse": "^2.4.5",
+    "unpdf": "^1.4.0",
     "pdfjs-dist": "4.4.168",
     "react": "^19.1.0",
     "react-confirm-lite": "^1.4.4",
