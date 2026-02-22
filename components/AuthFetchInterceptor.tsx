@@ -17,7 +17,7 @@ export function AuthFetchInterceptor() {
     ): Promise<Response> {
       const response = await originalFetch.call(window, input, init);
 
-      // On 401 from our API (excluding auth routes), redirect to login
+      // On 401 from our API (excluding auth and Office 365 routes), redirect to login
       if (response.status === 401) {
         const url =
           typeof input === "string"
@@ -31,7 +31,13 @@ export function AuthFetchInterceptor() {
           url.includes("/api/auth/login") ||
           url.includes("/api/auth/signup") ||
           url.includes("/api/auth/refresh");
-        if (!isAuthRoute && (url.includes("/api/") || url.startsWith("/api/"))) {
+        // Office 365 401 = MS token missing/expired, not CMS session — don't log user out
+        const isOffice365Route = url.includes("/api/office365/");
+        if (
+          !isAuthRoute &&
+          !isOffice365Route &&
+          (url.includes("/api/") || url.startsWith("/api/"))
+        ) {
           logout();
         }
       }

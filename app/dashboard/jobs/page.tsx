@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
+import { IoFilterSharp } from "react-icons/io5";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -1162,13 +1163,13 @@ export default function JobList() {
               ref={advancedSearchButtonRef}
               type="button"
               onClick={() => setShowAdvancedSearch((v) => !v)}
-              className={`px-4 py-2 text-sm font-medium rounded border flex items-center gap-2 ${
+              className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${
                 showAdvancedSearch || advancedSearchCriteria.length > 0
                   ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
                   : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
               }`}
             >
-              Advanced
+              <IoFilterSharp /> Filter
             </button>
 
             {(searchTerm ||

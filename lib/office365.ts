@@ -276,8 +276,9 @@ export const sendCalendarInvite = async (
     });
 
     if (!response.ok) {
-      const error = await response.json();
-      throw new Error(error.message || 'Failed to send calendar invite');
+      const error = await response.json().catch(() => ({}));
+      const message = error?.message || error?.error || 'Failed to send calendar invite';
+      throw new Error(message);
     }
 
     return true;
