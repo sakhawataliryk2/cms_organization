@@ -32,6 +32,7 @@ const SECTION_CONFIG: Record<
       { value: "JOB_SEEKER_DELETE_REQUEST", label: "Job Seeker - Delete Request (Payroll)" },
       { value: "JOB_SEEKER_TRANSFER_REQUEST", label: "Job Seeker - Transfer Request (Payroll)" },
       { value: "JOB_SEEKER_UNARCHIVE_REQUEST", label: "Job Seeker - Unarchive Request (Onboarding)" },
+      { value: "JOB_SEEKER_APPLICATION_SUBMISSION", label: "Application Submission Template" },
     ],
     placeholders: {
       ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}"],
@@ -69,6 +70,17 @@ const SECTION_CONFIG: Record<
         "{{approvalUrl}}",
         "{{denyUrl}}",
       ],
+      JOB_SEEKER_APPLICATION_SUBMISSION: [
+        "{{candidateName}}",
+        "{{candidateNameLink}}",
+        "{{jobTitle}}",
+        "{{submittedBy}}",
+        "{{submissionType}}",
+        "{{source}}",
+        "{{submittedAt}}",
+        "{{submissionSummary}}",
+        "{{viewCandidateUrl}}",
+      ],
     },
     required: {
       ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}"],
@@ -77,6 +89,7 @@ const SECTION_CONFIG: Record<
       JOB_SEEKER_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       JOB_SEEKER_TRANSFER_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       JOB_SEEKER_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+      JOB_SEEKER_APPLICATION_SUBMISSION: ["{{candidateNameLink}}", "{{viewCandidateUrl}}"],
     },
     defaults: {
       ONBOARDING_INTERNAL_SENT: {
@@ -167,6 +180,23 @@ const SECTION_CONFIG: Record<
           `<p><strong>Request Date:</strong> {{requestDate}}</p>` +
           `<p><strong>Reason:</strong> {{reason}}</p>` +
           `<p><a href="{{approvalUrl}}">Approve Unarchive</a> | <a href="{{denyUrl}}">Deny Unarchive</a></p>` +
+          `</div>`,
+      },
+      JOB_SEEKER_APPLICATION_SUBMISSION: {
+        template_name: "Application Submission Template",
+        subject: "New Candidate Submission: {{candidateName}} → {{jobTitle}}",
+        body:
+          `<div>` +
+          `<p><strong>Candidate:</strong> {{candidateNameLink}}</p>` +
+          `<p><strong>Job:</strong> {{jobTitle}}</p>` +
+          `<p><strong>Submitted By:</strong> {{submittedBy}}</p>` +
+          `<p><strong>Submission Type:</strong> {{submissionType}}</p>` +
+          `<p><strong>Source:</strong> {{source}}</p>` +
+          `<p><strong>Submitted At:</strong> {{submittedAt}}</p>` +
+          `<p><strong>Submission Summary:</strong></p>` +
+          `<pre style="background:#f5f5f5;padding:10px;border-radius:4px;">{{submissionSummary}}</pre>` +
+          `<p><strong>View Candidate:</strong> <a href="{{viewCandidateUrl}}">{{viewCandidateUrl}}</a></p>` +
+          `<p><em>This is an automated notification from the ATS.</em></p>` +
           `</div>`,
       },
     },

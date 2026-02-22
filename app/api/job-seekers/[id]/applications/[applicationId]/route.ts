@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
+/**
+ * PATCH: Update an application (e.g. status to "Interview").
+ * Backend updates the row in job_seeker_applications by id.
+ */
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string; applicationId: string }> }

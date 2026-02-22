@@ -380,7 +380,11 @@ export default function JobSeekerView() {
   const [applicationsColumnFilters, setApplicationsColumnFilters] = useState<Record<string, ColumnFilterState>>({});
   const [applicationsPage, setApplicationsPage] = useState(1);
   const [applicationsPageSize, setApplicationsPageSize] = useState(10);
+  const [selectedApplications, setSelectedApplications] = useState<string[]>([]);
+  const [selectAllApplications, setSelectAllApplications] = useState(false);
+  const [applicationsSearchTerm, setApplicationsSearchTerm] = useState("");
 
+  /** Applications are loaded from the dedicated API (backend job_seeker_applications table), not from job seeker custom_fields. */
   const fetchApplications = async (id: string) => {
     setIsLoadingApplications(true);
     setApplicationsError(null);
@@ -472,6 +476,116 @@ export default function JobSeekerView() {
   useEffect(() => {
     setApplicationsPage(1);
   }, [applicationsView]);
+
+  // Applications table: filtered and sorted list (for select-all, pagination, table body)
+  const applicationsColumnConfigStatic: Record<string, { label: string; filterType: "text" | "select" | "number"; filterOptions?: { label: string; value: string }[] }> = useMemo(() => ({
+    job: { label: "Job", filterType: "text" },
+    organization: { label: "Organization / Client", filterType: "text" },
+    status: { label: "Status", filterType: "select" },
+    submission_source: { label: "Submission Source", filterType: "text" },
+    created_at: { label: "Created At", filterType: "text" },
+    created_by: { label: "Created By", filterType: "text" },
+  }), []);
+
+  const {
+    filteredAndSortedApplications,
+    applicationsColumnConfig,
+    applicationsHasActiveFilters,
+  } = useMemo(() => {
+    const filteredByView = applications
+      .filter((a) => a?.type === applicationsView)
+      .sort((a, b) => new Date(b?.created_at || 0).getTime() - new Date(a?.created_at || 0).getTime());
+    const statusOptions = Array.from(new Set(filteredByView.map((a) => a?.status).filter(Boolean)))
+      .sort()
+      .map((s) => ({ label: String(s), value: String(s) }));
+    const config: Record<string, { label: string; filterType: "text" | "select" | "number"; filterOptions?: { label: string; value: string }[] }> = {
+      ...applicationsColumnConfigStatic,
+      status: { label: "Status", filterType: "select", filterOptions: statusOptions },
+    };
+    let result = [...filteredByView];
+    const term = (applicationsSearchTerm || "").trim().toLowerCase();
+    if (term) {
+      result = result.filter((app) => {
+        const job = (app?.job_title ?? app?.job_id ?? "").toString().toLowerCase();
+        const org = (app?.organization_name ?? app?.client_name ?? "").toString().toLowerCase();
+        const status = (app?.status ?? "").toString().toLowerCase();
+        const source = (app?.submission_source ?? app?.submissionSource ?? "").toString().toLowerCase();
+        const createdBy = ((app as any)?.created_by_name ?? (app as any)?.created_by ?? "").toString().toLowerCase();
+        return job.includes(term) || org.includes(term) || status.includes(term) || source.includes(term) || createdBy.includes(term);
+      });
+    }
+    Object.entries(applicationsColumnFilters).forEach(([columnKey, filterValue]) => {
+      if (!filterValue || filterValue.trim() === "") return;
+      const cfg = config[columnKey];
+      const isSelect = cfg?.filterType === "select";
+      result = result.filter((app) => {
+        const raw = getApplicationColumnValue(app, columnKey);
+        const valueStr = String(raw).toLowerCase();
+        const filterStr = String(filterValue).toLowerCase();
+        return isSelect ? valueStr === filterStr : valueStr.includes(filterStr);
+      });
+    });
+    const activeSort = Object.entries(applicationsColumnSorts).find(([, dir]) => dir !== null);
+    if (activeSort?.length === 2) {
+      const [sortKey, sortDir] = activeSort;
+      result.sort((a, b) => {
+        const aVal = getApplicationColumnValue(a, sortKey);
+        const bVal = getApplicationColumnValue(b, sortKey);
+        const aNum = typeof aVal === "number" ? aVal : Number(aVal);
+        const bNum = typeof bVal === "number" ? bVal : Number(bVal);
+        let cmp = 0;
+        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) cmp = aNum - bNum;
+        else cmp = String(aVal ?? "").localeCompare(String(bVal ?? ""), undefined, { numeric: true, sensitivity: "base" });
+        return sortDir === "asc" ? cmp : -cmp;
+      });
+    }
+    const hasFilters =
+      (applicationsSearchTerm || "").trim() !== "" ||
+      Object.keys(applicationsColumnFilters).length > 0 ||
+      Object.keys(applicationsColumnSorts).length > 0;
+    return {
+      filteredAndSortedApplications: result,
+      applicationsColumnConfig: config,
+      applicationsHasActiveFilters: hasFilters,
+    };
+  }, [
+    applications,
+    applicationsView,
+    applicationsSearchTerm,
+    applicationsColumnFilters,
+    applicationsColumnSorts,
+    getApplicationColumnValue,
+    applicationsColumnConfigStatic,
+  ]);
+
+  const handleApplicationsClearAllFilters = useCallback(() => {
+    setApplicationsSearchTerm("");
+    setApplicationsColumnFilters({});
+    setApplicationsColumnSorts({});
+    setApplicationsPage(1);
+  }, []);
+
+  const handleApplicationsSelectAll = useCallback(() => {
+    if (selectAllApplications) {
+      setSelectedApplications([]);
+      setSelectAllApplications(false);
+    } else {
+      setSelectedApplications(filteredAndSortedApplications.map((a) => String(a.id)));
+      setSelectAllApplications(true);
+    }
+  }, [selectAllApplications, filteredAndSortedApplications]);
+
+  const handleApplicationsSelectOne = useCallback((id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (selectedApplications.includes(id)) {
+      setSelectedApplications((prev) => prev.filter((x) => x !== id));
+      setSelectAllApplications(false);
+    } else {
+      const next = [...selectedApplications, id];
+      setSelectedApplications(next);
+      if (next.length === filteredAndSortedApplications.length) setSelectAllApplications(true);
+    }
+  }, [selectedApplications, filteredAndSortedApplications]);
 
   // Add states for job seeker data
   const [jobSeeker, setJobSeeker] = useState<any>(null);
@@ -947,6 +1061,8 @@ export default function JobSeekerView() {
   const [isSavingAppointment, setIsSavingAppointment] = useState(false);
   const [appointmentUsers, setAppointmentUsers] = useState<any[]>([]);
   const [isLoadingAppointmentUsers, setIsLoadingAppointmentUsers] = useState(false);
+  const [includeJobSeekerInCalendarInvite, setIncludeJobSeekerInCalendarInvite] = useState(true);
+  const [appointmentJobOwnerEmail, setAppointmentJobOwnerEmail] = useState<string | null>(null);
 
   // Delete request modal state
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -1525,6 +1641,13 @@ Best regards`;
     }
   }, [activeTab, jobSeekerId]);
 
+  // Fetch applications when Applications tab is active (e.g. on load with ?tab=applications or after refresh)
+  useEffect(() => {
+    if (activeTab === "applications" && jobSeekerId) {
+      fetchApplications(jobSeekerId);
+    }
+  }, [activeTab, jobSeekerId]);
+
   // Fetch available fields after job seeker is loaded
   useEffect(() => {
     if (jobSeeker && jobSeekerId) {
@@ -1815,12 +1938,54 @@ Best regards`;
     }
   }, [showEmailDropdown]);
 
-  // Fetch users for appointment attendees
+  // Fetch users for appointment attendees (used when not from Schedule Interview)
   useEffect(() => {
     if (showAppointmentModal) {
       fetchAppointmentUsers();
     }
   }, [showAppointmentModal]);
+
+  // When opening from Schedule Interview: set attendees to Job Seeker Owner + Job Owner (no manual pick)
+  useEffect(() => {
+    if (!showAppointmentModal || !applicationForInterview || !jobSeeker) return;
+    const jobId = applicationForInterview.job_id;
+    const jsOwnerEmail = (jobSeeker as any).owner_email?.trim?.();
+    const baseEmails: string[] = [];
+    if (jsOwnerEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(jsOwnerEmail)) {
+      baseEmails.push(jsOwnerEmail);
+    }
+    let cancelled = false;
+    if (jobId) {
+      setIsLoadingAppointmentUsers(true);
+      fetch(`/api/jobs/${jobId}`, {
+        headers: {
+          Authorization: `Bearer ${document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1")}`,
+        },
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (cancelled) return;
+          const job = data.job ?? data.data ?? data;
+          const jobOwnerEmail = job?.owner_email ?? job?.owner?.email ?? "";
+          const email = typeof jobOwnerEmail === "string" ? jobOwnerEmail.trim() : "";
+          if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && !baseEmails.includes(email)) {
+            baseEmails.push(email);
+          }
+          setAppointmentJobOwnerEmail(email || null);
+          setAppointmentForm((prev) => ({ ...prev, attendees: baseEmails }));
+        })
+        .catch(() => {
+          if (!cancelled) setAppointmentForm((prev) => ({ ...prev, attendees: baseEmails }));
+        })
+        .finally(() => {
+          if (!cancelled) setIsLoadingAppointmentUsers(false);
+        });
+    } else {
+      setAppointmentJobOwnerEmail(null);
+      setAppointmentForm((prev) => ({ ...prev, attendees: baseEmails }));
+    }
+    return () => { cancelled = true; };
+  }, [showAppointmentModal, applicationForInterview?.id, applicationForInterview?.job_id, jobSeeker?.id, (jobSeeker as any)?.owner_email]);
 
   // Fetch users for email notification dropdown
   const fetchUsers = async () => {
@@ -2738,6 +2903,8 @@ Best regards`;
           ? formatDate(jobSeekerData.last_contact_date)
           : "Never contacted",
         owner: jobSeekerData.owner || "Not assigned",
+        owner_id: jobSeekerData.owner_id ?? jobSeekerData.owner?.id ?? null,
+        owner_email: jobSeekerData.owner_email ?? jobSeekerData.owner?.email ?? "",
         skills: jobSeekerData.skills
           ? jobSeekerData.skills.split(",").map((skill: string) => skill.trim())
           : [],
@@ -3125,14 +3292,14 @@ Best regards`;
     } else if (action === "add-tearsheet") {
       setShowAddTearsheetModal(true);
     } else if (action === "add-appointment") {
+      setApplicationForInterview(null);
+      setAppointmentJobOwnerEmail(null);
       setShowAppointmentModal(true);
-      // Pre-fill job seeker email if available
-      if (jobSeeker?.email && jobSeeker.email !== "No email provided") {
-        setAppointmentForm((prev) => ({
-          ...prev,
-          attendees: [jobSeeker.email],
-        }));
-      }
+      // Default: send to Job Seeker Owner; "Also send to Job Seeker" checkbox controls candidate
+      const ownerEmail = (jobSeeker as any)?.owner_email?.trim?.();
+      const initialAttendees = ownerEmail && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(ownerEmail) ? [ownerEmail] : [];
+      setAppointmentForm((prev) => ({ ...prev, attendees: initialAttendees }));
+      setIncludeJobSeekerInCalendarInvite(true);
     } else if (action === "add-submission") {
       if (jobSeekerId) {
         fetchNotes(jobSeekerId);
@@ -3476,6 +3643,13 @@ Best regards`;
         "$1"
       );
 
+      // Effective attendees: Job Seeker Owner + Job Owner (from form) + optionally Job Seeker (candidate)
+      const effectiveAttendees = [...appointmentForm.attendees];
+      if (includeJobSeekerInCalendarInvite && jobSeeker?.email && jobSeeker.email !== "No email provided") {
+        const jsEmail = jobSeeker.email.trim();
+        if (jsEmail && !effectiveAttendees.includes(jsEmail)) effectiveAttendees.push(jsEmail);
+      }
+
       // Create appointment in planner
       const response = await fetch("/api/planner/appointments", {
         method: "POST",
@@ -3493,7 +3667,7 @@ Best regards`;
           jobSeekerId: jobSeekerId,
           jobId: applicationForInterview?.job_id || undefined,
           client: jobSeeker?.fullName || jobSeeker?.name || "",
-          attendees: appointmentForm.attendees,
+          attendees: effectiveAttendees,
           sendInvites: appointmentForm.sendInvites,
         }),
       });
@@ -3512,8 +3686,8 @@ Best regards`;
 
       const data = await response.json();
 
-      // Send calendar invites if requested
-      if (appointmentForm.sendInvites && appointmentForm.attendees.length > 0) {
+      // Send calendar invites if requested (to effective attendees: JS Owner, Job Owner, and optionally Job Seeker)
+      if (appointmentForm.sendInvites && effectiveAttendees.length > 0) {
         try {
           // Combine date and time
           const [hours, minutes] = appointmentForm.time.split(':');
@@ -3542,7 +3716,7 @@ Best regards`;
             } : undefined,
           };
 
-          await sendCalendarInvite(calendarEvent, appointmentForm.attendees);
+          await sendCalendarInvite(calendarEvent, effectiveAttendees);
         } catch (inviteError) {
           console.error("Error sending calendar invites:", inviteError);
           // Don't fail the appointment creation if invites fail
@@ -3562,6 +3736,8 @@ Best regards`;
         } catch (_) { /* ignore */ }
       }
       setApplicationForInterview(null);
+      setAppointmentJobOwnerEmail(null);
+      setIncludeJobSeekerInCalendarInvite(true);
       setShowAppointmentModal(false);
       setAppointmentForm({
         date: "",
@@ -5320,6 +5496,78 @@ Best regards`;
                   </button>
                 </div>
 
+                {/* Search and Clear All - same pattern as Organizations list */}
+                <div className="p-4 border-b border-gray-200">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="text"
+                        placeholder="Search applications..."
+                        className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        value={applicationsSearchTerm}
+                        onChange={(e) => setApplicationsSearchTerm(e.target.value)}
+                      />
+                      <div className="absolute left-3 top-2.5 text-gray-400">
+                        <FiSearch className="h-5 w-5" />
+                      </div>
+                    </div>
+                    {applicationsHasActiveFilters && (
+                      <button
+                        type="button"
+                        onClick={handleApplicationsClearAllFilters}
+                        className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                      >
+                        <FiX />
+                        Clear All
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Selection bar when applications selected */}
+                {selectedApplications.length > 0 && (
+                  <div className="px-4 py-2 bg-blue-50 border-b border-blue-100 flex items-center gap-3 flex-wrap">
+                    <span className="text-sm font-medium text-blue-800">
+                      {selectedApplications.length} selected
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => { setSelectedApplications([]); setSelectAllApplications(false); }}
+                      className="px-3 py-1 text-sm text-blue-700 hover:bg-blue-100 rounded"
+                    >
+                      Clear selection
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const selected = applications.filter((a) => a.id != null && selectedApplications.includes(String(a.id)));
+                        const headers = ["Record", "Job", "Organization / Client", "Status", "Submission Source", "Created At", "Created By"];
+                        const escapeCSV = (v: any) => (v === null || v === undefined ? "" : String(v).includes(",") || String(v).includes('"') ? `"${String(v).replace(/"/g, '""')}"` : String(v));
+                        const rows = selected.map((a) => [
+                          a.id,
+                          a.job_title ?? a.job_id ?? "",
+                          a.organization_name ?? a.client_name ?? "",
+                          a.status ?? "",
+                          a.submission_source ?? a.submissionSource ?? "",
+                          a.created_at ? new Date(a.created_at).toLocaleString() : "",
+                          (a as any).created_by_name ?? (a as any).created_by ?? "",
+                        ].map(escapeCSV).join(","));
+                        const csv = [headers.join(","), ...rows].join("\n");
+                        const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `job-seeker-applications-${new Date().toISOString().slice(0, 10)}.csv`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                      className="px-3 py-1 text-sm text-blue-700 hover:bg-blue-100 rounded"
+                    >
+                      Export CSV
+                    </button>
+                  </div>
+                )}
+
                 {isLoadingApplications ? (
                   <div className="flex justify-center py-6">
                     <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
@@ -5328,71 +5576,17 @@ Best regards`;
                   <div className="text-red-600 text-sm">{applicationsError}</div>
                 ) : (
                   (() => {
-                    const filtered = applications
-                      .filter((a) => a?.type === applicationsView)
-                      .sort(
-                        (a, b) =>
-                          new Date(b?.created_at || 0).getTime() -
-                          new Date(a?.created_at || 0).getTime()
-                      );
-
-                    if (filtered.length === 0) {
+                    if (filteredAndSortedApplications.length === 0) {
                       return (
                         <p className="text-gray-500 italic">No records found</p>
                       );
                     }
 
-                    const statusOptions = Array.from(
-                      new Set(filtered.map((a) => a?.status).filter(Boolean))
-                    )
-                      .sort()
-                      .map((s) => ({ label: String(s), value: String(s) }));
-
-                    const applicationsColumnConfig: Record<string, { label: string; filterType: "text" | "select" | "number"; filterOptions?: { label: string; value: string }[] }> = {
-                      job: { label: "Job", filterType: "text" },
-                      organization: { label: "Organization / Client", filterType: "text" },
-                      status: { label: "Status", filterType: "select", filterOptions: statusOptions },
-                      submission_source: { label: "Submission Source", filterType: "text" },
-                      created_at: { label: "Created At", filterType: "text" },
-                      created_by: { label: "Created By", filterType: "text" },
-                    };
-
-                    let filteredAndSorted = [...filtered];
-                    Object.entries(applicationsColumnFilters).forEach(([columnKey, filterValue]) => {
-                      if (!filterValue || filterValue.trim() === "") return;
-                      const cfg = applicationsColumnConfig[columnKey];
-                      const isSelect = cfg?.filterType === "select";
-                      filteredAndSorted = filteredAndSorted.filter((app) => {
-                        const raw = getApplicationColumnValue(app, columnKey);
-                        const valueStr = String(raw).toLowerCase();
-                        const filterStr = String(filterValue).toLowerCase();
-                        return isSelect ? valueStr === filterStr : valueStr.includes(filterStr);
-                      });
-                    });
-
-                    const activeSort = Object.entries(applicationsColumnSorts).find(([, dir]) => dir !== null);
-                    if (activeSort?.length === 2) {
-                      const [sortKey, sortDir] = activeSort;
-                      filteredAndSorted.sort((a, b) => {
-                        const aVal = getApplicationColumnValue(a, sortKey);
-                        const bVal = getApplicationColumnValue(b, sortKey);
-                        const aNum = typeof aVal === "number" ? aVal : Number(aVal);
-                        const bNum = typeof bVal === "number" ? bVal : Number(bVal);
-                        let cmp = 0;
-                        if (!Number.isNaN(aNum) && !Number.isNaN(bNum)) {
-                          cmp = aNum - bNum;
-                        } else {
-                          cmp = String(aVal ?? "").localeCompare(String(bVal ?? ""), undefined, { numeric: true, sensitivity: "base" });
-                        }
-                        return sortDir === "asc" ? cmp : -cmp;
-                      });
-                    }
-
-                    const totalRows = filteredAndSorted.length;
+                    const totalRows = filteredAndSortedApplications.length;
                     const totalPages = Math.max(1, Math.ceil(totalRows / applicationsPageSize));
                     const page = Math.min(Math.max(1, applicationsPage), totalPages);
                     const start = (page - 1) * applicationsPageSize;
-                    const paginatedRows = filteredAndSorted.slice(start, start + applicationsPageSize);
+                    const paginatedRows = filteredAndSortedApplications.slice(start, start + applicationsPageSize);
 
                     const getStatusBadgeClass = (status: string) => {
                       const s = (status || "").toLowerCase();
@@ -5443,6 +5637,20 @@ Best regards`;
                           <table className="min-w-full divide-y divide-gray-200 w-full border-collapse">
                             <thead className="bg-gray-50">
                               <tr>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200">
+                                  <input
+                                    type="checkbox"
+                                    className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                                    checked={filteredAndSortedApplications.length > 0 && selectedApplications.length === filteredAndSortedApplications.length}
+                                    onChange={handleApplicationsSelectAll}
+                                  />
+                                </th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200">
+                                  Actions
+                                </th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200">
+                                  Record Number
+                                </th>
                                 <SortableContext items={applicationsColumnOrder} strategy={horizontalListSortingStrategy}>
                                   {applicationsColumnOrder.map((columnKey) => {
                                     const cfg = applicationsColumnConfig[columnKey];
@@ -5463,46 +5671,60 @@ Best regards`;
                                     );
                                   })}
                                 </SortableContext>
-                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider bg-gray-50 border-r border-gray-200">
-                                  Actions
-                                </th>
                               </tr>
                             </thead>
                             <tbody className="bg-white divide-y divide-gray-200">
                               {paginatedRows.map((app) => {
                                 const canScheduleInterview = (app.status === "Client Submission" || app.status === "Submitted") && app.id;
+                                const appIdStr = String(app.id);
+                                const actionOptions = [
+                                  ...(canScheduleInterview
+                                    ? [{
+                                        label: "Schedule Interview",
+                                        action: () => {
+                                          setApplicationForInterview(app);
+                                          setAppointmentForm((prev) => ({
+                                            ...prev,
+                                            type: "Interview",
+                                            description: prev.description || `Interview for ${app.job_title || "position"}`,
+                                            sendInvites: true,
+                                          }));
+                                          setIncludeJobSeekerInCalendarInvite(!!(jobSeeker?.email && jobSeeker.email !== "No email provided"));
+                                          setShowAppointmentModal(true);
+                                        },
+                                      }]
+                                    : []),
+                                  ...(app.job_id != null && app.job_id !== ""
+                                    ? [{ label: "View Job", action: () => router.push(`/dashboard/jobs/view?id=${app.job_id}`) }]
+                                    : []),
+                                  ...(app.organization_id != null && app.organization_id !== ""
+                                    ? [{ label: "View Organization", action: () => router.push(`/dashboard/organizations/view?id=${app.organization_id}`) }]
+                                    : []),
+                                ];
                                 return (
                                   <tr key={app.id} className="hover:bg-gray-50">
+                                    <td className="px-6 py-4 whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                                      <input
+                                        type="checkbox"
+                                        className="h-4 w-4 text-blue-600 border-gray-300 rounded"
+                                        checked={selectedApplications.includes(appIdStr)}
+                                        onChange={() => {}}
+                                        onClick={(e) => handleApplicationsSelectOne(appIdStr, e)}
+                                      />
+                                    </td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm" onClick={(e) => e.stopPropagation()}>
+                                      {actionOptions.length > 0 ? (
+                                        <ActionDropdown label="Actions" options={actionOptions} />
+                                      ) : (
+                                        <span className="text-gray-400">—</span>
+                                      )}
+                                    </td>
+                                    <td className="px-6 py-4 text-black whitespace-nowrap text-sm">App {app.id ?? "—"}</td>
                                     {applicationsColumnOrder.map((columnKey) => (
                                       <td key={columnKey} className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">
                                         {renderAppCell(app, columnKey)}
                                       </td>
                                     ))}
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm">
-                                      {canScheduleInterview ? (
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setApplicationForInterview(app);
-                                            setAppointmentForm((prev) => ({
-                                              ...prev,
-                                              type: "Interview",
-                                              description: prev.description || `Interview for ${app.job_title || "position"}`,
-                                              attendees: jobSeeker?.email && jobSeeker.email !== "No email provided"
-                                                ? [jobSeeker.email]
-                                                : prev.attendees,
-                                              sendInvites: true,
-                                            }));
-                                            setShowAppointmentModal(true);
-                                          }}
-                                          className="text-blue-600 hover:underline font-medium"
-                                        >
-                                          Schedule Interview
-                                        </button>
-                                      ) : (
-                                        <span className="text-gray-400">—</span>
-                                      )}
-                                    </td>
                                   </tr>
                                 );
                               })}
@@ -6183,6 +6405,8 @@ Best regards`;
               <button
                 onClick={() => {
                   setApplicationForInterview(null);
+                  setAppointmentJobOwnerEmail(null);
+                  setIncludeJobSeekerInCalendarInvite(true);
                   setShowAppointmentModal(false);
                   setAppointmentForm({
                     date: "",
@@ -6306,83 +6530,42 @@ Best regards`;
                 />
               </div>
 
-              {/* Attendees */}
+              {/* Calendar invite recipients: Job Seeker Owner, Job Owner, and optionally Job Seeker */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Attendees (will receive calendar invite)
+                  Calendar invite recipients
                 </label>
                 {isLoadingAppointmentUsers ? (
-                  <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50">
-                    Loading users...
+                  <div className="w-full p-2 border border-gray-300 rounded text-gray-500 bg-gray-50 text-sm">
+                    Loading…
                   </div>
                 ) : (
-                  <div className="border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500">
-                    <div className="max-h-48 overflow-y-auto p-2">
-                      {appointmentUsers.length === 0 ? (
-                        <div className="text-gray-500 text-sm p-2">
-                          No users available
-                        </div>
-                      ) : (
-                        appointmentUsers.map((user) => (
-                          <label
-                            key={user.id}
-                            className="flex items-center p-2 hover:bg-gray-50 cursor-pointer rounded"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={appointmentForm.attendees.includes(user.email || user.id)}
-                              onChange={(e) => {
-                                const email = user.email || user.id;
-                                if (e.target.checked) {
-                                  setAppointmentForm((prev) => ({
-                                    ...prev,
-                                    attendees: [...prev.attendees, email],
-                                  }));
-                                } else {
-                                  setAppointmentForm((prev) => ({
-                                    ...prev,
-                                    attendees: prev.attendees.filter((a) => a !== email),
-                                  }));
-                                }
-                              }}
-                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
-                            />
-                            <span className="text-sm text-gray-700">
-                              {user.name || user.email || `${user.id}`}
-                            </span>
-                          </label>
-                        ))
+                  <div className="border border-gray-300 rounded p-3 bg-gray-50 space-y-2">
+                    <p className="text-sm text-gray-700">
+                      Invites will be sent to: <strong>Job Seeker Owner</strong>
+                      {applicationForInterview ? (
+                        <> and <strong>Job Owner</strong></>
+                      ) : null}
+                      {appointmentForm.attendees.length > 0 && (
+                        <span className="block mt-1 text-xs text-gray-600">
+                          ({appointmentForm.attendees.length} recipient{appointmentForm.attendees.length !== 1 ? "s" : ""}: {appointmentForm.attendees.join(", ")})
+                        </span>
                       )}
-                    </div>
-                    {appointmentForm.attendees.length > 0 && (
-                      <div className="border-t border-gray-300 p-2 bg-gray-50">
-                        <div className="text-xs text-gray-600 mb-1">
-                          Selected: {appointmentForm.attendees.length} attendee(s)
-                        </div>
-                        <div className="flex flex-wrap gap-1">
-                          {appointmentForm.attendees.map((email) => (
-                            <span
-                              key={email}
-                              className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800"
-                            >
-                              {email}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setAppointmentForm((prev) => ({
-                                    ...prev,
-                                    attendees: prev.attendees.filter((a) => a !== email),
-                                  }));
-                                }}
-                                className="ml-1 text-blue-600 hover:text-blue-800"
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                    </p>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={includeJobSeekerInCalendarInvite}
+                        onChange={(e) => setIncludeJobSeekerInCalendarInvite(e.target.checked)}
+                        className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                      />
+                      <span className="text-sm text-gray-700">
+                        Also send calendar invite to Job Seeker (candidate)
+                        {jobSeeker?.email && jobSeeker.email !== "No email provided" && (
+                          <span className="text-gray-500"> — {jobSeeker.email}</span>
+                        )}
+                      </span>
+                    </label>
                   </div>
                 )}
               </div>
@@ -6407,6 +6590,8 @@ Best regards`;
               <button
                 onClick={() => {
                   setApplicationForInterview(null);
+                  setAppointmentJobOwnerEmail(null);
+                  setIncludeJobSeekerInCalendarInvite(true);
                   setShowAppointmentModal(false);
                   setAppointmentForm({
                     date: "",
