@@ -3284,7 +3284,13 @@ export default function JobView() {
           await sendCalendarInvite(calendarEvent, appointmentForm.attendees);
         } catch (inviteError) {
           console.error("Error sending calendar invites:", inviteError);
-          toast.warning("Appointment created, but calendar invites failed to send. Please send manually.");
+          const msg = inviteError instanceof Error ? inviteError.message : String(inviteError);
+          const isAuthError = /not authenticated|sign in|401|please authenticate/i.test(msg);
+          toast.warning(
+            isAuthError
+              ? "Appointment created. To send calendar invites, connect Office 365 first (Dashboard → Planner → Connect Microsoft 365)."
+              : `Appointment created, but calendar invites failed: ${msg}. Please send manually.`
+          );
         }
       }
 

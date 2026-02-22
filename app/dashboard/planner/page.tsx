@@ -3,8 +3,9 @@
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { FiX, FiPrinter, FiLock, FiUnlock, FiArrowUp, FiArrowDown, FiFilter } from 'react-icons/fi';
+import { initializeOffice365Auth, isOffice365Authenticated, disconnectOffice365 } from '@/lib/office365';
 import { TbGripVertical } from 'react-icons/tb';
 import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
 import {
@@ -286,6 +287,27 @@ const Planners = () => {
   const [monthTableColumnFilters, setMonthTableColumnFilters] = useState<Record<string, ColumnFilterState>>({});
   const [monthTableCurrentPage, setMonthTableCurrentPage] = useState(1);
   const [monthTableItemsPerPage, setMonthTableItemsPerPage] = useState(10);
+
+  const searchParams = useSearchParams();
+  // const router = useRouter();
+  const [isOffice365Connected, setIsOffice365Connected] = useState(false);
+
+  // Office 365 connection status and callback handling
+  useEffect(() => {
+    setIsOffice365Connected(isOffice365Authenticated());
+  }, []);
+  useEffect(() => {
+    const connected = searchParams?.get('connected');
+    const error = searchParams?.get('error');
+    if (connected === 'true') {
+      toast.success('Microsoft 365 connected. You can now send calendar invites from appointments.');
+      setIsOffice365Connected(true);
+      router.replace('/dashboard/planner', { scroll: false });
+    } else if (error) {
+      toast.error(`Microsoft 365 sign-in failed: ${decodeURIComponent(error)}`);
+      router.replace('/dashboard/planner', { scroll: false });
+    }
+  }, [searchParams, router]);
 
   // Load pinned state from localStorage
   useEffect(() => {
@@ -1494,6 +1516,37 @@ const Planners = () => {
                   </button>
                 ))}
               </div>
+
+              {/* Microsoft 365 Connect — for calendar invites from Job Seeker / Hiring Manager / Jobs views */}
+              {isOffice365Connected ? (
+                <div className="flex items-center gap-2">
+                  <span className="flex items-center gap-2 text-sm text-green-700 bg-green-50 px-3 py-1.5 rounded-lg border border-green-200">
+                    <span className="w-2 h-2 rounded-full bg-green-500" aria-hidden />
+                    Microsoft 365 connected
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      disconnectOffice365();
+                      setIsOffice365Connected(false);
+                      toast.info('Microsoft 365 disconnected.');
+                    }}
+                    className="text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    initializeOffice365Auth().catch((err) => toast.error(err?.message || 'Failed to start sign-in'));
+                  }}
+                  className="text-sm text-blue-600 hover:text-blue-800 font-medium px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100"
+                >
+                  Connect Microsoft 365
+                </button>
+              )}
               
               {/* Action Icons */}
               <div className="flex items-center space-x-2">
