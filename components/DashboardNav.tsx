@@ -103,7 +103,7 @@ function SortablePinnedTab({
         ["--tabs-selected-text-color" as any]: "#ffffff",
       }
       : {
-        backgroundColor: "rgb(29 41 61)",
+        backgroundColor: "#16a24b",
         color: "rgb(255, 255, 255)",
       })
   };
