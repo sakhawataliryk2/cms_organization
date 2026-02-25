@@ -184,77 +184,14 @@ export async function POST(
       );
     }
 
-    // 4) Build login URL (job seeker portal)
-    const origin =
-      process.env.NEXTAUTH_URL ||
-      (req.headers.get("x-forwarded-proto") && req.headers.get("x-forwarded-host")
-        ? `${req.headers.get("x-forwarded-proto")}://${req.headers.get("x-forwarded-host")}`
-        : null) ||
-      (req.url ? new URL(req.url).origin : "https://app.completestaffingsolutions.com");
-    const loginUrl =
-      process.env.JOBSEEKER_PORTAL_LOGIN_URL ||
-      `${origin}/job-seeker-portal`;
-
-    const emailBody = `
-<p><strong>Job Seeker Login Credentials</strong></p>
-<p>Please use the following credentials to sign in. You will be prompted to change your password after first login.</p>
-<table style="border-collapse: collapse; margin: 16px 0;">
-  <tr><td style="padding: 6px 12px; border: 1px solid #ddd;"><strong>Portal URL</strong></td><td style="padding: 6px 12px; border: 1px solid #ddd;"><a href="${loginUrl}">${loginUrl}</a></td></tr>
-  <tr><td style="padding: 6px 12px; border: 1px solid #ddd;"><strong>Email</strong></td><td style="padding: 6px 12px; border: 1px solid #ddd;">${jobSeekerEmail}</td></tr>
-  <tr><td style="padding: 6px 12px; border: 1px solid #ddd;"><strong>Temporary Password</strong></td><td style="padding: 6px 12px; border: 1px solid #ddd;">${temporaryPassword}</td></tr>
-</table>
-<p><strong>Important:</strong> For security, please change your password after your first login.</p>
-<p>This is an automated message from Complete Staffing Solutions.</p>
-    `.trim();
-
-    const toAddresses: string[] = [
-      recordOwnerEmail,
-      ONBOARDING_EMAIL,
-      EXTRA_EMAIL,
-      jobSeekerEmail,
-    ].filter(Boolean) as string[];
-
-    const uniqueTo = Array.from(new Set(toAddresses));
-
-    if (uniqueTo.length === 0) {
-      return NextResponse.json(
-        { message: "No valid recipient addresses (record owner, onboarding, or job seeker)." },
-        { status: 400 }
-      );
-    }
-
-    // 5) Send email via app's Office365 API (uses same token)
-    const emailApiOrigin = req.url ? new URL(req.url).origin : origin;
-    const emailResponse = await fetch(`${emailApiOrigin}/api/office365/email`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        subject: "Job Seeker Login Credentials",
-        body: emailBody,
-        bodyType: "html",
-        to: uniqueTo,
-      }),
-    });
-
-    if (!emailResponse.ok) {
-      const emailErr = await emailResponse.json().catch(() => ({}));
-      console.error("Email send failed:", emailErr);
-      return NextResponse.json(
-        {
-          message:
-            "Password was reset but sending login credentials by email failed. Please share the temporary password with the job seeker manually.",
-          emailError: emailErr?.error || emailErr?.message,
-        },
-        { status: 500 }
-      );
-    }
+    // 4) Email sending is handled in the Node backend via sendMail
+    // (see jobseekerPortalAuthController.adminSetPassword). At this
+    // point the portal account has been created/updated and the
+    // backend has dispatched the credentials email.
 
     return NextResponse.json({
       message:
-        "Password reset successfully. Login credentials have been sent to the Record Owner, Onboarding@completestaffingsolutions.com, nt50616849@gmail.com, and the Job Seeker.",
+        "Password reset successfully. Login credentials email has been sent from the backend.",
     });
   } catch (error: unknown) {
     console.error("Password reset error:", error);

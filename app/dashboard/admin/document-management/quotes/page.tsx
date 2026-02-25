@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { FiArrowLeft, FiX } from "react-icons/fi";
 import ConfirmFileDetailsModal from "@/components/ConfirmFileDetailsModal";
+import { formatRecordId } from "@/lib/recordIdFormatter";
 
 const QUOTE_DOC_TYPE = { value: "Quote", label: "Quote" };
 const MAX_FILE_SIZE_MB = 25;
@@ -84,14 +85,41 @@ export default function DocumentManagementQuotesPage() {
     }
   }, [activeTab]);
 
+  const getOrgLabel = (o: OrgRecord): string => {
+    const name =
+      (o.name as string) ||
+      (o as any).organization_name ||
+      "";
+    const prefix = formatRecordId(
+      (o as any).record_number ?? o.id,
+      "organization"
+    );
+    return name ? `${prefix} - ${name}` : prefix || `Record ${o.id}`;
+  };
+
+  const getHMLabel = (hm: HMRecord): string => {
+    const baseName =
+      (hm.name as string) ||
+      `${(hm as any).first_name || ""} ${(hm as any).last_name || ""}`.trim() ||
+      `${hm.custom_fields?.["First Name"] || ""} ${hm.custom_fields?.["Last Name"] || ""}`.trim() ||
+      "";
+    const prefix = formatRecordId(
+      (hm as any).record_number ?? hm.id,
+      "hiringManager"
+    );
+    return baseName ? `${prefix} - ${baseName}` : `${prefix} - Hiring Manager`;
+  };
+
   const filteredOrgs = organizations.filter((o) => {
-    const name = (o.name || o.organization_name || "").toString().toLowerCase();
-    return name.includes(searchTerm.toLowerCase());
+    const label = getOrgLabel(o).toLowerCase();
+    const term = searchTerm.toLowerCase();
+    return !term || label.includes(term);
   });
 
   const filteredHMs = hiringManagers.filter((hm) => {
-    const name = (hm.name || hm.first_name + " " + hm.last_name || hm.custom_fields?.["First Name"] + " " + hm.custom_fields?.["Last Name"] || "").toString().toLowerCase(); 
-    return name.includes(searchTerm.toLowerCase());
+    const label = getHMLabel(hm).toLowerCase();
+    const term = searchTerm.toLowerCase();
+    return !term || label.includes(term);
   });
 
   const toggleOrgSelection = (id: string) => {
@@ -248,15 +276,6 @@ export default function DocumentManagementQuotesPage() {
         ? selectedOrgIds.size > 0
         : selectedHMIds.size > 0);
 
-  const getRecordLabel = (r: OrgRecord | HMRecord) => {
-    if ("name" in r && r.name) return String(r.name);
-    if ("organization_name" in r && r.organization_name) return String(r.organization_name);
-    if ("first_name" in r || "last_name" in r) {
-      return [r.first_name, r.last_name].filter(Boolean).join(" ") || `Record ${r.id}`;
-    }
-    return `Record ${r.id}`;
-  };
-
   return (
     <div>
       <button
@@ -360,7 +379,7 @@ export default function DocumentManagementQuotesPage() {
                           onChange={() => toggleOrgSelection(String(org.id))}
                           className="text-blue-600"
                         />
-                        <span className="text-sm">{getRecordLabel(org)}</span>
+                        <span className="text-sm">{getOrgLabel(org)}</span>
                       </label>
                     ))}
                   </>
@@ -379,7 +398,7 @@ export default function DocumentManagementQuotesPage() {
                         onChange={() => setSelectedSingleOrgId(String(org.id))}
                         className="text-blue-600"
                       />
-                      <span className="text-sm">{getRecordLabel(org)}</span>
+                      <span className="text-sm">{getOrgLabel(org)}</span>
                     </label>
                   ))
                 ) : (
@@ -415,7 +434,7 @@ export default function DocumentManagementQuotesPage() {
                           onChange={() => toggleHMSelection(String(hm.id))}
                           className="text-blue-600"
                         />
-                        <span className="text-sm">{getRecordLabel(hm)}</span>
+                        <span className="text-sm">{getHMLabel(hm)}</span>
                       </label>
                     ))}
                   </>
@@ -434,7 +453,7 @@ export default function DocumentManagementQuotesPage() {
                         onChange={() => setSelectedSingleHMId(String(hm.id))}
                         className="text-blue-600"
                       />
-                      <span className="text-sm">{getRecordLabel(hm)}</span>
+                      <span className="text-sm">{getHMLabel(hm)}</span>
                     </label>
                   ))
                 ) : (
