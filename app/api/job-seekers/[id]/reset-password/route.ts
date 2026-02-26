@@ -129,7 +129,9 @@ export async function POST(
       cache: "no-store",
     });
 
-    if (setPasswordResponse.ok) {
+    const backendResult = await setPasswordResponse.json().catch(() => ({} as any));
+
+    if (setPasswordResponse.ok && backendResult?.success !== false) {
       passwordSet = true;
     } else if (setPasswordResponse.status === 404) {
       // Fallback: if backend has no admin-set-password, try PUT users/:userId/password
@@ -166,11 +168,10 @@ export async function POST(
         );
       }
     } else {
-      const errData = await setPasswordResponse.json().catch(() => ({}));
       return NextResponse.json(
         {
           message:
-            errData.message ||
+            backendResult?.message ||
             "Backend could not set password.",
         },
         { status: setPasswordResponse.status }
@@ -184,14 +185,20 @@ export async function POST(
       );
     }
 
-    // 4) Email sending is handled in the Node backend via sendMail
-    // (see jobseekerPortalAuthController.adminSetPassword). At this
-    // point the portal account has been created/updated and the
-    // backend has dispatched the credentials email.
+    // 4) Email sending is handled in the Node backend via sendMail.
+    // Use the backend's message so the UI reflects whether an email
+    // actually went out.
+
+    const emailSent = backendResult?.emailSent !== false;
+    const successMessage =
+      backendResult?.message ||
+      (emailSent
+        ? "Password reset successfully. Login credentials email has been sent."
+        : "Password reset successfully, but the login credentials email could not be sent. Please share the password manually if needed.");
 
     return NextResponse.json({
-      message:
-        "Password reset successfully. Login credentials email has been sent from the backend.",
+      message: successMessage,
+      emailSent,
     });
   } catch (error: unknown) {
     console.error("Password reset error:", error);

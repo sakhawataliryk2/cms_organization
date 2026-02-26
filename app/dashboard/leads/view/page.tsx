@@ -3603,7 +3603,7 @@ export default function LeadView() {
                 { value: "Contract", label: "Contract" },
                 { value: "Invoice", label: "Invoice" },
                 { value: "Report", label: "Report" },
-                { value: "ID", label: "ID" },
+                { value: "ID", label: "Record Number" },
                 { value: "General", label: "General" },
               ]}
               confirmButtonText="Save & Upload"

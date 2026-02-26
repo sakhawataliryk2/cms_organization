@@ -20,6 +20,7 @@ import {
   FiFilter,
   FiStar,
   FiChevronDown,
+  FiChevronLeft,
   FiX,
 } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
@@ -266,6 +267,7 @@ export default function ArchivedOrganizationsList() {
   // TABLE COLUMNS (Overview List) – driven by admin field-management + archive_reason
   // =====================
   const ORG_BACKEND_COLUMN_KEYS = [
+    "record_number",
     "name",
     "status",
     "archive_reason",
@@ -484,7 +486,10 @@ export default function ArchivedOrganizationsList() {
     //     filterType: "text" as const,
     //   }));
 
-    const merged = [...fromApi];
+    const merged = [
+      { key: "record_number", label: "Record Number", sortable: true, filterType: "number" as const, fieldType: "", lookupType: "" },
+      ...fromApi,
+    ];
     if (!merged.some((x) => x.key === "archive_reason")) {
       merged.push({
         key: "archive_reason",
@@ -515,8 +520,14 @@ export default function ArchivedOrganizationsList() {
         if (Array.isArray(parsed) && parsed.length > 0) {
           const validOrder = parsed.filter((k: string) => catalogSet.has(k));
           if (validOrder.length > 0) {
-            setColumnFields(validOrder);
-            return;
+            let order = validOrder;
+            if (catalogSet.has("record_number") && !order.includes("record_number")) {
+              order = ["record_number", ...order];
+            }
+            if (order.length > 0) {
+              setColumnFields(order);
+              return;
+            }
           }
         }
       } catch {
@@ -543,6 +554,9 @@ export default function ArchivedOrganizationsList() {
     columnsCatalog.find((c) => c.key === key);
 
   const getColumnValue = (org: any, key: string) => {
+    if (key === "record_number") {
+      return org.record_number ?? org.id;
+    }
     if (key.startsWith("custom:")) {
       const rawKey = key.replace("custom:", "");
       const cf = org?.customFields || org?.custom_fields || {};
@@ -847,22 +861,61 @@ export default function ArchivedOrganizationsList() {
 
   return (
     <div className="bg-white rounded-lg shadow">
-      {/* Header - responsive: mobile = title+add row, then full-width Favorites, then full-width Columns */}
-      <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center">
-        {/* Row 1: Title + Add (mobile) / Title only (desktop) */}
-        <div className="flex justify-between items-center gap-4">
-          <h1 className="text-xl font-bold">Archived Organizations</h1>
-          {/* Back to Organizations - visible on mobile only; desktop version below */}
-          <button
-            onClick={handleBackToOrganizations}
-            className="md:hidden px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center shrink-0 bg-white"
-          >
-            Back to Organizations
-          </button>
+      {/* Header - responsive: search on top, then actions */}
+      <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center space-x-4 w-full">
+        {/* Row 1: Back arrow + Title + Search + Clear */}
+        <div className="w-full flex justify-between items-center gap-4">
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleBackToOrganizations}
+              className="p-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center bg-white text-gray-700"
+              title="Back to Organizations"
+            >
+              <FiChevronLeft className="h-5 w-5" />
+            </button>
+            <h1 className="text-xl font-bold">Archived Organizations</h1>
+          </div>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  placeholder="Search archived organizations..."
+                  className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                <div className="absolute left-3 top-2.5 text-gray-400">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
+              </div>
+              {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
+                <button
+                  onClick={handleClearAllFilters}
+                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                >
+                  <FiX />
+                  Clear All
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Desktop: Favorites, Delete Selected, Columns, Add - single row */}
         <div className="hidden md:flex items-center space-x-4">
+
           {/* Favorites Dropdown - ref on wrapper so click-outside works for both desktop and mobile */}
           <div ref={favoritesMenuRef} className="relative">
             <button
@@ -959,12 +1012,6 @@ export default function ArchivedOrganizationsList() {
           >
             Columns
           </button>
-          <button
-            onClick={handleBackToOrganizations}
-            className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center"
-          >
-            Back to Organizations
-          </button>
         </div>
 
         {/* Mobile: Favorites - full width */}
@@ -1055,15 +1102,6 @@ export default function ArchivedOrganizationsList() {
             Columns
           </button>
         </div>
-        {/* Mobile: Back to Organizations - full width */}
-        <div className="w-full md:hidden">
-          <button
-            onClick={handleBackToOrganizations}
-            className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center"
-          >
-            Back to Organizations
-          </button>
-        </div>
       </div>
 
       {/* Error message */}
@@ -1079,45 +1117,6 @@ export default function ArchivedOrganizationsList() {
           <p>{deleteError}</p>
         </div>
       )}
-
-      {/* Search */}
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              placeholder="Search archived organizations..."
-              className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <div className="absolute left-3 top-2.5 text-gray-400">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-          </div>
-
-          {(searchTerm || Object.keys(columnFilters).length > 0 || Object.keys(columnSorts).length > 0) && (
-            <button
-              onClick={handleClearAllFilters}
-              className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
-            >
-              <FiX />
-              Clear All
-            </button>
-          )}
-        </div>
-      </div>
 
       <div className="w-full max-w-full overflow-x-hidden">
         <div className="overflow-x-auto">
@@ -1141,10 +1140,7 @@ export default function ArchivedOrganizationsList() {
                     Actions
                   </th>
 
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ID
-                  </th>
-                  {/* Draggable Dynamic headers */}
+                  {/* Draggable Dynamic headers (includes Record Number) */}
                   <SortableContext
                     items={columnFields}
                     strategy={horizontalListSortingStrategy}
@@ -1243,15 +1239,19 @@ export default function ArchivedOrganizationsList() {
                         />
                       </td>
 
-                      <td className="px-6 py-4 text-black whitespace-nowrap">
-                        <div className="flex flex-col gap-1">
-                          <span>O {org?.record_number ?? org?.id}</span>
-                          {org.archived_at && (
-                            <CountdownTimer archivedAt={org.archived_at} />
-                          )}
-                        </div>
-                      </td>
                       {columnFields.map((key) => {
+                        if (key === "record_number") {
+                          return (
+                            <td key={key} className="px-6 py-4 text-black whitespace-nowrap">
+                              <div className="flex flex-col gap-1">
+                                <span>O {getColumnValue(org, key)}</span>
+                                {org.archived_at && (
+                                  <CountdownTimer archivedAt={org.archived_at} />
+                                )}
+                              </div>
+                            </td>
+                          );
+                        }
                         const colInfo = getColumnInfo(key);
                         const val = getColumnValue(org, key);
                         const isArchiveReason = getColumnLabel(key).toLowerCase() === "archive reason";
@@ -1264,12 +1264,12 @@ export default function ArchivedOrganizationsList() {
                               : undefined;
                         const fieldInfo = colInfo
                           ? {
-                              key: colInfo.key,
-                              label: colInfo.label,
-                              fieldType: (colInfo as any).fieldType,
-                              lookupType: (colInfo as any).lookupType,
-                              multiSelectLookupType: (colInfo as any).multiSelectLookupType,
-                            }
+                            key: colInfo.key,
+                            label: colInfo.label,
+                            fieldType: (colInfo as any).fieldType,
+                            lookupType: (colInfo as any).lookupType,
+                            multiSelectLookupType: (colInfo as any).multiSelectLookupType,
+                          }
                           : { key, label: getColumnLabel(key) };
                         return (
                           <td
