@@ -1535,14 +1535,68 @@ const FieldMapping = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Default Value:
                   </label>
-                  <input
-                    type="text"
-                    name="defaultValue"
-                    value={editFormData.defaultValue}
-                    onChange={handleEditFormChange}
-                    className="w-full px-3 py-2 border rounded"
-                    placeholder="Default value for the field"
-                  />
+                  {(() => {
+                    const ft = editFormData.fieldType;
+                    const hasOptions =
+                      ft === "select" ||
+                      ft === "radio" ||
+                      ft === "multiselect" ||
+                      ft === "multicheckbox";
+                    const isBoolean = ft === "boolean";
+                    if (hasOptions && editFormData.options.length > 0) {
+                      return (
+                        <select
+                          name="defaultValue"
+                          value={editFormData.defaultValue}
+                          onChange={handleEditFormChange}
+                          className="w-full px-3 py-2 border rounded"
+                        >
+                          <option value="">— None —</option>
+                          {editFormData.options.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      );
+                    }
+                    if (isBoolean) {
+                      return (
+                        <select
+                          name="defaultValue"
+                          value={editFormData.defaultValue}
+                          onChange={handleEditFormChange}
+                          className="w-full px-3 py-2 border rounded"
+                        >
+                          <option value="">— None —</option>
+                          <option value="true">Yes</option>
+                          <option value="false">No</option>
+                        </select>
+                      );
+                    }
+                    if (ft === "lookup" || ft === "multiselect_lookup") {
+                      return (
+                        <input
+                          type="text"
+                          name="defaultValue"
+                          value={editFormData.defaultValue}
+                          onChange={handleEditFormChange}
+                          className="w-full px-3 py-2 border rounded"
+                          placeholder="Default record ID (optional)"
+                        />
+                      );
+                    }
+                    return (
+                      <input
+                        type="text"
+                        name="defaultValue"
+                        value={editFormData.defaultValue}
+                        onChange={handleEditFormChange}
+                        className="w-full px-3 py-2 border rounded"
+                        placeholder="Default value for the field"
+                      />
+                    );
+                  })()}
                 </div>
 
                 {(editFormData.fieldType === "select" ||
