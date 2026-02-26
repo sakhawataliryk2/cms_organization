@@ -137,6 +137,7 @@ export default function HiringManagerView() {
   const hiringManagerId = searchParams.get("id");
   const tabFromUrl = searchParams.get("tab");
   const deleteFromUrl = searchParams.get("delete");
+  const noteIdFromUrl = searchParams.get("noteId");
 
   const [activeTab, setActiveTabState] = useState(() =>
     tabFromUrl && HM_VIEW_TAB_IDS.includes(tabFromUrl) ? tabFromUrl : "summary"
@@ -217,6 +218,22 @@ export default function HiringManagerView() {
     });
     return out;
   }, [notes, noteActionFilter, noteAuthorFilter, noteSortKey, noteSortDir]);
+
+  
+
+  // When opening Notes tab with noteId in URL, scroll to that note and highlight it
+  useEffect(() => {
+    if (activeTab !== "notes" || !noteIdFromUrl || isLoadingNotes) return;
+    const timer = setTimeout(() => {
+      const el = document.getElementById(`note-${noteIdFromUrl}`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("ring-2", "ring-blue-500");
+        setTimeout(() => el.classList.remove("ring-2", "ring-blue-500"), 2000);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [activeTab, noteIdFromUrl, isLoadingNotes, sortedFilteredNotes.length]);
 
   // Documents state
   const [documents, setDocuments] = useState<Array<any>>([]);
