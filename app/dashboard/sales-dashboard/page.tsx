@@ -1,254 +1,158 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react';
-import { toast } from 'sonner';
+import { useState } from 'react';
 import { useAuth } from '@/lib/auth';
-import { FiX, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { FiX, FiChevronLeft, FiBriefcase, FiEye } from 'react-icons/fi';
 import { useRouter } from 'next/navigation';
-import { HiEye } from 'react-icons/hi';
 
 interface ApplicationTile {
-    id: number;
-    companyName: string;
-    jobId: string;
-    jobName: string;
-    viewCount: number;
-    candidateId?: number;
+  id: number;
+  companyName: string;
+  jobId: string;
+  jobName: string;
+  viewCount: number;
+  candidateId?: number;
 }
 
 interface Column {
-    id: string;
-    title: string;
-    color: string;
-    applications: ApplicationTile[];
+  id: string;
+  title: string;
+  color: string;
+  accent: string;
+  applications: ApplicationTile[];
+}
+
+const COLUMN_CONFIG: { id: string; title: string; color: string; accent: string }[] = [
+  { id: 'submission', title: 'Submission', color: 'bg-green-50', accent: 'border-green-500' },
+  { id: 'client-submitted', title: 'Client Submitted', color: 'bg-blue-50', accent: 'border-blue-500' },
+  { id: 'interview', title: 'Interview', color: 'bg-emerald-100', accent: 'border-emerald-500' },
+  { id: 'offer-extended', title: 'Offer Extended', color: 'bg-amber-100', accent: 'border-amber-500' },
+  { id: 'placement', title: 'Placement', color: 'bg-teal-100', accent: 'border-teal-600' },
+];
+
+const SAMPLE_APPLICATIONS: Record<string, Omit<ApplicationTile, 'id'>[]> = {
+  submission: [
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 5 },
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 3 },
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 7 },
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 2 },
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 4 },
+  ],
+  'client-submitted': [
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 8 },
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 6 },
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 9 },
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 1 },
+  ],
+  interview: [
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 12 },
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 15 },
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 10 },
+  ],
+  'offer-extended': [
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 20 },
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 18 },
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 22 },
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 19 },
+  ],
+  placement: [
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 25 },
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 30 },
+    { companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 28 },
+  ],
+};
+
+function buildColumns(): Column[] {
+  let idCounter = 0;
+  return COLUMN_CONFIG.map((config) => ({
+    ...config,
+    applications: (SAMPLE_APPLICATIONS[config.id] ?? []).map((app) => ({
+      ...app,
+      id: ++idCounter,
+    })),
+  }));
 }
 
 export default function SalesDashboard() {
-    const { user } = useAuth();
-    const router = useRouter();
-    const [isSaving, setIsSaving] = useState(false);
+  const { user } = useAuth();
+  const router = useRouter();
+  const [columns, setColumns] = useState<Column[]>(buildColumns);
 
-    // Sample data matching the screenshot design
-    const [columns, setColumns] = useState<Column[]>([
-        {
-            id: 'submission',
-            title: 'Submission',
-            color: 'bg-green-200', // Light green
-            applications: [
-                { id: 1, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 5 },
-                { id: 2, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 3 },
-                { id: 3, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 7 },
-                { id: 4, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 2 },
-                { id: 5, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 4 },
-            ]
-        },
-        {
-            id: 'client-submitted',
-            title: 'Client Submitted',
-            color: 'bg-blue-200', // Light blue
-            applications: [
-                { id: 6, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 8 },
-                { id: 7, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 6 },
-                { id: 8, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 9 },
-                { id: 9, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 1 },
-            ]
-        },
-        {
-            id: 'interview',
-            title: 'Interview',
-            color: 'bg-green-500', // Green (darker)
-            applications: [
-                { id: 10, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 12 },
-                { id: 11, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 15 },
-                { id: 12, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 10 },
-            ]
-        },
-        {
-            id: 'offer-extended',
-            title: 'Offer Extended',
-            color: 'bg-orange-400', // Orange
-            applications: [
-                { id: 13, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 20 },
-                { id: 14, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 18 },
-                { id: 15, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 22 },
-                { id: 16, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 19 },
-            ]
-        },
-        {
-            id: 'placement',
-            title: 'Placement',
-            color: 'bg-green-700', // Dark green
-            applications: [
-                { id: 17, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 25 },
-                { id: 18, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 30 },
-                { id: 19, companyName: 'Company Name', jobId: 'Job ID #', jobName: 'Job Name', viewCount: 28 },
-            ]
-        }
-    ]);
+  const handleClose = () => router.push('/home');
+  const handlePrevious = () => router.push('/dashboard/candidate-flow');
 
-    // Handle close/return to home
-    const handleClose = () => {
-        router.push('/home');
-    };
+  const handleTileClick = (application: ApplicationTile) => {
+    if (application.candidateId) {
+      router.push(`/dashboard/job-seekers/view?id=${application.candidateId}`);
+    }
+  };
 
-    // Handle previous navigation
-    const handlePrevious = () => {
-        router.push('/dashboard/candidate-flow');
-    };
+  return (
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+      <button
+        onClick={handleClose}
+        className="absolute top-4 right-4 z-10 p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded-lg transition-colors"
+        aria-label="Close and return to home"
+      >
+        <FiX size={24} />
+      </button>
 
-    // Handle tile click - navigate to candidate profile
-    const handleTileClick = (application: ApplicationTile) => {
-        if (application.candidateId) {
-            router.push(`/dashboard/job-seekers/view?id=${application.candidateId}`);
-        } else {
-            // If no candidate ID, you could navigate to a generic page or show a message
-            console.log('Navigate to candidate profile for:', application);
-        }
-    };
+      <div className="px-4 pt-4 pb-2">
+        <h1 className="text-2xl font-bold text-slate-800">Sales Dashboard</h1>
+        <p className="text-slate-600 text-sm mt-0.5">Applications by stage — click a card to view candidate.</p>
+      </div>
 
-    // Handle save
-    const handleSave = async () => {
-        setIsSaving(true);
-        try {
-            // Save logic here - update application stages
-            // This would typically make an API call to save the current state
-            await new Promise(resolve => setTimeout(resolve, 500)); // Simulate API call
-            toast.success('Changes saved successfully');
-        } catch (error) {
-            console.error('Error saving:', error);
-            toast.error('Error saving changes');
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    // Handle moving application between columns (drag and drop would be implemented here)
-    const moveApplication = (applicationId: number, fromColumnId: string, toColumnId: string) => {
-        setColumns(prevColumns => {
-            const newColumns = [...prevColumns];
-            const fromColumn = newColumns.find(col => col.id === fromColumnId);
-            const toColumn = newColumns.find(col => col.id === toColumnId);
-            
-            if (!fromColumn || !toColumn) return prevColumns;
-
-            const application = fromColumn.applications.find(app => app.id === applicationId);
-            if (!application) return prevColumns;
-
-            // Remove from source column
-            fromColumn.applications = fromColumn.applications.filter(app => app.id !== applicationId);
-            
-            // Add to target column
-            toColumn.applications.push(application);
-
-            // If moving to Placement, trigger placement actions
-            if (toColumnId === 'placement') {
-                // These actions would be triggered:
-                // 1. Force note to be entered
-                // 2. Automatically add note to Candidate record and Job order
-                // 3. Force task to be scheduled
-                // 4. Send email to Account Manager and recruiter
-                console.log('Application moved to Placement - triggering placement actions');
-            }
-
-            return newColumns;
-        });
-    };
-
-    return (
-        <div className="flex flex-col h-screen relative bg-gray-100">
-            {/* X button in top right corner */}
-            <button
-                onClick={handleClose}
-                className="absolute top-2 right-2 z-10 p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors"
-                aria-label="Close and return to home"
+      <div className="grow overflow-x-auto overflow-y-hidden p-4">
+        <div className="flex gap-4 h-full min-w-max pb-4">
+          {columns.map((column) => (
+            <div
+              key={column.id}
+              className="shrink-0 w-[280px] flex flex-col rounded-2xl bg-white/80 backdrop-blur shadow-lg border border-slate-200/80 overflow-hidden"
             >
-                <FiX size={24} />
-            </button>
-
-            {/* Main Kanban Board */}
-            <div className="flex-grow overflow-x-auto overflow-y-hidden p-4">
-                <div className="flex gap-4 h-full min-w-max">
-                    {columns.map((column) => (
-                        <div
-                            key={column.id}
-                            className="flex-shrink-0 w-64 flex flex-col"
-                        >
-                            {/* Column Header */}
-                            <div className="bg-white rounded-t-lg p-3 border-b-2 border-gray-300">
-                                <h2 className="text-lg font-semibold text-gray-800 text-center">
-                                    {column.title}
-                                </h2>
-                            </div>
-
-                            {/* Column Content */}
-                            <div className="flex-1 bg-gray-50 rounded-b-lg p-3 overflow-y-auto space-y-3">
-                                {column.applications.map((application) => (
-                                    <div
-                                        key={application.id}
-                                        onClick={() => handleTileClick(application)}
-                                        className={`${column.color} rounded-lg p-4 cursor-pointer hover:shadow-lg transition-all transform hover:scale-105`}
-                                    >
-                                        <div className="text-gray-800 font-medium mb-1">
-                                            {application.companyName}
-                                        </div>
-                                        <div className="text-gray-700 text-sm mb-1">
-                                            {application.jobId}
-                                        </div>
-                                        <div className="text-gray-800 text-sm font-semibold mb-2">
-                                            {application.jobName}
-                                        </div>
-                                        <div className="flex items-center justify-end text-gray-700">
-                                            <HiEye className="mr-1" size={16} />
-                                            <span className="text-sm font-medium">#{application.viewCount}</span>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    ))}
-                </div>
-            </div>
-
-            {/* Navigation buttons at bottom */}
-            <div className="flex justify-between items-center p-4 border-t border-gray-300 bg-white">
-                {/* Left side - Previous button */}
-                <div className="flex items-center space-x-4">
-                    <div className="text-right">
-                        <div className="text-lg mb-1 text-gray-700">Previous</div>
-                        <button
-                            onClick={handlePrevious}
-                            className="bg-teal-600 hover:bg-teal-700 text-white w-24 h-10 rounded flex items-center justify-center transition-colors"
-                        >
-                            <FiChevronLeft size={20} />
-                        </button>
+              <div className={`px-4 py-3 border-b-2 ${column.accent} bg-white`}>
+                <h2 className="font-semibold text-slate-800 text-sm">
+                  {column.title}
+                </h2>
+              </div>
+              <div className="flex-1 bg-slate-50/50 p-3 overflow-y-auto space-y-3">
+                {column.applications.map((app) => (
+                  <button
+                    type="button"
+                    key={app.id}
+                    onClick={() => handleTileClick(app)}
+                    className={`w-full text-left ${column.color} rounded-xl p-4 border border-white/60 shadow-sm hover:shadow-md hover:scale-[1.02] transition-all group`}
+                  >
+                    <div className="flex items-start gap-2 text-gray-800 font-medium mb-1">
+                      <FiBriefcase className="text-slate-500 shrink-0 mt-0.5" size={14} />
+                      <span className="line-clamp-1">{app.companyName}</span>
                     </div>
-                </div>
-
-                {/* Right side - Save and navigation arrows */}
-                <div className="flex items-center space-x-4">
-                    {/* <button
-                        onClick={handleSave}
-                        disabled={isSaving}
-                        className="bg-blue-600 hover:bg-blue-700 text-white px-6 h-10 rounded font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {isSaving ? 'Saving...' : 'SAVE'}
-                    </button> */}
-                    {/* <div className="flex items-center space-x-2">
-                        <button
-                            className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors"
-                            aria-label="Previous page"
-                        >
-                            <FiChevronLeft size={20} />
-                        </button>
-                        <button
-                            className="p-2 text-gray-600 hover:text-gray-800 hover:bg-gray-200 rounded transition-colors"
-                            aria-label="Next page"
-                        >
-                            <FiChevronRight size={20} />
-                        </button>
-                    </div> */}
-                </div>
+                    <div className="text-gray-600 text-sm mb-0.5">{app.jobId}</div>
+                    <div className="text-gray-800 text-sm font-semibold mb-2 line-clamp-1">{app.jobName}</div>
+                    <div className="flex items-center justify-end text-slate-600 text-xs">
+                      <FiEye className="mr-1 opacity-70 group-hover:opacity-100" size={14} />
+                      <span className="font-medium">#{app.viewCount}</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
             </div>
+          ))}
         </div>
-    );
+      </div>
+
+      <div className="flex justify-between items-center p-4 border-t border-slate-200 bg-white/90">
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <div className="text-sm font-medium text-slate-600 mb-1">Previous</div>
+            <button
+              onClick={handlePrevious}
+              className="bg-teal-600 hover:bg-teal-700 text-white w-24 h-10 rounded-xl flex items-center justify-center transition-colors shadow-sm"
+            >
+              <FiChevronLeft size={20} />
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }

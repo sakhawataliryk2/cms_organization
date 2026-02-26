@@ -119,7 +119,6 @@ export default function Dashboard() {
             }
             setActivityReport(data);
         } catch (err) {
-            console.error('Error fetching activity report:', err);
             setActivityReportError(err instanceof Error ? err.message : 'Failed to fetch activity report');
             setActivityReport(null);
         } finally {
