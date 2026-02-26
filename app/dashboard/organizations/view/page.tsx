@@ -356,6 +356,7 @@ export default function OrganizationView() {
   // Note sorting & filtering state
   const [noteActionFilter, setNoteActionFilter] = useState<string>("");
   const [noteAuthorFilter, setNoteAuthorFilter] = useState<string>("");
+  const [noteHiringManagerFilter, setNoteHiringManagerFilter] = useState<string>(""); // '' = all, '__organization__' = org only, or hiring_manager id
   const [noteSortKey, setNoteSortKey] = useState<"date" | "action" | "author">("date");
   const [noteSortDir, setNoteSortDir] = useState<"asc" | "desc">("desc");
 
@@ -369,6 +370,17 @@ export default function OrganizationView() {
       out = out.filter(
         (n) => (n.created_by_name || "Unknown User") === noteAuthorFilter
       );
+    }
+    if (noteHiringManagerFilter) {
+      if (noteHiringManagerFilter === "__organization__") {
+        out = out.filter((n) => (n as any).source_type === "organization");
+      } else {
+        out = out.filter(
+          (n) =>
+            (n as any).source_type === "hiring_manager" &&
+            String((n as any).source_id) === String(noteHiringManagerFilter)
+        );
+      }
     }
 
     out.sort((a, b) => {
@@ -401,7 +413,24 @@ export default function OrganizationView() {
     });
 
     return out;
-  }, [notes, noteActionFilter, noteAuthorFilter, noteSortKey, noteSortDir]);
+  }, [notes, noteActionFilter, noteAuthorFilter, noteHiringManagerFilter, noteSortKey, noteSortDir]);
+
+  // Unique hiring managers from notes (for HM filter dropdown)
+  const noteHiringManagerOptions = useMemo(() => {
+    const seen = new Set<string>();
+    return notes
+      .filter((n) => (n as any).source_type === "hiring_manager" && (n as any).source_id != null)
+      .map((n) => ({
+        id: String((n as any).source_id),
+        display: (n as any).hiring_manager_display || `Hiring Manager #${(n as any).source_id}`,
+      }))
+      .filter(({ id }) => {
+        if (seen.has(id)) return false;
+        seen.add(id);
+        return true;
+      })
+      .sort((a, b) => a.display.localeCompare(b.display, undefined, { sensitivity: "base" }));
+  }, [notes]);
   const [isLoadingNotes, setIsLoadingNotes] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
@@ -589,6 +618,18 @@ export default function OrganizationView() {
     [notes]
   );
   const organizationJobsCount = useMemo(() => jobs.length, [jobs]);
+
+  // Client Visits "acknowledged" count: once user clicks to view, we store count so green goes to normal badge
+  const CLIENT_VISITS_ACK_KEY_PREFIX = "cms_org_client_visits_ack_";
+  const [acknowledgedClientVisitCount, setAcknowledgedClientVisitCount] = useState(0);
+
+  useEffect(() => {
+    if (!organizationId) return;
+    const key = CLIENT_VISITS_ACK_KEY_PREFIX + organizationId;
+    const raw = localStorage.getItem(key);
+    const val = raw !== null ? parseInt(raw, 10) : 0;
+    setAcknowledgedClientVisitCount(Number.isNaN(val) ? 0 : val);
+  }, [organizationId]);
 
   // Current active tab (sync with ?tab= URL param for shareable links)
   const [activeTab, setActiveTabState] = useState(() =>
@@ -4737,6 +4778,26 @@ export default function OrganizationView() {
             </select>
           </div>
 
+          {/* Hiring Manager Filter */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Hiring Manager
+            </label>
+            <select
+              value={noteHiringManagerFilter}
+              onChange={(e) => setNoteHiringManagerFilter(e.target.value)}
+              className="p-2 border border-gray-300 rounded text-sm"
+            >
+              <option value="">All</option>
+              <option value="__organization__">Organization only</option>
+              {noteHiringManagerOptions.map((hm) => (
+                <option key={hm.id} value={hm.id}>
+                  {hm.display}
+                </option>
+              ))}
+            </select>
+          </div>
+
           {/* Sort Key */}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">
@@ -4769,11 +4830,12 @@ export default function OrganizationView() {
           </div>
 
           {/* Clear Filters */}
-          {(noteActionFilter || noteAuthorFilter) && (
+          {(noteActionFilter || noteAuthorFilter || noteHiringManagerFilter) && (
             <button
               onClick={() => {
                 setNoteActionFilter("");
                 setNoteAuthorFilter("");
+                setNoteHiringManagerFilter("");
               }}
               className="px-3 py-2 bg-gray-100 border border-gray-300 rounded text-xs"
             >
@@ -4822,9 +4884,21 @@ export default function OrganizationView() {
                             </span>
                           )}
                           {/* Source Module Badge */}
-                          <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded border">
-                            Organization
-                          </span>
+                          {(note as any).source_type === "hiring_manager" ? (
+                            <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-800 rounded border border-amber-200 font-medium inline-flex items-center gap-1">
+                              From Hiring Manager:{" "}
+                              <RecordNameResolver
+                                id={(note as any).source_id}
+                                type="hiringManager"
+                                fallback={(note as any).hiring_manager_display || "Hiring Manager"}
+                                clickable
+                              />
+                            </span>
+                          ) : (
+                            <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded border">
+                              Organization
+                            </span>
+                          )}
                         </div>
                         {/* Date & Time */}
                         <div className="text-xs text-gray-500">
@@ -4841,7 +4915,11 @@ export default function OrganizationView() {
                       <div className="flex items-center gap-1">
                         <button
                           onClick={() => {
-                            // View action - scroll to note or highlight
+                            const noteAny = note as any;
+                            if (noteAny.source_type === "hiring_manager" && noteAny.source_id) {
+                              router.push(`/dashboard/hiring-managers/view?id=${noteAny.source_id}&tab=notes&noteId=${note.id}`);
+                              return;
+                            }
                             const noteElement = document.getElementById(`note-${note.id}`);
                             if (noteElement) {
                               noteElement.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -4852,7 +4930,7 @@ export default function OrganizationView() {
                             }
                           }}
                           className="px-2 py-1 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors"
-                          title="View"
+                          title={(note as any).source_type === "hiring_manager" ? "View on Hiring Manager record" : "View"}
                         >
                           View
                         </button>
@@ -5286,20 +5364,29 @@ export default function OrganizationView() {
                   ? clientVisitNoteCount
                   : summaryCounts.clientVisits;
               const hasAny = count > 0;
+              const hasUnacknowledged =
+                hasAny && count > acknowledgedClientVisitCount;
               return (
                 <button
                   key={action.id}
-                  className={`inline-flex items-center gap-2 px-4 py-1 rounded-full shadow font-medium border ${hasAny
+                  className={`inline-flex items-center gap-2 px-4 py-1 rounded-full shadow font-medium border ${hasUnacknowledged
                       ? "border-green-500 bg-green-50 text-green-800"
                       : "border-gray-300 bg-white text-gray-700"
                     }`}
                   onClick={() => {
+                    if (organizationId && hasAny) {
+                      setAcknowledgedClientVisitCount(count);
+                      localStorage.setItem(
+                        CLIENT_VISITS_ACK_KEY_PREFIX + organizationId,
+                        String(count)
+                      );
+                    }
                     setNoteActionFilter("Client Visit");
                     setActiveTab("notes");
                   }}
                 >
                   <span
-                    className={`w-2.5 h-2.5 rounded-full border ${hasAny
+                    className={`w-2.5 h-2.5 rounded-full border ${hasUnacknowledged
                         ? "bg-green-500 border-green-600"
                         : "bg-gray-200 border-gray-400"
                       }`}
