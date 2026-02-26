@@ -81,6 +81,120 @@ function ClearButton({
   );
 }
 
+/** Searchable multi-select for static options (same UI/UX as MultiSelectLookupField but with given options) */
+function SearchableMultiSelect({
+  options,
+  value,
+  onChange,
+  placeholder = "Type to search...",
+  disabled = false,
+  className = "w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500",
+  id,
+}: {
+  options: string[];
+  value: string[];
+  onChange: (value: string[]) => void;
+  placeholder?: string;
+  disabled?: boolean;
+  className?: string;
+  id?: string;
+}) {
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [showDropdown, setShowDropdown] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  const selectedSet = new Set(value);
+  const q = searchQuery.trim().toLowerCase();
+  const filteredOptions = q
+    ? options.filter((o) => o.toLowerCase().includes(q))
+    : options;
+  const selectableOptions = filteredOptions.filter((o) => !selectedSet.has(o));
+
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
+    if (showDropdown) document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showDropdown]);
+
+  const addSelection = (option: string) => {
+    onChange([...value, option]);
+    setSearchQuery("");
+    setShowDropdown(false);
+  };
+
+  const removeSelection = (option: string) => {
+    onChange(value.filter((x) => x !== option));
+  };
+
+  return (
+    <div ref={containerRef} className="relative" id={id}>
+      <div
+        className={
+          className +
+          " min-h-[42px] flex flex-wrap items-center gap-2 " +
+          (disabled ? " bg-gray-100 cursor-not-allowed opacity-70" : "")
+        }
+      >
+        {value.map((opt) => (
+          <span
+            key={opt}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-blue-100 text-blue-800 text-sm"
+          >
+            {opt}
+            {!disabled && (
+              <button
+                type="button"
+                onClick={() => removeSelection(opt)}
+                className="hover:text-blue-600 font-bold leading-none"
+                aria-label="Remove"
+              >
+                ×
+              </button>
+            )}
+          </span>
+        ))}
+        {!disabled && (
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setShowDropdown(true);
+            }}
+            onFocus={() => setShowDropdown(true)}
+            placeholder={value.length === 0 ? placeholder : "Add more..."}
+            className="flex-1 min-w-[120px] border-0 p-0 focus:ring-0 focus:outline-none bg-transparent"
+          />
+        )}
+      </div>
+      {!disabled && showDropdown && (
+        <div className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-60 overflow-y-auto">
+          {selectableOptions.length > 0 ? (
+            selectableOptions.map((opt) => (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => addSelection(opt)}
+                className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 text-sm"
+              >
+                {opt}
+              </button>
+            ))
+          ) : (
+            <div className="px-3 py-2 text-gray-500 text-sm">
+              {filteredOptions.length === 0 ? "No options" : "All selected or no match"}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface CustomFieldRendererProps {
   field: CustomFieldDefinition;
   value: any;
@@ -659,7 +773,28 @@ export default function CustomFieldRenderer({
           disabled={readOnly}
         />
       );
-    case "multiselect":
+    case "multiselect": {
+      const selectedValues = Array.isArray(value)
+        ? value.map((v) => String(v))
+        : typeof value === "string" && value.trim() !== ""
+          ? value.split(",").map((v) => v.trim()).filter(Boolean)
+          : [];
+      return readOnly ? (
+        <div className="py-2 px-2 border border-gray-200 rounded bg-gray-50 text-gray-700">
+          {selectedValues.length === 0 ? "—" : selectedValues.join(", ")}
+        </div>
+      ) : (
+        <SearchableMultiSelect
+          options={normalizedOptions}
+          value={selectedValues}
+          onChange={(val) => onChange(field.field_name, val)}
+          placeholder={field.placeholder || "Type to search..."}
+          disabled={readOnly}
+          className={className}
+          id={field.field_name}
+        />
+      );
+    }
     case "multicheckbox": {
       const selectedValues = Array.isArray(value)
         ? value.map((v) => String(v))
@@ -681,7 +816,6 @@ export default function CustomFieldRenderer({
           id={field.field_name}
           className="w-full p-4 border border-gray-200 rounded-lg bg-white"
         >
-          {/* Vertical list of checkboxes */}
           <div className="space-y-3">
             {normalizedOptions.length === 0 ? (
               <span className="text-sm text-gray-500">No options configured.</span>
@@ -712,9 +846,7 @@ export default function CustomFieldRenderer({
               })
             )}
           </div>
-          {/* Separator */}
           <div className="border-t border-gray-200 my-4" />
-          {/* Selected count + pill tags */}
           <div className="space-y-3">
             <p className="text-sm text-gray-500">
               Selected: {count} {labelPlural}
