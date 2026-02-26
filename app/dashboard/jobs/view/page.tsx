@@ -1938,6 +1938,7 @@ export default function JobView() {
   const [isLoadingJobSeekers, setIsLoadingJobSeekers] = useState(false);
   const [isLoadingSubmittedCandidates, setIsLoadingSubmittedCandidates] =
     useState(false);
+  const [isAiMatching, setIsAiMatching] = useState(false);
   const [isSavingPlacement, setIsSavingPlacement] = useState(false);
   const [candidateSearchQuery, setCandidateSearchQuery] = useState("");
   const [showCandidateDropdown, setShowCandidateDropdown] = useState(false);
@@ -3546,6 +3547,57 @@ export default function JobView() {
       // setShowAddClientSubmissionModal(true);
       toast.info("Coming soon");
       return;
+    } else if (action === "ai-smart-match" && jobId) {
+      (async () => {
+        setIsAiMatching(true);
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        );
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (token) headers.Authorization = `Bearer ${token}`;
+        try {
+          const res = await fetch(`/api/jobs/${jobId}/ai-match`, {
+            method: "POST",
+            headers,
+          });
+          const data = await res.json().catch(() => ({}));
+          const matchedIds: string[] = Array.isArray(data?.matchedIds)
+            ? data.matchedIds.map((id: any) => String(id))
+            : [];
+          if (matchedIds.length === 0) {
+            setSubmittedCandidates([]);
+            setFilteredCandidates([]);
+            setActiveTab("applied");
+            toast.info("AI Smart Match found no candidates for this job.");
+            return;
+          }
+          const jsRes = await fetch("/api/job-seekers", { headers });
+          const jsData = await jsRes.json().catch(() => ({}));
+          const all = jsData?.jobSeekers || [];
+          const ordered = matchedIds
+            .map((id) => all.find((js: any) => String(js.id) === id))
+            .filter(Boolean);
+          const matchedCandidates = ordered.map((js: any) => ({
+            id: js.id,
+            name:
+              js.full_name ||
+              `${(js.first_name || "").trim()} ${(js.last_name || "").trim()}`.trim() ||
+              `Job Seeker #${js.id}`,
+            email: js.email,
+            ...js,
+          }));
+          setSubmittedCandidates(matchedCandidates);
+          setFilteredCandidates(matchedCandidates);
+          setActiveTab("applied");
+          toast.success(`AI Smart Match found ${matchedCandidates.length} candidate(s).`);
+        } catch (e) {
+          console.error("AI Smart Match error:", e);
+          toast.error("AI Smart Match failed. Please try again.");
+        } finally {
+          setIsAiMatching(false);
+        }
+      })();
     }
   };
 
@@ -4018,6 +4070,7 @@ export default function JobView() {
         { label: "Add Task", action: () => handleActionSelected("add-task") },
         { label: "Add Placement", action: () => handleActionSelected("add-placement") },
         { label: "Add Tearsheet", action: () => handleActionSelected("add-tearsheet") },
+        { label: "AI Smart Match", action: () => handleActionSelected("ai-smart-match") },
         { label: "Publish to Job Board", action: () => handleActionSelected("publish") },
         { label: "Add Client Submission", action: () => handleActionSelected("add-client-submission") },
         { label: "Clone", action: () => handleActionSelected("clone") },
