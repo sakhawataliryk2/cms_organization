@@ -15,7 +15,9 @@ import AddressGroupRenderer, {
   getAddressFields,
   isAddressGroupValid,
 } from "@/components/AddressGroupRenderer";
+import Tooltip from "@/components/Tooltip";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
+import { FiInfo } from "react-icons/fi";
 
 // Map admin field labels to backend columns; unmapped labels go to custom_fields JSONB
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
@@ -25,6 +27,50 @@ const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
   "Status": "status", "Job Status": "status",
   "Organization": "organizationId", "Organization Name": "organizationId", Company: "organizationId",
 };
+
+/** Normalize label for comparison: lowercase, collapse spaces, normalize % and punctuation */
+function normalizeLabelForMatch(label: string | null | undefined): string {
+  if (label == null) return "";
+  return String(label)
+    .toLowerCase()
+    .replace(/%/g, " percent ")
+    .replace(/[_\s]+/g, " ")
+    .trim();
+}
+
+/** Find the custom field whose label best matches one of the candidate labels (exact > includes > word overlap). */
+function findFieldByLabelMatch<T extends { field_label?: string | null }>(
+  fields: T[],
+  ...candidateLabels: string[]
+): T | null {
+  if (!fields?.length || !candidateLabels.length) return null;
+  const normalizedCandidates = candidateLabels.map(normalizeLabelForMatch).filter(Boolean);
+  if (!normalizedCandidates.length) return null;
+
+  let best: { field: T; score: number } | null = null;
+
+  for (const field of fields) {
+    const fieldNorm = normalizeLabelForMatch(field.field_label);
+    if (!fieldNorm) continue;
+    for (const cand of normalizedCandidates) {
+      if (fieldNorm === cand) {
+        return field; // exact match wins
+      }
+      let score = 0;
+      if (fieldNorm.includes(cand) || cand.includes(fieldNorm)) score = 0.8;
+      else {
+        const fieldWords = new Set(fieldNorm.split(/\s+/).filter(Boolean));
+        const candWords = cand.split(/\s+/).filter(Boolean);
+        const overlap = candWords.filter((w) => fieldWords.has(w)).length;
+        if (candWords.length) score = overlap / candWords.length;
+      }
+      if (score > 0 && (!best || score > best.score)) {
+        best = { field, score };
+      }
+    }
+  }
+  return best?.field ?? null;
+}
 
 // Define field type for typesafety
 interface FormField {
@@ -549,6 +595,65 @@ export default function AddJob() {
     () => (addressFields.length ? addressFields[0].id : null),
     [addressFields]
   );
+
+  // Resolve Pay Rate, Mark-up %, and Client Bill Rate by label match (closest match)
+  const payRateField = useMemo(
+    () => findFieldByLabelMatch(customFields, "Pay Rate", "pay rate"),
+    [customFields]
+  );
+  const markUpField = useMemo(
+    () =>
+      findFieldByLabelMatch(
+        customFields,
+        "Mark-up %",
+        "Mark-up",
+        "Mark up",
+        "Mark up %",
+        "mark up percent",
+        "Markup %",
+        "Markup"
+      ),
+    [customFields]
+  );
+  const clientBillRateField = useMemo(
+    () =>
+      findFieldByLabelMatch(
+        customFields,
+        "Client Bill Rate",
+        "client bill rate"
+      ),
+    [customFields]
+  );
+
+  // Compute Client Bill Rate from Pay Rate × (1 + Mark-up % / 100) and sync to form
+  useEffect(() => {
+    if (!clientBillRateField || !payRateField || !markUpField) return;
+    const payRaw = customFieldValues[payRateField.field_name];
+    const markUpRaw = customFieldValues[markUpField.field_name];
+    const payNum = parseFloat(String(payRaw ?? "").trim());
+    const markUpNum = parseFloat(String(markUpRaw ?? "").replace(/%/g, "").trim());
+    if (Number.isNaN(payNum) || Number.isNaN(markUpNum)) {
+      return;
+    }
+    const computed = payNum * (1 + markUpNum / 100);
+    const formatted =
+      computed % 1 === 0
+        ? String(Math.round(computed))
+        : computed.toFixed(2);
+    const current = customFieldValues[clientBillRateField.field_name];
+    if (current === formatted) return;
+    setCustomFieldValues((prev) => ({
+      ...prev,
+      [clientBillRateField.field_name]: formatted,
+    }));
+  }, [
+    clientBillRateField,
+    payRateField,
+    markUpField,
+    customFieldValues[payRateField?.field_name ?? ""],
+    customFieldValues[markUpField?.field_name ?? ""],
+    setCustomFieldValues,
+  ]);
 
   // Helper to normalize a label into a canonical address role
   const getAddressRoleFromLabel = (
@@ -1898,17 +2003,46 @@ export default function AddJob() {
 
                     const fieldValue = customFieldValues[field.field_name] || "";
 
+                    // Client Bill Rate: only read-only if set in admin; when editable show info tooltip and clear Pay Rate / Mark-up % on change
+                    const isClientBillRateField =
+                      clientBillRateField && field.id === clientBillRateField.id;
+                    const isClientBillRateEditable =
+                      isClientBillRateField && !field.is_read_only;
+                    const handleFieldChange = (name: string, value: any) => {
+                      handleCustomFieldChange(name, value);
+                      if (
+                        isClientBillRateField &&
+                        name === clientBillRateField!.field_name &&
+                        payRateField &&
+                        markUpField
+                      ) {
+                        setCustomFieldValues((prev) => ({
+                          ...prev,
+                          [payRateField.field_name]: "",
+                          [markUpField.field_name]: "",
+                        }));
+                      }
+                    };
+
                     return (
                       <div key={field.id} className="flex items-center gap-4 mb-3">
                         <label className="w-48 font-medium flex items-center">
                           {field.field_label}:
+                          {isClientBillRateEditable && (
+                            <Tooltip
+                              text="Changing this value will clear Pay Rate and Mark-up %."
+                              className="ml-2"
+                            >
+                              <FiInfo className="w-5 h-5 text-gray-600 shrink-0" aria-hidden />
+                            </Tooltip>
+                          )}
                         </label>
 
                         <div className="flex-1 relative">
                           <CustomFieldRenderer
                             field={field}
                             value={fieldValue}
-                            onChange={handleCustomFieldChange}
+                            onChange={isClientBillRateField ? handleFieldChange : handleCustomFieldChange}
                             allFields={customFields}
                             values={customFieldValues}
                             context={{ organizationId: currentOrganizationId || organizationIdFromUrl || "" }}

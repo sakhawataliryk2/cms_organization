@@ -409,8 +409,19 @@ const SECTION_CONFIG: Record<
     types: [
       { value: "JOB_DELETE_REQUEST", label: "Job - Delete Request (Payroll)" },
       { value: "JOB_UNARCHIVE_REQUEST", label: "Job - Unarchive Request (Payroll)" },
+      { value: "JOB_DISTRIBUTION", label: "Job - Distribution email (send job to distribution list)" },
     ],
     placeholders: {
+      JOB_DISTRIBUTION: [
+        "{{jobTitle}}",
+        "{{jobTitleLink}}",
+        "{{recordNumber}}",
+        "{{jobLink}}",
+        "{{organizationName}}",
+        "{{status}}",
+        "{{employmentType}}",
+        "{{createdByName}}",
+      ],
       JOB_DELETE_REQUEST: [
         "{{requestedBy}}",
         "{{requestedByEmail}}",
@@ -438,8 +449,24 @@ const SECTION_CONFIG: Record<
     required: {
       JOB_DELETE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       JOB_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
+      JOB_DISTRIBUTION: [],
     },
     defaults: {
+      JOB_DISTRIBUTION: {
+        template_name: "Job Distribution",
+        subject: "New job shared with you: {{jobTitle}}",
+        body:
+          `<div>` +
+          `<h2>Job shared with you</h2>` +
+          `<p><strong>Job:</strong> {{jobTitleLink}}</p>` +
+          `<p><strong>Record #:</strong> {{recordNumber}}</p>` +
+          `<p><strong>Organization:</strong> {{organizationName}}</p>` +
+          `<p><strong>Status:</strong> {{status}}</p>` +
+          `<p><strong>Employment Type:</strong> {{employmentType}}</p>` +
+          `<p><strong>Created by:</strong> {{createdByName}}</p>` +
+          `<p><a href="{{jobLink}}">View job</a></p>` +
+          `</div>`,
+      },
       JOB_DELETE_REQUEST: {
         template_name: "Job Delete Request",
         subject: "Delete Request: {{recordType}} {{recordNumber}}",

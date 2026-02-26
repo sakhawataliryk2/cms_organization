@@ -341,10 +341,10 @@ export default function CustomFieldRenderer({
     }
 
     if (Array.isArray(field.options)) {
-      return field.options.filter(
-        (option): option is string =>
-          typeof option === "string" && option.trim().length > 0
-      );
+      return field.options
+        .filter((option): option is string => typeof option === "string")
+        .map((option) => option.trim())
+        .filter((option) => option.length > 0);
     }
 
     if (typeof field.options === "string") {
@@ -379,6 +379,39 @@ export default function CustomFieldRenderer({
 
     return [];
   }, [field.options]);
+
+  // Normalize option-based value: if value has spaces and matches an option when trimmed, sync trimmed option to form state
+  const isOptionBasedType =
+    field.field_type === "select" ||
+    field.field_type === "radio" ||
+    field.field_type === "multiselect" ||
+    field.field_type === "multicheckbox";
+  React.useEffect(() => {
+    if (!isOptionBasedType || readOnly || normalizedOptions.length === 0) return;
+    const raw = value;
+    if (field.field_type === "select" || field.field_type === "radio") {
+      const str = String(raw ?? "").trim();
+      if (!str) return;
+      const match = normalizedOptions.find((o) => o.trim() === str);
+      if (match != null && raw !== match) {
+        onChange(field.field_name, match);
+      }
+      return;
+    }
+    if (field.field_type === "multiselect" || field.field_type === "multicheckbox") {
+      const arr = Array.isArray(raw)
+        ? raw.map((v) => String(v).trim()).filter(Boolean)
+        : typeof raw === "string" && raw.trim() !== ""
+          ? raw.split(",").map((v) => v.trim()).filter(Boolean)
+          : [];
+      const normalized = arr
+        .map((v) => normalizedOptions.find((o) => o.trim() === v))
+        .filter(Boolean) as string[];
+      if (normalized.length > 0 && JSON.stringify(normalized) !== JSON.stringify(raw)) {
+        onChange(field.field_name, normalized);
+      }
+    }
+  }, [field.field_name, field.field_type, isOptionBasedType, normalizedOptions, onChange, readOnly, value]);
 
   const isCredentialsMultiSelect =
     field.field_type === "select" &&
@@ -724,7 +757,18 @@ export default function CustomFieldRenderer({
         );
       }
       return withValidationWrapper(
-        <select {...fieldProps}>
+        <select
+          {...fieldProps}
+          value={
+            normalizedOptions.find(
+              (o) => o.trim() === String(fieldProps.value ?? "").trim()
+            ) ?? ""
+          }
+          onChange={(e) => {
+            const v = e.target.value;
+            onChange(field.field_name, v);
+          }}
+        >
           <option value="">Select an option</option>
           {normalizedOptions.map((option, idx) => (
             <option key={`${field.field_name}-${option}-${idx}`} value={option}>
@@ -742,22 +786,26 @@ export default function CustomFieldRenderer({
               No options configured for this field.
             </div>
           ) : (
-            normalizedOptions.map((option) => (
-              <label
-                key={`${field.field_name}-${option}`}
-                className="flex items-center gap-2 text-sm cursor-pointer"
-              >
-                <input
-                  type="radio"
-                  name={field.field_name}
-                  value={option}
-                  checked={value === option}
-                  onChange={() => onChange(field.field_name, option)}
-                  required={field.is_required}
-                />
-                <span>{option}</span>
-              </label>
-            ))
+            normalizedOptions.map((option) => {
+              const valStr = String(value ?? "").trim();
+              const isChecked = option.trim() === valStr;
+              return (
+                <label
+                  key={`${field.field_name}-${option}`}
+                  className="flex items-center gap-2 text-sm cursor-pointer"
+                >
+                  <input
+                    type="radio"
+                    name={field.field_name}
+                    value={option}
+                    checked={isChecked}
+                    onChange={() => onChange(field.field_name, option)}
+                    required={field.is_required}
+                  />
+                  <span>{option}</span>
+                </label>
+              );
+            })
           )}
         </div>,
         validationIndicator
@@ -774,11 +822,14 @@ export default function CustomFieldRenderer({
         />
       );
     case "multiselect": {
-      const selectedValues = Array.isArray(value)
+      const rawSelected = Array.isArray(value)
         ? value.map((v) => String(v))
         : typeof value === "string" && value.trim() !== ""
           ? value.split(",").map((v) => v.trim()).filter(Boolean)
           : [];
+      const selectedValues = normalizedOptions.filter((opt) =>
+        rawSelected.some((v) => v.trim() === opt.trim())
+      );
       return readOnly ? (
         <div className="py-2 px-2 border border-gray-200 rounded bg-gray-50 text-gray-700">
           {selectedValues.length === 0 ? "—" : selectedValues.join(", ")}
@@ -796,11 +847,14 @@ export default function CustomFieldRenderer({
       );
     }
     case "multicheckbox": {
-      const selectedValues = Array.isArray(value)
+      const rawSelected = Array.isArray(value)
         ? value.map((v) => String(v))
         : typeof value === "string" && value.trim() !== ""
           ? value.split(",").map((v) => v.trim()).filter(Boolean)
           : [];
+      const selectedValues = normalizedOptions.filter((opt) =>
+        rawSelected.some((v) => v.trim() === opt.trim())
+      );
       const count = selectedValues.length;
       const labelSingular = (field.field_label || "item").toLowerCase().replace(/\s*\(s\)$/, "");
       const labelPlural = count === 1 ? labelSingular : `${labelSingular}s`;
@@ -1975,7 +2029,7 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
           next[fld.field_name] =
             isOwnerLookup && ownerIdFromCookie
               ? ownerIdFromCookie
-              : (fld.default_value || "");
+              : (fld.default_value || "").trim();
         });
         return next;
       });
@@ -2024,7 +2078,7 @@ export function useCustomFields(entityType: string, options?: UseCustomFieldsOpt
             next[fld.field_name] =
               isOwnerLookup && ownerIdFromCookie
                 ? ownerIdFromCookie
-                : (fld.default_value || "");
+                : (fld.default_value || "").trim();
           });
           return next;
         });

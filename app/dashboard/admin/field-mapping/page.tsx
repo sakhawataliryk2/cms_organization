@@ -303,9 +303,11 @@ const FieldMapping = () => {
       isHidden: field.is_hidden,
       isReadOnly: Boolean((field as any).is_read_only),
       sortOrder: field.sort_order,
-      options: field.options || [],
-      placeholder: field.placeholder || "",
-      defaultValue: field.default_value || "",
+      options: Array.isArray(field.options)
+        ? (field.options as string[]).map((o) => String(o).trim()).filter(Boolean)
+        : [],
+      placeholder: (field.placeholder || "").trim(),
+      defaultValue: (field.default_value || "").trim(),
       lookupType: (field as any).lookup_type || "organizations",
       subFieldIds: Array.isArray(subIds) ? subIds.map(String) : [],
       isDependent: Boolean(depId),
@@ -396,11 +398,33 @@ const FieldMapping = () => {
   };
 
   const handleOptionsChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const value = e.target.value.replace(/\r\n/g, "\n"); // normalize
-    const options = value.split("\n"); // preserve blank lines
+    const value = e.target.value.replace(/\r\n/g, "\n");
+    const options = value
+      .split("\n")
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
     setEditFormData((prev) => ({
       ...prev,
       options,
+    }));
+  };
+
+  const handleOptionChange = (index: number, value: string) => {
+    setEditFormData((prev) => {
+      const next = [...prev.options];
+      if (index >= 0 && index < next.length) next[index] = value;
+      return { ...prev, options: next };
+    });
+  };
+
+  const handleAddOption = () => {
+    setEditFormData((prev) => ({ ...prev, options: [...prev.options, ""] }));
+  };
+
+  const handleRemoveOption = (index: number) => {
+    setEditFormData((prev) => ({
+      ...prev,
+      options: prev.options.filter((_, i) => i !== index),
     }));
   };
 
@@ -420,9 +444,11 @@ const FieldMapping = () => {
           isReadOnly: editFormData.isReadOnly,
           sortOrder: editFormData.sortOrder,
           options:
-            editFormData.options.length > 0 ? editFormData.options : null,
+            editFormData.options.length > 0
+              ? editFormData.options.map((o: string) => o.trim()).filter(Boolean)
+              : null,
           placeholder: editFormData.placeholder || null,
-          defaultValue: editFormData.defaultValue || null,
+          defaultValue: (editFormData.defaultValue || "").trim() || null,
           lookupType:
             editFormData.fieldType === "lookup" || editFormData.fieldType === "multiselect_lookup"
               ? editFormData.lookupType
@@ -460,9 +486,11 @@ const FieldMapping = () => {
           isReadOnly: editFormData.isReadOnly,
           sortOrder: editFormData.sortOrder,
           options:
-            editFormData.options.length > 0 ? editFormData.options : null,
+            editFormData.options.length > 0
+              ? editFormData.options.map((o: string) => o.trim()).filter(Boolean)
+              : null,
           placeholder: editFormData.placeholder || null,
-          defaultValue: editFormData.defaultValue || null,
+          defaultValue: (editFormData.defaultValue || "").trim() || null,
           lookupType:
             editFormData.fieldType === "lookup" || editFormData.fieldType === "multiselect_lookup"
               ? editFormData.lookupType
@@ -1605,15 +1633,41 @@ const FieldMapping = () => {
                   editFormData.fieldType === "multicheckbox") && (
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Options (one per line):
+                        Options (each value in its own field):
                       </label>
-                      <textarea
-                        value={editFormData.options.join("\n")}
-                        onChange={handleOptionsChange}
-                        className="w-full px-3 py-2 border rounded"
-                        rows={5}
-                        placeholder="Option 1&#10;Option 2&#10;Option 3"
-                      />
+                      <p className="text-xs text-gray-500 mb-2">
+                        Add one option per input. Existing options are shown below; add more with the button.
+                      </p>
+                      <div className="space-y-2">
+                        {(editFormData.options.length === 0 ? [""] : editFormData.options).map((opt, idx) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={opt}
+                              onChange={(e) => handleOptionChange(idx, e.target.value)}
+                              className="flex-1 px-3 py-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              placeholder={`Option ${idx + 1}`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveOption(idx)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded border border-transparent hover:border-red-200"
+                              title="Remove option"
+                              disabled={editFormData.options.length <= 1}
+                            >
+                              <FiTrash2 size={16} />
+                            </button>
+                          </div>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={handleAddOption}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded bg-white hover:bg-gray-50 text-gray-700"
+                        >
+                          <FiPlus size={16} />
+                          Add option
+                        </button>
+                      </div>
                     </div>
                   )}
 
