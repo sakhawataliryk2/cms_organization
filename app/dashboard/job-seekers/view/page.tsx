@@ -5816,7 +5816,7 @@ Best regards`;
         documentTypeOptions={[
           { value: "General", label: "General" },
           { value: "Resume", label: "Resume" },
-          { value: "ID", label: "ID" },
+          { value: "ID", label: "Record Number" },
           { value: "Contract", label: "Contract" },
           { value: "Other", label: "Other" },
         ]}

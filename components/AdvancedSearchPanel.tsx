@@ -284,17 +284,25 @@ export default function AdvancedSearchPanel({
   // Position under anchor, via portal (fixed coords)
   const reposition = useCallback(() => {
     if (!anchorEl) return;
+
     const rect = anchorEl.getBoundingClientRect();
+
     const width = Math.min(
       980,
       Math.max(720, Math.floor(window.innerWidth * 0.86))
     );
+
     const margin = 8;
-    const left = Math.min(
-      window.innerWidth - width - margin,
-      Math.max(margin, rect.right - width)
+
+    // Center horizontally
+    const left = Math.max(
+      margin,
+      (window.innerWidth - width) / 2
     );
+
+    // Keep vertical position below anchor
     const top = rect.bottom + 8;
+
     setPos({ top, left, width });
   }, [anchorEl]);
 
@@ -481,9 +489,8 @@ export default function AdvancedSearchPanel({
   return (
     <div
       ref={panelRef}
-      className={`bg-white border border-gray-200 shadow-sm rounded-lg z-[9999] ${
-        visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1"
-      } transition-all duration-150 ease-out`}
+      className={`bg-white border border-gray-200 shadow-sm rounded-lg z-9999 ${visible ? "opacity-100 translate-y-0" : "opacity-0 -translate-y-1"
+        } transition-all duration-150 ease-out`}
       style={{
         position: "fixed",
         top: pos.top,
@@ -498,21 +505,19 @@ export default function AdvancedSearchPanel({
         <div className="flex">
           <button
             onClick={() => setActiveTab("search")}
-            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === "search"
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === "search"
                 ? "border-blue-600 text-blue-600"
                 : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}
+              }`}
           >
             Search
           </button>
           <button
             onClick={() => setActiveTab("recent")}
-            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === "recent"
+            className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === "recent"
                 ? "border-blue-600 text-blue-600"
                 : "border-transparent text-gray-500 hover:text-gray-700"
-            }`}
+              }`}
           >
             Recent
           </button>
@@ -537,9 +542,8 @@ export default function AdvancedSearchPanel({
               className="flex items-center gap-2 w-full text-left text-sm font-semibold text-gray-700 mb-3"
             >
               <span
-                className={`inline-block transition-transform ${
-                  criteriaCollapsed ? "" : "rotate-180"
-                }`}
+                className={`inline-block transition-transform ${criteriaCollapsed ? "" : "rotate-180"
+                  }`}
               >
                 ▼
               </span>
@@ -663,23 +667,23 @@ function SearchRow({
     rawType === "date"
       ? "date"
       : rawType === "datetime"
-      ? "datetime"
-      : rawType === "time"
-      ? "time"
-      : rawType === "number" || rawType === "currency"
-      ? "number"
-      : rawType === "percentage" || rawType === "percent"
-      ? "percent"
-      : rawType === "select" || rawType === "dropdown" || rawType === "radio"
-      ? "select"
-      : rawType === "multiselect" ||
-        rawType === "multicheckbox" ||
-        rawType === "multi_select" ||
-        rawType === "multiselect_lookup"
-      ? "multiselect"
-      : rawType === "checkbox" || rawType === "boolean" || rawType === "switch"
-      ? "boolean"
-      : "text";
+        ? "datetime"
+        : rawType === "time"
+          ? "time"
+          : rawType === "number" || rawType === "currency"
+            ? "number"
+            : rawType === "percentage" || rawType === "percent"
+              ? "percent"
+              : rawType === "select" || rawType === "dropdown" || rawType === "radio"
+                ? "select"
+                : rawType === "multiselect" ||
+                  rawType === "multicheckbox" ||
+                  rawType === "multi_select" ||
+                  rawType === "multiselect_lookup"
+                  ? "multiselect"
+                  : rawType === "checkbox" || rawType === "boolean" || rawType === "switch"
+                    ? "boolean"
+                    : "text";
 
   const showRange = operatorNeedsRange(row.operator);
   const showNoValue = operatorNeedsNoValue(row.operator);
@@ -910,9 +914,9 @@ function SearchRow({
             value={
               wantsMultiChoice
                 ? String(row.value ?? "")
-                    .split(",")
-                    .map((x) => x.trim())
-                    .filter(Boolean)
+                  .split(",")
+                  .map((x) => x.trim())
+                  .filter(Boolean)
                 : row.value ?? ""
             }
             onChange={(e) => {
@@ -925,9 +929,8 @@ function SearchRow({
               );
               onUpdate({ value: values.join(",") });
             }}
-            className={`flex-1 min-w-[220px] px-4 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 bg-white ${
-              wantsMultiChoice ? "h-28" : ""
-            }`}
+            className={`flex-1 min-w-[220px] px-4 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 bg-white ${wantsMultiChoice ? "h-28" : ""
+              }`}
           >
             {!wantsMultiChoice && <option value="">Select…</option>}
             {selectOptions.map((opt) => (

@@ -370,7 +370,10 @@ export default function TaskList() {
           lookupType: (f as any)?.lookup_type || "",
         };
       });
-    return fromApi;
+    return [
+      { key: "record_number", label: "Record Number", sortable: true, filterType: "number" as const, fieldType: undefined, lookupType: "" },
+      ...fromApi,
+    ];
   }, [availableFields]);
 
   const normalizeFields = (payload: any) => {
@@ -436,6 +439,9 @@ export default function TaskList() {
     taskColumnsCatalog.find((c) => c.key === key);
 
   const getColumnValue = (task: any, key: string) => {
+    if (key === "record_number") {
+      return task.record_number ?? task.id;
+    }
     if (key.startsWith("custom:")) {
       const rawKey = key.replace("custom:", "");
       const cf = task?.customFields || task?.custom_fields || {};
@@ -520,7 +526,10 @@ export default function TaskList() {
       try {
         const parsed = JSON.parse(savedOrder);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const validOrder = parsed.filter((k: string) => catalogSet.has(k));
+          let validOrder = parsed.filter((k: string) => catalogSet.has(k));
+          if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
+            validOrder = ["record_number", ...validOrder];
+          }
           if (validOrder.length > 0) {
             setColumnFields(validOrder);
             return;
@@ -890,7 +899,7 @@ export default function TaskList() {
     );
 
     // Get headers from currently displayed columns
-    const headers = ['ID', ...columnFields.map((key) => getColumnLabel(key))];
+    const headers = columnFields.map((key) => getColumnLabel(key));
 
     // Escape CSV values
     const escapeCSV = (value: any): string => {
@@ -906,10 +915,9 @@ export default function TaskList() {
     const csvRows = [
       headers.map(escapeCSV).join(','),
       ...selectedData.map((task) => {
-        const row = [
-          `T ${task.record_number ?? task.id}`,
-          ...columnFields.map((key) => escapeCSV(getColumnValue(task, key)))
-        ];
+        const row = columnFields.map((key) =>
+          key === "record_number" ? escapeCSV(`T ${getColumnValue(task, key)}`) : escapeCSV(getColumnValue(task, key))
+        );
         return row.join(',');
       })
     ];
@@ -987,10 +995,75 @@ export default function TaskList() {
 
   return (
     <div className="bg-white rounded-lg shadow">
-      {/* Header */}
-      <div className="flex justify-between items-center p-4 border-b border-gray-200">
-        <h1 className="text-xl font-bold">Tasks</h1>
-        <div className="flex space-x-4">
+      {/* Header - responsive: search/filters on top, then actions */}
+      <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center space-x-4 w-full">
+        {/* Row 1: Title + Search + Filter + Clear + Add (mobile) */}
+        <div className="w-full flex justify-between items-center gap-4">
+          <h1 className="text-xl font-bold">Tasks</h1>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  placeholder="Search tasks..."
+                  className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                <div className="absolute left-3 top-2.5 text-gray-400">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
+              </div>
+              <button
+                ref={advancedSearchButtonRef}
+                type="button"
+                onClick={() => setShowAdvancedSearch((v) => !v)}
+                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${
+                  showAdvancedSearch || advancedSearchCriteria.length > 0
+                    ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <IoFilterSharp /> Filter
+              </button>
+              {(searchTerm ||
+                Object.keys(columnFilters).length > 0 ||
+                Object.keys(columnSorts).length > 0 ||
+                advancedSearchCriteria.length > 0) && (
+                <button
+                  onClick={handleClearAllFilters}
+                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                >
+                  <FiX />
+                  Clear All
+                </button>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={handleAddTask}
+            className="md:hidden px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center shrink-0"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
+            </svg>
+            Add
+          </button>
+        </div>
+
+        {/* Desktop: Bulk, Favorites, Columns, Archived, Add */}
+        <div className="hidden md:flex space-x-4 items-center">
           {selectedTasks.length > 0 && (
             <BulkActionsButton
               selectedCount={selectedTasks.length}
@@ -1075,12 +1148,12 @@ export default function TaskList() {
           </button>
           <button
             onClick={handleAddTask}
-            className="hidden md:flex px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 items-center"
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center"
           >
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
             </svg>
-            Add Task
+            Add
           </button>
         </div>
         <div className="flex flex-col gap-2 w-full md:hidden">
@@ -1172,61 +1245,6 @@ export default function TaskList() {
         </div>
       )}
 
-      {/* Search and Filter */}
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              placeholder="Search tasks..."
-              className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <div className="absolute left-3 top-2.5 text-gray-400">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              ref={advancedSearchButtonRef}
-              type="button"
-              onClick={() => setShowAdvancedSearch((v) => !v)}
-              className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${
-                showAdvancedSearch || advancedSearchCriteria.length > 0
-                  ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
-                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <IoFilterSharp /> Filter
-            </button>
-            {(searchTerm ||
-              Object.keys(columnFilters).length > 0 ||
-              Object.keys(columnSorts).length > 0 ||
-              advancedSearchCriteria.length > 0) && (
-              <button
-                onClick={handleClearAllFilters}
-                className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
-              >
-                <FiX />
-                Clear All
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
       <AdvancedSearchPanel
         open={showAdvancedSearch}
         onClose={() => setShowAdvancedSearch(false)}
@@ -1266,12 +1284,7 @@ export default function TaskList() {
                     Actions
                   </th>
 
-                  {/* Fixed ID */}
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ID
-                  </th>
-
-                  {/* Draggable Dynamic headers */}
+                  {/* Draggable Dynamic headers (includes Record #) */}
                   <SortableContext
                     items={columnFields}
                     strategy={horizontalListSortingStrategy}
@@ -1363,52 +1376,16 @@ export default function TaskList() {
                         />
                       </td>
 
-                      {/* Fixed ID */}
-                      <td className="px-6 py-4 text-black whitespace-nowrap">
-                        T {task?.record_number ?? task?.id}
-                      </td>
-
-                      {/* Dynamic cells */}
-                      {/* {columnFields.map((key) => (
-                        <td
-                          key={key}
-                          className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
-                        >
-                          {key === "completed" ? (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleTaskComplete(task.id, task.is_completed);
-                              }}
-                              className={`px-2 py-1 rounded text-xs font-semibold ${task.is_completed
-                                ? "bg-green-100 text-green-800"
-                                : "bg-gray-100 text-gray-800 hover:bg-gray-200"
-                                }`}
-                            >
-                              {task.is_completed ? "✓ Yes" : "○ No"}
-                            </button>
-                          ) : key === "priority" ? (
-                            <span
-                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getPriorityColor(
-                                task.priority
-                              )}`}
-                            >
-                              {getColumnValue(task, key)}
-                            </span>
-                          ) : key === "status" ? (
-                            <span
-                              className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(
-                                task.status
-                              )}`}
-                            >
-                              {getColumnValue(task, key)}
-                            </span>
-                          ) : (
-                            getColumnValue(task, key)
-                          )}
-                        </td>
-                      ))} */}
-                      {columnFields.map((key) => (
+                      {/* Dynamic cells (including Record #) */}
+                      {columnFields.map((key) => {
+                        if (key === "record_number") {
+                          return (
+                            <td key={key} className="px-6 py-4 text-black whitespace-nowrap">
+                              T {getColumnValue(task, key)}
+                            </td>
+                          );
+                        }
+                        return (
                         <td
                           key={key}
                           className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
@@ -1460,7 +1437,8 @@ export default function TaskList() {
                             className="text-sm text-gray-500"
                           />
                         </td>
-                      ))}
+                      );
+                      })}
                     </tr>
                   ))
                 ) : (

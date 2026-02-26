@@ -391,6 +391,7 @@ export default function TearsheetList() {
 
   const columnsCatalog = useMemo(() => {
     return [
+      { key: "id", label: "Record Number", sortable: true, filterType: "number" as const },
       { key: "name", label: "Name", sortable: true, filterType: "text" as const },
       { key: "job_seeker_count", label: "Job Seeker Count", sortable: true, filterType: "number" as const },
       { key: "hiring_manager_count", label: "Hiring Manager Count", sortable: true, filterType: "number" as const },
@@ -414,7 +415,10 @@ export default function TearsheetList() {
       try {
         const parsed = JSON.parse(savedOrder);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const validOrder = parsed.filter((k: string) => catalogSet.has(k));
+          let validOrder = parsed.filter((k: string) => catalogSet.has(k));
+          if (catalogSet.has("id") && !validOrder.includes("id")) {
+            validOrder = ["id", ...validOrder];
+          }
           if (validOrder.length > 0) {
             setColumnFields(validOrder);
             return;
@@ -460,6 +464,8 @@ export default function TearsheetList() {
 
   const getColumnValue = (ts: any, key: string) => {
     switch (key) {
+      case "id":
+        return ts.id ?? "N/A";
       case "name":
         return ts.name || "N/A";
       case "job_seeker_count":
@@ -820,11 +826,62 @@ export default function TearsheetList() {
 
   return (
     <div className="bg-white rounded-lg shadow">
-      {/* Header - responsive: mobile = title row, then full-width Favorites, then full-width Columns */}
-      <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center">
-        {/* Row 1: Title */}
-        <div className="flex justify-between items-center gap-4">
+      {/* Header - responsive: search/filters on top, then actions */}
+      <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center space-x-4 w-full">
+        {/* Row 1: Title + Search + Filter + Clear */}
+        <div className="w-full flex justify-between items-center gap-4">
           <h1 className="text-xl font-bold">Tearsheets</h1>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  placeholder="Search tearsheets..."
+                  className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                <div className="absolute left-3 top-2.5 text-gray-400">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
+              </div>
+              <button
+                ref={advancedSearchButtonRef}
+                type="button"
+                onClick={() => setShowAdvancedSearch((v) => !v)}
+                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${
+                  showAdvancedSearch || advancedSearchCriteria.length > 0
+                    ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <IoFilterSharp /> Filter
+              </button>
+              {(searchTerm ||
+                Object.keys(columnFilters).length > 0 ||
+                Object.keys(columnSorts).length > 0 ||
+                advancedSearchCriteria.length > 0) && (
+                <button
+                  onClick={handleClearAllFilters}
+                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                >
+                  <FiX />
+                  Clear All
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Desktop: Favorites, Delete Selected, Columns - single row */}
@@ -1026,62 +1083,6 @@ export default function TearsheetList() {
         </div>
       )}
 
-      {/* Search */}
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              placeholder="Search tearsheets..."
-              className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <div className="absolute left-3 top-2.5 text-gray-400">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              ref={advancedSearchButtonRef}
-              type="button"
-              onClick={() => setShowAdvancedSearch((v) => !v)}
-              className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${
-                showAdvancedSearch || advancedSearchCriteria.length > 0
-                  ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
-                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <IoFilterSharp /> Filter
-            </button>
-            {(searchTerm ||
-              Object.keys(columnFilters).length > 0 ||
-              Object.keys(columnSorts).length > 0 ||
-              advancedSearchCriteria.length > 0) && (
-              <button
-                onClick={handleClearAllFilters}
-                className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
-              >
-                <FiX />
-                Clear All
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
       <AdvancedSearchPanel
         open={showAdvancedSearch}
         onClose={() => setShowAdvancedSearch(false)}
@@ -1121,10 +1122,7 @@ export default function TearsheetList() {
                   Actions
                 </th>
 
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  ID
-                </th>
-                {/* Draggable Dynamic headers */}
+                {/* Draggable Dynamic headers (includes Record Number) */}
                 <SortableContext
                   items={columnFields}
                   strategy={horizontalListSortingStrategy}
@@ -1193,15 +1191,13 @@ export default function TearsheetList() {
                       />
                     </td>
 
-                    <td className="px-6 py-4 text-black whitespace-nowrap">TE {ts?.id}</td>
-
-                    {/* Dynamic cells */}
+                    {/* Dynamic cells (including Record Number) */}
                     {columnFields.map((key) => (
                       <td
                         key={key}
-                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                        className={`px-6 py-4 whitespace-nowrap text-sm ${key === "id" ? "text-black" : "text-gray-500"}`}
                       >
-                        <span>{getColumnValue(ts, key)}</span>
+                        {key === "id" ? `TE ${getColumnValue(ts, key)}` : <span>{getColumnValue(ts, key)}</span>}
                       </td>
                     ))}
                   </tr>

@@ -432,7 +432,10 @@ export default function LeadList() {
     //     filterType: "text" as const,
     //   }));
 
-    const merged = [...fromApi];
+    const merged = [
+      { key: "record_number", label: "Record Number", sortable: true, filterType: "number" as const },
+      ...fromApi,
+    ];
     const seen = new Set<string>();
     return merged.filter((x) => {
       if (seen.has(x.key)) return false;
@@ -451,7 +454,10 @@ export default function LeadList() {
       try {
         const parsed = JSON.parse(savedOrder);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const validOrder = parsed.filter((k: string) => catalogSet.has(k));
+          let validOrder = parsed.filter((k: string) => catalogSet.has(k));
+          if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
+            validOrder = ["record_number", ...validOrder];
+          }
           if (validOrder.length > 0) {
             setColumnFields(validOrder);
             return;
@@ -471,6 +477,9 @@ export default function LeadList() {
     columnsCatalog.find((c) => c.key === key);
 
   const getColumnValue = (lead: any, key: string) => {
+    if (key === "record_number") {
+      return lead.record_number ?? lead.id;
+    }
     if (key.startsWith("custom:")) {
       const rawKey = key.replace("custom:", "");
       const cf = lead?.customFields || lead?.custom_fields || {};
@@ -848,13 +857,65 @@ export default function LeadList() {
 
   return (
     <div className="bg-white rounded-lg shadow">
-      {/* Header - responsive: mobile = title+add row, then full-width Favorites, Columns */}
-      <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center">
-        <div className="flex justify-between items-center gap-4">
+      {/* Header - responsive: search/filters on top, then actions */}
+      <div className="p-4 border-b border-gray-200 space-y-3 md:space-y-0 md:flex md:justify-between md:items-center space-x-4 w-full">
+        {/* Row 1: Title + Search + Filter + Clear + Add (mobile) */}
+        <div className="w-full flex justify-between items-center gap-4">
           <h1 className="text-xl font-bold">Leads</h1>
+          <div className="flex-1">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1">
+                <input
+                  type="text"
+                  placeholder="Search leads..."
+                  className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+                <div className="absolute left-3 top-2.5 text-gray-400">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-5 w-5"
+                    viewBox="0 0 20 20"
+                    fill="currentColor"
+                  >
+                    <path
+                      fillRule="evenodd"
+                      d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
+                      clipRule="evenodd"
+                    />
+                  </svg>
+                </div>
+              </div>
+              <button
+                ref={advancedSearchButtonRef}
+                type="button"
+                onClick={() => setShowAdvancedSearch((v) => !v)}
+                className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${
+                  showAdvancedSearch || advancedSearchCriteria.length > 0
+                    ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
+                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                }`}
+              >
+                <IoFilterSharp /> Filter
+              </button>
+              {(searchTerm ||
+                Object.keys(columnFilters).length > 0 ||
+                Object.keys(columnSorts).length > 0 ||
+                advancedSearchCriteria.length > 0) && (
+                <button
+                  onClick={handleClearAllFilters}
+                  className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
+                >
+                  <FiX />
+                  Clear All
+                </button>
+              )}
+            </div>
+          </div>
           <button onClick={handleAddLead} className="md:hidden px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 flex items-center shrink-0">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" /></svg>
-            Add Lead
+            Add
           </button>
         </div>
 
@@ -972,7 +1033,7 @@ export default function LeadList() {
                 clipRule="evenodd"
               />
             </svg>
-            Add Lead
+            Add
           </button>
         </div>
 
@@ -1092,61 +1153,6 @@ export default function LeadList() {
         </div>
       )} */}
 
-      {/* Search and Filter */}
-      <div className="p-4 border-b border-gray-200">
-        <div className="flex flex-col md:flex-row gap-4">
-          <div className="relative flex-1">
-            <input
-              type="text"
-              placeholder="Search leads..."
-              className="w-full p-2 pl-10 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <div className="absolute left-3 top-2.5 text-gray-400">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z"
-                  clipRule="evenodd"
-                />
-              </svg>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              ref={advancedSearchButtonRef}
-              type="button"
-              onClick={() => setShowAdvancedSearch((v) => !v)}
-              className={`px-4 py-2.5 text-sm font-medium rounded border flex items-center gap-2 ${
-                showAdvancedSearch || advancedSearchCriteria.length > 0
-                  ? "bg-blue-50 border-blue-300 text-blue-700 ring-1 ring-blue-200"
-                  : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
-              }`}
-            >
-              <IoFilterSharp /> Filter
-            </button>
-            {(searchTerm ||
-              Object.keys(columnFilters).length > 0 ||
-              Object.keys(columnSorts).length > 0 ||
-              advancedSearchCriteria.length > 0) && (
-              <button
-                onClick={handleClearAllFilters}
-                className="px-4 py-2 text-sm text-red-600 bg-red-50 border border-red-200 rounded hover:bg-red-100 transition-colors flex items-center gap-2"
-              >
-                <FiX />
-                Clear All
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-
       {/* Advanced Search Panel */}
       <AdvancedSearchPanel
         open={showAdvancedSearch}
@@ -1186,10 +1192,7 @@ export default function LeadList() {
                     Actions
                   </th>
 
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    ID
-                  </th>
-                  {/* Draggable Dynamic headers */}
+                  {/* Draggable Dynamic headers (includes Record #) */}
                   <SortableContext
                     items={columnFields}
                     strategy={horizontalListSortingStrategy}
@@ -1294,8 +1297,15 @@ export default function LeadList() {
                   />
                 </td>
 
-                <td className="px-6 py-4 text-black whitespace-nowrap">L {lead?.record_number ?? lead?.id}</td>
+                {/* Dynamic columns (including Record #) */}
                 {columnFields.map((key) => {
+                    if (key === "record_number") {
+                      return (
+                        <td key={key} className="px-6 py-4 text-black whitespace-nowrap">
+                          L {getColumnValue(lead, key)}
+                        </td>
+                      );
+                    }
                     const colInfo = getColumnInfo(key);
                     const fieldInfo = colInfo
                       ? {

@@ -1412,7 +1412,7 @@ export default function TearsheetView() {
             return row[key] || "-";
           },
           (key) => {
-            if (key === "id") return "Record #";
+            if (key === "id") return "Record Number";
             if (key === "name") return "Name";
             return key;
           },
@@ -1436,7 +1436,7 @@ export default function TearsheetView() {
             return row[key] || "-";
           },
           (key) => {
-            if (key === "id") return "Record #";
+            if (key === "id") return "Record Number";
             if (key === "name") return "Name";
             if (key === "email") return "Email";
             if (key === "organization") return "Organization";
@@ -1461,7 +1461,7 @@ export default function TearsheetView() {
             return row[key] || "-";
           },
           (key) => {
-            if (key === "id") return "Record #";
+            if (key === "id") return "Record Number";
             if (key === "title") return "Title";
             if (key === "organization") return "Organization";
             return key;
@@ -1485,7 +1485,7 @@ export default function TearsheetView() {
             return row[key] || "-";
           },
           (key) => {
-            if (key === "id") return "Record #";
+            if (key === "id") return "Record Number";
             if (key === "name") return "Name";
             if (key === "email") return "Email";
             return key;
@@ -1509,7 +1509,7 @@ export default function TearsheetView() {
             return row[key] || "-";
           },
           (key) => {
-            if (key === "id") return "Record #";
+            if (key === "id") return "Record Number";
             if (key === "name") return "Name";
             if (key === "email") return "Email";
             return key;
@@ -1537,7 +1537,7 @@ export default function TearsheetView() {
             return row[key] || "-";
           },
           (key) => {
-            if (key === "id") return "Record #";
+            if (key === "id") return "Record Number";
             if (key === "name") return "Title";
             if (key === "status") return "Status";
             if (key === "priority") return "Priority";
@@ -1566,7 +1566,7 @@ export default function TearsheetView() {
             return row[key] || "-";
           },
           (key) => {
-            if (key === "id") return "Record #";
+            if (key === "id") return "Record Number";
             if (key === "job_seeker") return "Job Seeker";
             if (key === "job") return "Job";
             if (key === "status") return "Status";
