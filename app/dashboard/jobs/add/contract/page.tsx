@@ -465,6 +465,15 @@ export default function AddJob() {
     });
   }, [customFields]);
 
+  // Resolve the Organization custom field once (prefer label match, fallback to legacy Field_3)
+  const organizationField = useMemo(
+    () =>
+      customFields.find(
+        (f) => String(f.field_label || "").trim().toLowerCase() === "organization"
+      ) || customFields.find((f) => f.field_name === "Field_3"),
+    [customFields]
+  );
+
   const hiringManagerValue =
     (hiringManagerCustomField
       ? (customFieldValues[hiringManagerCustomField.field_name] as string)
@@ -499,20 +508,18 @@ export default function AddJob() {
     setJobStep(jobId || cloneFrom ? 3 : 2);
   }, [jobId, cloneFrom]);
 
+  // Always show the form on the Contract page once we're not in a loading state.
+  // The Hiring Manager + type selection flow happens on the main Add Job page,
+  // so this route should not gate the form on organization/hiring manager params.
   useEffect(() => {
     if (isEditMode) {
       setJobStep(3);
       return;
     }
-    // From job overview: no HM step; go straight to form when type is selected
-    if (jobType && !organizationIdFromUrl) {
-      setJobStep(3);
-      return;
-    }
-    if (hiringManagerValue && hiringManagerValue.trim() !== "") {
+    if (!jobId) {
       setJobStep(3);
     }
-  }, [hiringManagerValue, isEditMode, jobType, organizationIdFromUrl]);
+  }, [jobId, isEditMode]);
 
   // Fetch HMs for: (1) org HM-first step, (2) form inline dropdown / modal (add and edit mode)
   const needHiringManagerOptions =
@@ -735,13 +742,13 @@ export default function AddJob() {
     fetchOrganizations();
   }, []);
 
-  // Set Field_3 when organizations load if organizationIdFromUrl is present
-  // This is a backup in case organizations load before the API call in prefill effect completes
+  // Set Organization custom field when organizations load if organizationIdFromUrl is present.
+  // This is a backup in case organizations load before the API call in prefill effect completes.
   useEffect(() => {
     if (jobId) return; // don't override edit mode
     if (!organizationIdFromUrl) return;
     if (organizations.length === 0) return; // Wait for organizations to load
-    if (customFieldsLoading || customFields.length === 0) return; // Wait for custom fields
+    if (customFieldsLoading || !organizationField) return; // Wait for custom fields / org field
 
     // Find organization by ID
     const foundOrg = organizations.find(
@@ -749,21 +756,27 @@ export default function AddJob() {
     );
 
     if (foundOrg && foundOrg.name) {
-      const orgField = customFields.find((f) => f.field_name === "Field_3");
-      if (orgField) {
-        setCustomFieldValues((prev) => {
-          // Only set if not already set (don't override if already set by prefill effect or user)
-          if (prev[orgField.field_name]) return prev;
-          return {
-            ...prev,
-            Field_3: foundOrg.name,
-          };
-        });
-        setOrganizationName(foundOrg.name);
-        setCurrentOrganizationId(organizationIdFromUrl);
-      }
+      setCustomFieldValues((prev) => {
+        // Only set if not already set (don't override if already set by prefill effect or user)
+        if (prev[organizationField.field_name]) return prev;
+
+        const fieldType = String((organizationField as any).field_type || "").toLowerCase();
+        const lookupType = String((organizationField as any).lookup_type || "").toLowerCase();
+        // For lookup-to-organizations fields, store the ID; for plain selects, store the label so validation passes.
+        const storedValue =
+          fieldType === "lookup" || lookupType === "organizations"
+            ? organizationIdFromUrl
+            : foundOrg.name;
+
+        return {
+          ...prev,
+          [organizationField.field_name]: storedValue,
+        };
+      });
+      setOrganizationName(foundOrg.name);
+      setCurrentOrganizationId(organizationIdFromUrl);
     }
-  }, [organizations, organizationIdFromUrl, jobId, customFieldsLoading, customFields, setCustomFieldValues]);
+  }, [organizations, organizationIdFromUrl, jobId, customFieldsLoading, organizationField, setCustomFieldValues]);
 
   // Auto-populate Field_507 (Account Manager) with logged-in user's name
   // useEffect(() => {
@@ -809,12 +822,10 @@ export default function AddJob() {
   //   setCustomFieldValues,
   // ]);
 
-  // Sync currentOrganizationId with Organization field (Field_3) value when it changes
+  // Sync currentOrganizationId with Organization custom field value when it changes
   useEffect(() => {
-    if (customFieldsLoading || customFields.length === 0) return;
-    const organizationField = customFields.find((f) => f.field_name === "Field_3");
-    if (!organizationField) return;
-    const fieldValue = customFieldValues["Field_3"] || "";
+    if (customFieldsLoading || !organizationField) return;
+    const fieldValue = customFieldValues[organizationField.field_name] || "";
     if (!fieldValue) return;
     // Lookup stores org id; legacy select may store name or id
     const selectedOrg = organizations.find(
@@ -824,7 +835,13 @@ export default function AddJob() {
     if (newOrgId && newOrgId !== currentOrganizationId) {
       setCurrentOrganizationId(newOrgId);
     }
-  }, [customFieldValues["Field_3"], organizations, customFields, customFieldsLoading, currentOrganizationId]);
+  }, [
+    customFieldValues[organizationField?.field_name ?? ""],
+    organizations,
+    customFieldsLoading,
+    organizationField,
+    currentOrganizationId,
+  ]);
 
   // When selected organization changes (from URL or from form), fetch org and auto-fill address; address stays editable
   useEffect(() => {
@@ -904,7 +921,7 @@ export default function AddJob() {
     // Set currentOrganizationId immediately so hiring manager fetch works
     setCurrentOrganizationId(organizationIdFromUrl);
 
-    // Fetch organization name and set both formFields and custom field Field_3
+    // Fetch organization name and set both formFields and Organization custom field
     const fetchAndSetOrganization = async () => {
       try {
         const response = await fetch(`/api/organizations/${organizationIdFromUrl}`);
@@ -916,20 +933,23 @@ export default function AddJob() {
 
           // Address is prefilled by the "when selected organization changes" effect below
 
-          // Set Field_3 (Organization custom field) if it exists
-          // Use the organization name (which matches the dropdown option values)
-          if (customFields.length > 0 && orgName) {
-            const orgField = customFields.find((f) => f.field_name === "Field_3");
-            if (orgField) {
-              setCustomFieldValues((prev) => {
-                // Only set if not already set (don't override user input)
-                if (prev[orgField.field_name]) return prev;
-                return {
-                  ...prev,
-                  Field_3: orgName,
-                };
-              });
-            }
+          // Set Organization custom field if it exists.
+          // For lookup fields, store the ID; for plain selects, store the label.
+          if (organizationField) {
+            setCustomFieldValues((prev) => {
+              // Only set if not already set (don't override user input)
+              if (prev[organizationField.field_name]) return prev;
+              const fieldType = String((organizationField as any).field_type || "").toLowerCase();
+              const lookupType = String((organizationField as any).lookup_type || "").toLowerCase();
+              const storedValue =
+                fieldType === "lookup" || lookupType === "organizations"
+                  ? organizationIdFromUrl
+                  : orgName || organizationIdFromUrl;
+              return {
+                ...prev,
+                [organizationField.field_name]: storedValue,
+              };
+            });
           }
 
           // Also set the old formFields for backward compatibility
@@ -947,13 +967,18 @@ export default function AddJob() {
               (org) => org.id.toString() === organizationIdFromUrl
             );
             if (foundOrg && foundOrg.name) {
-              const orgField = customFields.find((f) => f.field_name === "Field_3");
-              if (orgField) {
+              if (organizationField) {
                 setCustomFieldValues((prev) => {
-                  if (prev[orgField.field_name]) return prev;
+                  if (prev[organizationField.field_name]) return prev;
+                  const fieldType = String((organizationField as any).field_type || "").toLowerCase();
+                  const lookupType = String((organizationField as any).lookup_type || "").toLowerCase();
+                  const storedValue =
+                    fieldType === "lookup" || lookupType === "organizations"
+                      ? organizationIdFromUrl
+                      : foundOrg.name;
                   return {
                     ...prev,
-                    Field_3: foundOrg.name,
+                    [organizationField.field_name]: storedValue,
                   };
                 });
               }
@@ -1526,13 +1551,11 @@ export default function AddJob() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    // Only require Hiring Manager when coming from org flow (organization or HM in URL)
-    const requireHiringManager = !isEditMode && requireHiringManagerFromUrl;
+    // Only require Hiring Manager when coming from org flow AND a Hiring Manager custom field exists.
+    // If there's no custom field, we still allow saving and just persist the ID from the URL.
+    const requireHiringManager =
+      !isEditMode && requireHiringManagerFromUrl && Boolean(hiringManagerCustomField);
     if (requireHiringManager) {
-      if (!hiringManagerCustomField) {
-        setError("Hiring Manager field is not configured in Field Management.");
-        return;
-      }
       if (!hiringManagerValue || String(hiringManagerValue).trim() === "") {
         setError("Hiring Manager is required.");
         return;
@@ -1574,6 +1597,17 @@ export default function AddJob() {
       const statusRaw = payload.status || "Open";
       payload.status = allowedStatus.includes(statusRaw) ? statusRaw : "Open";
       payload.organizationId = organizationIdFromUrl || currentOrganizationId || payload.organizationId || "";
+      // Always persist a hiring manager when we have one, even if there's no Hiring Manager custom field.
+      // Prefer the custom field value (when present), otherwise fall back to the URL param.
+      const hiringManagerFromCustom =
+        hiringManagerCustomField && customFieldsToSend[hiringManagerCustomField.field_label];
+      const hiringManagerFinal =
+        (hiringManagerFromCustom != null && String(hiringManagerFromCustom).trim() !== ""
+          ? hiringManagerFromCustom
+          : hiringManagerIdFromUrl) || "";
+      if (hiringManagerFinal) {
+        payload.hiringManager = String(hiringManagerFinal).trim();
+      }
       payload.jobType = jobType;
       payload.custom_fields = customFieldsForDB;
 
