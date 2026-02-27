@@ -332,31 +332,6 @@ function getDetailsStorageKey(job: any): string {
 
 const JOB_VIEW_TAB_IDS = ["summary", "applied", "modify", "history", "notes", "docs"];
 
-// TEMP: Static applications list to simulate XML feed until feed is built
-const STATIC_XML_APPLICATIONS = [
-  {
-    id: 1,
-    candidateName: "ONIKA BOYKE",
-    dateApplied: "2025-09-06T11:28:00Z",
-    status: "Submitted",
-    addedBy: "XML Feed",
-  },
-  {
-    id: 2,
-    candidateName: "Shahara West",
-    dateApplied: "2025-09-15T15:21:00Z",
-    status: "Submitted",
-    addedBy: "XML Feed",
-  },
-  {
-    id: 3,
-    candidateName: "Ajarnie Neil",
-    dateApplied: "2025-09-09T16:52:00Z",
-    status: "Placed",
-    addedBy: "XML Feed",
-  },
-];
-
 export default function JobView() {
   const router = useRouter();
   const searchParams = useSearchParams() ?? new URLSearchParams();
@@ -677,10 +652,8 @@ export default function JobView() {
           ).length;
         }
 
-        // Applied count will ultimately come from XML feed.
-        // For now, override with static XML applications to make UI deterministic.
         setQuickTabCounts({
-          applied: STATIC_XML_APPLICATIONS.length,
+          applied,
           clientSubmissions,
           interviews,
           placements,
@@ -3607,8 +3580,7 @@ export default function JobView() {
 
     setIsLoadingSubmittedCandidates(true);
     try {
-      // Try to fetch applications/submissions for this job
-      // If API doesn't exist, we'll need to create it or use a different approach
+      // Prefer dedicated applications endpoint for this job
       const response = await fetch(`/api/jobs/${jobId}/applications`, {
         headers: {
           Authorization: `Bearer ${document.cookie.replace(
@@ -3620,28 +3592,41 @@ export default function JobView() {
 
       if (response.ok) {
         const data = await response.json();
-        // Assuming the API returns applications with job_seeker_id or job_seeker data
         const candidates =
           data.applications
-            ?.map((app: any) => ({
-              id: app.job_seeker_id || app.job_seeker?.id,
-              name:
-                app.job_seeker?.full_name ||
-                app.job_seeker?.name ||
-                `${app.job_seeker?.first_name || ""} ${app.job_seeker?.last_name || ""
-                  }`.trim(),
-              email: app.job_seeker?.email,
-              ...app.job_seeker,
-            }))
-            .filter((c: any) => c.id) || [];
+            ?.map((app: any) => {
+              const js = app.job_seeker || app.jobSeeker || {};
+              const id = app.job_seeker_id || js.id;
+              if (!id) return null;
+              const name =
+                js.full_name ||
+                js.name ||
+                `${js.first_name || ""} ${js.last_name || ""}`.trim() ||
+                `Job Seeker #${id}`;
+              return {
+                id,
+                name,
+                email: js.email,
+                appliedAt: app.created_at ?? app.createdAt ?? null,
+                status: app.status ?? app.type ?? "Submitted",
+                addedBy:
+                  app.created_by_name ??
+                  app.submitted_by_name ??
+                  app.submittedBy ??
+                  null,
+                rawApplication: app,
+                rawJobSeeker: js,
+              };
+            })
+            .filter(Boolean) || [];
 
-        setSubmittedCandidates(candidates);
-        setFilteredCandidates(candidates);
+        setSubmittedCandidates(candidates as any[]);
+        setFilteredCandidates(candidates as any[]);
       } else {
-        // If API doesn't exist, fallback to fetching all job seekers
-        // In production, this should be replaced with actual submissions API
+        // If API doesn't exist, fallback to fetching job seekers and
+        // using custom_fields.applications to infer submissions.
         console.warn(
-          "Applications API not found, fetching all job seekers as fallback"
+          "Applications API not found, falling back to job_seeker custom_fields"
         );
         const fallbackResponse = await fetch("/api/job-seekers", {
           headers: {
@@ -3653,30 +3638,65 @@ export default function JobView() {
         });
         if (fallbackResponse.ok) {
           const fallbackData = await fallbackResponse.json();
-          const allCandidates = (fallbackData.jobSeekers || []).map(
-            (js: any) => ({
+          const allJobSeekers: any[] = fallbackData.jobSeekers || [];
+          const candidates: any[] = [];
+
+          allJobSeekers.forEach((js: any) => {
+            let customFields: any =
+              js.custom_fields ?? js.customFields ?? js.job_seeker_custom_fields;
+            if (typeof customFields === "string") {
+              try {
+                customFields = JSON.parse(customFields || "{}");
+              } catch {
+                customFields = {};
+              }
+            }
+            const apps = Array.isArray(customFields?.applications)
+              ? customFields.applications
+              : [];
+
+            const hasThisJob = apps.some((app: any) => {
+              if (!app) return false;
+              const jid = app.job_id ?? app.jobId;
+              return jid != null && String(jid) === String(jobId);
+            });
+
+            if (!hasThisJob) return;
+
+            candidates.push({
               id: js.id,
               name:
                 js.full_name ||
                 `${js.first_name || ""} ${js.last_name || ""}`.trim() ||
                 `Job Seeker #${js.id}`,
               email: js.email,
-              ...js,
-            })
-          );
-          setSubmittedCandidates(allCandidates);
-          setFilteredCandidates(allCandidates);
+              appliedAt: null,
+              status: "Submitted",
+              addedBy: null,
+              rawApplication: null,
+              rawJobSeeker: js,
+            });
+          });
+
+          setSubmittedCandidates(candidates);
+          setFilteredCandidates(candidates);
         }
       }
     } catch (err) {
       console.error("Error fetching submitted candidates:", err);
-      // Fallback to empty array
       setSubmittedCandidates([]);
       setFilteredCandidates([]);
     } finally {
       setIsLoadingSubmittedCandidates(false);
     }
   };
+
+  // Load submitted candidates once jobId is known so "Applied" reflects live submissions
+  useEffect(() => {
+    if (jobId) {
+      fetchSubmittedCandidates();
+    }
+  }, [jobId]);
 
   // Filter candidates based on search query
   useEffect(() => {
@@ -4457,27 +4477,37 @@ export default function JobView() {
     </div>
   );
 
-  // Applied tab content – currently backed by static XML-style applications
+  // Applied tab content – static XML-style applications + live submissions
   const renderAppliedTab = () => {
+    const totalApplied = submittedCandidates.length;
+
     return (
       <div className="bg-white p-4 rounded shadow-sm border border-gray-200">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-baseline gap-2">
             <h2 className="text-lg font-semibold text-gray-800">Applied</h2>
             <span className="text-sm text-gray-500">
-              ({STATIC_XML_APPLICATIONS.length})
+              ({totalApplied})
             </span>
           </div>
           <span className="text-xs text-gray-500">
             Last Activity{" "}
-            {STATIC_XML_APPLICATIONS.length > 0
-              ? new Date(
-                  STATIC_XML_APPLICATIONS.reduce((latest, app) => {
-                    const t = new Date(app.dateApplied).getTime();
-                    return t > latest ? t : latest;
-                  }, 0)
-                ).toLocaleDateString()
-              : "—"}
+            {(() => {
+              const submissionsLatest =
+                submittedCandidates.length > 0
+                  ? submittedCandidates.reduce((latest, c: any) => {
+                      const ts = c.appliedAt
+                        ? new Date(c.appliedAt).getTime()
+                        : 0;
+                      return ts > latest ? ts : latest;
+                    }, 0)
+                  : 0;
+
+              const latest = submissionsLatest;
+              return latest
+                ? new Date(latest).toLocaleDateString()
+                : "—";
+            })()}
           </span>
         </div>
 
@@ -4496,35 +4526,46 @@ export default function JobView() {
               </tr>
             </thead>
             <tbody>
-              {STATIC_XML_APPLICATIONS.map((app) => {
-                const appliedDate = new Date(app.dateApplied);
-                const formattedDate = `${appliedDate.toLocaleDateString()} ${appliedDate.toLocaleTimeString(
-                  [],
-                  { hour: "2-digit", minute: "2-digit" }
-                )}`;
+              {/* Live submissions from job_seeker_applications table */}
+              {submittedCandidates.map((c: any) => {
+                const appliedDate = c.appliedAt
+                  ? new Date(c.appliedAt)
+                  : null;
+                const formattedDate = appliedDate
+                  ? `${appliedDate.toLocaleDateString()} ${appliedDate.toLocaleTimeString(
+                      [],
+                      { hour: "2-digit", minute: "2-digit" }
+                    )}`
+                  : "—";
                 return (
                   <tr
-                    key={app.id}
+                    key={`live-${c.id}-${c.appliedAt ?? ""}`}
                     className="border-t border-gray-200 hover:bg-gray-50"
                   >
                     <td className="px-3 py-2">
                       <input type="checkbox" className="w-4 h-4" />
                     </td>
                     <td className="px-3 py-2 text-blue-600 font-medium cursor-pointer">
-                      {app.candidateName}
+                      {c.name}
                     </td>
-                    <td className="px-3 py-2 text-gray-700">{formattedDate}</td>
-                    <td className="px-3 py-2 text-gray-700">{formattedDate}</td>
+                    <td className="px-3 py-2 text-gray-700">
+                      {formattedDate}
+                    </td>
+                    <td className="px-3 py-2 text-gray-700">
+                      {formattedDate}
+                    </td>
                     <td className="px-3 py-2">
                       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">
-                        {app.status}
+                        {c.status || "Submitted"}
                       </span>
                     </td>
-                    <td className="px-3 py-2 text-gray-700">{app.addedBy}</td>
+                    <td className="px-3 py-2 text-gray-700">
+                      {c.addedBy || "Recruiter"}
+                    </td>
                   </tr>
                 );
               })}
-              {STATIC_XML_APPLICATIONS.length === 0 && (
+              {submittedCandidates.length === 0 && (
                 <tr>
                   <td
                     colSpan={6}
@@ -5217,21 +5258,33 @@ export default function JobView() {
       {/* Quick Action Buttons */}
       <div className="flex bg-gray-300 p-2 space-x-2">
         <div className="flex-1 space-x-2">
-          {quickTabs.map((action) => (
-            <button
-              key={action.id}
-              className={`${activeQuickTab === action.id
-                ? "bg-white text-blue-600 font-medium"
-                : "bg-white text-gray-700 hover:bg-gray-100"
+          {quickTabs.map((action) => {
+            const count =
+              action.id === "applied"
+                ? submittedCandidates.length
+                : quickTabCounts[action.countKey] ?? 0;
+
+            return (
+              <button
+                key={action.id}
+                className={`${
+                  activeQuickTab === action.id
+                    ? "bg-white text-blue-600 font-medium"
+                    : "bg-white text-gray-700 hover:bg-gray-100"
                 } px-4 py-1 rounded-full shadow`}
-              onClick={() => action.id === "applied" ? setActiveTab("applied") : setActiveQuickTab(action.id)}
-            >
-              <span className="flex items-center gap-2">
-                <span>{action.label}</span>
-                <span className="text-xs text-gray-600">({quickTabCounts[action.countKey] ?? 0})</span>
-              </span>
-            </button>
-          ))}
+                onClick={() =>
+                  action.id === "applied"
+                    ? setActiveTab("applied")
+                    : setActiveQuickTab(action.id)
+                }
+              >
+                <span className="flex items-center gap-2">
+                  <span>{action.label}</span>
+                  <span className="text-xs text-gray-600">({count})</span>
+                </span>
+              </button>
+            );
+          })}
         </div>
 
         {/* {activeTab === "summary" && (
