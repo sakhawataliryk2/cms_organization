@@ -33,12 +33,12 @@ interface CandidateColumn {
 }
 
 const PLACEHOLDER_COLUMNS: Omit<CandidateColumn, 'candidates' | 'count'>[] = [
-  { id: 'submitted', title: 'Candidates Submitted', color: 'bg-slate-100', accent: 'border-slate-400' },
+  { id: 'submitted', title: 'Job Seekers Submitted', color: 'bg-slate-100', accent: 'border-slate-400' },
   { id: 'client-submitted', title: 'Client Submitted', color: 'bg-emerald-50', accent: 'border-emerald-400' },
-  { id: 'interviews', title: 'Candidates with Interviews', color: 'bg-amber-50', accent: 'border-amber-400' },
-  { id: 'offer', title: 'Candidates with Offer', color: 'bg-teal-50', accent: 'border-teal-400' },
-  { id: 'starting', title: 'Candidates Starting', color: 'bg-sky-50', accent: 'border-sky-400' },
-  { id: 'assignment', title: 'Candidates on Assignment', color: 'bg-violet-50', accent: 'border-violet-400' },
+  { id: 'interviews', title: 'Job Seekers with Interviews', color: 'bg-amber-50', accent: 'border-amber-400' },
+  { id: 'offer', title: 'Job Seekers with Offer', color: 'bg-teal-50', accent: 'border-teal-400' },
+  { id: 'starting', title: 'Job Seekers Starting', color: 'bg-sky-50', accent: 'border-sky-400' },
+  { id: 'assignment', title: 'Job Seekers on Assignment', color: 'bg-violet-50', accent: 'border-violet-400' },
 ];
 
 export default function CandidateFlowDashboard() {
@@ -167,7 +167,7 @@ export default function CandidateFlowDashboard() {
   useEffect(() => {
     const prescreenedColumn: CandidateColumn = {
       id: 'prescreened',
-      title: 'Candidates PreScreened',
+      title: 'Job Seekers PreScreened',
       color: 'bg-green-50',
       accent: 'border-green-500',
       count: prescreenedStage.length,
@@ -177,7 +177,7 @@ export default function CandidateFlowDashboard() {
 
     const submittedColumn: CandidateColumn = {
       id: 'submitted',
-      title: 'Candidates Submitted',
+      title: 'Job Seekers Submitted',
       color: 'bg-slate-50',
       accent: 'border-slate-500',
       count: submittedStage.length,
@@ -231,7 +231,7 @@ export default function CandidateFlowDashboard() {
         </div>
         <div className="mt-2 flex items-center justify-between text-green-600 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
           <span className="rounded-full px-2 py-0.5 bg-green-50 border border-green-200 text-[11px]">
-            Drag to "Candidates Submitted" to submit
+            Drag to "Job Seekers Submitted" to submit
           </span>
           <span className="flex items-center">
             <FiEye className="mr-1" size={14} />
@@ -282,7 +282,7 @@ export default function CandidateFlowDashboard() {
 
       <div className="grow overflow-auto">
         <div className="px-4 pt-4 pb-2">
-          <h1 className="text-2xl font-bold text-slate-800">Candidate Flow</h1>
+          <h1 className="text-2xl font-bold text-slate-800">Job Seeker Flow</h1>
           <p className="text-slate-600 text-sm mt-0.5">Pipeline by stage — PreScreened shows your last 30 days.</p>
         </div>
         <div className="flex overflow-x-auto gap-4 p-4 pb-8 min-h-[420px]">
