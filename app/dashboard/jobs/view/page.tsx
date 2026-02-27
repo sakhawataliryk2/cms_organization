@@ -3556,7 +3556,7 @@ export default function JobView() {
             name:
               js.full_name ||
               `${(js.first_name || "").trim()} ${(js.last_name || "").trim()}`.trim() ||
-              `Job Seeker #${js.id}`,
+              `Job Seeker #${js?.record_number || js.id}`,
             email: js.email,
             ...js,
           }));
@@ -4546,7 +4546,8 @@ export default function JobView() {
                       <input type="checkbox" className="w-4 h-4" />
                     </td>
                     <td className="px-3 py-2 text-blue-600 font-medium cursor-pointer">
-                      {c.name}
+                      <RecordNameResolver id={c.id} type="jobSeeker" fallback={`Job Seeker #${c?.record_number || c.id}`} clickable={true} />
+                      {/* {c.id} */}
                     </td>
                     <td className="px-3 py-2 text-gray-700">
                       {formattedDate}
