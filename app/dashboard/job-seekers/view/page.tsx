@@ -2918,11 +2918,12 @@ Best regards`;
       console.log("Formatted job seeker data:", formattedJobSeeker);
       setJobSeeker(formattedJobSeeker);
 
-      // Now fetch notes, history, documents, and tasks
+      // Now fetch notes, history, documents, tasks and applications
       fetchNotes(id);
       fetchHistory(id);
       fetchDocuments(id);
       fetchTasks(id);
+      fetchApplications(id);
     } catch (err) {
       console.error("Error fetching job seeker:", err);
       setError(
@@ -3978,9 +3979,14 @@ Best regards`;
 
   const getQuickTabCount = (tabId: string): number => {
     const cf = jobSeeker?.customFields || {};
+
     if (tabId === "prescreen") {
       const fromNotes = notes.filter((n) => {
-        const actionOrType = String((n as any).action ?? (n as any).note_type ?? "").trim().toLowerCase();
+        const actionOrType = String(
+          (n as any).action ?? (n as any).note_type ?? ""
+        )
+          .trim()
+          .toLowerCase();
         return /pre\s*screen|prescreen/.test(actionOrType);
       }).length;
       if (fromNotes > 0) return fromNotes;
@@ -3988,11 +3994,25 @@ Best regards`;
         cf.prescreen ?? cf.prescreens ?? cf.preScreen ?? cf.preScreens
       );
     }
+
     if (tabId === "submissions") {
+      // Prefer live submissions from Applications table when available.
+      // Treat both internal submissions and client submissions as "Submissions"
+      // for the Job Seeker quick tab.
+      const fromApplications = applications.filter((a) => {
+        const t = String(a?.type || "").toLowerCase();
+        return (
+          t === "submissions" ||
+          t === "web_submissions" ||
+          t === "client_submissions"
+        );
+      }).length;
+      if (fromApplications > 0) return fromApplications;
       return getCustomFieldRecordCount(
         cf.submissions ?? cf.submission ?? cf.candidateSubmissions
       );
     }
+
     if (tabId === "sendouts") {
       return getCustomFieldRecordCount(
         cf.sendouts ?? cf.sendOuts ?? cf.sendout ?? cf.sendOut
@@ -4915,19 +4935,114 @@ Best regards`;
 
       {/* Quick Action Buttons - wrap on small screens */}
       <div className="flex bg-gray-300 p-2 flex-wrap gap-2">
-        {quickTabs.map((action) => (
-          <button
-            key={action.id}
-            className={`${activeQuickTab === action.id
-              ? "bg-white text-blue-600 font-medium"
-              : "bg-white text-gray-700 hover:bg-gray-100"
-              } px-3 sm:px-4 py-1 rounded-full shadow text-sm sm:text-base`}
-            onClick={() => setActiveQuickTab(action.id)}
-          >
-            {action.label} ({action.count})
-          </button>
-        ))}
+        {quickTabs.map((action) => {
+          const isActive = activeQuickTab === action.id;
+          const hasCount = action.count > 0;
+          const isSubmissions = action.id === "submissions";
+
+          let variantClasses = "";
+          if (isSubmissions && hasCount) {
+            variantClasses = isActive
+              ? "bg-green-600 text-white font-semibold border border-green-700"
+              : "bg-green-100 text-green-800 border border-green-400 font-medium";
+          } else if (isActive) {
+            variantClasses = "bg-white text-blue-600 font-medium";
+          } else {
+            variantClasses = "bg-white text-gray-700 hover:bg-gray-100";
+          }
+
+          return (
+            <button
+              key={action.id}
+              className={`${variantClasses} px-3 sm:px-4 py-1 rounded-full shadow text-sm sm:text-base`}
+              onClick={() => setActiveQuickTab(action.id)}
+            >
+              {action.label} ({action.count})
+            </button>
+          );
+        })}
       </div>
+
+      {/* Quick tab details – show submissions list when Submissions is selected */}
+      {activeQuickTab === "submissions" && getQuickTabCount("submissions") > 0 && (
+        <div className="bg-white border border-green-200 mx-2 sm:mx-4 mt-2 p-3 rounded shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-sm font-semibold text-green-800">
+              Submissions ({getQuickTabCount("submissions")})
+            </h3>
+            <button
+              type="button"
+              className="text-xs text-blue-600 hover:underline"
+              onClick={() => setActiveTab("applications")}
+            >
+              View in Applications tab
+            </button>
+          </div>
+          <div className="max-h-64 overflow-y-auto space-y-2 text-sm">
+            {applications
+              .filter((a) => {
+                const t = String(a?.type || "").toLowerCase();
+                return (
+                  t === "submissions" ||
+                  t === "web_submissions" ||
+                  t === "client_submissions"
+                );
+              })
+              .sort(
+                (a, b) =>
+                  new Date(b?.created_at || 0).getTime() -
+                  new Date(a?.created_at || 0).getTime()
+              )
+              .map((app) => (
+                <div
+                  key={app.id ?? `${app.job_id}-${app.organization_id}-${app.created_at}`}
+                  className="flex justify-between items-start border-b border-gray-100 last:border-b-0 pb-2"
+                >
+                  <div className="mr-3">
+                    <div className="font-medium text-gray-900">
+                      {app.job_id ? (
+                        <RecordNameResolver
+                          id={app.job_id}
+                          type="job"
+                          clickable
+                          fallback={app.job_title || `Job #${app.job_id}`}
+                        />
+                      ) : (
+                        app.job_title || "Unknown Job"
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-600">
+                      {app.organization_id ? (
+                        <RecordNameResolver
+                          id={app.organization_id}
+                          type="organization"
+                          clickable
+                          fallback={
+                            app.organization_name ||
+                            app.client_name ||
+                            `Org #${app.organization_id}`
+                          }
+                        />
+                      ) : (
+                        app.organization_name || app.client_name || "—"
+                      )}
+                    </div>
+                  </div>
+                  <div className="text-right text-xs text-gray-500">
+                    <div className="mb-0.5">
+                      {app.status || "Submitted"}
+                    </div>
+                    <div>
+                      {app.created_at
+                        ? new Date(app.created_at).toLocaleDateString()
+                        : ""}
+                    </div>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <div className="p-2 sm:p-4 min-w-0">
