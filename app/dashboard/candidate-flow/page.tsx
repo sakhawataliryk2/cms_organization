@@ -6,6 +6,8 @@ import { useState, useEffect } from 'react';
 import { useAuth } from '@/lib/auth';
 import { FiEye, FiX, FiChevronLeft, FiChevronRight, FiUser } from 'react-icons/fi';
 import { useRouter } from 'next/navigation';
+import SubmissionFormModal from '@/components/SubmissionFormModal';
+import { formatRecordId } from '@/lib/recordIdFormatter';
 
 interface PrescreenedCandidate {
   id: number;
@@ -45,7 +47,13 @@ export default function CandidateFlowDashboard() {
   const [prescreenedTotal, setPrescreenedTotal] = useState(0);
   const [prescreenedList, setPrescreenedList] = useState<PrescreenedCandidate[]>([]);
   const [loading, setLoading] = useState(true);
+  const [stageLoading, setStageLoading] = useState(false);
   const [columns, setColumns] = useState<CandidateColumn[]>([]);
+  const [prescreenedStage, setPrescreenedStage] = useState<PrescreenedCandidate[]>([]);
+  const [submittedStage, setSubmittedStage] = useState<Candidate[]>([]);
+  const [draggedCandidate, setDraggedCandidate] = useState<PrescreenedCandidate | null>(null);
+  const [modalCandidate, setModalCandidate] = useState<PrescreenedCandidate | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -69,24 +77,122 @@ export default function CandidateFlowDashboard() {
     }
     fetchStats();
     return () => { mounted = false; };
-  }, []);
+  }, [reloadKey]);
 
+  // Classify prescreened candidates into "still prescreened" vs "submitted"
+  useEffect(() => {
+    let cancelled = false;
+
+    async function classifyStages() {
+      if (prescreenedList.length === 0) {
+        if (!cancelled) {
+          setPrescreenedStage([]);
+          setSubmittedStage([]);
+        }
+        return;
+      }
+
+      setStageLoading(true);
+      try {
+        const results = await Promise.all(
+          prescreenedList.map(async (c) => {
+            try {
+              const res = await fetch(`/api/job-seekers/${c.id}/applications`, {
+                credentials: 'include',
+              });
+              if (!res.ok) {
+                return { applications: [] as any[] };
+              }
+              const data = await res.json();
+              return { applications: Array.isArray(data.applications) ? data.applications : [] };
+            } catch {
+              return { applications: [] as any[] };
+            }
+          })
+        );
+
+        if (cancelled) return;
+
+        const nextPrescreened: PrescreenedCandidate[] = [];
+        const nextSubmitted: Candidate[] = [];
+
+        prescreenedList.forEach((c, idx) => {
+          const apps = results[idx]?.applications || [];
+          const submissionApps = apps.filter((a: any) => {
+            const t = String(a?.type || '').toLowerCase();
+            return (
+              t === 'submissions' ||
+              t === 'web_submissions' ||
+              t === 'client_submissions'
+            );
+          });
+
+          if (submissionApps.length === 0) {
+            nextPrescreened.push(c);
+          } else {
+            submissionApps.sort(
+              (a: any, b: any) =>
+                new Date(b?.created_at || 0).getTime() -
+                new Date(a?.created_at || 0).getTime()
+            );
+            const latest = submissionApps[0];
+            const jobIdLabel =
+              latest?.job_id != null
+                ? formatRecordId(latest.job_id, 'job')
+                : latest?.job_title || '';
+
+            nextSubmitted.push({
+              id: c.id,
+              name: c.name,
+              jobId: jobIdLabel,
+            });
+          }
+        });
+
+        setPrescreenedStage(nextPrescreened);
+        setSubmittedStage(nextSubmitted);
+      } finally {
+        if (!cancelled) setStageLoading(false);
+      }
+    }
+
+    classifyStages();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [prescreenedList]);
+
+  // Build columns from stage data
   useEffect(() => {
     const prescreenedColumn: CandidateColumn = {
       id: 'prescreened',
       title: 'Candidates PreScreened',
       color: 'bg-green-50',
       accent: 'border-green-500',
-      count: prescreenedTotal,
-      candidates: prescreenedList,
+      count: prescreenedStage.length,
+      candidates: prescreenedStage,
       isPrescreenedColumn: true,
     };
-    const others: CandidateColumn[] = PLACEHOLDER_COLUMNS.map((col) => ({
+
+    const submittedColumn: CandidateColumn = {
+      id: 'submitted',
+      title: 'Candidates Submitted',
+      color: 'bg-slate-50',
+      accent: 'border-slate-500',
+      count: submittedStage.length,
+      candidates: submittedStage,
+    };
+
+    const others: CandidateColumn[] = PLACEHOLDER_COLUMNS.filter(
+      (col) => col.id !== 'submitted'
+    ).map((col) => ({
       ...col,
-      candidates: [], // Empty for now; other stages can be wired later
+      candidates: [],
     }));
-    setColumns([prescreenedColumn, ...others]);
-  }, [prescreenedTotal, prescreenedList]);
+
+    setColumns([prescreenedColumn, submittedColumn, ...others]);
+  }, [prescreenedStage, submittedStage]);
 
   const handlePrevious = () => router.push('/dashboard');
   const handleNext = () => router.push('/dashboard/sales-dashboard');
@@ -96,39 +202,73 @@ export default function CandidateFlowDashboard() {
     router.push(`/dashboard/job-seekers/view?id=${id}`);
   };
 
-  const renderPrescreenedCard = (c: PrescreenedCandidate) => (
-    <button
-      type="button"
-      key={c.id}
-      onClick={() => handleViewCandidate(c.id)}
-      className="w-full text-left rounded-xl p-4 mb-3 bg-white border border-green-200 shadow-sm hover:shadow-md hover:border-green-400 transition-all group"
-    >
-      <div className="flex items-center gap-2 text-gray-800 font-medium">
-        <FiUser className="text-green-600 shrink-0" size={16} />
-        <span className="truncate">{c.name || `Record #${c.record_number ?? c.id}`}</span>
-      </div>
-      <div className="text-gray-500 text-sm mt-0.5">
-        Record #{c.record_number ?? c.id}
-      </div>
-      <div className="mt-2 flex items-center justify-end text-green-600 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-        <FiEye className="mr-1" size={14} />
-        View
-      </div>
-    </button>
-  );
+  const openSubmissionModalFor = (c: PrescreenedCandidate) => {
+    setModalCandidate(c);
+  };
 
-  const renderPlaceholderCard = (candidate: Candidate, color: string) => (
+  const closeSubmissionModal = () => {
+    setModalCandidate(null);
+  };
+
+  const renderPrescreenedCard = (c: PrescreenedCandidate) => {
+    return (
+      <button
+        type="button"
+        key={c.id}
+        draggable
+        onDragStart={() => setDraggedCandidate(c)}
+        onClick={() => handleViewCandidate(c.id)}
+        className="w-full text-left rounded-xl p-4 mb-3 bg-white border border-green-200 shadow-sm hover:shadow-md hover:border-green-400 transition-all group cursor-move"
+      >
+        <div className="flex items-center gap-2 text-gray-800 font-medium">
+          <FiUser className="text-green-600 shrink-0" size={16} />
+          <span className="truncate">
+            {c.name || `Record #${c.record_number ?? c.id}`}
+          </span>
+        </div>
+        <div className="text-gray-500 text-sm mt-0.5">
+          Record #{c.record_number ?? c.id}
+        </div>
+        <div className="mt-2 flex items-center justify-between text-green-600 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
+          <span className="rounded-full px-2 py-0.5 bg-green-50 border border-green-200 text-[11px]">
+            Drag to "Candidates Submitted" to submit
+          </span>
+          <span className="flex items-center">
+            <FiEye className="mr-1" size={14} />
+            View
+          </span>
+        </div>
+      </button>
+    );
+  };
+
+  const renderSubmittedCard = (candidate: Candidate) => (
     <div
       key={candidate.id}
-      className={`${color} rounded-xl p-4 mb-3 border border-white/50 shadow-sm flex flex-col items-center transition-all`}
+      className="w-full rounded-xl p-4 mb-3 bg-white border border-slate-200 shadow-sm flex flex-col justify-between"
     >
-      <div className="text-gray-700 font-medium">{candidate.name}</div>
-      <div className="text-gray-600 text-sm">{candidate.jobId}</div>
-      <div className="mt-1 text-gray-500">
-        <FiEye size={18} />
+      <div>
+        <div className="text-slate-800 font-medium truncate">{candidate.name}</div>
+        {candidate.jobId && (
+          <div className="text-slate-500 text-xs mt-0.5 truncate">
+            {candidate.jobId}
+          </div>
+        )}
+      </div>
+      <div className="mt-2 flex items-center justify-end text-teal-600 text-xs font-medium gap-1">
+        <FiEye size={14} />
+        <button
+          type="button"
+          onClick={() => handleViewCandidate(candidate.id)}
+          className="hover:underline"
+        >
+          View record
+        </button>
       </div>
     </div>
   );
+
+  const anyLoading = loading || stageLoading;
 
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -149,7 +289,7 @@ export default function CandidateFlowDashboard() {
           {columns.map((column) => (
             <div
               key={column.id}
-              className="shrink-0 w-[280px] flex flex-col rounded-2xl bg-white/80 backdrop-blur shadow-lg border border-slate-200/80 overflow-hidden"
+              className="shrink-0 w-[300px] max-w-[300px] flex flex-col rounded-2xl bg-white/80 backdrop-blur-sm shadow-md border border-slate-200 overflow-hidden"
             >
               <div className={`px-4 py-3 border-b-2 ${column.accent} bg-white`}>
                 <div className="flex items-center justify-between gap-2">
@@ -158,22 +298,43 @@ export default function CandidateFlowDashboard() {
                   </h2>
                   {column.count !== undefined && (
                     <span className="shrink-0 min-w-[28px] h-7 px-2 rounded-full bg-green-100 text-green-800 text-xs font-bold flex items-center justify-center">
-                      {loading ? '…' : column.count}
+                      {anyLoading ? '…' : column.count}
                     </span>
                   )}
                 </div>
               </div>
-              <div className="flex-1 p-3 overflow-y-auto">
+              <div
+                className="flex-1 p-3 overflow-y-auto min-h-[360px]"
+                onDragOver={(e) => {
+                  if (column.id === 'submitted' && draggedCandidate) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                  }
+                }}
+                onDrop={(e) => {
+                  if (column.id === 'submitted' && draggedCandidate) {
+                    e.preventDefault();
+                    openSubmissionModalFor(draggedCandidate);
+                    setDraggedCandidate(null);
+                  }
+                }}
+              >
                 {column.isPrescreenedColumn ? (
-                  (column.candidates as PrescreenedCandidate[]).length === 0 && !loading ? (
+                  (column.candidates as PrescreenedCandidate[]).length === 0 && !anyLoading ? (
                     <p className="text-slate-500 text-sm py-4 text-center">No candidates prescreened by you in the last 30 days.</p>
                   ) : (
                     (column.candidates as PrescreenedCandidate[]).map(renderPrescreenedCard)
                   )
+                ) : column.id === 'submitted' ? (
+                  (column.candidates as Candidate[]).length === 0 && !anyLoading ? (
+                    <p className="text-slate-400 text-sm py-4 text-center">No candidates submitted yet.</p>
+                  ) : (
+                    (column.candidates as Candidate[]).map(renderSubmittedCard)
+                  )
                 ) : (column.candidates as Candidate[]).length === 0 ? (
                   <p className="text-slate-400 text-sm py-4 text-center">No records yet.</p>
                 ) : (
-                  (column.candidates as Candidate[]).map((c) => renderPlaceholderCard(c, column.color))
+                  null
                 )}
               </div>
             </div>
@@ -203,6 +364,28 @@ export default function CandidateFlowDashboard() {
           </button>
         </div>
       </div>
+
+      {modalCandidate && (
+        <SubmissionFormModal
+          open={Boolean(modalCandidate)}
+          onClose={closeSubmissionModal}
+          jobSeekerId={String(modalCandidate.id)}
+          jobSeekerName={modalCandidate.name}
+          jobSeekerRecordId={
+            modalCandidate.record_number != null
+              ? formatRecordId(modalCandidate.record_number, 'jobSeeker')
+              : undefined
+          }
+          documents={[]}
+          currentUserName={user?.name || ''}
+          currentUserEmail={user?.email || ''}
+          hasPrescreenNote={true}
+          onSuccess={() => {
+            closeSubmissionModal();
+            setReloadKey((k) => k + 1);
+          }}
+        />
+      )}
     </div>
   );
 }
