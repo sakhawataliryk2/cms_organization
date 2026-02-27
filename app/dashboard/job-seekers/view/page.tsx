@@ -4040,6 +4040,11 @@ Best regards`;
     { id: "placements", label: "Placements", count: getQuickTabCount("placements") },
   ];
 
+  // For prescreen stage highlighting we need to know
+  // whether there are any submissions yet.
+  const submissionsQuickTabCount =
+    quickTabs.find((t) => t.id === "submissions")?.count ?? 0;
+
   // Render notes tab content
   const renderNotesTab = () => {
     // Filter and sort notes
@@ -4940,6 +4945,40 @@ Best regards`;
           const hasCount = action.count > 0;
           const isSubmissions = action.id === "submissions";
 
+          // Special styling for Prescreen stage:
+          // - Green (stage) when there is at least one prescreen note
+          //   AND there are no submissions yet.
+          if (action.id === "prescreen") {
+            const hasPrescreen = hasCount;
+            const isPrescreenStage =
+              hasPrescreen && submissionsQuickTabCount === 0;
+
+            const buttonClasses = `inline-flex items-center gap-2 px-3 sm:px-4 py-1 rounded-full shadow text-sm sm:text-base font-medium border ${
+              isPrescreenStage
+                ? "border-green-500 bg-green-50 text-green-800"
+                : "border-gray-300 bg-white text-gray-700"
+            }`;
+
+            const dotClasses = `w-2.5 h-2.5 rounded-full border ${
+              isPrescreenStage
+                ? "bg-green-500 border-green-600"
+                : "bg-gray-200 border-gray-400"
+            }`;
+
+            return (
+              <button
+                key={action.id}
+                className={buttonClasses}
+                onClick={() => setActiveQuickTab(action.id)}
+              >
+                <span className={dotClasses} />
+                <span>
+                  {action.label} ({action.count})
+                </span>
+              </button>
+            );
+          }
+
           let variantClasses = "";
           if (isSubmissions && hasCount) {
             variantClasses = isActive
@@ -4962,6 +5001,79 @@ Best regards`;
           );
         })}
       </div>
+
+      {/* Quick tab details – show prescreen notes when Prescreen is selected */}
+      {activeQuickTab === "prescreen" &&
+        getQuickTabCount("prescreen") > 0 && (
+          <div className="bg-white border border-green-200 mx-2 sm:mx-4 mt-2 p-3 rounded shadow-sm">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold text-green-800">
+                Prescreen Notes ({getQuickTabCount("prescreen")})
+              </h3>
+              <button
+                type="button"
+                className="text-xs text-blue-600 hover:underline"
+                onClick={() => {
+                  setActiveTab("notes");
+                  setNoteActionFilter("Pre Screen");
+                }}
+              >
+                View in Notes tab
+              </button>
+            </div>
+            <div className="max-h-64 overflow-y-auto space-y-2 text-sm">
+              {notes
+                .filter((n) => {
+                  const actionOrType = String(
+                    (n as any).action ?? (n as any).note_type ?? ""
+                  )
+                    .trim()
+                    .toLowerCase();
+                  return /pre\s*screen|prescreen/.test(actionOrType);
+                })
+                .sort(
+                  (a, b) =>
+                    new Date(b.created_at || 0).getTime() -
+                    new Date(a.created_at || 0).getTime()
+                )
+                .map((note) => (
+                  <div
+                    key={note.id}
+                    className="flex justify-between items-start border-b border-gray-100 last:border-b-0 pb-2"
+                  >
+                    <div className="mr-3">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-900">
+                          {note.created_by_name || "Unknown User"}
+                        </span>
+                        {(note.action || note.note_type) && (
+                          <span className="text-xs px-2 py-0.5 bg-blue-100 text-blue-800 rounded font-medium">
+                            {note.action || note.note_type}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        {note.created_at
+                          ? new Date(note.created_at).toLocaleString("en-US", {
+                              month: "2-digit",
+                              day: "2-digit",
+                              year: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })
+                          : null}
+                      </div>
+                      {note.text && (
+                        <div className="mt-1 text-gray-800 line-clamp-2">
+                          {note.text}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        )}
 
       {/* Quick tab details – show submissions list when Submissions is selected */}
       {activeQuickTab === "submissions" && getQuickTabCount("submissions") > 0 && (
