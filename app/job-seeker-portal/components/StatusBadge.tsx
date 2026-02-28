@@ -1,6 +1,9 @@
 // app/job-seeker-portal/components/StatusBadge.tsx
-export default function StatusBadge({ status }: { status: string }) {
-  const isSent = status.toUpperCase() === "SENT";
+export default function StatusBadge({ status }: { status: string | null | undefined }) {
+  // Check if the status is a valid string
+  const statusText = typeof status === "string" ? status.toUpperCase() : "UNKNOWN";
+
+  const isSent = statusText === "SENT";
 
   return (
     <span
@@ -8,7 +11,7 @@ export default function StatusBadge({ status }: { status: string }) {
         isSent ? "text-blue-700" : "text-gray-600"
       }`}
     >
-      {status.toUpperCase()}
+      {statusText}
     </span>
   );
 }
