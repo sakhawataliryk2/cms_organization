@@ -283,9 +283,22 @@ export default function JobSeekerList() {
 
   // Save column order to localStorage whenever it changes
   useEffect(() => {
-    if (columnFields.length > 0) {
-      localStorage.setItem("jobSeekerColumnOrder", JSON.stringify(columnFields));
+    if (columnFields.length === 0) return;
+    // Don't overwrite a multi-column preference with only record_number (e.g. after API or initial load)
+    const savingOnlyRecordNumber =
+      columnFields.length === 1 && columnFields[0] === "record_number";
+    if (savingOnlyRecordNumber) {
+      try {
+        const saved = localStorage.getItem("jobSeekerColumnOrder");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 1) return;
+        }
+      } catch {
+        // ignore
+      }
     }
+    localStorage.setItem("jobSeekerColumnOrder", JSON.stringify(columnFields));
   }, [columnFields]);
 
   // Per-column sorting state
@@ -455,7 +468,11 @@ export default function JobSeekerList() {
           if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
             validOrder = ["record_number", ...validOrder];
           }
-          if (validOrder.length > 0) {
+          // Don't apply when we would collapse a multi-column preference to only record_number
+          // (catalog may still be loading — e.g. availableFields not yet loaded)
+          const wouldCollapseToRecordNumberOnly =
+            parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
+          if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
             setColumnFields(validOrder);
             return;
           }

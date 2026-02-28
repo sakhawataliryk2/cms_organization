@@ -3609,6 +3609,7 @@ export default function JobView() {
                 email: js.email,
                 appliedAt: app.created_at ?? app.createdAt ?? null,
                 status: app.status ?? app.type ?? "Submitted",
+                applicationId: app.id,
                 addedBy:
                   app.created_by_name ??
                   app.submitted_by_name ??
@@ -3691,7 +3692,62 @@ export default function JobView() {
     }
   };
 
-  // Load submitted candidates once jobId is known so "Applied" reflects live submissions
+  const APPLICATION_STATUS_OPTIONS = [
+    "Submitted",
+    "Client Submission",
+    "Interview",
+    "Client Rejected",
+    "Candidate Withdrew",
+    "Placed",
+  ] as const;
+
+  const updateApplicationStatus = async (
+    jobSeekerId: number | string,
+    applicationId: number | string,
+    newStatus: string
+  ) => {
+    try {
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      const res = await fetch(
+        `/api/job-seekers/${jobSeekerId}/applications/${applicationId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.message || "Failed to update status");
+        return;
+      }
+      setSubmittedCandidates((prev) =>
+        prev.map((c: any) =>
+          String(c.applicationId ?? c.rawApplication?.id) === String(applicationId)
+            ? { ...c, status: newStatus }
+            : c
+        )
+      );
+      setFilteredCandidates((prev) =>
+        prev.map((c: any) =>
+          String(c.applicationId ?? c.rawApplication?.id) === String(applicationId)
+            ? { ...c, status: newStatus }
+            : c
+        )
+      );
+      toast.success("Status updated");
+    } catch (err) {
+      console.error("Error updating application status:", err);
+      toast.error("Failed to update status");
+    }
+  };
+  
   useEffect(() => {
     if (jobId) {
       fetchSubmittedCandidates();
@@ -4547,7 +4603,6 @@ export default function JobView() {
                     </td>
                     <td className="px-3 py-2 text-blue-600 font-medium cursor-pointer">
                       <RecordNameResolver id={c.id} type="jobSeeker" fallback={`Job Seeker #${c?.record_number || c.id}`} clickable={true} />
-                      {/* {c.id} */}
                     </td>
                     <td className="px-3 py-2 text-gray-700">
                       {formattedDate}
@@ -4556,9 +4611,29 @@ export default function JobView() {
                       {formattedDate}
                     </td>
                     <td className="px-3 py-2">
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">
-                        {c.status || "Submitted"}
-                      </span>
+                      {c.applicationId != null || c.rawApplication?.id != null ? (
+                        <select
+                          value={c.status || "Submitted"}
+                          onChange={(e) =>
+                            updateApplicationStatus(
+                              c.id,
+                              c.applicationId ?? c.rawApplication?.id,
+                              e.target.value
+                            )
+                          }
+                          className="text-xs border border-gray-300 rounded px-2 py-1 bg-white text-gray-800 focus:ring-2 focus:ring-green-500 focus:border-green-500 min-w-[140px]"
+                        >
+                          {APPLICATION_STATUS_OPTIONS.map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs bg-gray-100 text-gray-800">
+                          {c.status || "Submitted"}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 text-gray-700">
                       {c.addedBy || "Recruiter"}

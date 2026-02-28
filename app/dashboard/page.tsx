@@ -1149,13 +1149,15 @@ export default function Dashboard() {
                                     >
                                         <div className="flex items-start justify-between mb-2">
                                             <div className="flex items-start space-x-2 flex-1">
-                                                <button
-                                                    onClick={(e) => handleToggleTaskComplete(task, e)}
-                                                    className={`mt-1 hover:scale-110 transition-transform ${task.is_completed ? 'text-green-600' : 'text-gray-400 hover:text-green-600'}`}
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!task.is_completed}
+                                                    onChange={(e) => handleToggleTaskComplete(task, e as unknown as React.MouseEvent)}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    className="mt-1 h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-500 cursor-pointer"
                                                     title={task.is_completed ? 'Mark as incomplete' : 'Mark as complete'}
-                                                >
-                                                    <FiCheckSquare size={16} />
-                                                </button>
+                                                    aria-label={task.is_completed ? 'Mark as incomplete' : 'Mark as complete'}
+                                                />
                                                 <div className="flex-1 min-w-0">
                                                     <h3 className={`text-sm font-medium truncate ${task.is_completed ? 'line-through text-gray-500' : 'text-gray-900'}`}>
                                                         {task.title}
@@ -1660,11 +1662,11 @@ export default function Dashboard() {
 
                             {/* Inbound emails Column */}
                             <div className="w-28 p-3 border-r border-gray-300">
-                                <input
-                                    type="number"
-                                    className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                                    placeholder=""
-                                />
+                                <div className="text-sm text-gray-800 text-center">
+                                    {isLoadingActivityReport
+                                        ? "…"
+                                        : (activityReport?.categories?.[row.key]?.inboundEmails ?? 0)}
+                                </div>
                             </div>
 
                             {/* Inbound emails - Goals/Quotas */}
@@ -1685,11 +1687,11 @@ export default function Dashboard() {
 
                             {/* Outbound emails Column */}
                             <div className="w-28 p-3 border-r border-gray-300">
-                                <input
-                                    type="number"
-                                    className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                                    placeholder=""
-                                />
+                                <div className="text-sm text-gray-800 text-center">
+                                    {isLoadingActivityReport
+                                        ? "…"
+                                        : (activityReport?.categories?.[row.key]?.outboundEmails ?? 0)}
+                                </div>
                             </div>
 
                             {/* Outbound emails - Goals/Quotas */}
@@ -1710,11 +1712,11 @@ export default function Dashboard() {
 
                             {/* Calls Column */}
                             <div className="w-16 p-3 border-r border-gray-300">
-                                <input
-                                    type="number"
-                                    className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                                    placeholder=""
-                                />
+                                <div className="text-sm text-gray-800 text-center">
+                                    {isLoadingActivityReport
+                                        ? "…"
+                                        : (activityReport?.categories?.[row.key]?.calls ?? 0)}
+                                </div>
                             </div>
 
                             {/* Calls - Goals/Quotas */}
@@ -1735,11 +1737,11 @@ export default function Dashboard() {
 
                             {/* Texts Column */}
                             <div className="w-16 p-3">
-                                <input
-                                    type="number"
-                                    className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                                    placeholder=""
-                                />
+                                <div className="text-sm text-gray-800 text-center">
+                                    {isLoadingActivityReport
+                                        ? "…"
+                                        : (activityReport?.categories?.[row.key]?.texts ?? 0)}
+                                </div>
                             </div>
                         </div>
                     ))}

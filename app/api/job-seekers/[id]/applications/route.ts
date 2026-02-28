@@ -77,17 +77,6 @@ export async function POST(
     const { id: jobSeekerId } = await params;
 
     const body = await request.json();
-
-    console.log(DEBUG_TAG, "incoming request", {
-      jobSeekerId,
-      job_id: body.job_id ?? body.jobId,
-      type: body.type,
-      status: body.status,
-      submitted_by_name: body.submitted_by_name ?? body.submittedBy ?? "(missing)",
-      submitted_by_email: body.submitted_by_email ?? body.submittedByEmail ?? "(missing)",
-      submission_source: body.submission_source ?? body.submissionSource,
-    });
-
     const cookieStore = await cookies();
     const token = cookieStore.get("token")?.value;
 
@@ -113,12 +102,6 @@ export async function POST(
     });
 
     const responseText = await response.text();
-    console.log(DEBUG_TAG, "backend response", {
-      status: response.status,
-      ok: response.ok,
-      bodyLength: responseText?.length ?? 0,
-      bodyPreview: responseText?.substring(0, 200) ?? "",
-    });
 
     let data: any;
     try {

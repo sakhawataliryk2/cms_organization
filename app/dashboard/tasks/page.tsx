@@ -512,9 +512,21 @@ export default function TaskList() {
 
   // Save column order to localStorage whenever it changes
   useEffect(() => {
-    if (columnFields.length > 0) {
-      localStorage.setItem("tasksColumnOrder", JSON.stringify(columnFields));
+    if (columnFields.length === 0) return;
+    const savingOnlyRecordNumber =
+      columnFields.length === 1 && columnFields[0] === "record_number";
+    if (savingOnlyRecordNumber) {
+      try {
+        const saved = localStorage.getItem("tasksColumnOrder");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 1) return;
+        }
+      } catch {
+        // ignore
+      }
     }
+    localStorage.setItem("tasksColumnOrder", JSON.stringify(columnFields));
   }, [columnFields]);
 
   useEffect(() => {
@@ -530,7 +542,9 @@ export default function TaskList() {
           if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
             validOrder = ["record_number", ...validOrder];
           }
-          if (validOrder.length > 0) {
+          const wouldCollapseToRecordNumberOnly =
+            parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
+          if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
             setColumnFields(validOrder);
             return;
           }

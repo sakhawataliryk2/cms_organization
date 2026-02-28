@@ -554,7 +554,9 @@ export default function PlacementList() {
           if (catalogSet.has("record_number") && !validOrder.includes("record_number")) {
             validOrder.unshift("record_number");
           }
-          if (validOrder.length > 0) {
+          const wouldCollapseToRecordNumberOnly =
+            parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "record_number";
+          if (!wouldCollapseToRecordNumberOnly && validOrder.length > 0) {
             setColumnFields(validOrder);
             return;
           }
@@ -610,9 +612,21 @@ export default function PlacementList() {
 
   // Save column order to localStorage whenever it changes
   useEffect(() => {
-    if (columnFields.length > 0) {
-      localStorage.setItem("placementsArchivedColumnOrder", JSON.stringify(columnFields));
+    if (columnFields.length === 0) return;
+    const savingOnlyRecordNumber =
+      columnFields.length === 1 && columnFields[0] === "record_number";
+    if (savingOnlyRecordNumber) {
+      try {
+        const saved = localStorage.getItem("placementsArchivedColumnOrder");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 1) return;
+        }
+      } catch {
+        // ignore
+      }
     }
+    localStorage.setItem("placementsArchivedColumnOrder", JSON.stringify(columnFields));
   }, [columnFields]);
 
   // Unique options for select filters

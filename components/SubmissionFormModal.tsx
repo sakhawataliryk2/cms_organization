@@ -328,7 +328,8 @@ export default function SubmissionFormModal({
                 <option value="Submitted">Submitted</option>
                 <option value="Client Submission">Client Submission</option>
                 <option value="Interview">Interview</option>
-                <option value="Rejected">Rejected</option>
+                <option value="Client Rejected">Client Rejected</option>
+                <option value="Candidate Withdrew">Candidate Withdrew</option>
                 <option value="Placed">Placed</option>
               </select>
               <FiCheck className="text-green-600 shrink-0" size={18} />
