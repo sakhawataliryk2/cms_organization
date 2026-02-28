@@ -72,11 +72,13 @@ interface RecentSearch {
 
 function SortablePinnedTab({
   record,
+  index,
   isActive,
   onClick,
   onUnpin
 }: {
   record: PinnedRecord;
+  index: number;
   isActive: boolean;
   onClick: () => void;
   onUnpin: (e: React.MouseEvent) => void;
@@ -89,6 +91,8 @@ function SortablePinnedTab({
     transition,
     isDragging
   } = useSortable({ id: record.key });
+
+  const letterNum = String.fromCharCode(65 + Math.floor(index / 10)) + ((index % 10) + 1);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -118,7 +122,7 @@ function SortablePinnedTab({
       className={`sd-tab-label is-pinned ${isActive ? "is-active" : "hover:bg-slate-200"} transition-colors cursor-grab active:cursor-grabbing`}
       onClick={onClick}
     >
-      <div className="sd-tab-desc">{String(record.label || "")}</div>
+      <div className="sd-tab-desc"><span className="sd-tab-letter-num">{letterNum}</span> {String(record.label || "")}</div>
       <span
         className="sd-tab-icon sd-tab-close"
         onPointerDown={(e) => e.stopPropagation()}
@@ -785,7 +789,7 @@ export default function DashboardNav() {
                       onClick={openTbiQuickTab}
                       title="T.B.I"
                     >
-                      <div className="sd-tab-desc">T.B.I</div>
+                      <div className="sd-tab-desc"><span className="sd-tab-letter-num">A1</span> T.B.I</div>
                       <span
                         className="sd-tab-icon sd-tab-close"
                         onClick={(e) => {
@@ -810,10 +814,11 @@ export default function DashboardNav() {
                   items={pinnedRecords.map((r) => r.key)}
                   strategy={horizontalListSortingStrategy}
                 >
-                  {pinnedRecords.map((rec) => (
+                  {pinnedRecords.map((rec, idx) => (
                     <SortablePinnedTab
                       key={rec.key}
                       record={rec}
+                      index={showTbiQuickTab ? idx + 1 : idx}
                       isActive={currentUrl === rec.url}
                       onClick={() => goToPinned(rec.url)}
                       onUnpin={(e) => {

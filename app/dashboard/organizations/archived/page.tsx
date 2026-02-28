@@ -292,9 +292,21 @@ export default function ArchivedOrganizationsList() {
 
   // Save column order to localStorage whenever it changes
   useEffect(() => {
-    if (columnFields.length > 0) {
-      localStorage.setItem("organizationArchivedColumnOrder", JSON.stringify(columnFields));
+    if (columnFields.length === 0) return;
+    const savingOnlyRecordNumber =
+      columnFields.length === 1 && columnFields[0] === "record_number";
+    if (savingOnlyRecordNumber) {
+      try {
+        const saved = localStorage.getItem("organizationArchivedColumnOrder");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 1) return;
+        }
+      } catch {
+        // ignore
+      }
     }
+    localStorage.setItem("organizationArchivedColumnOrder", JSON.stringify(columnFields));
   }, [columnFields]);
 
   // Per-column sorting state
@@ -524,7 +536,9 @@ export default function ArchivedOrganizationsList() {
             if (catalogSet.has("record_number") && !order.includes("record_number")) {
               order = ["record_number", ...order];
             }
-            if (order.length > 0) {
+            const wouldCollapseToRecordNumberOnly =
+              parsed.length > 1 && order.length === 1 && order[0] === "record_number";
+            if (!wouldCollapseToRecordNumberOnly && order.length > 0) {
               setColumnFields(order);
               return;
             }

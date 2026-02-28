@@ -301,9 +301,20 @@ export default function TearsheetList() {
 
   // Save column order to localStorage whenever it changes
   useEffect(() => {
-    if (columnFields.length > 0) {
-      localStorage.setItem("tearsheetsColumnOrder", JSON.stringify(columnFields));
+    if (columnFields.length === 0) return;
+    const savingOnlyId = columnFields.length === 1 && columnFields[0] === "id";
+    if (savingOnlyId) {
+      try {
+        const saved = localStorage.getItem("tearsheetsColumnOrder");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 1) return;
+        }
+      } catch {
+        // ignore
+      }
     }
+    localStorage.setItem("tearsheetsColumnOrder", JSON.stringify(columnFields));
   }, [columnFields]);
 
   // Per-column sorting state
@@ -419,7 +430,9 @@ export default function TearsheetList() {
           if (catalogSet.has("id") && !validOrder.includes("id")) {
             validOrder = ["id", ...validOrder];
           }
-          if (validOrder.length > 0) {
+          const wouldCollapseToIdOnly =
+            parsed.length > 1 && validOrder.length === 1 && validOrder[0] === "id";
+          if (!wouldCollapseToIdOnly && validOrder.length > 0) {
             setColumnFields(validOrder);
             return;
           }
