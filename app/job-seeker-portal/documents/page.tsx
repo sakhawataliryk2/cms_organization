@@ -33,6 +33,7 @@ type Doc = {
 };
 
 type Profile = {
+  id: number;
   first_name: string;
   last_name: string;
 };
@@ -183,6 +184,7 @@ export default function JobSeekerPortalDocumentsPage() {
                       jobseekerData={
                         selectedDoc.jobseekerData || {}
                       }
+                       jobSeekerId={profile?.id} 
                       onClose={handleCloseViewer}
                     />
                   </div>
