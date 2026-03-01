@@ -26,7 +26,6 @@ type MappedField = {
   h: number;
   page_number?: number;
 };
-
 interface Props {
   doc: {
     id: number;
@@ -35,9 +34,9 @@ interface Props {
     mapped_fields: MappedField[];
   };
   jobseekerData: Record<string, string>;
+  jobSeekerId?: number; 
   onClose: () => void;
 }
-
 type PageDim = { w: number; h: number };
 
 // ✅ what parent can call
@@ -46,8 +45,9 @@ export type DocumentViewerHandle = {
 };
 
 const DocumentViewer = forwardRef<DocumentViewerHandle, Props>(
-  function DocumentViewer({ doc, jobseekerData, onClose }, ref) {
-    const [pdfUrl, setPdfUrl] = useState<string>(doc.file_url);
+function DocumentViewer({ doc, jobseekerData, jobSeekerId, onClose }, ref) {
+      const [pdfUrl, setPdfUrl] = useState<string>(doc.file_url);
+      const [selectedJobSeekerId, setSelectedJobSeekerId] = useState<number | null>(null);
     const [numPages, setNumPages] = useState<number>(1);
     const [pageDims, setPageDims] = useState<Record<number, PageDim>>({});
     const [formValues, setFormValues] = useState<Record<string, string>>(
@@ -116,27 +116,41 @@ const DocumentViewer = forwardRef<DocumentViewerHandle, Props>(
     };
 
     // ✅ Submit function (called from parent)
-    const handleSubmit = () => {
-      const missingFields = doc.mapped_fields.filter((field) => {
-        const value = formValues[field.field_name];
+   const handleSubmit = async () => {
+  const missingFields = doc.mapped_fields.filter((field) => {
+    const value = formValues[field.field_name];
+    if (field.field_type === "Signature") return !value;
+    return !value || value.trim() === "";
+  });
 
-        if (field.field_type === "Signature") return !value;
-        return !value || value.trim() === "";
-      });
+  if (missingFields.length) {
+    alert("Please fill all required fields before submitting.");
+    return;
+  }
 
-      
+  const payload = {
+  job_seeker_id: jobSeekerId,
+  submitted_fields: doc.mapped_fields.map((f) => ({
+    name: f.field_name,
+    value: formValues[f.field_name] || "",
+  })),
+};
 
-      const payload = {
-        document_id: doc.id,
-        submitted_fields: doc.mapped_fields.map((f) => ({
-          name: f.field_name,
-          value: formValues[f.field_name] || "",
-        })),
-      };
+  const res = await fetch(`/api/job-seeker-portal/onboarding-items/${doc.id}/submit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 
-      console.log("Submitting document:", payload);
-      
-    };
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok || !data?.success) {
+    alert(data?.message || "Submit failed");
+    return;
+  }
+
+  alert("Submitted successfully");
+};
 
     // ✅ expose submit() to parent
     useImperativeHandle(ref, () => ({

@@ -35,7 +35,7 @@ const SECTION_CONFIG: Record<
       { value: "JOB_SEEKER_APPLICATION_SUBMISSION", label: "Application Submission Template" },
     ],
     placeholders: {
-      ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}"],
+      ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}", "{{jobTitle}}", "{{noteText}}"],
       ONBOARDING_JOBSEEKER_FIRST_TIME: ["{{portalUrl}}", "{{username}}", "{{tempPassword}}"],
       ONBOARDING_JOBSEEKER_REPEAT: ["{{portalUrl}}"],
       JOB_SEEKER_DELETE_REQUEST: [
