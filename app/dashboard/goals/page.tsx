@@ -64,7 +64,6 @@ const mockAppointments = [
   },
 ];
 
-// Mock data for calendar days with appointment counts
 const getCalendarData = () => {
   const today = new Date();
   const currentMonth = today.getMonth();
