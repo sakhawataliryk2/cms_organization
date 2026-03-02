@@ -315,10 +315,16 @@ export default function CustomFieldRenderer({
     }
   }, []);
 
-  // Auto-populate today's date for ALL date fields (Date Added, W9 Last Inserted Date, General Liabilities date updated, Worker Compensation Date, etc.)
+  // Normalize "Date Added" label
+  const isDateAddedLabel =
+    String(field.field_label || "")
+      .trim()
+      .toLowerCase() === "date added";
+
+  // Auto-populate today's date for "Date Added" fields by default
   React.useEffect(() => {
     if (readOnly || isDisabledByDependency) return;
-    if (field.field_type === "date" && !value && !hasAutoFilledRef.current) {
+    if (field.field_type === "date" && isDateAddedLabel && !value && !hasAutoFilledRef.current) {
       // Get today's date in mm/dd/yyyy format
       const today = new Date();
       const month = String(today.getMonth() + 1).padStart(2, "0");
@@ -333,7 +339,7 @@ export default function CustomFieldRenderer({
     if (value) {
       hasAutoFilledRef.current = false;
     }
-  }, [field.field_type, field.field_label, field.field_name, isDisabledByDependency, onChange, readOnly, value]);
+  }, [field.field_type, field.field_label, field.field_name, isDateAddedLabel, isDisabledByDependency, onChange, readOnly, value]);
 
   const normalizedOptions = React.useMemo<string[]>(() => {
     if (!field.options) {
@@ -1259,6 +1265,10 @@ export default function CustomFieldRenderer({
       // Format date value for display (mm/dd/yyyy)
       const displayValue = React.useMemo(() => {
         if (!value || value === "") {
+          // Only \"Date Added\" fields should visually default to today's date
+          if (!isDateAddedLabel) {
+            return "";
+          }
           const today = new Date();
           const month = String(today.getMonth() + 1).padStart(2, "0");
           const day = String(today.getDate()).padStart(2, "0");
@@ -1266,7 +1276,7 @@ export default function CustomFieldRenderer({
           return `${month}/${day}/${year}`;
         }
         return formatDateToMMDDYYYY(String(value));
-      }, [value, formatDateToMMDDYYYY]);
+      }, [value, formatDateToMMDDYYYY, isDateAddedLabel]);
 
       // Handle date selection from calendar
       const handleDateSelect = (selectedDate: Date) => {
