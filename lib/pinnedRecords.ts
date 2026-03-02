@@ -59,7 +59,7 @@ export function pinRecord(record: PinnedRecord): { ok: boolean; reason?: "limit"
   if (existing.some((r) => r.key === record.key)) return { ok: false, reason: "duplicate" };
   if (existing.length >= MAX_PINNED_RECORDS) return { ok: false, reason: "limit" };
 
-  const next = [record, ...existing];
+  const next = [...existing, record];
   savePinnedRecords(next);
   dispatchPinnedRecordsChanged();
   return { ok: true };
@@ -82,7 +82,7 @@ export function togglePinnedRecord(record: PinnedRecord): {
     return { action: "limit" };
   }
 
-  const next = [record, ...existing];
+  const next = [...existing, record];
   savePinnedRecords(next);
   dispatchPinnedRecordsChanged();
   return { action: "pinned" };

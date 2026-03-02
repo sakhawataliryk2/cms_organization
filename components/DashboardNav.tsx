@@ -92,7 +92,31 @@ function SortablePinnedTab({
     isDragging
   } = useSortable({ id: record.key });
 
-  const letterNum = String.fromCharCode(65 + Math.floor(index / 10)) + ((index % 10) + 1);
+  const getModuleCode = (key: string): string => {
+    const module = key.split(":")[0];
+    switch (module) {
+      case "org":
+        return "O";
+      case "job":
+        return "J";
+      case "jobSeeker":
+        return "J";
+      case "lead":
+        return "L";
+      case "hiringManager":
+        return "H";
+      case "task":
+        return "T";
+      case "placement":
+        return "P";
+      case "tearsheet":
+        return "T";
+      default:
+        return "A";
+    }
+  };
+
+  const letterNum = `${getModuleCode(record.key)}${(index % 10) + 1}`;
 
   const style = {
     transform: CSS.Transform.toString(transform),

@@ -12,6 +12,7 @@ interface Task {
     title: string;
     description?: string;
     is_completed: boolean;
+    created_at?: string;
     due_date?: string;
     due_time?: string;
     priority: string;
@@ -242,14 +243,26 @@ export default function Dashboard() {
         await fetchTasksForDate(date);
     };
 
-    // Check if a date has tasks
+    const getTaskPrimaryDate = (task: Task): Date | null => {
+        if (task.created_at) {
+            const created = new Date(task.created_at);
+            if (!Number.isNaN(created.getTime())) return created;
+        }
+        if (task.due_date) {
+            const due = new Date(task.due_date);
+            if (!Number.isNaN(due.getTime())) return due;
+        }
+        return null;
+    };
+
+    // Check if a date has tasks (by Date Added, falling back to due_date)
     const hasTasks = (date: Date) => {
         if (allTasks.length === 0) return false;
-        const dateString = formatDateForAPI(date);
+        const target = formatDateForAPI(date);
         return allTasks.some((task: Task) => {
-            if (!task.due_date) return false;
-            const taskDate = new Date(task.due_date);
-            return formatDateForAPI(taskDate) === dateString;
+            const taskDate = getTaskPrimaryDate(task);
+            if (!taskDate) return false;
+            return formatDateForAPI(taskDate) === target;
         });
     };
 
@@ -279,10 +292,10 @@ export default function Dashboard() {
         return `${year}-${month}-${day}`;
     };
 
-    // Check if a task's due_date matches the selected date
+    // Check if a task's primary date (Date Added, then due_date) matches the selected date
     const isTaskForDate = (task: Task, date: Date): boolean => {
-        if (!task.due_date) return false;
-        const taskDate = new Date(task.due_date);
+        const taskDate = getTaskPrimaryDate(task);
+        if (!taskDate) return false;
         return formatDateForAPI(taskDate) === formatDateForAPI(date);
     };
 
@@ -303,14 +316,9 @@ export default function Dashboard() {
 
             const data = await response.json();
             const allTasks = data.tasks || [];
-            
-            // Filter tasks for the selected date
-            const dateString = formatDateForAPI(date);
-            const tasksForDate = allTasks.filter((task: Task) => {
-                if (!task.due_date) return false;
-                const taskDate = new Date(task.due_date);
-                return formatDateForAPI(taskDate) === dateString;
-            });
+
+            // Filter tasks for the selected date using primary date (Date Added, then due_date)
+            const tasksForDate = allTasks.filter((task: Task) => isTaskForDate(task, date));
             
             setTasks(tasksForDate);
             setFilteredTasks(tasksForDate);
@@ -432,17 +440,18 @@ export default function Dashboard() {
             const data = await response.json();
             const allTasksData = data.tasks || [];
             setAllTasks(allTasksData); // Store all tasks for calendar indicators
-            
-            // Filter tasks by date range on frontend if backend doesn't support it
+
+            // Filter tasks by date range on frontend if backend doesn't support it,
+            // using primary date (Date Added, then due_date)
             let filteredTasksData = allTasksData;
             if (activityRange.start && activityRange.end) {
                 const startDate = new Date(activityRange.start);
                 const endDate = new Date(activityRange.end);
                 endDate.setHours(23, 59, 59, 999); // Include the entire end date
-                
+
                 filteredTasksData = allTasksData.filter((task: Task) => {
-                    if (!task.due_date) return false;
-                    const taskDate = new Date(task.due_date);
+                    const taskDate = getTaskPrimaryDate(task);
+                    if (!taskDate) return false;
                     return taskDate >= startDate && taskDate <= endDate;
                 });
             }
