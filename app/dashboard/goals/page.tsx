@@ -10,7 +10,6 @@ interface User {
   role?: string;
 }
 
-// Mock data for appointments
 const mockAppointments = [
   {
     id: 1,
