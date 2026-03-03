@@ -291,6 +291,60 @@ const Planners = () => {
   const searchParams = useSearchParams();
   // const router = useRouter();
   const [isOffice365Connected, setIsOffice365Connected] = useState(false);
+  const [highlightAppointmentId, setHighlightAppointmentId] = useState<number | null>(null);
+  const [listViewFilterDate, setListViewFilterDate] = useState<string | null>(null);
+  const listViewRowRef = useRef<HTMLTableRowElement | null>(null);
+
+  // Apply date/view/appointmentId from URL (e.g. from dashboard appointment click)
+  useEffect(() => {
+    const dateParam = searchParams?.get('date');
+    const viewParam = searchParams?.get('view');
+    const appointmentIdParam = searchParams?.get('appointmentId');
+    if (dateParam) {
+      const d = new Date(dateParam);
+      if (!Number.isNaN(d.getTime())) {
+        setSelectedDate(d);
+        setCurrentMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+        setListViewFilterDate(dateParam);
+        setCurrentPage(1);
+      }
+    }
+    if (viewParam === 'List') {
+      setViewType('List');
+    }
+    if (appointmentIdParam) {
+      const id = parseInt(appointmentIdParam, 10);
+      if (!Number.isNaN(id)) setHighlightAppointmentId(id);
+    }
+  }, [searchParams]);
+
+  // Scroll highlighted row into view when List view has loaded
+  useEffect(() => {
+    if (highlightAppointmentId != null && viewType === 'List' && listViewRowRef.current) {
+      listViewRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+  }, [highlightAppointmentId, viewType, appointments.length]);
+
+  const hasSetPageForHighlight = useRef(false);
+  // When opened with appointmentId, ensure we're on the page that contains that appointment (after filtered list is ready)
+  useEffect(() => {
+    if (highlightAppointmentId == null || !listViewFilterDate) return;
+    if (hasSetPageForHighlight.current) return;
+    hasSetPageForHighlight.current = true;
+    const filtered = [...appointments].filter((apt) => {
+      if (!apt.date) return false;
+      const aptDate = new Date(apt.date);
+      const y = aptDate.getFullYear();
+      const m = String(aptDate.getMonth() + 1).padStart(2, '0');
+      const d = String(aptDate.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}` === listViewFilterDate;
+    });
+    const index = filtered.findIndex((a) => a.id === highlightAppointmentId);
+    if (index >= 0) {
+      const page = Math.floor(index / itemsPerPage) + 1;
+      setCurrentPage(page);
+    }
+  }, [highlightAppointmentId, listViewFilterDate, appointments, itemsPerPage]);
 
   // Office 365 connection status and callback handling
   useEffect(() => {
@@ -1150,6 +1204,19 @@ const Planners = () => {
   const filteredAndSortedAppointments = useMemo(() => {
     let filtered = [...appointments];
 
+    // When opened from dashboard with date=, show only that day in List
+    if (listViewFilterDate) {
+      const target = listViewFilterDate;
+      filtered = filtered.filter((apt) => {
+        if (!apt.date) return false;
+        const aptDate = new Date(apt.date);
+        const y = aptDate.getFullYear();
+        const m = String(aptDate.getMonth() + 1).padStart(2, '0');
+        const d = String(aptDate.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}` === target;
+      });
+    }
+
     // Apply filters
     Object.entries(columnFilters).forEach(([key, filterValue]) => {
       if (!filterValue) return;
@@ -1185,7 +1252,7 @@ const Planners = () => {
     }
 
     return filtered;
-  }, [appointments, columnFilters, columnSorts]);
+  }, [appointments, listViewFilterDate, columnFilters, columnSorts]);
 
   // Render List View
   const renderListView = () => {
@@ -1218,6 +1285,18 @@ const Planners = () => {
 
     return (
       <div className="px-6 pb-6">
+        {listViewFilterDate && (
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-sm text-gray-600">Showing appointments for {listViewFilterDate}</span>
+            <button
+              type="button"
+              onClick={() => setListViewFilterDate(null)}
+              className="text-sm text-blue-600 hover:text-blue-800"
+            >
+              Show all dates
+            </button>
+          </div>
+        )}
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
           <DndContext collisionDetection={closestCenter} onDragEnd={handleColumnDragEnd}>
             <div className="overflow-x-auto">
@@ -1257,8 +1336,14 @@ const Planners = () => {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {paginatedAppointments.length > 0 ? (
-                    paginatedAppointments.map((appointment) => (
-                      <tr key={appointment.id} className="hover:bg-gray-50">
+                    paginatedAppointments.map((appointment) => {
+                      const isHighlighted = appointment.id === highlightAppointmentId;
+                      return (
+                      <tr
+                        key={appointment.id}
+                        ref={isHighlighted ? (el) => { listViewRowRef.current = el; } : undefined}
+                        className={`hover:bg-gray-50 ${isHighlighted ? 'bg-blue-100 ring-1 ring-blue-300' : ''}`}
+                      >
                         {columnFields.map((key) => {
                           const value = getColumnValue(appointment, key);
                           return (
@@ -1298,7 +1383,8 @@ const Planners = () => {
                           );
                         })}
                       </tr>
-                    ))
+                      );
+                    })
                   ) : (
                     <tr>
                       <td colSpan={columnFields.length} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">

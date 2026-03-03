@@ -242,6 +242,14 @@ export default function Dashboard() {
         setSelectedDate(date);
         await fetchTasksForDate(date);
     };
+    
+    // Format date to YYYY-MM-DD for API comparison
+    const formatDateForAPI = (date: Date): string => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
 
     const getTaskPrimaryDate = (task: Task): Date | null => {
         if (task.created_at) {
@@ -277,19 +285,20 @@ export default function Dashboard() {
         });
     };
 
+    // Appointments to display: when a calendar date is selected, show only that day's appointments; otherwise show all in range
+    const displayedAppointments = selectedDate
+        ? appointments.filter((apt: Appointment) => {
+            if (!apt.date) return false;
+            const aptDate = new Date(apt.date);
+            return formatDateForAPI(aptDate) === formatDateForAPI(selectedDate);
+          })
+        : appointments;
+
     // Check if a date is within the selected date range
     const isInDateRange = (date: Date) => {
         if (!activityRange.start || !activityRange.end || dateRangeError) return true; // Show all if invalid
         const dateString = formatDateForAPI(date);
         return dateString >= activityRange.start && dateString <= activityRange.end;
-    };
-
-    // Format date to YYYY-MM-DD for API comparison
-    const formatDateForAPI = (date: Date): string => {
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        return `${year}-${month}-${day}`;
     };
 
     // Check if a task's primary date (Date Added, then due_date) matches the selected date
@@ -338,15 +347,23 @@ export default function Dashboard() {
         fetchBroadcastMessages();
     }, []);
 
-    // Refresh tasks and appointments when date range changes (only if valid)
+    // Refresh tasks and appointments when date range or calendar selection changes (only if valid)
     useEffect(() => {
         if (!validateDateRange(activityRange.start, activityRange.end)) {
             return;
         }
+        // Include selected calendar date in fetch range so clicking a date shows its appointments
+        let effectiveStart = activityRange.start;
+        let effectiveEnd = activityRange.end;
+        if (selectedDate) {
+            const selectedStr = formatDateForAPI(selectedDate);
+            if (selectedStr < effectiveStart) effectiveStart = selectedStr;
+            if (selectedStr > effectiveEnd) effectiveEnd = selectedStr;
+        }
         fetchAllTasks();
-        fetchAppointments();
+        fetchAppointments({ start: effectiveStart, end: effectiveEnd });
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activityRange.start, activityRange.end]);
+    }, [activityRange.start, activityRange.end, selectedDate]);
 
     // Fetch appointments with date range filtering
     const fetchAppointments = async (range?: { start: string; end: string }) => {
@@ -1052,12 +1069,26 @@ export default function Dashboard() {
                                             : 'Select a date range to view appointments'}
                                     </p>
                                 </div>
+                            ) : displayedAppointments.length === 0 ? (
+                                <div className="text-center py-4">
+                                    <p className="text-sm text-gray-500">No appointments on selected date</p>
+                                    <p className="text-xs text-gray-400 mt-1">Select a date with appointments or clear selection</p>
+                                </div>
                             ) : (
                                 <div className="space-y-2">
-                                    {appointments.map((apt) => (
+                                    {displayedAppointments.map((apt) => {
+                                        const aptDateStr = apt.date ? formatDateForAPI(new Date(apt.date)) : '';
+                                        const plannerUrl = aptDateStr
+                                            ? `/dashboard/planner?date=${aptDateStr}&view=List${apt.id ? `&appointmentId=${apt.id}` : ''}`
+                                            : '/dashboard/planner';
+                                        return (
                                         <div
                                             key={apt.id}
-                                            className="p-2 border border-gray-200 rounded text-xs hover:bg-gray-50"
+                                            role="button"
+                                            tabIndex={0}
+                                            onClick={() => router.push(plannerUrl)}
+                                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); router.push(plannerUrl); } }}
+                                            className="p-2 border border-gray-200 rounded text-xs hover:bg-blue-50 hover:border-blue-200 cursor-pointer transition-colors"
                                         >
                                             <div className="font-medium text-gray-700">
                                                 {apt.date && new Date(apt.date).toLocaleDateString('en-US', { 
@@ -1073,7 +1104,8 @@ export default function Dashboard() {
                                                 {apt.owner && <div className="text-gray-500 text-xs mt-1">Owner: {apt.owner}</div>}
                                             </div>
                                         </div>
-                                    ))}
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>
@@ -1445,95 +1477,7 @@ export default function Dashboard() {
 
             {/* Bottom Row */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-                {/* Select Date and Time Range */}
-                {/* <div className="bg-white rounded-md shadow overflow-hidden">
-                    <div className="p-2 border-b border-gray-200">
-                        <h2 className="text-lg font-semibold">Select Date and Time Range</h2>
-                    </div>
-                    <div className="p-4">
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium text-gray-700 mb-1">Start Date & Time:</label>
-                            <input
-                                type="datetime-local"
-                                value={startDateTime}
-                                onChange={(e) => setStartDateTime(e.target.value)}
-                                className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-medium text-gray-700 mb-1">End Date & Time:</label>
-                            <input
-                                type="datetime-local"
-                                value={endDateTime}
-                                onChange={(e) => setEndDateTime(e.target.value)}
-                                className="w-full p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                            />
-                        </div>
-                    </div>
-                </div> */}
-
-                {/* Goals and Quotas */}
-                {/* {showGoalsQuotas && (
-                    <div className="bg-white rounded-md shadow overflow-hidden">
-                        <div className="p-2 border-b border-gray-200">
-                            <h2 className="text-lg font-semibold mb-2">Goals and Quotas</h2>
-                            
-                            <div className="relative">
-                                <FiSearch className="absolute left-2 top-1/2 transform -translate-y-1/2 text-gray-400" size={18} />
-                                <input
-                                    type="text"
-                                    placeholder="Search goals and quotas..."
-                                    value={goalsSearchQuery}
-                                    onChange={(e) => setGoalsSearchQuery(e.target.value)}
-                                    className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                                />
-                            </div>
-                        </div>
-                        <div className="p-4">
-                            <div className="text-center mb-4">
-                                <p className="text-gray-600 text-sm mb-2">View and manage your goals and quotas</p>
-                                <Link
-                                    href="/dashboard/goals"
-                                    className="inline-block bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium transition-colors"
-                                >
-                                    Go to Goals & Quotas
-                                </Link>
-                            </div>
-                            <div className="border-t border-gray-200 pt-4 mt-4">
-                                <div className="grid grid-cols-2 gap-4 text-center">
-                                    <div>
-                                        <div className="text-2xl font-bold text-blue-600">0</div>
-                                        <div className="text-xs text-gray-500 mt-1">Active Goals</div>
-                                    </div>
-                                    <div>
-                                        <div className="text-2xl font-bold text-green-600">0</div>
-                                        <div className="text-xs text-gray-500 mt-1">Quotas Met</div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                )} */}
-
-                {/* Rules of Engagement */}
-                {/* <div className="bg-white rounded-md shadow overflow-hidden">
-                    <div className="p-2 border-b border-gray-200">
-                        <h2 className="text-lg font-semibold">Rules of engagement</h2>
-                    </div>
-                    <div className="p-6 flex justify-center">
-                        <button className="bg-blue-500 rounded-md p-4 w-28 h-28 flex flex-col items-center justify-center text-white hover:bg-blue-600 transition-colors">
-                            <div className="bg-white w-10 h-10 mb-2 rounded flex items-center justify-center">
-                                <svg className="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                </svg>
-                            </div>
-                            <div className="text-center">
-                                <div className="text-sm font-medium">Rules of</div>
-                                <div className="text-sm font-medium">Engagement</div>
-                            </div>
-                        </button>
-                    </div>
-                </div> */}
+                
             </div>
 
             {/* Activity Report Section */}
@@ -1566,35 +1510,30 @@ export default function Dashboard() {
                         </div>
                         <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
                             <div>Goals</div>
-                            <div className="text-xs font-normal text-gray-500">Quotas</div>
                         </div>
                         <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
                             Added to System
                         </div>
                         <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
                             <div>Goals</div>
-                            <div className="text-xs font-normal text-gray-500">Quotas</div>
                         </div>
                         <div className="w-28 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
                             Inbound emails
                         </div>
                         <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
                             <div>Goals</div>
-                            <div className="text-xs font-normal text-gray-500">Quotas</div>
                         </div>
                         <div className="w-28 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
                             Outbound emails
                         </div>
                         <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
                             <div>Goals</div>
-                            <div className="text-xs font-normal text-gray-500">Quotas</div>
                         </div>
                         <div className="w-16 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
                             Calls
                         </div>
                         <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
                             <div>Goals</div>
-                            <div className="text-xs font-normal text-gray-500">Quotas</div>
                         </div>
                         <div className="w-16 p-3 text-sm font-medium text-gray-700">
                             Texts
@@ -1628,7 +1567,7 @@ export default function Dashboard() {
                                 </div>
                             </div>
 
-                            {/* Notes - Goals/Quotas */}
+                            {/* Notes - Goals */}
                             <div className="w-20 p-3 border-r border-gray-300">
                                 <div className="flex space-x-2">
                                     <input
