@@ -7085,7 +7085,7 @@ Best regards`;
               </div>
               <div className="bg-blue-50 border border-blue-200 rounded p-4">
                 <p className="text-sm text-blue-800">
-                  <strong>Note:</strong> This will create a transfer request. This job seeker&apos;s notes, documents, tasks, placements, and applications will move to the target job seeker, and this record will be archived. Payroll will be notified and must approve or deny.
+                  <strong>Note:</strong> This will create a transfer request. This job seeker&apos;s notes, documents, tasks, placements, and applications will move to the target job seeker, and this record will be archived. OnBoarding will be notified and must approve or deny.
                 </p>
               </div>
             </div>

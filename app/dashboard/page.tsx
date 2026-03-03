@@ -1567,19 +1567,10 @@ export default function Dashboard() {
                                 </div>
                             </div>
 
-                            {/* Notes - Goals */}
+                            {/* Notes - Goals (read-only / not yet wired) */}
                             <div className="w-20 p-3 border-r border-gray-300">
-                                <div className="flex space-x-2">
-                                    <input
-                                        type="number"
-                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                                        placeholder=""
-                                    />
-                                    <input 
-                                        type="number" 
-                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
-                                        placeholder=""
-                                    />
+                                <div className="text-xs text-gray-500 text-center">
+                                    --
                                 </div>
                             </div>
 
@@ -1592,19 +1583,10 @@ export default function Dashboard() {
                                 </div>
                             </div>
 
-                            {/* Added to System - Goals/Quotas */}
+                            {/* Added to System - Goals/Quotas (read-only / not yet wired) */}
                             <div className="w-20 p-3 border-r border-gray-300">
-                                <div className="flex space-x-2">
-                                    <input
-                                        type="number"
-                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                                        placeholder=""
-                                    />
-                                    <input 
-                                        type="number" 
-                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
-                                        placeholder="0"
-                                    />
+                                <div className="text-xs text-gray-500 text-center">
+                                    --
                                 </div>
                             </div>
 
@@ -1617,19 +1599,10 @@ export default function Dashboard() {
                                 </div>
                             </div>
 
-                            {/* Inbound emails - Goals/Quotas */}
+                            {/* Inbound emails - Goals/Quotas (read-only / not yet wired) */}
                             <div className="w-20 p-3 border-r border-gray-300">
-                                <div className="flex space-x-2">
-                                    <input
-                                        type="number"
-                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                                        placeholder=""
-                                    />
-                                    <input 
-                                        type="number" 
-                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
-                                        placeholder=""
-                                    />
+                                <div className="text-xs text-gray-500 text-center">
+                                    --
                                 </div>
                             </div>
 
@@ -1642,19 +1615,10 @@ export default function Dashboard() {
                                 </div>
                             </div>
 
-                            {/* Outbound emails - Goals/Quotas */}
+                            {/* Outbound emails - Goals/Quotas (read-only / not yet wired) */}
                             <div className="w-20 p-3 border-r border-gray-300">
-                                <div className="flex space-x-2">
-                                    <input
-                                        type="number"
-                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                                        placeholder=""
-                                    />
-                                    <input 
-                                        type="number" 
-                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
-                                        placeholder=""
-                                    />
+                                <div className="text-xs text-gray-500 text-center">
+                                    --
                                 </div>
                             </div>
 
@@ -1667,19 +1631,10 @@ export default function Dashboard() {
                                 </div>
                             </div>
 
-                            {/* Calls - Goals/Quotas */}
+                            {/* Calls - Goals/Quotas (read-only / not yet wired) */}
                             <div className="w-20 p-3 border-r border-gray-300">
-                                <div className="flex space-x-2">
-                                    <input
-                                        type="number"
-                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                                        placeholder=""
-                                    />
-                                    <input 
-                                        type="number" 
-                                        className="w-8 text-sm border-0 bg-transparent focus:outline-none focus:ring-0" 
-                                        placeholder=""
-                                    />
+                                <div className="text-xs text-gray-500 text-center">
+                                    --
                                 </div>
                             </div>
 

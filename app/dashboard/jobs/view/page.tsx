@@ -3774,7 +3774,30 @@ export default function JobView() {
       setClientSubmissionCandidate(candidate);
       setShowClientSubmissionModal(true);
     } else if (newStatus === "Interview") {
-      setShowAppointmentModal(true);
+      // Open Planner → Add Appointment modal with pre-filled Job Seeker + Job
+      const jobSeekerId = candidate?.id;
+      const candidateJobId =
+        candidate?.applicationId != null || candidate?.rawApplication
+          ? candidate?.rawApplication?.job_id ??
+            candidate?.rawApplication?.jobId ??
+            candidate?.rawApplication?.job_id_id ??
+            null
+          : null;
+      const effectiveJobId = candidateJobId ?? jobId;
+
+      const params = new URLSearchParams();
+      params.set("addAppointment", "1");
+      params.set("participantType", "job_seeker");
+      if (jobSeekerId != null) {
+        params.set("participantId", String(jobSeekerId));
+      }
+      if (effectiveJobId) {
+        params.set("jobId", String(effectiveJobId));
+      }
+      // Default appointment type to Interview
+      params.set("appointmentType", "Interview");
+
+      router.push(`/dashboard/planner?${params.toString()}`);
     } else if (
       newStatus === "Job Seeker Withdrew" ||
       newStatus === "Client Rejected" ||

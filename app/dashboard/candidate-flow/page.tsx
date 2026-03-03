@@ -51,6 +51,9 @@ export default function CandidateFlowDashboard() {
   const [columns, setColumns] = useState<CandidateColumn[]>([]);
   const [prescreenedStage, setPrescreenedStage] = useState<PrescreenedCandidate[]>([]);
   const [submittedStage, setSubmittedStage] = useState<Candidate[]>([]);
+  const [clientSubmittedStage, setClientSubmittedStage] = useState<Candidate[]>([]);
+  const [interviewStage, setInterviewStage] = useState<Candidate[]>([]);
+  const [offerStage, setOfferStage] = useState<Candidate[]>([]);
   const [draggedCandidate, setDraggedCandidate] = useState<PrescreenedCandidate | null>(null);
   const [modalCandidate, setModalCandidate] = useState<PrescreenedCandidate | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -97,16 +100,30 @@ export default function CandidateFlowDashboard() {
         const results = await Promise.all(
           prescreenedList.map(async (c) => {
             try {
-              const res = await fetch(`/api/job-seekers/${c.id}/applications`, {
-                credentials: 'include',
-              });
-              if (!res.ok) {
-                return { applications: [] as any[] };
+              const [appsRes, clientSubsRes] = await Promise.all([
+                fetch(`/api/job-seekers/${c.id}/applications`, {
+                  credentials: 'include',
+                }),
+                fetch(`/api/job-seekers/${c.id}/client-submissions`, {
+                  credentials: 'include',
+                }),
+              ]);
+
+              let applications: any[] = [];
+              if (appsRes.ok) {
+                const data = await appsRes.json();
+                applications = Array.isArray(data.applications) ? data.applications : [];
               }
-              const data = await res.json();
-              return { applications: Array.isArray(data.applications) ? data.applications : [] };
+
+              let clientSubmissions: any[] = [];
+              if (clientSubsRes.ok) {
+                const data = await clientSubsRes.json();
+                clientSubmissions = Array.isArray(data.submissions) ? data.submissions : [];
+              }
+
+              return { applications, clientSubmissions };
             } catch {
-              return { applications: [] as any[] };
+              return { applications: [] as any[], clientSubmissions: [] as any[] };
             }
           })
         );
@@ -115,42 +132,76 @@ export default function CandidateFlowDashboard() {
 
         const nextPrescreened: PrescreenedCandidate[] = [];
         const nextSubmitted: Candidate[] = [];
+        const nextClientSubmitted: Candidate[] = [];
+        const nextInterview: Candidate[] = [];
+        const nextOffer: Candidate[] = [];
 
         prescreenedList.forEach((c, idx) => {
           const apps = results[idx]?.applications || [];
-          const submissionApps = apps.filter((a: any) => {
-            const t = String(a?.type || '').toLowerCase();
-            return (
-              t === 'submissions' ||
-              t === 'web_submissions' ||
-              t === 'client_submissions'
-            );
-          });
+          const clientSubs = results[idx]?.clientSubmissions || [];
 
-          if (submissionApps.length === 0) {
+          if (apps.length === 0 && clientSubs.length === 0) {
             nextPrescreened.push(c);
-          } else {
-            submissionApps.sort(
-              (a: any, b: any) =>
-                new Date(b?.created_at || 0).getTime() -
-                new Date(a?.created_at || 0).getTime()
-            );
-            const latest = submissionApps[0];
-            const jobIdLabel =
-              latest?.job_id != null
-                ? formatRecordId(latest.job_id, 'job')
-                : latest?.job_title || '';
+            return;
+          }
 
-            nextSubmitted.push({
+          // If there is any client submission, treat as "Client Submitted"
+          if (clientSubs.length > 0) {
+            const latestClientSub = clientSubs[0];
+            const jobIdLabel =
+              latestClientSub?.job_id != null
+                ? formatRecordId(latestClientSub.job_id, 'job')
+                : latestClientSub?.job_title || '';
+
+            nextClientSubmitted.push({
               id: c.id,
               name: c.name,
               jobId: jobIdLabel,
             });
+            return;
+          }
+
+          if (apps.length === 0) {
+            nextPrescreened.push(c);
+            return;
+          }
+
+          const sortedApps = [...apps].sort(
+            (a: any, b: any) =>
+              new Date(b?.created_at || 0).getTime() -
+              new Date(a?.created_at || 0).getTime()
+          );
+
+          const latest = sortedApps[0];
+          const jobIdLabel =
+            latest?.job_id != null
+              ? formatRecordId(latest.job_id, 'job')
+              : latest?.job_title || '';
+
+          const status = String(latest?.status || '').toLowerCase();
+
+          const baseCandidate: Candidate = {
+            id: c.id,
+            name: c.name,
+            jobId: jobIdLabel,
+          };
+
+          if (status === 'client submission') {
+            nextClientSubmitted.push(baseCandidate);
+          } else if (status === 'interview') {
+            nextInterview.push(baseCandidate);
+          } else if (status === 'offer extended') {
+            nextOffer.push(baseCandidate);
+          } else {
+            nextSubmitted.push(baseCandidate);
           }
         });
 
         setPrescreenedStage(nextPrescreened);
         setSubmittedStage(nextSubmitted);
+        setClientSubmittedStage(nextClientSubmitted);
+        setInterviewStage(nextInterview);
+        setOfferStage(nextOffer);
       } finally {
         if (!cancelled) setStageLoading(false);
       }
@@ -165,6 +216,9 @@ export default function CandidateFlowDashboard() {
 
   // Build columns from stage data
   useEffect(() => {
+    const findPlaceholder = (id: string) =>
+      PLACEHOLDER_COLUMNS.find((col) => col.id === id);
+
     const prescreenedColumn: CandidateColumn = {
       id: 'prescreened',
       title: 'Job Seekers PreScreened',
@@ -184,15 +238,62 @@ export default function CandidateFlowDashboard() {
       candidates: submittedStage,
     };
 
+    const clientMeta = findPlaceholder('client-submitted');
+    const clientSubmittedColumn: CandidateColumn = {
+      id: 'client-submitted',
+      title: clientMeta?.title ?? 'Client Submitted',
+      color: clientMeta?.color ?? 'bg-emerald-50',
+      accent: clientMeta?.accent ?? 'border-emerald-400',
+      count: clientSubmittedStage.length,
+      candidates: clientSubmittedStage,
+    };
+
+    const interviewMeta = findPlaceholder('interviews');
+    const interviewColumn: CandidateColumn = {
+      id: 'interviews',
+      title: interviewMeta?.title ?? 'Job Seekers with Interviews',
+      color: interviewMeta?.color ?? 'bg-amber-50',
+      accent: interviewMeta?.accent ?? 'border-amber-400',
+      count: interviewStage.length,
+      candidates: interviewStage,
+    };
+
+    const offerMeta = findPlaceholder('offer');
+    const offerColumn: CandidateColumn = {
+      id: 'offer',
+      title: offerMeta?.title ?? 'Job Seekers with Offer',
+      color: offerMeta?.color ?? 'bg-teal-50',
+      accent: offerMeta?.accent ?? 'border-teal-400',
+      count: offerStage.length,
+      candidates: offerStage,
+    };
+
     const others: CandidateColumn[] = PLACEHOLDER_COLUMNS.filter(
-      (col) => col.id !== 'submitted'
+      (col) =>
+        col.id !== 'submitted' &&
+        col.id !== 'client-submitted' &&
+        col.id !== 'interviews' &&
+        col.id !== 'offer'
     ).map((col) => ({
       ...col,
       candidates: [],
     }));
 
-    setColumns([prescreenedColumn, submittedColumn, ...others]);
-  }, [prescreenedStage, submittedStage]);
+    setColumns([
+      prescreenedColumn,
+      submittedColumn,
+      clientSubmittedColumn,
+      interviewColumn,
+      offerColumn,
+      ...others,
+    ]);
+  }, [
+    prescreenedStage,
+    submittedStage,
+    clientSubmittedStage,
+    interviewStage,
+    offerStage,
+  ]);
 
   const handlePrevious = () => router.push('/dashboard');
   const handleNext = () => router.push('/dashboard/sales-dashboard');
@@ -321,21 +422,30 @@ export default function CandidateFlowDashboard() {
               >
                 {column.isPrescreenedColumn ? (
                   (column.candidates as PrescreenedCandidate[]).length === 0 && !anyLoading ? (
-                    <p className="text-slate-500 text-sm py-4 text-center">No candidates prescreened by you in the last 30 days.</p>
+                    <p className="text-slate-500 text-sm py-4 text-center">
+                      No candidates prescreened by you in the last 30 days.
+                    </p>
                   ) : (
                     (column.candidates as PrescreenedCandidate[]).map(renderPrescreenedCard)
                   )
-                ) : column.id === 'submitted' ? (
-                  (column.candidates as Candidate[]).length === 0 && !anyLoading ? (
-                    <p className="text-slate-400 text-sm py-4 text-center">No candidates submitted yet.</p>
-                  ) : (
-                    (column.candidates as Candidate[]).map(renderSubmittedCard)
-                  )
-                ) : (column.candidates as Candidate[]).length === 0 ? (
-                  <p className="text-slate-400 text-sm py-4 text-center">No records yet.</p>
-                ) : (
-                  null
-                )}
+                ) : (() => {
+                  const candidateList = column.candidates as Candidate[];
+                  if (candidateList.length === 0 && !anyLoading) {
+                    if (column.id === 'submitted') {
+                      return (
+                        <p className="text-slate-400 text-sm py-4 text-center">
+                          No candidates submitted yet.
+                        </p>
+                      );
+                    }
+                    return (
+                      <p className="text-slate-400 text-sm py-4 text-center">
+                        No records yet.
+                      </p>
+                    );
+                  }
+                  return candidateList.map(renderSubmittedCard);
+                })()}
               </div>
             </div>
           ))}
