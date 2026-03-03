@@ -168,53 +168,62 @@ const [isOpen, setIsOpen] = useState(false);
     setSelectedDocs((prev) => ({ ...prev, [id]: !prev[id] }));
 
   async function handleSend() {
-    const chosenPacketIds = Object.keys(selectedPackets)
-      .filter((k) => selectedPackets[Number(k)])
-      .map(Number);
+  const chosenPacketIds = Object.keys(selectedPackets)
+    .filter((k) => selectedPackets[Number(k)])
+    .map(Number);
 
-    const chosenDocIds = Object.keys(selectedDocs)
-      .filter((k) => selectedDocs[Number(k)])
-      .map(Number);
+  const chosenDocIds = Object.keys(selectedDocs)
+    .filter((k) => selectedDocs[Number(k)])
+    .map(Number);
 
-    if (chosenPacketIds.length === 0 && chosenDocIds.length === 0) {
-      toast.error("Select at least 1 packet or document.");
+  if (chosenPacketIds.length === 0 && chosenDocIds.length === 0) {
+    toast.error("Select at least 1 packet or document.");
+    return;
+  }
+  if (!jobId) {
+    toast.error("Select a job.");
+    return;
+  }
+
+  try {
+    setLoading(true);
+    setError(null);
+
+    const headers: HeadersInit = {
+      "Content-Type": "application/json",
+      ...authHeaders(),
+    };
+
+    const res = await fetch(`/api/onboarding/send`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        job_seeker_id: jobSeeker.id,
+        job_id: jobId,
+        packet_ids: chosenPacketIds,
+        document_ids: chosenDocIds,
+      }),
+    });
+
+    const json = await res.json();
+    if (!res.ok) throw new Error(json?.message || "Failed to send onboarding");
+
+    // If documents are already sent
+    if (json.message === "Document(s) already sent.") {
+      toast.error("Document(s) already sent.");
       return;
     }
-    if (!jobId) {
-        toast.error("Select a job.");
-        return;
-      }
-    try {
-      setLoading(true);
-      setError(null);
 
-      const headers: HeadersInit = {
-        "Content-Type": "application/json",
-        ...authHeaders(),
-      };
-
-      const res = await fetch(`/api/onboarding/send`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          job_seeker_id: jobSeeker.id,
-          job_id: jobId,
-          packet_ids: chosenPacketIds,
-          document_ids: chosenDocIds,
-        }),
-      });
-
-      const json = await res.json();
-      if (!res.ok) throw new Error(json?.message || "Failed to send onboarding");
-
-      onSent?.();
-      onClose();
-    } catch (e: any) {
-      setError(e?.message || "Failed to send onboarding");
-    } finally {
-      setLoading(false);
-    }
+    // Otherwise, on success
+    onSent?.();
+    onClose();
+  } catch (e: any) {
+    setError(e?.message || "Failed to send onboarding");
+    toast.error(e?.message || "Failed to send onboarding");  
+  } finally {
+    setLoading(false);
   }
+}
 
 return (
   <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
