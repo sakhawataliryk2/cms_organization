@@ -4,14 +4,14 @@ import { FiHelpCircle, FiUser, FiLogOut } from "react-icons/fi";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation"; 
-import ProfileModal from "../components/ProfileModal"; // Import ProfileModal component
+import ProfileModal from "../components/ProfileModal"; 
 
 interface PortalHeaderProps {
   userName: string;
 }
 
 export default function PortalHeader({ userName }: PortalHeaderProps) {
-  const [isModalOpen, setIsModalOpen] = useState(false); // State to manage modal visibility
+  const [isModalOpen, setIsModalOpen] = useState(false); 
   const router = useRouter();
 
   const navigateToProfile = () => {
