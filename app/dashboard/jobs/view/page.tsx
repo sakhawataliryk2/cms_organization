@@ -441,6 +441,11 @@ export default function JobView() {
   const [historyError, setHistoryError] = useState<string | null>(null);
   const historyFilters = useHistoryFilters(history);
   const [showAddNote, setShowAddNote] = useState(false);
+  const [pendingStatusChange, setPendingStatusChange] = useState<{
+    candidateId: number | string;
+    applicationId: number | string;
+    newStatus: string;
+  } | null>(null);
   const [noteTypeFilter, setNoteTypeFilter] = useState<string>("");
   // Publish / distribute job (LinkedIn, Job Board) — works without credentials; completes when credentials are added
   const [showPublishModal, setShowPublishModal] = useState(false);
@@ -3770,11 +3775,17 @@ export default function JobView() {
   } | null>(null);
 
   const handleApplicationStatusChange = (candidate: any, newStatus: string) => {
+    const applicationId = candidate.applicationId ?? candidate.rawApplication?.id;
+
+    // Client Submission: open modal, let backend update status on successful submission
     if (newStatus === "Client Submission") {
       setClientSubmissionCandidate(candidate);
       setShowClientSubmissionModal(true);
-    } else if (newStatus === "Interview") {
-      // Open Planner → Add Appointment modal with pre-filled Job Seeker + Job
+      return;
+    }
+
+    // Interview: open appointment planner, but DO NOT change status automatically here
+    if (newStatus === "Interview") {
       const jobSeekerId = candidate?.id;
       const candidateJobId =
         candidate?.applicationId != null || candidate?.rawApplication
@@ -3794,15 +3805,26 @@ export default function JobView() {
       if (effectiveJobId) {
         params.set("jobId", String(effectiveJobId));
       }
-      // Default appointment type to Interview
       params.set("appointmentType", "Interview");
 
       router.push(`/dashboard/planner?${params.toString()}`);
-    } else if (
+      return;
+    }
+
+    // Statuses that REQUIRE a note first: only change status after note is saved
+    if (
       newStatus === "Job Seeker Withdrew" ||
       newStatus === "Client Rejected" ||
       newStatus === "Offer Extended"
     ) {
+      if (applicationId != null) {
+        setPendingStatusChange({
+          candidateId: candidate.id,
+          applicationId,
+          newStatus,
+        });
+      }
+
       const refs: {
         id: string;
         type: string;
@@ -3868,14 +3890,12 @@ export default function JobView() {
         aboutReferences: refs,
       });
       setShowAddNote(true);
+      return;
     }
 
-    if (candidate.applicationId != null || candidate.rawApplication?.id != null) {
-      updateApplicationStatus(
-        candidate.id,
-        candidate.applicationId ?? candidate.rawApplication?.id,
-        newStatus
-      );
+    // All other statuses: update immediately
+    if (applicationId != null) {
+      updateApplicationStatus(candidate.id, applicationId, newStatus);
     }
   };
   
@@ -6379,7 +6399,18 @@ export default function JobView() {
           entityDisplay={job.job_title || job.jobTitle || `Job #${jobId}`}
           defaultAction={noteModalDefaults?.action}
           defaultAboutReferences={noteModalDefaults?.aboutReferences}
-          onSuccess={() => { if (jobId) fetchNotes(jobId); }}
+          onSuccess={() => {
+            if (jobId) fetchNotes(jobId);
+            // If this note was opened as part of a status change, apply the status now
+            if (pendingStatusChange && pendingStatusChange.applicationId != null) {
+              updateApplicationStatus(
+                pendingStatusChange.candidateId,
+                pendingStatusChange.applicationId,
+                pendingStatusChange.newStatus
+              );
+              setPendingStatusChange(null);
+            }
+          }}
         />
       )}
 
