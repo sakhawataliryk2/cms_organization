@@ -33,6 +33,7 @@ const SECTION_CONFIG: Record<
       { value: "JOB_SEEKER_TRANSFER_REQUEST", label: "Job Seeker - Transfer Request (Payroll)" },
       { value: "JOB_SEEKER_UNARCHIVE_REQUEST", label: "Job Seeker - Unarchive Request (Onboarding)" },
       { value: "JOB_SEEKER_APPLICATION_SUBMISSION", label: "Application Submission Template" },
+      { value: "CLIENT_SUBMISSION_EMAIL", label: "Client Submission Email Template" },
     ],
     placeholders: {
       ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}", "{{jobTitle}}", "{{noteText}}"],
@@ -81,6 +82,15 @@ const SECTION_CONFIG: Record<
         "{{submissionSummary}}",
         "{{viewCandidateUrl}}",
       ],
+      CLIENT_SUBMISSION_EMAIL: [
+        "{{candidateName}}",
+        "{{jobTitle}}",
+        "{{submittedBy}}",
+        "{{status}}",
+        "{{submittedAt}}",
+        "{{comments}}",
+        "{{candidateUrl}}",
+      ],
     },
     required: {
       ONBOARDING_INTERNAL_SENT: ["{{jobSeekerName}}", "{{sentBy}}", "{{docsList}}"],
@@ -90,6 +100,7 @@ const SECTION_CONFIG: Record<
       JOB_SEEKER_TRANSFER_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       JOB_SEEKER_UNARCHIVE_REQUEST: ["{{approvalUrl}}", "{{denyUrl}}"],
       JOB_SEEKER_APPLICATION_SUBMISSION: ["{{candidateNameLink}}", "{{viewCandidateUrl}}"],
+      CLIENT_SUBMISSION_EMAIL: ["{{candidateName}}", "{{jobTitle}}", "{{candidateUrl}}"],
     },
     defaults: {
       ONBOARDING_INTERNAL_SENT: {
@@ -196,6 +207,22 @@ const SECTION_CONFIG: Record<
           `<p><strong>Submission Summary:</strong></p>` +
           `<pre style="background:#f5f5f5;padding:10px;border-radius:4px;">{{submissionSummary}}</pre>` +
           `<p><strong>View Candidate:</strong> <a href="{{viewCandidateUrl}}">{{viewCandidateUrl}}</a></p>` +
+          `<p><em>This is an automated notification from the ATS.</em></p>` +
+          `</div>`,
+      },
+      CLIENT_SUBMISSION_EMAIL: {
+        template_name: "Client Submission Email Template",
+        subject: "Client Submission: {{candidateName}} → {{jobTitle}}",
+        body:
+          `<div>` +
+          `<p><strong>Candidate:</strong> {{candidateName}}</p>` +
+          `<p><strong>Job:</strong> {{jobTitle}}</p>` +
+          `<p><strong>Submitted By:</strong> {{submittedBy}}</p>` +
+          `<p><strong>Status:</strong> {{status}}</p>` +
+          `<p><strong>Submitted At:</strong> {{submittedAt}}</p>` +
+          `<p><strong>Summary:</strong></p>` +
+          `<pre style="background:#f5f5f5;padding:10px;border-radius:4px;">{{comments}}</pre>` +
+          `<p><strong>View Candidate:</strong> <a href="{{candidateUrl}}">{{candidateUrl}}</a></p>` +
           `<p><em>This is an automated notification from the ATS.</em></p>` +
           `</div>`,
       },

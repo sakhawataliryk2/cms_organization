@@ -318,6 +318,35 @@ const Planners = () => {
     }
   }, [searchParams]);
 
+  // One-time handler: open Add Appointment modal with pre-filled data when requested via URL
+  const hasInitializedFromUrl = useRef(false);
+  useEffect(() => {
+    if (hasInitializedFromUrl.current) return;
+    const addParam = searchParams?.get('addAppointment');
+    if (!addParam || (addParam !== '1' && addParam.toLowerCase() !== 'true')) return;
+
+    hasInitializedFromUrl.current = true;
+
+    const participantTypeParam = searchParams?.get('participantType') || '';
+    const participantIdParam = searchParams?.get('participantId') || '';
+    const jobIdParam = searchParams?.get('jobId') || '';
+    const appointmentTypeParam = searchParams?.get('appointmentType') || 'Interview';
+
+    const today = new Date();
+    const dateStr = today.toISOString().split('T')[0];
+
+    setAppointmentForm((prev) => ({
+      ...prev,
+      date: prev.date || dateStr,
+      time: prev.time || '',
+      type: prev.type || appointmentTypeParam,
+      participant_type: participantTypeParam || prev.participant_type,
+      participant_id: participantIdParam || prev.participant_id,
+      job_id: jobIdParam || prev.job_id,
+    }));
+    setShowAddModal(true);
+  }, [searchParams]);
+
   // Scroll highlighted row into view when List view has loaded
   useEffect(() => {
     if (highlightAppointmentId != null && viewType === 'List' && listViewRowRef.current) {
@@ -377,7 +406,9 @@ const Planners = () => {
       setIsLoadingLookups(true);
       try {
         const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-        const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+        const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
+
+        // console.log("apiUrl", apiUrl);
 
         // Fetch job seekers
         try {
