@@ -408,7 +408,7 @@ const Planners = () => {
         const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
         const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
 
-        // console.log("apiUrl", apiUrl);
+        console.log("apiUrl", apiUrl);
 
         // Fetch job seekers
         try {

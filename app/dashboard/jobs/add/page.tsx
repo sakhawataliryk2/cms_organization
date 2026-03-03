@@ -16,6 +16,8 @@ import AddressGroupRenderer, {
   isAddressGroupValid,
 } from "@/components/AddressGroupRenderer";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
+import { applyParsedJobToForm } from "@/lib/jobTextParsing";
+import type { ParsedJob } from "@/app/api/parse-job/route";
 
 // Map admin field labels to backend columns; unmapped labels go to custom_fields JSONB
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
@@ -425,6 +427,8 @@ export default function AddJob() {
   const [jobDescFile, setJobDescFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isParsingJob, setIsParsingJob] = useState(false);
+  const [parseJobError, setParseJobError] = useState<string | null>(null);
 
   // Use the custom fields hook (✅ Added setCustomFieldValues like Organizations)
   const {
@@ -553,6 +557,65 @@ export default function AddJob() {
     currentOrganizationId,
     organizationIdFromUrl,
   ]);
+
+  // Parse Job Order (AI) — only when creating a new job from the landing page
+  const handleParseJobOrder = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const ext = (file.name.toLowerCase().split(".").pop() || "").toLowerCase();
+    if (!["pdf", "doc", "docx", "txt"].includes(ext)) {
+      setParseJobError("Use PDF, DOC, DOCX, or TXT.");
+      return;
+    }
+
+    setParseJobError(null);
+    setIsParsingJob(true);
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+
+      const res = await fetch("/api/parse-job", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setParseJobError(data.message || "Job parse failed.");
+        return;
+      }
+      if (!data.success || !data.parsed) {
+        setParseJobError("Invalid response. Enter job manually.");
+        return;
+      }
+
+      applyParsedJobToForm(
+        data.parsed as ParsedJob,
+        null, // main add page does not own the per-type form fields
+        setCustomFieldValues,
+        customFields.map((f) => ({
+          field_name: f.field_name,
+          field_label: f.field_label,
+        }))
+      );
+    } catch (err) {
+      setParseJobError(
+        err instanceof Error ? err.message : "Job parse failed."
+      );
+    } finally {
+      setIsParsingJob(false);
+      // clear input value so same file can be selected again if needed
+      e.target.value = "";
+    }
+  };
 
   // Sort custom fields by sort_order
   const sortedCustomFields = useMemo(
@@ -1595,6 +1658,32 @@ export default function AddJob() {
             >
               X
             </button>
+          </div>
+
+          {/* Parse Job Order (AI) */}
+          <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
+            <h2 className="text-sm font-semibold text-gray-700 mb-2">
+              Parse Job Order (PDF / DOC / DOCX / TXT)
+            </h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Upload a job order or job description to extract key details and prefill
+              fields via AI. You can review and edit everything before saving.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                type="file"
+                accept=".pdf,.doc,.docx,.txt"
+                onChange={handleParseJobOrder}
+                disabled={isParsingJob}
+                className="text-sm text-gray-600 file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+              {isParsingJob && (
+                <span className="text-sm text-gray-500">Parsing…</span>
+              )}
+            </div>
+            {parseJobError && (
+              <p className="mt-2 text-sm text-red-600">{parseJobError}</p>
+            )}
           </div>
 
           {/* Job Type Options */}

@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { extractTextFromFile, isResumeFile } from "@/lib/resumeTextExtract";
+import {
+  CustomFieldDef,
+  FieldMeta,
+  buildCustomFieldMeta,
+  buildCustomFieldPromptInfo,
+  fetchEntityCustomFields,
+  findClosestOption,
+  normalizeOptions,
+  normalizeStr,
+} from "@/lib/aiParsing";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "stepfun/step-3.5-flash:free";
@@ -12,20 +22,6 @@ function debugLog(label: string, data?: unknown) {
   console.log(`\n[RESUME-PARSER] ${label}`);
   if (data !== undefined) console.dir(data, { depth: 5 });
 }
-
-type CustomFieldDef = {
-  field_name: string;
-  field_label?: string | null;
-  field_type?: string | null;
-  is_hidden?: boolean;
-  options?: string[] | string | Record<string, unknown> | null;
-};
-
-type FieldMeta = {
-  name: string;
-  type: string;
-  options: string[];
-};
 
 const BASE_SYSTEM_PROMPT = `You are an intelligent resume parsing and field-normalization engine.
 
@@ -59,86 +55,12 @@ ADDRESS PARSING:
   - "address_2": line 2 if any
   - "city": city
   - "state": 2-letter code
-  - "zip": postal code
+- "zip": postal code
 - If only one line like "San Francisco, CA", put city in "city" and state in "state".
 `;
 
-function normalizeOptions(opts: unknown): string[] {
-  if (!opts) return [];
-  if (Array.isArray(opts)) return opts.filter((o) => typeof o === "string").map((o) => String(o).trim());
-  if (typeof opts === "string") {
-    try {
-      const p = JSON.parse(opts);
-      if (Array.isArray(p)) return normalizeOptions(p);
-      return opts.split(/\r?\n/).map((o) => o.trim()).filter(Boolean);
-    } catch {
-      return opts.split(/\r?\n/).map((o) => o.trim()).filter(Boolean);
-    }
-  }
-  if (typeof opts === "object") return Object.values(opts).filter((o) => typeof o === "string").map((o) => String(o).trim());
-  return [];
-}
-
 function buildSystemPrompt(customFields: CustomFieldDef[]): string {
-  const visible = customFields.filter((f) => !f.is_hidden && f.field_name);
-  const selectFields: Array<{ name: string; label: string; options: string[] }> = [];
-  const textFields: Array<{ name: string; label: string }> = [];
-
-  for (const f of visible) {
-    const opts = normalizeOptions(f.options);
-    const label = (f.field_label || f.field_name).replace(/"/g, "'");
-    const type = (f.field_type || "text").toLowerCase();
-    if ((type === "select" || type === "radio") && opts.length > 0) {
-      selectFields.push({ name: f.field_name, label, options: opts });
-    } else {
-      textFields.push({ name: f.field_name, label });
-    }
-  }
-
-  let customFieldEntries = "";
-  if (visible.length > 0) {
-    const lines: string[] = [];
-    for (const f of visible) {
-      const sf = selectFields.find((s) => s.name === f.field_name);
-      if (sf) {
-        lines.push(
-          `    "${f.field_name}": ""  // SELECT: ${sf.label}. MUST be exactly one of: [${sf.options
-            .map((o) => `"${o}"`)
-            .join(", ")}]. Choose closest match or "" if none.`
-        );
-      } else {
-        lines.push(`    "${f.field_name}": ""  // value for: ${(f.field_label || f.field_name).replace(/"/g, "'")}`);
-      }
-    }
-    customFieldEntries = lines.join(",\n");
-  }
-
-  const selectBlock =
-    selectFields.length > 0
-      ? `
-
-SELECTABLE FIELDS — MUST return only allowed values:
-${selectFields
-  .map(
-    (s) =>
-      `- "${s.name}" (${s.label}): allowed options = [${s.options.map((o) => `"${o}"`).join(", ")}]. Return exactly one option or "".`
-  )
-  .join("\n")}
-
-Examples:
-- Resume says "Senior Software Engineer" and options include "Senior Level" → return "Senior Level"
-- Resume says "full time" and options include "Full-Time" → return "Full-Time"
-- Resume says "Freelancer" and options include "Freelance" → return "Freelance"
-- No reasonable match → return ""`
-      : "";
-
-  const customBlock =
-    customFieldEntries.length > 0
-      ? `,
-  "custom_fields": {
-${customFieldEntries}
-  }`
-      : "";
+  const { selectBlock, customBlock } = buildCustomFieldPromptInfo(customFields);
 
   return `${BASE_SYSTEM_PROMPT}${selectBlock}
 
@@ -192,39 +114,6 @@ function toCustomFieldsRecord(v: unknown): Record<string, string> {
     if (typeof k === "string" && val != null) out[k] = toStr(val);
   }
   return out;
-}
-
-// ---------------- Semantic Option Matching ----------------
-function normalizeStr(v: string): string {
-  return v.toLowerCase().replace(/[-_/]/g, " ").replace(/\s+/g, " ").trim();
-}
-
-function semanticIncludes(a: string, b: string): boolean {
-  const na = normalizeStr(a);
-  const nb = normalizeStr(b);
-  return na.includes(nb) || nb.includes(na);
-}
-
-function findClosestOption(value: string, options: string[]): string | null {
-  if (!value || options.length === 0) return null;
-  const normalizedValue = normalizeStr(value);
-
-  // Exact match
-  for (const opt of options) {
-    if (normalizeStr(opt) === normalizedValue) return opt;
-  }
-
-  // Inclusion match
-  for (const opt of options) {
-    if (semanticIncludes(normalizedValue, opt)) return opt;
-  }
-
-  // Option contains the full value (e.g. "full" → "Full-Time")
-  for (const opt of options) {
-    if (normalizeStr(opt).includes(normalizedValue)) return opt;
-  }
-
-  return null;
 }
 
 // ---------------- AI JSON Parsing ----------------
@@ -309,21 +198,6 @@ function parseAiJson(raw: string, customFieldNames: string[], selectFieldMeta: F
   }
 }
 
-// ---------------- Fetch Custom Fields ----------------
-async function fetchJobSeekerCustomFields(token: string): Promise<CustomFieldDef[]> {
-  const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
-  const res = await fetch(`${apiUrl}/api/custom-fields/entity/job-seekers`, {
-    method: "GET",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return [];
-  const data = await res.json();
-  const list = data?.customFields ?? data?.data ?? [];
-  return Array.isArray(list)
-    ? list.filter((f: unknown) => f && typeof f === "object" && typeof (f as CustomFieldDef).field_name === "string")
-    : [];
-}
-
 // ---------------- Call OpenRouter AI ----------------
 async function callOpenRouter(extractedText: string, systemPrompt: string): Promise<string> {
   const apiKey = process.env.OPENROUTER_API_KEY;
@@ -375,16 +249,8 @@ export async function POST(request: NextRequest) {
     const text = await extractTextFromFile(file);
     if (!text || !text.trim()) return NextResponse.json({ success: false, message: "Could not extract text." }, { status: 400 });
 
-    const customFields = await fetchJobSeekerCustomFields(token);
-    const visibleFields = customFields.filter((f) => !f.is_hidden && f.field_name);
-    const customFieldNames = visibleFields.map((f) => f.field_name);
-    const selectFieldMeta: FieldMeta[] = visibleFields
-      .filter((f) => {
-        const t = (f.field_type || "text").toLowerCase();
-        return (t === "select" || t === "radio") && normalizeOptions(f.options).length > 0;
-      })
-      .map((f) => ({ name: f.field_name, type: (f.field_type || "text").toLowerCase(), options: normalizeOptions(f.options) }));
-
+    const customFields = await fetchEntityCustomFields("job-seekers", token);
+    const { customFieldNames, selectFieldMeta } = buildCustomFieldMeta(customFields);
     const systemPrompt = buildSystemPrompt(customFields);
 
     let rawContent = await callOpenRouter(text, systemPrompt);

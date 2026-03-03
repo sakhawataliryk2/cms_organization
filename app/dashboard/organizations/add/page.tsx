@@ -10,6 +10,8 @@ import CustomFieldRenderer, {
   isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
 import AddressGroupRenderer, { getAddressFields, isAddressGroupValid } from "@/components/AddressGroupRenderer";
+import { applyParsedOrganizationToCustomFields } from "@/lib/organizationTextParsing";
+import type { ParsedOrganization } from "@/app/api/parse-organization/route";
 
 
 interface CustomFieldDefinition {
@@ -83,6 +85,9 @@ export default function AddOrganization() {
     validateCustomFields,
     getCustomFieldsForSubmission,
   } = useCustomFields("organizations");
+  const [isParsingOrganization, setIsParsingOrganization] = useState(false);
+  const [parseOrganizationError, setParseOrganizationError] = useState<string | null>(null);
+  const parseOrgInputRef = useRef<HTMLInputElement | null>(null);
   const addressFields = useMemo(
     () => getAddressFields(customFields as any),
     [customFields]
@@ -233,34 +238,11 @@ export default function AddOrganization() {
           });
         }
 
-        console.log(
-          "Custom Field Values Loaded (mapped):",
-          mappedCustomFieldValues
-        );
-        console.log("Original custom fields from DB:", existingCustomFields);
-        console.log(
-          "Custom Fields Definitions:",
-          customFields.map((f) => ({
-            name: f.field_name,
-            label: f.field_label,
-          }))
-        );
-
         // Debug Status field specifically
         const statusFieldDebug = customFields.find(
           (f) => f.field_label?.toLowerCase() === "status" || f.field_name?.toLowerCase() === "status"
         );
-        if (statusFieldDebug) {
-          console.log("Status field found:", {
-            field_name: statusFieldDebug.field_name,
-            field_label: statusFieldDebug.field_label,
-            value_in_existingCustomFields: existingCustomFields[statusFieldDebug.field_label],
-            value_in_mappedCustomFieldValues: mappedCustomFieldValues[statusFieldDebug.field_name],
-          });
-        } else {
-          console.warn("Status field NOT found in customFields definitions!");
-        }
-
+        
         // All values live in customFieldValues (field_name as keys)
         setCustomFieldValues(mappedCustomFieldValues);
       } catch (err) {
@@ -428,6 +410,63 @@ export default function AddOrganization() {
     if (!duplicateWarning) return;
     setDuplicateWarning(null);
   }, [phoneWebsiteEmailValuesKey]);
+
+  // Parse Organization Document (AI) – create mode only
+  const handleParseOrganization = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const ext = (file.name.toLowerCase().split(".").pop() || "").toLowerCase();
+    if (!["pdf", "doc", "docx", "txt"].includes(ext)) {
+      setParseOrganizationError("Use PDF, DOC, DOCX, or TXT.");
+      return;
+    }
+
+    setParseOrganizationError(null);
+    setIsParsingOrganization(true);
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      const res = await fetch("/api/parse-organization", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setParseOrganizationError(data.message || "Organization parse failed.");
+        return;
+      }
+      if (!data.success || !data.parsed) {
+        setParseOrganizationError("Invalid response. Enter organization manually.");
+        return;
+      }
+
+      applyParsedOrganizationToCustomFields(
+        data.parsed as ParsedOrganization,
+        setCustomFieldValues,
+        customFields.map((f) => ({
+          field_name: f.field_name,
+          field_label: f.field_label,
+        }))
+      );
+    } catch (err) {
+      setParseOrganizationError(
+        err instanceof Error ? err.message : "Organization parse failed."
+      );
+    } finally {
+      setIsParsingOrganization(false);
+      if (parseOrgInputRef.current) {
+        parseOrgInputRef.current.value = "";
+      }
+    }
+  };
 
   // Removed console.logs from component level to prevent excessive logging on every render
   //console.log("Custom Fields:", customFields);
@@ -1192,60 +1231,106 @@ export default function AddOrganization() {
     router.back();
   };
 
-  // Compute whether all required fields are satisfied (for disabling Update/Save until valid)
-  const isFormValid = useMemo(() => {
+  const getFormValidationState = () => {
+    const issues: string[] = [];
+
     const customFieldValidation = validateCustomFields();
-    if (!customFieldValidation.isValid) return false;
+    if (!customFieldValidation.isValid) {
+      issues.push(
+        customFieldValidation.message ||
+          "Custom fields are invalid (validateCustomFields returned isValid=false)"
+      );
+    }
 
     // Address required fields
     if (addressFields.length > 0) {
       const requiredAddressFields = addressFields.filter((f) => f.is_required);
       for (const field of requiredAddressFields) {
         const value = customFieldValues[field.field_name];
-        if (!value || String(value).trim() === "") return false;
+        if (!value || String(value).trim() === "") {
+          issues.push(`Address field "${field.field_label}" is required`);
+          continue;
+        }
         const isZipCodeField =
           field.field_label?.toLowerCase().includes("zip") ||
           field.field_label?.toLowerCase().includes("postal code") ||
           field.field_name?.toLowerCase().includes("zip") ||
           field.field_name === "Field_24" ||
           field.field_name === "field_24";
-        if (isZipCodeField && !/^\d{5}$/.test(String(value).trim())) return false;
+        if (isZipCodeField && !/^\d{5}$/.test(String(value).trim())) {
+          issues.push(
+            `${field.field_label} must be exactly 5 digits (ZIP code)`
+          );
+        }
       }
     }
 
     // Contract Signed By required when Contract Signed on File is "Yes"
-    const contractSignedOnFileField = customFields.find(
+    const contractSignedOnFileFieldForState = customFields.find(
       (f) =>
         f.field_name === "Field_8" ||
         f.field_name === "field_8" ||
-        (f.field_label === "Contract Signed on File" && f.field_name?.toLowerCase().includes("field_8"))
+        (f.field_label === "Contract Signed on File" &&
+          f.field_name?.toLowerCase().includes("field_8"))
     );
-    const contractSignedByField = customFields.find(
+    const contractSignedByFieldForState = customFields.find(
       (f) =>
         f.field_name === "Field_9" ||
         f.field_name === "field_9" ||
-        (f.field_label === "Contract Signed By" && f.field_name?.toLowerCase().includes("field_9"))
+        (f.field_label === "Contract Signed By" &&
+          f.field_name?.toLowerCase().includes("field_9"))
     );
-    if (contractSignedOnFileField && contractSignedByField) {
+    if (contractSignedOnFileFieldForState && contractSignedByFieldForState) {
       const contractOnFileValue =
-        customFieldValues[contractSignedOnFileField.field_name] || "";
+        customFieldValues[contractSignedOnFileFieldForState.field_name] || "";
       const contractSignedByValue =
-        customFieldValues[contractSignedByField.field_name] || "";
+        customFieldValues[contractSignedByFieldForState.field_name] || "";
       if (
         String(contractOnFileValue).trim() === "Yes" &&
-        (!contractSignedByValue || String(contractSignedByValue).trim() === "")
+        (!contractSignedByValue ||
+          String(contractSignedByValue).trim() === "")
       ) {
-        return false;
+        issues.push(
+          `${contractSignedByFieldForState.field_label} is required when Contract Signed on File is "Yes"`
+        );
       }
     }
 
-    return true;
+    return {
+      isValid: issues.length === 0,
+      issues,
+    };
+  };
+
+  // Compute whether all required fields are satisfied (for disabling Update/Save until valid)
+  const isFormValid = useMemo(() => {
+    const { isValid } = getFormValidationState();
+    return isValid;
   }, [
     customFieldValues,
     customFields,
     addressFields,
     validateCustomFields,
   ]);
+
+  useEffect(() => {
+    const { isValid, issues } = getFormValidationState();
+
+    if (!isValid) {
+      console.groupCollapsed(
+        "[AddOrganization] Form is invalid - Save/Update button will be disabled"
+      );
+      console.log("Validation issues preventing save:", issues);
+      console.log("Current customFieldValues:", customFieldValues);
+      console.log("Address fields definition:", addressFields);
+      console.log("Custom fields definition:", customFields);
+      console.groupEnd();
+    } else {
+      console.log(
+        "[AddOrganization] Form is currently valid - Save/Update button should be enabled"
+      );
+    }
+  }, [customFieldValues, customFields, addressFields, isFormValid, validateCustomFields]);
 
   if (isLoading) {
     return <LoadingScreen message="Loading organization data..." />;
@@ -1302,6 +1387,36 @@ export default function AddOrganization() {
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 mb-4 rounded">
             <p className="whitespace-pre-line">{error}</p>
+          </div>
+        )}
+
+        {/* Parse Organization Document (AI) – only in create mode */}
+        {!isEditMode && (
+          <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
+            <h2 className="text-sm font-semibold text-gray-700 mb-2">
+              Parse Organization Document (PDF / DOC / DOCX / TXT)
+            </h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Upload an organization overview, capabilities statement, or similar document
+              to extract key details and prefill fields via AI. You can review and edit
+              everything before saving.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                ref={parseOrgInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.txt"
+                onChange={handleParseOrganization}
+                disabled={isParsingOrganization}
+                className="text-sm text-gray-600 file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+              {isParsingOrganization && (
+                <span className="text-sm text-gray-500">Parsing…</span>
+              )}
+            </div>
+            {parseOrganizationError && (
+              <p className="mt-2 text-sm text-red-600">{parseOrganizationError}</p>
+            )}
           </div>
         )}
 
