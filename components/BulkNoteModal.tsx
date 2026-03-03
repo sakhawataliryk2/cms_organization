@@ -854,8 +854,8 @@ export default function BulkNoteModal({
                                         }`}
                                 >
                                     <option value="">Select an action...</option>
-                                    {actionFields.map((action) => (
-                                        <option key={action.id} value={action.field_name || action.id}>
+                                    {actionFields.map((action, index) => (
+                                        <option key={`${action.id ?? action.field_name ?? index}-${index}`} value={action.field_name || action.id}>
                                             {action.field_label || action.field_name || action.id}
                                         </option>
                                     ))}

@@ -158,7 +158,7 @@ export default function SubmissionFormModal({
     }
     setIsSubmitting(true);
     try {
-      const res = await fetch(`/api/job-seekers/${jobSeekerId}/applications`, {
+      const res = await fetch(`/api/job-seekers/${jobSeekerId}/client-submissions`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

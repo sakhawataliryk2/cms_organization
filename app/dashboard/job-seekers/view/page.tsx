@@ -6897,12 +6897,12 @@ Best regards`;
             <div className="p-6 space-y-4">
               {pendingDeleteRequest && pendingDeleteRequest.status === "pending" ? (
                 <div className="bg-amber-50 border border-amber-200 rounded p-4 text-sm text-amber-800">
-                  A delete request is already pending for this job seeker. Payroll will approve or deny it.
+                  A delete request is already pending for this job seeker. OnBoarding will approve or deny it.
                 </div>
               ) : (
                 <>
                   <p className="text-sm text-gray-600">
-                    Request archival and permanent deletion of this job seeker. Payroll will be notified and must approve or deny.
+                    Request archival and permanent deletion of this job seeker. OnBoarding will be notified and must approve or deny.
                   </p>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">

@@ -12,6 +12,8 @@ import { HiOutlineUser, HiOutlineOfficeBuilding } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import RequestActionModal from '@/components/RequestActionModal';
+import { useAuth } from '@/lib/auth';
+import ClientSubmissionModal from '@/components/ClientSubmissionModal';
 // Drag and drop imports
 import {
   DndContext,
@@ -337,6 +339,8 @@ export default function JobView() {
   const searchParams = useSearchParams() ?? new URLSearchParams();
   const jobId = searchParams.get("id");
   const tabFromUrl = searchParams.get("tab");
+
+  const { user } = useAuth();
 
   const [activeTab, setActiveTabState] = useState(() =>
     tabFromUrl && JOB_VIEW_TAB_IDS.includes(tabFromUrl) ? tabFromUrl : "summary"
@@ -1920,6 +1924,10 @@ export default function JobView() {
 
   const [showAddTearsheetModal, setShowAddTearsheetModal] = useState(false);
 
+  // Client Submission modal state (submit candidate to client from Job view)
+  const [showClientSubmissionModal, setShowClientSubmissionModal] = useState(false);
+  const [clientSubmissionCandidate, setClientSubmissionCandidate] = useState<any | null>(null);
+
   // Fetch job when component mounts
   useEffect(() => {
     if (jobId) {
@@ -3332,6 +3340,7 @@ export default function JobView() {
 
   const handleCloseAddNoteModal = () => {
     setShowAddNote(false);
+    setNoteModalDefaults(null);
   };
 
   const handleGoBack = () => {
@@ -3517,8 +3526,9 @@ export default function JobView() {
       setPublishMessage(null);
       setPublishTargets({ linkedin: false, job_board: true });
     } else if (action === "add-client-submission") {  
-      // setShowAddClientSubmissionModal(true);
-      toast.info("Coming soon");
+      setClientSubmissionCandidate(null);
+      setShowClientSubmissionModal(true);
+      fetchSubmittedCandidates();
       return;
     } else if (action === "ai-smart-match" && jobId) {
       (async () => {
@@ -3697,7 +3707,8 @@ export default function JobView() {
     "Client Submission",
     "Interview",
     "Client Rejected",
-    "Candidate Withdrew",
+    "Job Seeker Withdrew",
+    "Offer Extended",
     "Placed",
   ] as const;
 
@@ -3745,6 +3756,103 @@ export default function JobView() {
     } catch (err) {
       console.error("Error updating application status:", err);
       toast.error("Failed to update status");
+    }
+  };
+
+  const [noteModalDefaults, setNoteModalDefaults] = useState<{
+    action?: string;
+    aboutReferences?: {
+      id: string;
+      type: string;
+      display: string;
+      value: string;
+    }[];
+  } | null>(null);
+
+  const handleApplicationStatusChange = (candidate: any, newStatus: string) => {
+    if (newStatus === "Client Submission") {
+      setClientSubmissionCandidate(candidate);
+      setShowClientSubmissionModal(true);
+    } else if (newStatus === "Interview") {
+      setShowAppointmentModal(true);
+    } else if (
+      newStatus === "Job Seeker Withdrew" ||
+      newStatus === "Client Rejected" ||
+      newStatus === "Offer Extended"
+    ) {
+      const refs: {
+        id: string;
+        type: string;
+        display: string;
+        value: string;
+      }[] = [];
+
+      if (job) {
+        const jobDisplay = `${formatRecordId(
+          job.record_number ?? job.id,
+          "job"
+        )} ${job.title}`;
+        refs.push({
+          id: String(job.id),
+          type: "Job",
+          display: jobDisplay,
+          value: jobDisplay,
+        });
+      }
+
+      if (candidate?.id) {
+        const jsName =
+          candidate.name ||
+          candidate.rawJobSeeker?.full_name ||
+          `${candidate.rawJobSeeker?.first_name || ""} ${
+            candidate.rawJobSeeker?.last_name || ""
+          }`.trim() ||
+          `Job Seeker #${candidate.id}`;
+        const jsRecord = candidate.rawJobSeeker?.record_number ?? candidate.id;
+        const jsDisplay = `${formatRecordId(
+          jsRecord,
+          "jobSeeker"
+        )} ${jsName}`;
+        refs.push({
+          id: String(candidate.id),
+          type: "Job Seeker",
+          display: jsDisplay,
+          value: jsDisplay,
+        });
+      }
+
+      if (newStatus === "Client Rejected" && jobHiringManager?.id) {
+        const hmName =
+          jobHiringManager.fullName ||
+          `${jobHiringManager.firstName || ""} ${
+            jobHiringManager.lastName || ""
+          }`.trim() ||
+          `Hiring Manager #${jobHiringManager.id}`;
+        const hmDisplay = `${formatRecordId(
+          jobHiringManager.record_number ?? jobHiringManager.id,
+          "hiringManager"
+        )} ${hmName}`;
+        refs.push({
+          id: String(jobHiringManager.id),
+          type: "Hiring Manager",
+          display: hmDisplay,
+          value: hmDisplay,
+        });
+      }
+
+      setNoteModalDefaults({
+        action: newStatus,
+        aboutReferences: refs,
+      });
+      setShowAddNote(true);
+    }
+
+    if (candidate.applicationId != null || candidate.rawApplication?.id != null) {
+      updateApplicationStatus(
+        candidate.id,
+        candidate.applicationId ?? candidate.rawApplication?.id,
+        newStatus
+      );
     }
   };
   
@@ -4614,13 +4722,7 @@ export default function JobView() {
                       {c.applicationId != null || c.rawApplication?.id != null ? (
                         <select
                           value={c.status || "Submitted"}
-                          onChange={(e) =>
-                            updateApplicationStatus(
-                              c.id,
-                              c.applicationId ?? c.rawApplication?.id,
-                              e.target.value
-                            )
-                          }
+                          onChange={(e) => handleApplicationStatusChange(c, e.target.value)}
                           className="text-xs border border-gray-300 rounded px-2 py-1 bg-white text-gray-800 focus:ring-2 focus:ring-green-500 focus:border-green-500 min-w-[140px]"
                         >
                           {APPLICATION_STATUS_OPTIONS.map((opt) => (
@@ -6216,6 +6318,28 @@ export default function JobView() {
         </div>
       )}
 
+      {showClientSubmissionModal && (
+        <ClientSubmissionModal
+          open={showClientSubmissionModal}
+          onClose={() => {
+            setShowClientSubmissionModal(false);
+            setClientSubmissionCandidate(null);
+          }}
+          jobId={jobId || ""}
+          job={job}
+          jobHiringManager={jobHiringManager}
+          candidates={submittedCandidates}
+          initialCandidate={clientSubmissionCandidate}
+          currentUserName={user?.name || ""}
+          currentUserEmail={user?.email || ""}
+          onSuccess={() => {
+            if (jobId) {
+              fetchSubmittedCandidates();
+            }
+          }}
+        />
+      )}
+
       <AddTearsheetModal
         open={showAddTearsheetModal}
         onClose={() => setShowAddTearsheetModal(false)}
@@ -6230,6 +6354,8 @@ export default function JobView() {
           entityType="job"
           entityId={jobId ?? ""}
           entityDisplay={job.job_title || job.jobTitle || `Job #${jobId}`}
+          defaultAction={noteModalDefaults?.action}
+          defaultAboutReferences={noteModalDefaults?.aboutReferences}
           onSuccess={() => { if (jobId) fetchNotes(jobId); }}
         />
       )}

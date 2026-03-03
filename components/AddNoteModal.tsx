@@ -14,6 +14,18 @@ interface AddNoteModalProps {
     entityId: string;
     entityDisplay?: string;
     onSuccess?: () => void;
+    /** Optional default action to pre-select when the modal opens (e.g. 'Job Seeker Withdrew'). */
+    defaultAction?: string;
+    /**
+     * Optional additional About/Reference records to pre-populate.
+     * These are merged with the primary entity reference and deduplicated by id+type.
+     */
+    defaultAboutReferences?: Array<{
+        id: string;
+        type: string;
+        display: string;
+        value: string;
+    }>;
 }
 
 interface NoteFormState {
@@ -39,7 +51,9 @@ export default function AddNoteModal({
     entityType,
     entityId,
     entityDisplay,
-    onSuccess
+    onSuccess,
+    defaultAction,
+    defaultAboutReferences
 }: AddNoteModalProps) {
     const [noteForm, setNoteForm] = useState<NoteFormState>({
         text: "",
@@ -68,6 +82,29 @@ export default function AddNoteModal({
     const [actionFields, setActionFields] = useState<any[]>([]);
     const [isLoadingActionFields, setIsLoadingActionFields] = useState(false);
 
+    // When defaultAction is provided, try to pre-select the closest matching action
+    useEffect(() => {
+        if (!defaultAction || actionFields.length === 0) return;
+
+        const target = defaultAction.toLowerCase();
+
+        const match = actionFields.find((action: any) => {
+            const label = String(action.field_label || action.field_name || action.id || "").toLowerCase();
+            // Case-insensitive, substring match in either direction
+            return label.includes(target) || target.includes(label);
+        });
+
+        if (match) {
+            const value = match.field_name || match.id;
+            if (!value) return;
+            setNoteForm((prev) => {
+                // If user already chose something, don't override it
+                if (prev.action && prev.action === value) return prev;
+                return { ...prev, action: value };
+            });
+        }
+    }, [defaultAction, actionFields]);
+
     // Reference search state for About field
     const [aboutSearchQuery, setAboutSearchQuery] = useState("");
     const [aboutSuggestions, setAboutSuggestions] = useState<any[]>([]);
@@ -94,15 +131,28 @@ export default function AddNoteModal({
             fetchActionFields();
             fetchUsers();
             // Reset form with entity info
-            const defaultAboutRef = entityDisplay ? [{
+            const baseRef = entityDisplay ? [{
                 id: entityId,
                 type: entityType.charAt(0).toUpperCase() + entityType.slice(1),
                 display: entityDisplay,
                 value: entityDisplay,
             }] : [];
+            // Merge in any provided default about references (e.g. job seeker, hiring manager)
+            const extraRefs = (defaultAboutReferences ?? []).map((ref) => ({
+                id: String(ref.id),
+                type: ref.type,
+                display: ref.display,
+                value: ref.value,
+            }));
+            const mergedMap = new Map<string, { id: string; type: string; display: string; value: string }>();
+            [...baseRef, ...extraRefs].forEach((ref) => {
+                const key = `${ref.type}:${ref.id}`;
+                if (!mergedMap.has(key)) mergedMap.set(key, ref);
+            });
+            const defaultAboutRef = Array.from(mergedMap.values());
             setNoteForm({
                 text: "",
-                action: "",
+                action: defaultAction || "",
                 about: entityDisplay || "",
                 aboutReferences: defaultAboutRef,
                 copyNote: "No",
@@ -698,6 +748,7 @@ export default function AddNoteModal({
                 value: ref.value,
             }));
 
+            // Create note on the primary record first
             const response = await fetch(`/api/${apiPath}/${entityId}/notes`, {
                 method: 'POST',
                 headers: {
@@ -719,6 +770,71 @@ export default function AddNoteModal({
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.message || 'Failed to add note');
+            }
+
+            // Best-effort: also add this note to each referenced record (About + Additional References)
+            const allRefs = [
+                ...(noteForm.aboutReferences || []),
+                ...(noteForm.additionalReferences || []),
+            ];
+            if (allRefs.length > 0) {
+                const typeToApiPath: Record<string, string> = {
+                    'Job': 'jobs',
+                    'Organization': 'organizations',
+                    'Job Seeker': 'job-seekers',
+                    'Lead': 'leads',
+                    'Task': 'tasks',
+                    'Placement': 'placements',
+                    'Hiring Manager': 'hiring-managers',
+                };
+                const currentEntityLabelMap: Record<string, string> = {
+                    'job': 'Job',
+                    'organization': 'Organization',
+                    'job-seeker': 'Job Seeker',
+                    'lead': 'Lead',
+                    'task': 'Task',
+                    'placement': 'Placement',
+                    'hiring-manager': 'Hiring Manager',
+                };
+                const currentEntityLabel = currentEntityLabelMap[entityType];
+                const seen = new Set<string>();
+
+                for (const ref of allRefs) {
+                    if (!ref || !ref.id || !ref.type) continue;
+                    const key = `${ref.type}:${ref.id}`;
+                    if (seen.has(key)) continue;
+                    seen.add(key);
+
+                    // Skip the primary entity itself; it already has the note
+                    if (currentEntityLabel && ref.type === currentEntityLabel && String(ref.id) === String(entityId)) {
+                        continue;
+                    }
+
+                    const refApiPath = typeToApiPath[ref.type];
+                    if (!refApiPath) continue;
+
+                    try {
+                        await fetch(`/api/${refApiPath}/${ref.id}/notes`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                                text: noteForm.text,
+                                action: noteForm.action,
+                                about: aboutData,
+                                about_references: aboutData,
+                                copy_note: noteForm.copyNote === 'Yes',
+                                replace_general_contact_comments: noteForm.replaceGeneralContactComments,
+                                additional_references: noteForm.additionalReferences,
+                                schedule_next_action: noteForm.scheduleNextAction,
+                                email_notification: noteForm.emailNotification,
+                            }),
+                        });
+                    } catch (propErr) {
+                        console.error('Error propagating note to reference:', propErr);
+                    }
+                }
             }
 
             const data = await response.json();
@@ -816,8 +932,8 @@ export default function AddNoteModal({
                                         }`}
                                 >
                                     <option value="">Select an action...</option>
-                                    {actionFields.map((action) => (
-                                        <option key={action.id} value={action.field_name || action.id}>
+                                    {actionFields.map((action, index) => (
+                                        <option key={`${action.id ?? action.field_name ?? index}-${index}`} value={action.field_name || action.id}>
                                             {action.field_label || action.field_name || action.id}
                                         </option>
                                     ))}
