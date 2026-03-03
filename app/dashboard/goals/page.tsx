@@ -630,17 +630,31 @@ const GoalsAndQuotas = () => {
       {/* Activity Report Section */}
       <div className="px-6 pb-6 mt-8">
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-gray-900">
-            ACTIVITY REPORT
-          </h2>
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">
+              ACTIVITY REPORT
+            </h2>
+            <div className="text-xs text-gray-500">
+              Counts by category for the selected users and date range.
+            </div>
+          </div>
 
           <div className="flex items-center gap-3">
             <button
               onClick={exportToExcel}
               className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 flex items-center gap-2"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                <path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" />
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                className="h-5 w-5"
+                viewBox="0 0 20 20"
+                fill="currentColor"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
+                  clipRule="evenodd"
+                />
               </svg>
               Export to Excel
             </button>
@@ -653,13 +667,14 @@ const GoalsAndQuotas = () => {
                   {selectedUsers.length === 0
                     ? "All Users"
                     : selectedUsers.length === 1
-                      ? users.find((u) => u.id === selectedUsers[0])?.name ||
+                    ? users.find((u) => u.id === selectedUsers[0])?.name ||
                       "1 User"
-                      : `${selectedUsers.length} Users`}
+                    : `${selectedUsers.length} Users`}
                 </span>
                 <svg
-                  className={`w-4 h-4 text-gray-500 transition-transform ${isUsersDropdownOpen ? "rotate-180" : ""
-                    }`}
+                  className={`w-4 h-4 text-gray-500 transition-transform ${
+                    isUsersDropdownOpen ? "rotate-180" : ""
+                  }`}
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -724,7 +739,7 @@ const GoalsAndQuotas = () => {
           </div>
         </div>
 
-        {/* Activity Report Grid */}
+        {/* Activity Report Grid - styled to match main dashboard */}
         <div className="bg-white border border-gray-300 rounded-lg overflow-hidden">
           {/* Header Row */}
           <div className="flex bg-gray-50 border-b border-gray-300">
@@ -737,20 +752,32 @@ const GoalsAndQuotas = () => {
             <div className="w-24 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
               Notes
             </div>
-            <div className="w-24 p-3 border-r border-gray-300 text-sm font-medium text-gray-700 text-center">
-              Notes Count
+            <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              <div>Goals</div>
             </div>
-            <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700 text-center">
+            <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
               Added to System
+            </div>
+            <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              <div>Goals</div>
             </div>
             <div className="w-28 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
               Inbound emails
             </div>
+            <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              <div>Goals</div>
+            </div>
             <div className="w-28 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
               Outbound emails
             </div>
+            <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              <div>Goals</div>
+            </div>
             <div className="w-16 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
               Calls
+            </div>
+            <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
+              <div>Goals</div>
             </div>
             <div className="w-16 p-3 text-sm font-medium text-gray-700">
               Texts
@@ -772,81 +799,107 @@ const GoalsAndQuotas = () => {
                   key={`${row.userId}-${row.category}`}
                   className={`flex border-b border-gray-300 last:border-b-0 ${rowClass}`}
                 >
+                  {/* User */}
                   <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
                     {row.userName}
                   </div>
 
+                  {/* Category */}
                   <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
                     {row.category}
                   </div>
 
-                  {/* Notes (free text) */}
+                  {/* Notes count (clickable, like main dashboard) */}
                   <div className="w-24 p-3 border-r border-gray-300">
-                    <input
-                      type="text"
-                      value={row.notes}
-                      onChange={(e) => {
-                        const updated = goalsQuotasData.map((item) =>
-                          item.userId === row.userId &&
-                            item.category === row.category
-                            ? { ...item, notes: e.target.value }
-                            : item
-                        );
-                        setGoalsQuotasData(updated);
-                      }}
-                      className="w-full text-sm border-0 bg-transparent focus:outline-none focus:ring-0"
-                      placeholder=""
-                    />
-                  </div>
-
-                  {/* ✅ Notes Count clickable */}
-                  <div className="w-24 p-3 border-r border-gray-300 text-center">
                     {isLoadingNotes ? (
-                      <span className="text-gray-400">...</span>
+                      <div className="text-sm text-gray-400 text-center">…</div>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleNotesClick(row.userId, row.category)
-                        }
-                        className="text-blue-600 hover:text-blue-800 underline font-medium"
-                        title="Click to view notes"
-                      >
-                        {row.notesCount || 0}
-                      </button>
+                      <div className="text-sm text-gray-800 text-center">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleNotesClick(row.userId, row.category)
+                          }
+                          className="text-blue-600 hover:text-blue-800 underline font-medium"
+                          title="Click to view notes"
+                        >
+                          {row.notesCount || 0}
+                        </button>
+                      </div>
                     )}
                   </div>
 
-                  {/* ✅ Added to System clickable */}
-                  <div className="w-32 p-3 border-r border-gray-300 text-center">
+                  {/* Notes Goals (read-only placeholder, matching main dashboard) */}
+                  <div className="w-20 p-3 border-r border-gray-300">
+                    <div className="text-xs text-gray-500 text-center">--</div>
+                  </div>
+
+                  {/* Added to System (clickable, like main dashboard) */}
+                  <div className="w-32 p-3 border-r border-gray-300">
                     {isLoadingRecords ? (
-                      <span className="text-gray-400">...</span>
+                      <div className="text-sm text-gray-400 text-center">…</div>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleRecordsClick(row.userId, row.category)
-                        }
-                        className="text-blue-600 hover:text-blue-800 underline font-medium"
-                        title="Click to view records"
-                      >
-                        {row.addedToSystem || 0}
-                      </button>
+                      <div className="text-sm text-gray-800 text-center">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleRecordsClick(row.userId, row.category)
+                          }
+                          className="text-blue-600 hover:text-blue-800 underline font-medium"
+                          title="Click to view records"
+                        >
+                          {row.addedToSystem || 0}
+                        </button>
+                      </div>
                     )}
                   </div>
 
-                  {/* static 0 columns */}
-                  <div className="w-28 p-3 border-r border-gray-300">
-                    <span className="text-sm text-gray-700">0</span>
+                  {/* Added to System Goals */}
+                  <div className="w-20 p-3 border-r border-gray-300">
+                    <div className="text-xs text-gray-500 text-center">--</div>
                   </div>
+
+                  {/* Inbound emails */}
                   <div className="w-28 p-3 border-r border-gray-300">
-                    <span className="text-sm text-gray-700">0</span>
+                    <div className="text-sm text-gray-800 text-center">
+                      {row.inboundEmails ?? 0}
+                    </div>
                   </div>
+
+                  {/* Inbound emails Goals */}
+                  <div className="w-20 p-3 border-r border-gray-300">
+                    <div className="text-xs text-gray-500 text-center">--</div>
+                  </div>
+
+                  {/* Outbound emails */}
+                  <div className="w-28 p-3 border-r border-gray-300">
+                    <div className="text-sm text-gray-800 text-center">
+                      {row.outboundEmails ?? 0}
+                    </div>
+                  </div>
+
+                  {/* Outbound emails Goals */}
+                  <div className="w-20 p-3 border-r border-gray-300">
+                    <div className="text-xs text-gray-500 text-center">--</div>
+                  </div>
+
+                  {/* Calls */}
                   <div className="w-16 p-3 border-r border-gray-300">
-                    <span className="text-sm text-gray-700">0</span>
+                    <div className="text-sm text-gray-800 text-center">
+                      {row.calls ?? 0}
+                    </div>
                   </div>
+
+                  {/* Calls Goals */}
+                  <div className="w-20 p-3 border-r border-gray-300">
+                    <div className="text-xs text-gray-500 text-center">--</div>
+                  </div>
+
+                  {/* Texts */}
                   <div className="w-16 p-3">
-                    <span className="text-sm text-gray-700">0</span>
+                    <div className="text-sm text-gray-800 text-center">
+                      {row.texts ?? 0}
+                    </div>
                   </div>
                 </div>
               );

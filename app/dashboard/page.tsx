@@ -90,6 +90,32 @@ export default function Dashboard() {
     const [activityReportError, setActivityReportError] = useState<string | null>(null);
     const [activityReport, setActivityReport] = useState<any>(null);
 
+    // Activity Report detail modals (similar to Goals & Quotas)
+    const [isLoadingActivityDetails, setIsLoadingActivityDetails] = useState(false);
+    const [showActivityNotesModal, setShowActivityNotesModal] = useState(false);
+    const [showActivityRecordsModal, setShowActivityRecordsModal] = useState(false);
+    const [activityNotesDetails, setActivityNotesDetails] = useState<{
+        category: string;
+        notes: any[];
+    } | null>(null);
+    const [activityRecordsDetails, setActivityRecordsDetails] = useState<{
+        category: string;
+        records: any[];
+    } | null>(null);
+
+    // Helper: auth header for internal API calls
+    const getAuthHeader = (): Record<string, string> => {
+        if (typeof document === 'undefined') return {};
+        const token = document.cookie.replace(
+            /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+            '$1'
+        );
+        if (!token) return {};
+        return {
+            Authorization: `Bearer ${token}`,
+        };
+    };
+
     // Validate date range
     const validateDateRange = (start: string, end: string): boolean => {
         if (!start || !end) {
@@ -138,6 +164,164 @@ export default function Dashboard() {
         return () => clearTimeout(handle);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activityRange.start, activityRange.end, user?.id]);
+
+    // Helpers to resolve date range for detail queries
+    const getActivityRangeStartDate = () =>
+        activityRange.start ? new Date(`${activityRange.start}T00:00:00`) : null;
+    const getActivityRangeEndDate = () =>
+        activityRange.end ? new Date(`${activityRange.end}T23:59:59.999`) : null;
+
+    const isInActivityRange = (dateString: string | undefined) => {
+        if (!dateString) return false;
+        const d = new Date(dateString);
+        if (Number.isNaN(d.getTime())) return false;
+        const rangeStart = getActivityRangeStartDate();
+        const rangeEnd = getActivityRangeEndDate();
+        if (rangeStart && d < rangeStart) return false;
+        if (rangeEnd && d > rangeEnd) return false;
+        return true;
+    };
+
+    const activityCategoryApiMap: Record<string, string> = {
+        Organization: 'organizations',
+        Jobs: 'jobs',
+        'Job Seekers': 'job-seekers',
+        'Hiring Managers': 'hiring-managers',
+        Placements: 'placements',
+        Leads: 'leads',
+    };
+
+    const activityResponseKeyMap: Record<string, string> = {
+        Organization: 'organizations',
+        Jobs: 'jobs',
+        'Job Seekers': 'jobSeekers',
+        'Hiring Managers': 'hiringManagers',
+        Placements: 'placements',
+        Leads: 'leads',
+    };
+
+    const handleActivityNotesClick = async (categoryLabel: string) => {
+        if (!user?.id) return;
+        const apiEndpoint = activityCategoryApiMap[categoryLabel];
+        if (!apiEndpoint) return;
+
+        // Placements notes list is not wired via API yet
+        if (categoryLabel === 'Placements') {
+            setActivityNotesDetails({
+                category: categoryLabel,
+                notes: [],
+            });
+            setShowActivityNotesModal(true);
+            return;
+        }
+
+        setIsLoadingActivityDetails(true);
+        try {
+            const entitiesResponse = await fetch(`/api/${apiEndpoint}`, {
+                headers: getAuthHeader(),
+            });
+            if (!entitiesResponse.ok) {
+                setActivityNotesDetails({
+                    category: categoryLabel,
+                    notes: [],
+                });
+                setShowActivityNotesModal(true);
+                return;
+            }
+
+            const entitiesData = await entitiesResponse.json();
+            const responseKey =
+                activityResponseKeyMap[categoryLabel] || apiEndpoint.replace('-', '');
+            const entities =
+                entitiesData[responseKey] ||
+                entitiesData[categoryLabel.toLowerCase().replace(' ', '')] ||
+                [];
+
+            const notesList: any[] = [];
+            for (const entity of entities) {
+                if (!entity?.id) continue;
+                try {
+                    const notesResponse = await fetch(
+                        `/api/${apiEndpoint}/${entity.id}/notes`,
+                        { headers: getAuthHeader() }
+                    );
+                    if (!notesResponse.ok) continue;
+                    const notesData = await notesResponse.json();
+                    const notes = notesData.notes || [];
+                    notes.forEach((note: any) => {
+                        if (
+                            String(note.created_by) === String(user.id) &&
+                            isInActivityRange(note.created_at)
+                        ) {
+                            notesList.push({
+                                ...note,
+                                _entityId: entity.id,
+                                _entityName:
+                                    entity.name ||
+                                    entity.job_title ||
+                                    entity.full_name ||
+                                    `${categoryLabel} #${entity.id}`,
+                            });
+                        }
+                    });
+                } catch {
+                    // ignore per-entity errors
+                }
+            }
+
+            setActivityNotesDetails({
+                category: categoryLabel,
+                notes: notesList,
+            });
+            setShowActivityNotesModal(true);
+        } finally {
+            setIsLoadingActivityDetails(false);
+        }
+    };
+
+    const handleActivityRecordsClick = async (categoryLabel: string) => {
+        if (!user?.id) return;
+        const apiEndpoint = activityCategoryApiMap[categoryLabel];
+        if (!apiEndpoint) return;
+
+        setIsLoadingActivityDetails(true);
+        try {
+            const entitiesResponse = await fetch(`/api/${apiEndpoint}`, {
+                headers: getAuthHeader(),
+            });
+            if (!entitiesResponse.ok) {
+                setActivityRecordsDetails({
+                    category: categoryLabel,
+                    records: [],
+                });
+                setShowActivityRecordsModal(true);
+                return;
+            }
+
+            const entitiesData = await entitiesResponse.json();
+            const responseKey =
+                activityResponseKeyMap[categoryLabel] || apiEndpoint.replace('-', '');
+            const entities = entitiesData[responseKey] || [];
+
+            const records: any[] = [];
+            entities.forEach((entity: any) => {
+                if (
+                    String(entity.created_by) === String(user.id) &&
+                    isInActivityRange(entity.created_at)
+                ) {
+                    records.push(entity);
+                }
+            });
+
+            setActivityRecordsDetails({
+                category: categoryLabel,
+                records,
+            });
+            setShowActivityRecordsModal(true);
+        } finally {
+            setIsLoadingActivityDetails(false);
+        }
+    };
 
     // Navigation handlers
     const handleNextClick = () => {
@@ -1558,12 +1742,21 @@ export default function Dashboard() {
                                 {row.category}
                             </div>
 
-                            {/* Notes Column */}
+                            {/* Notes Column (clickable for details) */}
                             <div className="w-24 p-3 border-r border-gray-300">
                                 <div className="text-sm text-gray-800 text-center">
-                                    {isLoadingActivityReport
-                                        ? "…"
-                                        : (activityReport?.categories?.[row.key]?.notesCount ?? 0)}
+                                    {isLoadingActivityReport ? (
+                                        "…"
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleActivityNotesClick(row.category)}
+                                            className="text-blue-600 hover:text-blue-800 underline font-medium disabled:cursor-not-allowed"
+                                            disabled={isLoadingActivityDetails}
+                                        >
+                                            {activityReport?.categories?.[row.key]?.notesCount ?? 0}
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 
@@ -1574,12 +1767,21 @@ export default function Dashboard() {
                                 </div>
                             </div>
 
-                            {/* Added to System Column */}
+                            {/* Added to System Column (clickable for details) */}
                             <div className="w-32 p-3 border-r border-gray-300">
                                 <div className="text-sm text-gray-800 text-center">
-                                    {isLoadingActivityReport
-                                        ? "…"
-                                        : (activityReport?.categories?.[row.key]?.addedToSystem ?? 0)}
+                                    {isLoadingActivityReport ? (
+                                        "…"
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={() => handleActivityRecordsClick(row.category)}
+                                            className="text-blue-600 hover:text-blue-800 underline font-medium disabled:cursor-not-allowed"
+                                            disabled={isLoadingActivityDetails}
+                                        >
+                                            {activityReport?.categories?.[row.key]?.addedToSystem ?? 0}
+                                        </button>
+                                    )}
                                 </div>
                             </div>
 
@@ -1650,6 +1852,182 @@ export default function Dashboard() {
                     ))}
                 </div>
             </div>
+
+            {/* Activity Report Notes Modal */}
+            {showActivityNotesModal && activityNotesDetails && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+                        <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                            <h2 className="text-lg font-semibold">
+                                Notes - {activityNotesDetails.category} -{" "}
+                                {user?.name || user?.email || "Current user"}
+                            </h2>
+                            <button
+                                onClick={() => {
+                                    setShowActivityNotesModal(false);
+                                    setActivityNotesDetails(null);
+                                }}
+                                className="p-1 rounded hover:bg-gray-200"
+                            >
+                                <span className="text-2xl font-bold">×</span>
+                            </button>
+                        </div>
+
+                        <div className="p-6">
+                            {isLoadingActivityDetails ? (
+                                <p className="text-gray-500 text-center py-8">
+                                    Loading notes...
+                                </p>
+                            ) : activityNotesDetails.notes.length === 0 ? (
+                                <p className="text-gray-500 text-center py-8">
+                                    No notes found for this category and date range.
+                                </p>
+                            ) : (
+                                <div className="space-y-3">
+                                    {activityNotesDetails.notes.map((note, idx) => (
+                                        <div
+                                            key={note.id || idx}
+                                            className="border border-gray-200 rounded p-4"
+                                        >
+                                            <div className="text-sm font-medium text-gray-900">
+                                                {note._entityName}
+                                            </div>
+                                            <div className="text-sm text-gray-700 mt-2">
+                                                {note.text || note.note || "(No text)"}
+                                            </div>
+                                            {note.created_at && (
+                                                <div className="text-xs text-gray-500 mt-2">
+                                                    Created:{" "}
+                                                    {new Date(
+                                                        note.created_at
+                                                    ).toLocaleString()}
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
+                            <div className="text-sm text-gray-600">
+                                Total: {activityNotesDetails.notes.length} note(s)
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setShowActivityNotesModal(false);
+                                    setActivityNotesDetails(null);
+                                }}
+                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Activity Report Records Modal */}
+            {showActivityRecordsModal && activityRecordsDetails && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
+                        <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
+                            <h2 className="text-lg font-semibold">
+                                {activityRecordsDetails.category} Records -{" "}
+                                {user?.name || user?.email || "Current user"}
+                            </h2>
+                            <button
+                                onClick={() => {
+                                    setShowActivityRecordsModal(false);
+                                    setActivityRecordsDetails(null);
+                                }}
+                                className="p-1 rounded hover:bg-gray-200"
+                            >
+                                <span className="text-2xl font-bold">×</span>
+                            </button>
+                        </div>
+
+                        <div className="p-6">
+                            {isLoadingActivityDetails ? (
+                                <p className="text-gray-500 text-center py-8">
+                                    Loading records...
+                                </p>
+                            ) : activityRecordsDetails.records.length === 0 ? (
+                                <p className="text-gray-500 text-center py-8">
+                                    No records found for this category and date range.
+                                </p>
+                            ) : (
+                                <div className="space-y-4">
+                                    {activityRecordsDetails.records.map((record, index) => (
+                                        <div
+                                            key={record.id || index}
+                                            className="border border-gray-200 rounded p-4 hover:bg-gray-50"
+                                        >
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex-1">
+                                                    {/* Basic display similar to Goals page */}
+                                                    <h3 className="font-medium text-gray-900">
+                                                        {record.name ||
+                                                            record.job_title ||
+                                                            record.full_name ||
+                                                            `${activityRecordsDetails.category} #${record.id}`}
+                                                    </h3>
+                                                    {record.email && (
+                                                        <p className="text-sm text-gray-600">
+                                                            {record.email}
+                                                        </p>
+                                                    )}
+                                                    {record.organization_name && (
+                                                        <p className="text-sm text-gray-600">
+                                                            {record.organization_name}
+                                                        </p>
+                                                    )}
+                                                    {record.title && (
+                                                        <p className="text-sm text-gray-600">
+                                                            {record.title}
+                                                        </p>
+                                                    )}
+                                                    {record.job_title && (
+                                                        <p className="text-sm text-gray-600">
+                                                            {record.job_title}
+                                                        </p>
+                                                    )}
+                                                    {record.created_at && (
+                                                        <p className="text-xs text-gray-500 mt-2">
+                                                            Created:{" "}
+                                                            {new Date(
+                                                                record.created_at
+                                                            ).toLocaleDateString()}
+                                                        </p>
+                                                    )}
+                                                </div>
+                                                <div className="text-xs text-gray-500">
+                                                    ID: {record.id}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
+                            <div className="text-sm text-gray-600">
+                                Total: {activityRecordsDetails.records.length} record(s)
+                            </div>
+                            <button
+                                onClick={() => {
+                                    setShowActivityRecordsModal(false);
+                                    setActivityRecordsDetails(null);
+                                }}
+                                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium"
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Next Button - Bottom Right */}
             <div className="flex justify-end mt-6 mb-4 px-6">

@@ -145,56 +145,65 @@ export default function CandidateFlowDashboard() {
             return;
           }
 
-          // If there is any client submission, treat as "Client Submitted"
-          if (clientSubs.length > 0) {
-            const latestClientSub = clientSubs[0];
-            const jobIdLabel =
-              latestClientSub?.job_id != null
-                ? formatRecordId(latestClientSub.job_id, 'job')
-                : latestClientSub?.job_title || '';
+          const normalizeStatus = (s: any) => String(s || '').toLowerCase();
 
-            nextClientSubmitted.push({
+          // Find applications by priority status
+          const appWithOffer = apps.find((a: any) => normalizeStatus(a?.status) === 'offer extended');
+          const appWithInterview = apps.find((a: any) => normalizeStatus(a?.status) === 'interview');
+          const appWithClientStatus = apps.find((a: any) => normalizeStatus(a?.status) === 'client submission');
+
+          // Helper to build job label from a record that may have job_id/job_title
+          const buildJobLabel = (record: any) => {
+            if (!record) return '';
+            if (record.job_id != null) {
+              return formatRecordId(record.job_id, 'job');
+            }
+            return record.job_title || '';
+          };
+
+          // 1) Highest priority: any application with Offer Extended
+          if (appWithOffer) {
+            nextOffer.push({
               id: c.id,
               name: c.name,
-              jobId: jobIdLabel,
+              jobId: buildJobLabel(appWithOffer),
             });
             return;
           }
 
-          if (apps.length === 0) {
-            nextPrescreened.push(c);
+          // 2) Next: any application with Interview
+          if (appWithInterview) {
+            nextInterview.push({
+              id: c.id,
+              name: c.name,
+              jobId: buildJobLabel(appWithInterview),
+            });
             return;
           }
 
-          const sortedApps = [...apps].sort(
+          // 3) Next: any client submission row OR application with Client Submission status
+          if (clientSubs.length > 0 || appWithClientStatus) {
+            const source = appWithClientStatus || clientSubs[0];
+            nextClientSubmitted.push({
+              id: c.id,
+              name: c.name,
+              jobId: buildJobLabel(source),
+            });
+            return;
+          }
+
+          // 4) Fallback: they have applications but none of the above statuses → generic Submitted
+          const latestApp = [...apps].sort(
             (a: any, b: any) =>
               new Date(b?.created_at || 0).getTime() -
               new Date(a?.created_at || 0).getTime()
-          );
+          )[0];
 
-          const latest = sortedApps[0];
-          const jobIdLabel =
-            latest?.job_id != null
-              ? formatRecordId(latest.job_id, 'job')
-              : latest?.job_title || '';
-
-          const status = String(latest?.status || '').toLowerCase();
-
-          const baseCandidate: Candidate = {
+          nextSubmitted.push({
             id: c.id,
             name: c.name,
-            jobId: jobIdLabel,
-          };
-
-          if (status === 'client submission') {
-            nextClientSubmitted.push(baseCandidate);
-          } else if (status === 'interview') {
-            nextInterview.push(baseCandidate);
-          } else if (status === 'offer extended') {
-            nextOffer.push(baseCandidate);
-          } else {
-            nextSubmitted.push(baseCandidate);
-          }
+            jobId: buildJobLabel(latestApp),
+          });
         });
 
         setPrescreenedStage(nextPrescreened);
