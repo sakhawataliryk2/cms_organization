@@ -243,6 +243,7 @@ function SortableColumnHeader({
 
 export default function ArchivedJobSeekersList() {
   const router = useRouter();
+  const [archivedActionsOpen, setArchivedActionsOpen] = useState(false);
   const [selectedJobSeekers, setSelectedJobSeekers] = useState<
     string[]
   >([]);
@@ -1001,10 +1002,52 @@ export default function ArchivedJobSeekersList() {
 
         <div className="hidden md:flex space-x-4">
           {selectedJobSeekers.length > 0 && (
-            <button onClick={deleteSelectedJobSeekers} className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-              Delete Selected ({selectedJobSeekers.length})
-            </button>
+            <div className="relative">
+              <button
+                onClick={() => setArchivedActionsOpen((v) => !v)}
+                className="px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-800 flex items-center gap-1"
+              >
+                Actions ({selectedJobSeekers.length})
+                <FiChevronDown className="ml-1" />
+              </button>
+              {archivedActionsOpen && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setArchivedActionsOpen(false)} aria-hidden="true" />
+                  <div className="absolute right-0 top-full mt-1 w-52 bg-white border border-gray-200 rounded-lg shadow-xl z-20 py-1">
+                    <button
+                      onClick={() => { setArchivedActionsOpen(false); deleteSelectedJobSeekers(); }}
+                      className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                    >
+                      Delete Permanently
+                    </button>
+                    <button
+                      onClick={async () => {
+                        setArchivedActionsOpen(false);
+                        if (!window.confirm(`Unarchive ${selectedJobSeekers.length} record(s)? An unarchive request will be sent.`)) return;
+                        setIsLoading(true);
+                        try {
+                          const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+                          for (const id of selectedJobSeekers) {
+                            const res = await fetch(`/api/job-seekers/${id}/unarchive-request`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+                            if (!res.ok) throw new Error("Unarchive request failed");
+                          }
+                          await fetchJobSeekers();
+                          setSelectedJobSeekers([]);
+                          setSelectAll(false);
+                        } catch (err) {
+                          setError(err instanceof Error ? err.message : "Unarchive failed");
+                        } finally {
+                          setIsLoading(false);
+                        }
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                    >
+                      Unarchive
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           )}
           <div className="relative">
             <button onClick={() => setFavoritesMenuOpen(!favoritesMenuOpen)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2 bg-white">
@@ -1032,8 +1075,43 @@ export default function ArchivedJobSeekersList() {
         </div>
 
         {selectedJobSeekers.length > 0 && (
-          <div className="w-full md:hidden">
-            <button onClick={deleteSelectedJobSeekers} className="w-full px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700 flex items-center justify-center gap-2">Delete Selected ({selectedJobSeekers.length})</button>
+          <div className="w-full md:hidden relative">
+            <button
+              onClick={() => setArchivedActionsOpen((v) => !v)}
+              className="w-full px-4 py-2 bg-gray-700 text-white rounded hover:bg-gray-800 flex items-center justify-center gap-2"
+            >
+              Actions ({selectedJobSeekers.length})
+              <FiChevronDown />
+            </button>
+            {archivedActionsOpen && (
+              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-20 py-1">
+                <button onClick={() => { setArchivedActionsOpen(false); deleteSelectedJobSeekers(); }} className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50">Delete Permanently</button>
+                <button
+                  onClick={async () => {
+                    setArchivedActionsOpen(false);
+                    if (!window.confirm(`Unarchive ${selectedJobSeekers.length} record(s)?`)) return;
+                    setIsLoading(true);
+                    try {
+                      const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+                      for (const id of selectedJobSeekers) {
+                        const res = await fetch(`/api/job-seekers/${id}/unarchive-request`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+                        if (!res.ok) throw new Error("Unarchive request failed");
+                      }
+                      await fetchJobSeekers();
+                      setSelectedJobSeekers([]);
+                      setSelectAll(false);
+                    } catch (err) {
+                      setError(err instanceof Error ? err.message : "Unarchive failed");
+                    } finally {
+                      setIsLoading(false);
+                    }
+                  }}
+                  className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                >
+                  Unarchive
+                </button>
+              </div>
+            )}
           </div>
         )}
         <div className="w-full md:hidden">
@@ -1169,44 +1247,37 @@ export default function ArchivedJobSeekersList() {
                     >
                       <ActionDropdown
                         label="Actions"
-                        disabled
                         options={[
                           { label: "View", action: () => handleViewJobSeeker(js.id) },
                           {
-                            label: "Delete",
+                            label: "Delete Permanently",
                             action: async () => {
-                              if (
-                                !window.confirm(
-                                  "Are you sure you want to permanently delete this job seeker?"
-                                )
-                              )
-                                return;
+                              if (!window.confirm("Are you sure you want to permanently delete this job seeker?")) return;
                               setIsLoading(true);
                               try {
-                                const token = document.cookie
-                                  .split("; ")
-                                  .find((row) => row.startsWith("token="))
-                                  ?.split("=")[1];
-                                const res = await fetch(
-                                  `/api/job-seekers/${js.id}`,
-                                  {
-                                    method: "DELETE",
-                                    headers: token
-                                      ? { Authorization: `Bearer ${token}` }
-                                      : undefined,
-                                  }
-                                );
-                                if (!res.ok)
-                                  throw new Error(
-                                    "Failed to delete job seeker"
-                                  );
+                                const token = document.cookie.split("; ").find((row) => row.startsWith("token="))?.split("=")[1];
+                                const res = await fetch(`/api/job-seekers/${js.id}`, { method: "DELETE", headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+                                if (!res.ok) throw new Error("Failed to delete job seeker");
                                 await fetchJobSeekers();
                               } catch (err) {
-                                setError(
-                                  err instanceof Error
-                                    ? err.message
-                                    : "Delete failed"
-                                );
+                                setError(err instanceof Error ? err.message : "Delete failed");
+                              } finally {
+                                setIsLoading(false);
+                              }
+                            },
+                          },
+                          {
+                            label: "Unarchive",
+                            action: async () => {
+                              if (!window.confirm("Send unarchive request for this job seeker?")) return;
+                              setIsLoading(true);
+                              try {
+                                const token = document.cookie.split("; ").find((row) => row.startsWith("token="))?.split("=")[1];
+                                const res = await fetch(`/api/job-seekers/${js.id}/unarchive-request`, { method: "POST", headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+                                if (!res.ok) throw new Error("Unarchive request failed");
+                                await fetchJobSeekers();
+                              } catch (err) {
+                                setError(err instanceof Error ? err.message : "Unarchive failed");
                               } finally {
                                 setIsLoading(false);
                               }

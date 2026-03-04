@@ -267,17 +267,11 @@ function AddOfficeModal({ onClose, onOfficeAdded }: { onClose: () => void, onOff
         }
     };
 
-    // Building types for dropdown
+    // Building types for dropdown (exact options per spec)
     const buildingTypes = [
-        'Corporate Office',
-        'Branch Office',
-        'Regional Headquarters',
-        'Operations Center',
-        'Research Facility',
-        'Training Center',
-        'Retail Location',
-        'Distribution Center',
-        'Manufacturing Facility'
+        'Office',
+        'Temporary Location',
+        'Remote Location'
     ];
 
     // Countries for dropdown

@@ -18,6 +18,8 @@ import AddressGroupRenderer, {
 import Tooltip from "@/components/Tooltip";
 import { isValidUSPhoneNumber } from "@/app/utils/phoneValidation";
 import { FiInfo } from "react-icons/fi";
+import { applyParsedJobToForm } from "@/lib/jobTextParsing";
+import type { ParsedJob } from "@/app/api/parse-job/route";
 
 // Map admin field labels to backend columns; unmapped labels go to custom_fields JSONB
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
@@ -445,6 +447,11 @@ export default function AddJob() {
   const [jobDescFile, setJobDescFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isParsingJob, setIsParsingJob] = useState(false);
+  const [parseJobError, setParseJobError] = useState<string | null>(null);
+  const [parseJobProgress, setParseJobProgress] = useState<number>(0);
+  const parseJobAbortRef = useRef<AbortController | null>(null);
+  const parseJobInputRef = useRef<HTMLInputElement | null>(null);
 
   // When URL has organizationId or hiringManagerId, user must select HM in first step; we then hide the HM custom field on the form.
   const requireHiringManagerFromUrl = Boolean(organizationIdFromUrl || hiringManagerIdFromUrl);
@@ -1547,6 +1554,123 @@ export default function AddJob() {
     }
   };
 
+  // Shared: run AI parse on a job order file and apply to custom fields.
+  const parseJobWithFile = async (file: File) => {
+    const ext = (file.name.toLowerCase().split(".").pop() || "").toLowerCase();
+    if (!["pdf", "doc", "docx", "txt"].includes(ext)) {
+      setParseJobError("Use PDF, DOC, DOCX, or TXT.");
+      return;
+    }
+
+    const abort = new AbortController();
+    parseJobAbortRef.current = abort;
+
+    setParseJobError(null);
+    setIsParsingJob(true);
+    setParseJobProgress(10);
+
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      setParseJobProgress(25);
+
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+
+      const res = await fetch("/api/parse-job", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData,
+        signal: abort.signal,
+      });
+
+      setParseJobProgress(70);
+      const data = await res.json();
+      if (!res.ok) {
+        setParseJobError(data.message || "Job parse failed.");
+        return;
+      }
+      if (!data.success || !data.parsed) {
+        setParseJobError("Invalid response. Enter job manually.");
+        return;
+      }
+
+      applyParsedJobToForm(
+        data.parsed as ParsedJob,
+        null,
+        setCustomFieldValues,
+        customFields.map((f) => ({
+          field_name: f.field_name,
+          field_label: f.field_label,
+        }))
+      );
+      setParseJobProgress(100);
+    } catch (err) {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setParseJobError("Parsing cancelled.");
+      } else {
+        setParseJobError(
+          err instanceof Error ? err.message : "Job parse failed."
+        );
+      }
+    } finally {
+      setIsParsingJob(false);
+      setParseJobProgress(0);
+      parseJobAbortRef.current = null;
+      if (parseJobInputRef.current) {
+        parseJobInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleParseJobOrder = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await parseJobWithFile(file);
+  };
+
+  const handleCancelParseJob = () => {
+    if (parseJobAbortRef.current) {
+      parseJobAbortRef.current.abort();
+    }
+  };
+
+  // When opened from sidebar with a document (parseJob=1 + jobAddParsePendingFile), auto-run parse once fields are ready
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (searchParams.get("parseJob") !== "1") return;
+    if (customFieldsLoading || customFields.length === 0) return;
+    if (isParsingJob) return;
+
+    const raw = sessionStorage.getItem("jobAddParsePendingFile");
+    if (!raw) return;
+    sessionStorage.removeItem("jobAddParsePendingFile");
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete("parseJob");
+    window.history.replaceState(null, "", url.toString());
+
+    try {
+      const { name, base64, type } = JSON.parse(raw);
+      const binary = atob(base64);
+      const arr = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        arr[i] = binary.charCodeAt(i);
+      }
+      const blob = new Blob([arr], { type: type || "application/pdf" });
+      const file = new File([blob], name, { type: blob.type });
+      void parseJobWithFile(file);
+    } catch (err) {
+      console.error("Sidebar job parse:", err);
+      setParseJobError("Failed to load dropped job order. Try uploading again.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams.get("parseJob"), customFieldsLoading, customFields.length, isParsingJob]);
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1926,6 +2050,57 @@ export default function AddJob() {
         {error && (
           <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 mb-4 rounded">
             <p>{error}</p>
+          </div>
+        )}
+
+        {/* Parse Job Order (AI) – only in add mode; never auto-save, recruiter reviews */}
+        {!isEditMode && (
+          <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
+            <h2 className="text-sm font-semibold text-gray-700 mb-2">
+              Parse Job Order (PDF / DOC / DOCX / TXT)
+            </h2>
+            <p className="text-xs text-gray-500 mb-3">
+              Upload a job order or job description to extract key details and prefill
+              fields via AI. You can review and edit everything before saving.
+            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                ref={parseJobInputRef}
+                type="file"
+                accept=".pdf,.doc,.docx,.txt"
+                onChange={handleParseJobOrder}
+                disabled={isParsingJob}
+                className="text-sm text-gray-600 file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+              {isParsingJob && (
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <div className="flex-1 sm:w-40 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-500 transition-all"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(10, parseJobProgress || 10)
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCancelParseJob}
+                    className="px-2 py-1 text-xs border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+            {isParsingJob && (
+              <p className="mt-1 text-xs text-gray-500">Parsing job order…</p>
+            )}
+            {parseJobError && (
+              <p className="mt-2 text-sm text-red-600">{parseJobError}</p>
+            )}
           </div>
         )}
 

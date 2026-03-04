@@ -3,7 +3,7 @@
  * Used by both admin/parse-resume and public parse-resume (AI) flows.
  */
 
-export const RESUME_EXT = new Set(["pdf", "doc", "docx", "txt", "rtf"]);
+export const RESUME_EXT = new Set(["pdf", "docx", "txt", "rtf"]);
 
 export function isResumeFile(name: string, type: string): boolean {
   const ext = name.toLowerCase().split(".").pop() || "";
@@ -34,13 +34,17 @@ export async function extractTextFromFile(file: File): Promise<string> {
   }
 
   if (ext === "docx") {
-    const mammoth = await import("mammoth");
-    const result = await mammoth.extractRawText({ arrayBuffer });
-    return result?.value || "";
+    const { extractRawText } = await import("mammoth");
+    const result = await extractRawText({ buffer });
+    return result.value || "";
   }
 
-  if (ext === "doc" || ext === "rtf") {
-    return buffer.toString("utf-8", 0, Math.min(buffer.length, 100000));
+  if (ext === "doc") {
+    throw new Error("Old .doc format is not supported. Please upload a .docx file.");
+  }
+
+  if (ext === "rtf") {
+    return buffer.toString("utf-8");
   }
 
   return buffer.toString("utf-8");
