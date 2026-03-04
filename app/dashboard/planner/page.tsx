@@ -406,7 +406,7 @@ const Planners = () => {
       setIsLoadingLookups(true);
       try {
         const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-        const apiUrl = process.env.API_BASE_URL || 'http://localhost:8080';
+        const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
 
         console.log("apiUrl", apiUrl);
 
@@ -1737,9 +1737,30 @@ const Planners = () => {
         {viewType === 'Day' && renderDayView()}
         {viewType === 'List' && renderListView()}
 
-        {/* Appointment Details Section (Month View Only) */}
+        {/* Available Section (Month View) - between Calendar and Appointments */}
+        {viewType === 'Month' && (
+          <div className="px-6 pb-4 no-print">
+            <section className="bg-white border border-gray-200 rounded-lg overflow-hidden" aria-label="Available">
+              <h3 className="text-sm font-semibold text-gray-700 px-4 py-3 border-b border-gray-200 bg-gray-50">
+                Available
+              </h3>
+              <div className="p-4 min-h-[60px]">
+                {selectedDate ? (
+                  <p className="text-sm text-gray-600">
+                    Selected: {selectedDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} — {appointments.filter((apt) => apt.date === selectedDate.toISOString().split('T')[0]).length} appointment(s) this day
+                  </p>
+                ) : (
+                  <p className="text-sm text-gray-500">Select a day in the calendar above.</p>
+                )}
+              </div>
+            </section>
+          </div>
+        )}
+
+        {/* Appointments Section (Month View) - directly below Available */}
         {viewType === 'Month' && (
           <div className="px-6 pb-6 no-print">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">Appointments</h3>
             {/* Items Per Page */}
             <div className="bg-gray-50 px-4 py-2 border-x border-gray-200">
               <div className="flex items-center space-x-2 text-sm text-gray-600">

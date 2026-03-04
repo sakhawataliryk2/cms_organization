@@ -12,6 +12,8 @@ import {
   normalizeStr,
 } from "@/lib/aiParsing";
 
+export const runtime = "nodejs";
+
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const MODEL = "stepfun/step-3.5-flash:free";
 
@@ -244,7 +246,7 @@ export async function POST(request: NextRequest) {
     const file = formData.get("file") as File | null;
     if (!file || !file.size) return NextResponse.json({ success: false, message: "No file provided" }, { status: 400 });
     if (!isResumeFile(file.name, file.type))
-      return NextResponse.json({ success: false, message: "Unsupported format. Use PDF, DOCX, or TXT." }, { status: 400 });
+      return NextResponse.json({ success: false, message: "Unsupported format. Use PDF, DOC, DOCX, or TXT." }, { status: 400 });
 
     const text = await extractTextFromFile(file);
     if (!text || !text.trim()) return NextResponse.json({ success: false, message: "Could not extract text." }, { status: 400 });

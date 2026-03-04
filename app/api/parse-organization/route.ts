@@ -241,7 +241,7 @@ export async function POST(request: NextRequest) {
 
     if (!isResumeFile(file.name, file.type)) {
       return NextResponse.json(
-        { success: false, message: "Unsupported format. Use PDF, DOCX, or TXT." },
+        { success: false, message: "Unsupported format. Use PDF, DOC, DOCX, or TXT." },
         { status: 400 }
       );
     }

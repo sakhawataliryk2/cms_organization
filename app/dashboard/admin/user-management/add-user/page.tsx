@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { FiPlus, FiRefreshCw, FiSearch, FiChevronDown, FiX } from 'react-icons/fi';
+import { FiPlus, FiRefreshCw, FiSearch, FiChevronDown, FiX, FiEye, FiEyeOff } from 'react-icons/fi';
 
 interface User {
     id: string;
+    userId: string;
     firstName: string;
     lastName: string;
     email: string;
@@ -55,8 +56,15 @@ export default function UserManagement() {
                     const firstName = nameParts[0] || '';
                     const lastName = nameParts.slice(1).join(' ') || '';
 
+                    const backendUserId =
+                        user.user_id ||
+                        user.userId ||
+                        null;
+
                     return {
                         id: String(user.id),
+                        // Fall back to primary id when a separate user_id field is not present
+                        userId: backendUserId ? String(backendUserId) : String(user.id),
                         firstName: firstName,
                         lastName: lastName,
                         email: user.email || '',
@@ -88,9 +96,12 @@ export default function UserManagement() {
         fetchUsers();
     }, []);
 
-    // Filter users based on search term
+    // Filter users based on search term (includes user_id)
     const filteredUsers = users.filter(user => {
-        const searchableFields = [
+        if (!searchTerm.trim()) return true;
+        const term = searchTerm.toLowerCase().trim();
+        const searchableText = [
+            user.userId,
             user.firstName,
             user.lastName,
             user.email,
@@ -99,9 +110,8 @@ export default function UserManagement() {
             user.office,
             user.team,
             user.idNumber
-        ].join(' ').toLowerCase();
-
-        return searchableFields.includes(searchTerm.toLowerCase());
+        ].filter(Boolean).join(' ').toLowerCase();
+        return searchableText.includes(term);
     });
 
     const handleAddUser = () => {
@@ -131,6 +141,7 @@ export default function UserManagement() {
 
     const tableHeaders = [
         { id: 'firstName', label: 'First Name' },
+        { id: 'userId', label: 'User ID' },
         { id: 'lastName', label: 'Last Name' },
         { id: 'email', label: 'Email' },
         { id: 'phone', label: 'Phone' },
@@ -212,7 +223,7 @@ export default function UserManagement() {
                         <thead>
                             <tr className="bg-gray-50 border-b">
                                 {tableHeaders.map(header => (
-                                    <th key={header.id} className="px-4 py-3 text-left text-sm font-medium text-gray-500">
+                                    <th key={header.id} className="whitespace-nowrap px-4 py-3 text-left text-sm font-medium text-gray-500">
                                         {header.label}
                                     </th>
                                 ))}
@@ -227,7 +238,7 @@ export default function UserManagement() {
                                 </tr>
                             ) : error ? (
                                 <tr>
-                                    <td colSpan={tableHeaders.length} className="px-4 py-4 text-center">
+                                    <td colSpan={tableHeaders.length} className="whitespace-nowrap px-4 py-4 text-center">
                                         <div className="text-red-600 mb-2">{error}</div>
                                         <button
                                             onClick={fetchUsers}
@@ -240,16 +251,17 @@ export default function UserManagement() {
                             ) : filteredUsers.length > 0 ? (
                                 filteredUsers.map(user => (
                                     <tr key={user.id} className="border-b hover:bg-gray-50">
-                                        <td className="px-4 py-3 text-sm">{user.firstName}</td>
-                                        <td className="px-4 py-3 text-sm">{user.lastName}</td>
-                                        <td className="px-4 py-3 text-sm text-blue-600">{user.email}</td>
-                                        <td className="px-4 py-3 text-sm">{user.phone}</td>
-                                        <td className="px-4 py-3 text-sm">{user.phone2 || '-'}</td>
-                                        <td className="px-4 py-3 text-sm">{user.title}</td>
-                                        <td className="px-4 py-3 text-sm">{user.office}</td>
-                                        <td className="px-4 py-3 text-sm">{user.team}</td>
-                                        <td className="px-4 py-3 text-sm">{user.idNumber}</td>
-                                        <td className="px-4 py-3 text-sm">{user.isAdmin ? 'Yes' : 'No'}</td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap">{user.firstName}</td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap font-mono text-gray-700">{user.userId || '—'}</td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap">{user.lastName}</td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap text-blue-600"><a href={`mailto:${user.email}`} className="hover:underline">{user.email}</a></td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap">{user.phone}</td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap">{user.phone2 || '-'}</td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap">{user.title}</td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap">{user.office}</td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap">{user.team}</td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap">{user.idNumber}</td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap">{user.isAdmin ? 'Yes' : 'No'}</td>
                                     </tr>
                                 ))
                             ) : (
@@ -275,6 +287,22 @@ export default function UserManagement() {
     );
 }
 
+const STRONG_PASSWORD_REGEX = {
+    length: /.{8,}/,
+    lower: /[a-z]/,
+    upper: /[A-Z]/,
+    number: /[0-9]/,
+    special: /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/,
+};
+function validateStrongPassword(p: string): { valid: boolean; message?: string } {
+    if (!p || p.length < 8) return { valid: false, message: 'Password must be at least 8 characters long' };
+    if (!STRONG_PASSWORD_REGEX.lower.test(p)) return { valid: false, message: 'Password must contain at least one lowercase letter' };
+    if (!STRONG_PASSWORD_REGEX.upper.test(p)) return { valid: false, message: 'Password must contain at least one uppercase letter' };
+    if (!STRONG_PASSWORD_REGEX.number.test(p)) return { valid: false, message: 'Password must contain at least one number' };
+    if (!STRONG_PASSWORD_REGEX.special.test(p)) return { valid: false, message: 'Password must contain at least one special character' };
+    return { valid: true };
+}
+
 // Add User Modal Component
 function AddUserModal({ onClose, onUserAdded }: { onClose: () => void; onUserAdded?: () => void }) {
     const [formData, setFormData] = useState({
@@ -292,6 +320,10 @@ function AddUserModal({ onClose, onUserAdded }: { onClose: () => void; onUserAdd
         confirmPassword: ''
     });
 
+    const [passwordMode, setPasswordMode] = useState<'manual' | 'auto'>('manual');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [createdPassword, setCreatedPassword] = useState<string | null>(null);
     const [offices, setOffices] = useState<Office[]>([]);
     const [teams, setTeams] = useState<Team[]>([]);
     const [filteredTeams, setFilteredTeams] = useState<Team[]>([]);
@@ -388,57 +420,71 @@ function AddUserModal({ onClose, onUserAdded }: { onClose: () => void; onUserAdd
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setError('');
 
-        // Validate form
-        if (formData.password !== formData.confirmPassword) {
-            setError('Passwords do not match');
+        if (!formData.firstName || !formData.lastName || !formData.email) {
+            setError('First name, last name, and email are required');
             return;
         }
-
-        if (!formData.firstName || !formData.lastName || !formData.email || !formData.password) {
-            setError('First name, last name, email, and password are required');
-            return;
-        }
-
         if (!formData.officeId || !formData.teamId) {
             setError('Office and team selection are required');
             return;
+        }
+        if (passwordMode === 'manual') {
+            if (formData.password !== formData.confirmPassword) {
+                setError('Passwords do not match');
+                return;
+            }
+            const pv = validateStrongPassword(formData.password);
+            if (!pv.valid) {
+                setError(pv.message || 'Invalid password');
+                return;
+            }
         }
 
         setLoading(true);
 
         try {
+            const body: Record<string, unknown> = {
+                name: `${formData.firstName} ${formData.lastName}`,
+                email: formData.email,
+                userType: formData.isAdmin ? 'admin' : 'recruiter',
+                officeId: formData.officeId,
+                teamId: formData.teamId,
+                phone: formData.phone,
+                phone2: formData.phone2,
+                title: formData.title,
+                idNumber: formData.idNumber,
+                isAdmin: formData.isAdmin
+            };
+            if (passwordMode === 'manual') {
+                body.password = formData.password;
+            }
+
             const response = await fetch('/api/users', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    name: `${formData.firstName} ${formData.lastName}`,
-                    email: formData.email,
-                    password: formData.password,
-                    userType: 'recruiter', // Default role
-                    officeId: formData.officeId,
-                    teamId: formData.teamId,
-                    phone: formData.phone,
-                    phone2: formData.phone2,
-                    title: formData.title,
-                    idNumber: formData.idNumber,
-                    isAdmin: formData.isAdmin
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
             });
 
             const data = await response.json();
 
             if (data.success) {
-                onClose();
-                // Call the callback to refresh users list
-                if (onUserAdded) {
-                    onUserAdded();
-                } else {
-                    // Fallback to page reload if callback not provided
-                    window.location.reload();
+                const plain = data.user?.plainPassword;
+                if (plain) {
+                    setLoading(false);
+                    setCreatedPassword(plain);
+                    return;
                 }
+                const createdUserId = data.user?.userId ?? data.user?.user_id ?? null;
+                if (createdUserId) {
+                    try {
+                        await navigator.clipboard.writeText(createdUserId);
+                    } catch (_) {}
+                }
+                onClose();
+                if (onUserAdded) onUserAdded();
+                else window.location.reload();
             } else {
                 setError(data.message || 'Failed to create user');
             }
@@ -448,6 +494,43 @@ function AddUserModal({ onClose, onUserAdded }: { onClose: () => void; onUserAdd
             setLoading(false);
         }
     };
+
+    const handleClosePasswordModal = () => {
+        setCreatedPassword(null);
+        onClose();
+        if (onUserAdded) onUserAdded();
+        else window.location.reload();
+    };
+
+    if (createdPassword) {
+        return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-white rounded-md shadow-lg max-w-md w-full mx-4 p-6">
+                    <h3 className="text-lg font-semibold text-gray-800 mb-2">Password generated</h3>
+                    <p className="text-sm text-gray-600 mb-3">Show this password once. Copy it now; it will not be shown again.</p>
+                    <div className="flex items-center gap-2 mb-4">
+                        <code className="flex-1 px-3 py-2 bg-gray-100 rounded border text-sm break-all font-mono">
+                            {createdPassword}
+                        </code>
+                        <button
+                            type="button"
+                            onClick={() => navigator.clipboard.writeText(createdPassword)}
+                            className="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm whitespace-nowrap"
+                        >
+                            Copy
+                        </button>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={handleClosePasswordModal}
+                        className="w-full px-4 py-2 bg-gray-800 text-white rounded hover:bg-gray-900"
+                    >
+                        Done
+                    </button>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -618,30 +701,84 @@ function AddUserModal({ onClose, onUserAdded }: { onClose: () => void; onUserAdd
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Password <span className="text-red-500">*</span>
+                                    User ID
                                 </label>
                                 <input
-                                    type="password"
-                                    name="password"
-                                    value={formData.password}
-                                    onChange={handleChange}
-                                    required
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    type="text"
+                                    readOnly
+                                    value=""
+                                    placeholder="Auto-generated on save"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-500 cursor-not-allowed"
+                                    title="Generated by the system when you save (format: USR-YYYY-XXXX)"
                                 />
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Confirm Password <span className="text-red-500">*</span>
-                                </label>
-                                <input
-                                    type="password"
-                                    name="confirmPassword"
-                                    value={formData.confirmPassword}
-                                    onChange={handleChange}
-                                    required
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                />
+                            <div className="col-span-2">
+                                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                                <div className="flex gap-4 items-center mb-2">
+                                    <label className="flex items-center gap-2">
+                                        <input
+                                            type="radio"
+                                            name="passwordMode"
+                                            checked={passwordMode === 'manual'}
+                                            onChange={() => setPasswordMode('manual')}
+                                            className="text-blue-600"
+                                        />
+                                        <span className="text-sm">Enter manually</span>
+                                    </label>
+                                    <label className="flex items-center gap-2">
+                                        <input
+                                            type="radio"
+                                            name="passwordMode"
+                                            checked={passwordMode === 'auto'}
+                                            onChange={() => setPasswordMode('auto')}
+                                            className="text-blue-600"
+                                        />
+                                        <span className="text-sm">Auto-generate strong password</span>
+                                    </label>
+                                </div>
+                                {passwordMode === 'manual' && (
+                                    <>
+                                        <div className="relative flex gap-2">
+                                            <input
+                                                type={showPassword ? 'text' : 'password'}
+                                                name="password"
+                                                value={formData.password}
+                                                onChange={handleChange}
+                                                required={passwordMode === 'manual'}
+                                                placeholder="Min 8 chars, upper, lower, number, special"
+                                                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowPassword(!showPassword)}
+                                                className="p-2 border border-gray-300 rounded-md hover:bg-gray-50"
+                                                title={showPassword ? 'Hide' : 'Show'}
+                                            >
+                                                {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
+                                            </button>
+                                        </div>
+                                        <div className="relative flex gap-2 mt-2">
+                                            <input
+                                                type={showConfirmPassword ? 'text' : 'password'}
+                                                name="confirmPassword"
+                                                value={formData.confirmPassword}
+                                                onChange={handleChange}
+                                                required={passwordMode === 'manual'}
+                                                placeholder="Confirm password"
+                                                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                                                className="p-2 border border-gray-300 rounded-md hover:bg-gray-50"
+                                                title={showConfirmPassword ? 'Hide' : 'Show'}
+                                            >
+                                                {showConfirmPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
+                                            </button>
+                                        </div>
+                                    </>
+                                )}
                             </div>
 
                             <div className="col-span-2">

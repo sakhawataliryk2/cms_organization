@@ -306,6 +306,8 @@ export default function AddJobSeeker() {
   const [isParsingResume, setIsParsingResume] = useState(false);
   const [parseResumeError, setParseResumeError] = useState<string | null>(null);
   const parseResumeInputRef = useRef<HTMLInputElement>(null);
+  const [parseResumeProgress, setParseResumeProgress] = useState<number>(0);
+  const parseResumeAbortRef = useRef<AbortController | null>(null);
 
   // Email and address validation states
   const [emailValidation, setEmailValidation] = useState<{
@@ -970,18 +972,20 @@ export default function AddJobSeeker() {
     });
   };
 
-  // Shared: run AI parse on a file and apply to form (used by file input and by sidebar PDF drop)
+  // Shared: run AI parse on a file and apply to form (used by file input and by sidebar PDF drop).
+  // Let the backend's isResumeFile() be the single source of truth for allowed formats.
   const parseResumeWithFile = async (file: File) => {
-    const ext = (file.name.toLowerCase().split(".").pop() || "").toLowerCase();
-    if (!["pdf", "docx", "txt"].includes(ext)) {
-      setParseResumeError("Use PDF, DOCX, or TXT.");
-      return;
-    }
+    const abort = new AbortController();
+    parseResumeAbortRef.current = abort;
+
     setParseResumeError(null);
     setIsParsingResume(true);
+    setParseResumeProgress(10);
     try {
       const formData = new FormData();
       formData.set("file", file);
+      setParseResumeProgress(25);
+
       const token = document.cookie.replace(
         /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
         "$1"
@@ -990,7 +994,10 @@ export default function AddJobSeeker() {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
+        signal: abort.signal,
       });
+      setParseResumeProgress(70);
+
       const data = await res.json();
       if (!res.ok) {
         setParseResumeError(data.message || "Parse failed.");
@@ -1007,11 +1014,24 @@ export default function AddJobSeeker() {
         customFields
       );
       setResumeFile(file);
-      if (parseResumeInputRef.current) parseResumeInputRef.current.value = "";
+      setParseResumeProgress(100);
     } catch (err) {
-      setParseResumeError(err instanceof Error ? err.message : "Parse failed.");
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setParseResumeError("Parsing cancelled.");
+      } else {
+        setParseResumeError(
+          err instanceof Error ? err.message : "Parse failed."
+        );
+      }
     } finally {
       setIsParsingResume(false);
+      setParseResumeProgress(0);
+      parseResumeAbortRef.current = null;
+      // Always clear the input value so the user can re-select
+      // the same file again to re-run parsing if needed.
+      if (parseResumeInputRef.current) {
+        parseResumeInputRef.current.value = "";
+      }
     }
   };
 
@@ -1020,6 +1040,12 @@ export default function AddJobSeeker() {
     const file = e.target.files?.[0];
     if (!file) return;
     await parseResumeWithFile(file);
+  };
+
+  const handleCancelParseResume = () => {
+    if (parseResumeAbortRef.current) {
+      parseResumeAbortRef.current.abort();
+    }
   };
 
   // When opened from sidebar with a PDF (parseResume=1 + jobSeekerAddParsePendingFile), auto-run parse
@@ -1392,11 +1418,11 @@ export default function AddJobSeeker() {
           </div>
         )}
 
-        {/* Parse from PDF (AI) – only in add mode; never auto-save, recruiter reviews */}
+        {/* Parse from PDF/DOC/DOCX/TXT (AI) – only in add mode; never auto-save, recruiter reviews */}
         {!isEditMode && (
           <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
             <h2 className="text-sm font-semibold text-gray-700 mb-2">
-              Parse from resume (PDF / DOCX / TXT)
+              Parse from resume (PDF / DOC / DOCX / TXT)
             </h2>
             <p className="text-xs text-gray-500 mb-3">
               Upload a file to extract text and fill the form via AI. You can review and edit before saving.
@@ -1405,15 +1431,37 @@ export default function AddJobSeeker() {
               <input
                 ref={parseResumeInputRef}
                 type="file"
-                accept=".pdf,.docx,.txt"
+                accept=".pdf,.doc,.docx,.txt"
                 onChange={handleParseResume}
                 disabled={isParsingResume}
                 className="text-sm text-gray-600 file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
               />
               {isParsingResume && (
-                <span className="text-sm text-gray-500">Parsing…</span>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <div className="flex-1 sm:w-40 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-500 transition-all"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(10, parseResumeProgress || 10)
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCancelParseResume}
+                    className="px-2 py-1 text-xs border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
               )}
             </div>
+            {isParsingResume && (
+              <p className="mt-1 text-xs text-gray-500">Parsing resume…</p>
+            )}
             {parseResumeError && (
               <p className="mt-2 text-sm text-red-600">{parseResumeError}</p>
             )}

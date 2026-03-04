@@ -201,6 +201,12 @@ export default function DashboardNav() {
   const [showTbiQuickTab, setShowTbiQuickTab] = useState(false);
   const [currentUrl, setCurrentUrl] = useState<string>("");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isParseModuleModalOpen, setIsParseModuleModalOpen] = useState(false);
+  const [pendingParseFile, setPendingParseFile] = useState<{
+    name: string;
+    base64: string;
+    type: string;
+  } | null>(null);
   const pathname = usePathname() ?? "";
   const router = useRouter();
   const addMenuRef = useRef<HTMLDivElement>(null);
@@ -1273,7 +1279,7 @@ export default function DashboardNav() {
               {isAddMenuOpen && addMenuPosition && typeof document !== "undefined" && createPortal(
                 <div
                   ref={addMenuDropdownRef}
-                  className="fixed w-56 bg-slate-800 rounded shadow-lg py-1 z-[300]"
+                  className="fixed w-56 bg-slate-800 rounded shadow-lg py-1 z-300"
                   style={{
                     top: `${addMenuPosition.top}px`,
                     left: `${addMenuPosition.left}px`,
@@ -1416,9 +1422,9 @@ export default function DashboardNav() {
             if (!file) return;
             const ext = (file.name.toLowerCase().split('.').pop() || '').toLowerCase();
             const isCsvOrExcel = ext === 'csv' || ext === 'xlsx' || ext === 'xls';
-            const isResumeDoc = ['pdf', 'doc', 'docx', 'txt', 'rtf'].includes(ext);
+            const isResumeDoc = ['pdf', 'doc', 'docx', 'txt'].includes(ext);
             if (!isCsvOrExcel && !isResumeDoc) {
-              toast.error('Use CSV/Excel for bulk data, or PDF/DOC/DOCX/TXT/RTF for resume parsing (Job Seekers).');
+              toast.error('Use CSV/Excel for bulk data, or PDF/DOC/DOCX/TXT for parsing.');
               return;
             }
             try {
@@ -1426,24 +1432,24 @@ export default function DashboardNav() {
               reader.onload = () => {
                 const base64 = (reader.result as string)?.split(',')[1];
                 if (!base64) return;
-                // PDF: go directly to Job Seekers add and auto-start AI resume parsing
-                if (ext === 'pdf') {
-                  sessionStorage.setItem('jobSeekerAddParsePendingFile', JSON.stringify({
+
+                if (isResumeDoc) {
+                  // For resume-style docs, open module chooser modal
+                  setPendingParseFile({
                     name: file.name,
                     base64,
-                    type: file.type || 'application/pdf',
-                  }));
-                  router.push('/dashboard/job-seekers/add?parseResume=1');
-                  setIsSidebarOpen(false);
-                  toast.success('Opening Job Seekers add to parse resume…');
+                    type: file.type || (ext === 'pdf' ? 'application/pdf' : ''),
+                  });
+                  setIsParseModuleModalOpen(true);
                   return;
                 }
-                // CSV/Excel or other resume doc: admin center upload flow
+
+                // CSV/Excel: admin center upload flow
                 sessionStorage.setItem('adminParseDataPendingFile', JSON.stringify({
                   name: file.name,
                   base64,
                   type: file.type,
-                  isResume: isResumeDoc,
+                  isResume: false,
                 }));
                 router.push('/dashboard/admin?upload=true');
                 setIsSidebarOpen(false);
@@ -1465,9 +1471,101 @@ export default function DashboardNav() {
               <FiUpload size={16} />
             </button>
           </div>
-          <p className="text-xs text-slate-400 mt-1">Drop CSV/Excel or resume (PDF)</p>
+          <p className="text-xs text-slate-400 mt-1">Drop CSV/Excel or resume (PDF / DOC / DOCX / TXT)</p>
         </div>
       </div>
+      {isParseModuleModalOpen && pendingParseFile && typeof document !== "undefined" &&
+        createPortal(
+          <div className="fixed inset-0 z-400 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-lg shadow-xl max-w-sm w-full p-4">
+              <h2 className="text-lg font-semibold text-slate-900 mb-2">
+                Choose module to parse
+              </h2>
+              <p className="text-sm text-slate-600 mb-4 break-all">
+                {pendingParseFile.name}
+              </p>
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 rounded-md bg-slate-800 text-white text-sm font-medium hover:bg-slate-700"
+                  onClick={() => {
+                    try {
+                      sessionStorage.setItem(
+                        "orgAddParsePendingFile",
+                        JSON.stringify(pendingParseFile)
+                      );
+                    } catch {
+                      toast.error("Unable to store file for organization parsing.");
+                      return;
+                    }
+                    setIsParseModuleModalOpen(false);
+                    setPendingParseFile(null);
+                    setIsSidebarOpen(false);
+                    router.push("/dashboard/organizations/add?parseOrg=1");
+                    toast.success("Opening Organizations add to parse document…");
+                  }}
+                >
+                  Organization
+                </button>
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 rounded-md bg-slate-800 text-white text-sm font-medium hover:bg-slate-700"
+                  onClick={() => {
+                    try {
+                      sessionStorage.setItem(
+                        "jobAddParsePendingFile",
+                        JSON.stringify(pendingParseFile)
+                      );
+                    } catch {
+                      toast.error("Unable to store file for job parsing.");
+                      return;
+                    }
+                    setIsParseModuleModalOpen(false);
+                    setPendingParseFile(null);
+                    setIsSidebarOpen(false);
+                    router.push("/dashboard/jobs/add?parseJob=1");
+                    toast.success("Opening Jobs add to parse job order…");
+                  }}
+                >
+                  Job
+                </button>
+                <button
+                  type="button"
+                  className="w-full px-3 py-2 rounded-md bg-slate-800 text-white text-sm font-medium hover:bg-slate-700"
+                  onClick={() => {
+                    try {
+                      sessionStorage.setItem(
+                        "jobSeekerAddParsePendingFile",
+                        JSON.stringify(pendingParseFile)
+                      );
+                    } catch {
+                      toast.error("Unable to store file for job seeker parsing.");
+                      return;
+                    }
+                    setIsParseModuleModalOpen(false);
+                    setPendingParseFile(null);
+                    setIsSidebarOpen(false);
+                    router.push("/dashboard/job-seekers/add?parseResume=1");
+                    toast.success("Opening Job Seekers add to parse resume…");
+                  }}
+                >
+                  Job Seeker
+                </button>
+              </div>
+              <button
+                type="button"
+                className="mt-4 w-full px-3 py-2 rounded-md border border-slate-300 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                onClick={() => {
+                  setIsParseModuleModalOpen(false);
+                  setPendingParseFile(null);
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>,
+          document.body
+        )}
     </>
   );
 }

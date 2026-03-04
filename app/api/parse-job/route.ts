@@ -236,10 +236,10 @@ export async function POST(request: NextRequest) {
     if (!file || !file.size) {
       return NextResponse.json({ success: false, message: "No file provided" }, { status: 400 });
     }
-    // Reuse resume file validation since job orders are also typically PDF/DOCX/TXT
+    // Reuse resume file validation since job orders are also typically PDF/DOC/DOCX/TXT
     if (!isResumeFile(file.name, file.type)) {
       return NextResponse.json(
-        { success: false, message: "Unsupported format. Use PDF, DOCX, or TXT." },
+        { success: false, message: "Unsupported format. Use PDF, DOC, DOCX, or TXT." },
         { status: 400 }
       );
     }

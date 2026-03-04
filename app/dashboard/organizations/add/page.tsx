@@ -87,7 +87,9 @@ export default function AddOrganization() {
   } = useCustomFields("organizations");
   const [isParsingOrganization, setIsParsingOrganization] = useState(false);
   const [parseOrganizationError, setParseOrganizationError] = useState<string | null>(null);
+  const [parseOrganizationProgress, setParseOrganizationProgress] = useState<number>(0);
   const parseOrgInputRef = useRef<HTMLInputElement | null>(null);
+  const parseOrgAbortRef = useRef<AbortController | null>(null);
   const addressFields = useMemo(
     () => getAddressFields(customFields as any),
     [customFields]
@@ -411,24 +413,26 @@ export default function AddOrganization() {
     setDuplicateWarning(null);
   }, [phoneWebsiteEmailValuesKey]);
 
-  // Parse Organization Document (AI) – create mode only
-  const handleParseOrganization = async (
-    e: React.ChangeEvent<HTMLInputElement>
-  ) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  // Shared helper: run AI parse on an organization file and apply to custom fields.
+  const parseOrganizationWithFile = async (file: File) => {
     const ext = (file.name.toLowerCase().split(".").pop() || "").toLowerCase();
     if (!["pdf", "doc", "docx", "txt"].includes(ext)) {
       setParseOrganizationError("Use PDF, DOC, DOCX, or TXT.");
       return;
     }
 
+    const abort = new AbortController();
+    parseOrgAbortRef.current = abort;
+
     setParseOrganizationError(null);
     setIsParsingOrganization(true);
+    setParseOrganizationProgress(10);
+
     try {
       const formData = new FormData();
       formData.set("file", file);
+      setParseOrganizationProgress(25);
+
       const token = document.cookie.replace(
         /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
         "$1"
@@ -437,14 +441,22 @@ export default function AddOrganization() {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         body: formData,
+        signal: abort.signal,
       });
+
+      setParseOrganizationProgress(70);
       const data = await res.json();
+
       if (!res.ok) {
-        setParseOrganizationError(data.message || "Organization parse failed.");
+        setParseOrganizationError(
+          data.message || "Organization parse failed."
+        );
         return;
       }
       if (!data.success || !data.parsed) {
-        setParseOrganizationError("Invalid response. Enter organization manually.");
+        setParseOrganizationError(
+          "Invalid response. Enter organization manually."
+        );
         return;
       }
 
@@ -456,17 +468,74 @@ export default function AddOrganization() {
           field_label: f.field_label,
         }))
       );
+      setParseOrganizationProgress(100);
     } catch (err) {
-      setParseOrganizationError(
-        err instanceof Error ? err.message : "Organization parse failed."
-      );
+      if (err instanceof DOMException && err.name === "AbortError") {
+        setParseOrganizationError("Parsing cancelled.");
+      } else {
+        setParseOrganizationError(
+          err instanceof Error ? err.message : "Organization parse failed."
+        );
+      }
     } finally {
       setIsParsingOrganization(false);
+      setParseOrganizationProgress(0);
+      parseOrgAbortRef.current = null;
       if (parseOrgInputRef.current) {
         parseOrgInputRef.current.value = "";
       }
     }
   };
+
+  // Handle file input change for organization parsing
+  const handleParseOrganization = async (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    await parseOrganizationWithFile(file);
+  };
+
+  const handleCancelParseOrganization = () => {
+    if (parseOrgAbortRef.current) {
+      parseOrgAbortRef.current.abort();
+    }
+  };
+
+  // When opened from sidebar with a document (parseOrg=1 + orgAddParsePendingFile), auto-run parse once fields are ready
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (searchParams.get("parseOrg") !== "1") return;
+    if (customFieldsLoading || customFields.length === 0) return;
+    if (isParsingOrganization) return;
+
+    const raw = sessionStorage.getItem("orgAddParsePendingFile");
+    if (!raw) return;
+    sessionStorage.removeItem("orgAddParsePendingFile");
+
+    // Clean the URL so parseOrg is only used once
+    const url = new URL(window.location.href);
+    url.searchParams.delete("parseOrg");
+    window.history.replaceState(null, "", url.toString());
+
+    try {
+      const { name, base64, type } = JSON.parse(raw);
+      const binary = atob(base64);
+      const arr = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        arr[i] = binary.charCodeAt(i);
+      }
+      const blob = new Blob([arr], { type: type || "application/pdf" });
+      const file = new File([blob], name, { type: blob.type });
+      void parseOrganizationWithFile(file);
+    } catch (err) {
+      console.error("Sidebar organization parse:", err);
+      setParseOrganizationError(
+        "Failed to load dropped document. Try uploading again."
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams.get("parseOrg"), customFieldsLoading, customFields.length, isParsingOrganization]);
 
   // Removed console.logs from component level to prevent excessive logging on every render
   //console.log("Custom Fields:", customFields);
@@ -1411,9 +1480,31 @@ export default function AddOrganization() {
                 className="text-sm text-gray-600 file:mr-2 file:py-2 file:px-3 file:rounded file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
               />
               {isParsingOrganization && (
-                <span className="text-sm text-gray-500">Parsing…</span>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <div className="flex-1 sm:w-40 h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-500 transition-all"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(10, parseOrganizationProgress || 10)
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCancelParseOrganization}
+                    className="px-2 py-1 text-xs border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
+                  >
+                    Cancel
+                  </button>
+                </div>
               )}
             </div>
+            {isParsingOrganization && (
+              <p className="mt-1 text-xs text-gray-500">Parsing organization document…</p>
+            )}
             {parseOrganizationError && (
               <p className="mt-2 text-sm text-red-600">{parseOrganizationError}</p>
             )}

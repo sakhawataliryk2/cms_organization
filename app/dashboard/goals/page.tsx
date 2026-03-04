@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { toast } from "sonner";
+import { ActivityReportGrid, type ActivityReportRow } from "@/components/ActivityReportGrid";
 
 interface User {
   id: string;
@@ -458,6 +459,23 @@ const GoalsAndQuotas = () => {
     return selectedUsers.includes(row.userId);
   });
 
+  const goalsActivityRows: ActivityReportRow[] = useMemo(
+    () =>
+      filteredGoalsQuotasData.map((row) => ({
+        key: `${row.userId}-${row.category}`,
+        categoryLabel: row.category,
+        userLabel: row.userName,
+        userId: row.userId,
+        notesCount: row.notesCount ?? 0,
+        addedToSystem: row.addedToSystem ?? 0,
+        inboundEmails: row.inboundEmails ?? 0,
+        outboundEmails: row.outboundEmails ?? 0,
+        calls: row.calls ?? 0,
+        texts: row.texts ?? 0,
+      })),
+    [filteredGoalsQuotasData]
+  );
+
   // Close dropdown
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -627,539 +645,46 @@ const GoalsAndQuotas = () => {
         </div>
       </div>
 
-      {/* Activity Report Section */}
       <div className="px-6 pb-6 mt-8">
-        <div className="mb-4 flex items-center justify-between">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900">
-              ACTIVITY REPORT
-            </h2>
-            <div className="text-xs text-gray-500">
-              Counts by category for the selected users and date range.
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <button
-              onClick={exportToExcel}
-              className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 flex items-center gap-2"
-            >
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                className="h-5 w-5"
-                viewBox="0 0 20 20"
-                fill="currentColor"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"
-                  clipRule="evenodd"
-                />
-              </svg>
-              Export to Excel
-            </button>
-            <div className="relative" ref={usersDropdownRef}>
-              <button
-                onClick={() => setIsUsersDropdownOpen(!isUsersDropdownOpen)}
-                className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <span className="text-sm font-medium text-gray-700">
-                  {selectedUsers.length === 0
-                    ? "All Users"
-                    : selectedUsers.length === 1
-                    ? users.find((u) => u.id === selectedUsers[0])?.name ||
-                      "1 User"
-                    : `${selectedUsers.length} Users`}
-                </span>
-                <svg
-                  className={`w-4 h-4 text-gray-500 transition-transform ${
-                    isUsersDropdownOpen ? "rotate-180" : ""
-                  }`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M19 9l-7 7-7-7"
-                  />
-                </svg>
+        <ActivityReportGrid
+          title="ACTIVITY REPORT"
+          subtitle="Counts by category for the selected users and date range."
+          rows={goalsActivityRows}
+          loading={isLoadingNotes || isLoadingRecords}
+          loadingDetails={false}
+          onNotesClick={(row) => handleNotesClick(row.userId ?? "", row.categoryLabel)}
+          onRecordsClick={(row) => handleRecordsClick(row.userId ?? "", row.categoryLabel)}
+          notesModalOpen={showNotesModal}
+          notesDetails={selectedNotes ? { category: selectedNotes.category, userLabel: users.find((u) => u.id === selectedNotes.userId)?.name ?? undefined, notes: selectedNotes.notes } : null}
+          recordsModalOpen={showRecordsModal}
+          recordsDetails={selectedRecords ? { category: selectedRecords.category, userLabel: users.find((u) => u.id === selectedRecords.userId)?.name ?? undefined, records: selectedRecords.records } : null}
+          onCloseNotes={() => { setShowNotesModal(false); setSelectedNotes(null); }}
+          onCloseRecords={() => { setShowRecordsModal(false); setSelectedRecords(null); }}
+          headerExtra={
+            <div className="flex items-center gap-3">
+              <button onClick={exportToExcel} className="px-4 py-2 bg-green-600 text-white rounded-md text-sm font-medium hover:bg-green-700 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                Export to Excel
               </button>
-
-              {isUsersDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-96 overflow-y-auto">
-                  <div className="p-2 border-b border-gray-200">
-                    <button
-                      onClick={selectAllUsers}
-                      className="w-full text-left px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded"
-                    >
-                      {selectedUsers.length === users.length
-                        ? "Deselect All"
-                        : "Select All"}
-                    </button>
+              <div className="relative" ref={usersDropdownRef}>
+                <button onClick={() => setIsUsersDropdownOpen(!isUsersDropdownOpen)} className="flex items-center space-x-2 px-4 py-2 border border-gray-300 rounded-md bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                  <span className="text-sm font-medium text-gray-700">{selectedUsers.length === 0 ? "All Users" : selectedUsers.length === 1 ? users.find((u) => u.id === selectedUsers[0])?.name || "1 User" : `${selectedUsers.length} Users`}</span>
+                  <svg className={`w-4 h-4 text-gray-500 transition-transform ${isUsersDropdownOpen ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                </button>
+                {isUsersDropdownOpen && (
+                  <div className="absolute right-0 mt-2 w-64 bg-white border border-gray-300 rounded-md shadow-lg z-50 max-h-96 overflow-y-auto">
+                    <div className="p-2 border-b border-gray-200"><button onClick={selectAllUsers} className="w-full text-left px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 rounded">{selectedUsers.length === users.length ? "Deselect All" : "Select All"}</button></div>
+                    <div className="p-2">{users.length === 0 ? <div className="px-3 py-2 text-sm text-gray-500">No users available</div> : users.map((user) => (<label key={user.id} className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer rounded"><input type="checkbox" checked={selectedUsers.includes(user.id)} onChange={() => toggleUserSelection(user.id)} className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2" /><span className="text-sm text-gray-700">{user.name || user.email}</span></label>))}</div>
+                    {selectedUsers.length > 0 && <div className="p-2 border-t border-gray-200"><div className="px-3 py-2 text-xs text-gray-500">{selectedUsers.length} user(s) selected</div></div>}
                   </div>
-
-                  <div className="p-2">
-                    {users.length === 0 ? (
-                      <div className="px-3 py-2 text-sm text-gray-500">
-                        No users available
-                      </div>
-                    ) : (
-                      users.map((user) => (
-                        <label
-                          key={user.id}
-                          className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer rounded"
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedUsers.includes(user.id)}
-                            onChange={() => toggleUserSelection(user.id)}
-                            className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 mr-2"
-                          />
-                          <span className="text-sm text-gray-700">
-                            {user.name || user.email}
-                          </span>
-                        </label>
-                      ))
-                    )}
-                  </div>
-
-                  {selectedUsers.length > 0 && (
-                    <div className="p-2 border-t border-gray-200">
-                      <div className="px-3 py-2 text-xs text-gray-500">
-                        {selectedUsers.length} user(s) selected
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
-        </div>
-
-        {/* Activity Report Grid - styled to match main dashboard */}
-        <div className="bg-white border border-gray-300 rounded-lg overflow-hidden">
-          {/* Header Row */}
-          <div className="flex bg-gray-50 border-b border-gray-300">
-            <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              User
-            </div>
-            <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              Category
-            </div>
-            <div className="w-24 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              Notes
-            </div>
-            <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              <div>Goals</div>
-            </div>
-            <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              Added to System
-            </div>
-            <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              <div>Goals</div>
-            </div>
-            <div className="w-28 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              Inbound emails
-            </div>
-            <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              <div>Goals</div>
-            </div>
-            <div className="w-28 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              Outbound emails
-            </div>
-            <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              <div>Goals</div>
-            </div>
-            <div className="w-16 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              Calls
-            </div>
-            <div className="w-20 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-              <div>Goals</div>
-            </div>
-            <div className="w-16 p-3 text-sm font-medium text-gray-700">
-              Texts
-            </div>
-          </div>
-
-          {/* Data Rows */}
-          {filteredGoalsQuotasData.length === 0 ? (
-            <div className="p-8 text-center text-gray-500">
-              {selectedUsers.length === 0
-                ? "No goals/quotes data available"
-                : "No goals/quotes found for selected users"}
-            </div>
-          ) : (
-            filteredGoalsQuotasData.map((row, index) => {
-              const rowClass = index % 2 === 0 ? "bg-white" : "bg-gray-50";
-              return (
-                <div
-                  key={`${row.userId}-${row.category}`}
-                  className={`flex border-b border-gray-300 last:border-b-0 ${rowClass}`}
-                >
-                  {/* User */}
-                  <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-                    {row.userName}
-                  </div>
-
-                  {/* Category */}
-                  <div className="w-32 p-3 border-r border-gray-300 text-sm font-medium text-gray-700">
-                    {row.category}
-                  </div>
-
-                  {/* Notes count (clickable, like main dashboard) */}
-                  <div className="w-24 p-3 border-r border-gray-300">
-                    {isLoadingNotes ? (
-                      <div className="text-sm text-gray-400 text-center">…</div>
-                    ) : (
-                      <div className="text-sm text-gray-800 text-center">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleNotesClick(row.userId, row.category)
-                          }
-                          className="text-blue-600 hover:text-blue-800 underline font-medium"
-                          title="Click to view notes"
-                        >
-                          {row.notesCount || 0}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Notes Goals (read-only placeholder, matching main dashboard) */}
-                  <div className="w-20 p-3 border-r border-gray-300">
-                    <div className="text-xs text-gray-500 text-center">--</div>
-                  </div>
-
-                  {/* Added to System (clickable, like main dashboard) */}
-                  <div className="w-32 p-3 border-r border-gray-300">
-                    {isLoadingRecords ? (
-                      <div className="text-sm text-gray-400 text-center">…</div>
-                    ) : (
-                      <div className="text-sm text-gray-800 text-center">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            handleRecordsClick(row.userId, row.category)
-                          }
-                          className="text-blue-600 hover:text-blue-800 underline font-medium"
-                          title="Click to view records"
-                        >
-                          {row.addedToSystem || 0}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Added to System Goals */}
-                  <div className="w-20 p-3 border-r border-gray-300">
-                    <div className="text-xs text-gray-500 text-center">--</div>
-                  </div>
-
-                  {/* Inbound emails */}
-                  <div className="w-28 p-3 border-r border-gray-300">
-                    <div className="text-sm text-gray-800 text-center">
-                      {row.inboundEmails ?? 0}
-                    </div>
-                  </div>
-
-                  {/* Inbound emails Goals */}
-                  <div className="w-20 p-3 border-r border-gray-300">
-                    <div className="text-xs text-gray-500 text-center">--</div>
-                  </div>
-
-                  {/* Outbound emails */}
-                  <div className="w-28 p-3 border-r border-gray-300">
-                    <div className="text-sm text-gray-800 text-center">
-                      {row.outboundEmails ?? 0}
-                    </div>
-                  </div>
-
-                  {/* Outbound emails Goals */}
-                  <div className="w-20 p-3 border-r border-gray-300">
-                    <div className="text-xs text-gray-500 text-center">--</div>
-                  </div>
-
-                  {/* Calls */}
-                  <div className="w-16 p-3 border-r border-gray-300">
-                    <div className="text-sm text-gray-800 text-center">
-                      {row.calls ?? 0}
-                    </div>
-                  </div>
-
-                  {/* Calls Goals */}
-                  <div className="w-20 p-3 border-r border-gray-300">
-                    <div className="text-xs text-gray-500 text-center">--</div>
-                  </div>
-
-                  {/* Texts */}
-                  <div className="w-16 p-3">
-                    <div className="text-sm text-gray-800 text-center">
-                      {row.texts ?? 0}
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
+          }
+        />
       </div>
 
-      {/* ✅ Notes Modal */}
-      {showNotesModal && selectedNotes && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">
-                Notes - {selectedNotes.category} -{" "}
-                {users.find((u) => u.id === selectedNotes.userId)?.name ||
-                  selectedNotes.userId}
-              </h2>
-              <button
-                onClick={() => {
-                  setShowNotesModal(false);
-                  setSelectedNotes(null);
-                }}
-                className="p-1 rounded hover:bg-gray-200"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
-
-            <div className="p-6">
-              {selectedNotes.notes.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">No notes found</p>
-              ) : (
-                <div className="space-y-3">
-                  {selectedNotes.notes.map((note, idx) => (
-                    <div
-                      key={note.id || idx}
-                      className="border border-gray-200 rounded p-4"
-                    >
-                      <div className="text-sm font-medium text-gray-900">
-                        {note._entityName}
-                      </div>
-                      <div className="text-sm text-gray-700 mt-2">
-                        {note.text || note.note || "(No text)"}
-                      </div>
-                      {note.created_at && (
-                        <div className="text-xs text-gray-500 mt-2">
-                          Created: {new Date(note.created_at).toLocaleString()}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
-              <div className="text-sm text-gray-600">
-                Total: {selectedNotes.notes.length} note(s)
-              </div>
-              <button
-                onClick={() => {
-                  setShowNotesModal(false);
-                  setSelectedNotes(null);
-                }}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Records Modal (existing) */}
-      {showRecordsModal && selectedRecords && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded shadow-xl max-w-4xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
-            <div className="bg-gray-100 p-4 border-b flex justify-between items-center">
-              <h2 className="text-lg font-semibold">
-                {selectedRecords.category} Records -{" "}
-                {users.find((u) => u.id === selectedRecords.userId)?.name ||
-                  selectedRecords.userId}
-              </h2>
-              <button
-                onClick={() => {
-                  setShowRecordsModal(false);
-                  setSelectedRecords(null);
-                }}
-                className="p-1 rounded hover:bg-gray-200"
-              >
-                <span className="text-2xl font-bold">×</span>
-              </button>
-            </div>
-
-            <div className="p-6">
-              {selectedRecords.records.length === 0 ? (
-                <p className="text-gray-500 text-center py-8">
-                  No records found
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  {selectedRecords.records.map((record, index) => (
-                    <div
-                      key={record.id || index}
-                      className="border border-gray-200 rounded p-4 hover:bg-gray-50"
-                    >
-                      <div className="flex justify-between items-start">
-                        <div className="flex-1">
-                          {selectedRecords.category === "Organization" && (
-                            <>
-                              <h3 className="font-medium text-gray-900">
-                                {record.name || `Organization #${record.id}`}
-                              </h3>
-                              {record.website && (
-                                <p className="text-sm text-gray-600">
-                                  {record.website}
-                                </p>
-                              )}
-                              {record.phone && (
-                                <p className="text-sm text-gray-600">
-                                  {record.phone}
-                                </p>
-                              )}
-                            </>
-                          )}
-
-                          {selectedRecords.category === "Jobs" && (
-                            <>
-                              <h3 className="font-medium text-gray-900">
-                                {record.job_title || `Job #${record.id}`}
-                              </h3>
-                              {record.organization_name && (
-                                <p className="text-sm text-gray-600">
-                                  {record.organization_name}
-                                </p>
-                              )}
-                              {record.category && (
-                                <p className="text-sm text-gray-600">
-                                  Category: {record.category}
-                                </p>
-                              )}
-                            </>
-                          )}
-
-                          {selectedRecords.category === "Job Seekers" && (
-                            <>
-                              <h3 className="font-medium text-gray-900">
-                                {record.full_name ||
-                                  `${record.first_name} ${record.last_name}` ||
-                                  `Job Seeker #${record.id}`}
-                              </h3>
-                              {record.email && (
-                                <p className="text-sm text-gray-600">
-                                  {record.email}
-                                </p>
-                              )}
-                              {record.phone && (
-                                <p className="text-sm text-gray-600">
-                                  {record.phone}
-                                </p>
-                              )}
-                            </>
-                          )}
-
-                          {selectedRecords.category === "Hiring Managers" && (
-                            <>
-                              <h3 className="font-medium text-gray-900">
-                                {record.full_name ||
-                                  `${record.first_name} ${record.last_name}` ||
-                                  `Hiring Manager #${record.id}`}
-                              </h3>
-                              {record.email && (
-                                <p className="text-sm text-gray-600">
-                                  {record.email}
-                                </p>
-                              )}
-                              {record.title && (
-                                <p className="text-sm text-gray-600">
-                                  {record.title}
-                                </p>
-                              )}
-                            </>
-                          )}
-
-                          {selectedRecords.category === "Placements" && (
-                            <>
-                              <h3 className="font-medium text-gray-900">
-                                {record.job_seeker_name ||
-                                  record.jobSeekerName ||
-                                  `Placement #${record.id}`}
-                              </h3>
-                              {record.job_title && (
-                                <p className="text-sm text-gray-600">
-                                  {record.job_title}
-                                </p>
-                              )}
-                              {record.status && (
-                                <p className="text-sm text-gray-600">
-                                  Status: {record.status}
-                                </p>
-                              )}
-                            </>
-                          )}
-
-                          {selectedRecords.category === "Leads" && (
-                            <>
-                              <h3 className="font-medium text-gray-900">
-                                {record.full_name ||
-                                  `${record.first_name} ${record.last_name}` ||
-                                  `Lead #${record.id}`}
-                              </h3>
-                              {record.email && (
-                                <p className="text-sm text-gray-600">
-                                  {record.email}
-                                </p>
-                              )}
-                              {record.title && (
-                                <p className="text-sm text-gray-600">
-                                  {record.title}
-                                </p>
-                              )}
-                            </>
-                          )}
-
-                          {record.created_at && (
-                            <p className="text-xs text-gray-500 mt-2">
-                              Created:{" "}
-                              {new Date(record.created_at).toLocaleDateString()}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="text-xs text-gray-500">
-                          ID: {record.id}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="p-4 border-t bg-gray-50 flex justify-between items-center">
-              <div className="text-sm text-gray-600">
-                Total: {selectedRecords.records.length} record(s)
-              </div>
-              <button
-                onClick={() => {
-                  setShowRecordsModal(false);
-                  setSelectedRecords(null);
-                }}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 font-medium"
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Notes and Records modals are rendered inside ActivityReportGrid */}
     </div>
   );
 };

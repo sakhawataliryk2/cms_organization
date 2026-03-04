@@ -35,9 +35,12 @@ const ACTIVITY_DEBOUNCE_MS = 800;
 const HEARTBEAT_INTERVAL_MS = 30000;
 const ENGAGEMENT_INTERVAL_MS = 30000;
 
+/** Set to true to re-enable activity tracking (sends to backend on session/page/heartbeat/click/etc.). */
+const ACTIVITY_TRACKING_ENABLED = false;
+
 /** Log a single activity to the backend (Activity Tracker). Credentials sent via cookies. */
 async function logActivityToBackend(payload: ActivityPayload): Promise<void> {
-  if (typeof window === "undefined") return;
+  if (!ACTIVITY_TRACKING_ENABLED || typeof window === "undefined") return;
   try {
     await fetch("/api/activity", {
       method: "POST",
