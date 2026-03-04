@@ -7,7 +7,10 @@ import { useAuth } from '@/lib/auth';
 import { FiEye, FiX, FiChevronLeft, FiChevronRight, FiUser } from 'react-icons/fi';
 import { useRouter } from 'next/navigation';
 import SubmissionFormModal from '@/components/SubmissionFormModal';
+import ClientSubmissionModal from '@/components/ClientSubmissionModal';
+import AddNoteModal from '@/components/AddNoteModal';
 import { formatRecordId } from '@/lib/recordIdFormatter';
+import { toast } from 'sonner';
 
 interface PrescreenedCandidate {
   id: number;
@@ -19,7 +22,18 @@ interface PrescreenedCandidate {
 interface Candidate {
   id: number;
   name: string;
+  /**
+   * Human-readable job label for display (record id / title).
+   */
   jobId: string;
+  /**
+   * Primary application id used for status updates.
+   */
+  applicationId?: number | string;
+  /**
+   * Underlying job id used for planner navigation / submissions.
+   */
+  jobNumericId?: number | string | null;
 }
 
 interface CandidateColumn {
@@ -30,6 +44,11 @@ interface CandidateColumn {
   count?: number;
   candidates: Candidate[] | PrescreenedCandidate[];
   isPrescreenedColumn?: boolean;
+}
+
+interface DragPayload {
+  fromColumnId: string;
+  candidate: PrescreenedCandidate | Candidate;
 }
 
 const PLACEHOLDER_COLUMNS: Omit<CandidateColumn, 'candidates' | 'count'>[] = [
@@ -54,9 +73,32 @@ export default function CandidateFlowDashboard() {
   const [clientSubmittedStage, setClientSubmittedStage] = useState<Candidate[]>([]);
   const [interviewStage, setInterviewStage] = useState<Candidate[]>([]);
   const [offerStage, setOfferStage] = useState<Candidate[]>([]);
-  const [draggedCandidate, setDraggedCandidate] = useState<PrescreenedCandidate | null>(null);
+  const [dragPayload, setDragPayload] = useState<DragPayload | null>(null);
   const [modalCandidate, setModalCandidate] = useState<PrescreenedCandidate | null>(null);
+  const [clientSubmissionContext, setClientSubmissionContext] = useState<{
+    candidateId: number;
+    candidateName: string;
+    jobId: number | string | null;
+  } | null>(null);
+  const [showAddNote, setShowAddNote] = useState(false);
+  const [pendingStatusChange, setPendingStatusChange] = useState<{
+    candidateId: number | string;
+    applicationId: number | string;
+    newStatus: string;
+  } | null>(null);
+  const [noteModalDefaults, setNoteModalDefaults] = useState<{
+    action: string;
+    aboutReferences: {
+      id: string;
+      type: string;
+      display: string;
+      value: string;
+    }[];
+  } | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+
+  const getToken = () =>
+    document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, '$1');
 
   useEffect(() => {
     let mounted = true;
@@ -147,19 +189,34 @@ export default function CandidateFlowDashboard() {
 
           const normalizeStatus = (s: any) => String(s || '').toLowerCase();
 
-          // Find applications by priority status
-          const appWithOffer = apps.find((a: any) => normalizeStatus(a?.status) === 'offer extended');
-          const appWithInterview = apps.find((a: any) => normalizeStatus(a?.status) === 'interview');
-          const appWithClientStatus = apps.find((a: any) => normalizeStatus(a?.status) === 'client submission');
+          const getJobIdFromRecord = (record: any) => {
+            if (!record) return null;
+            return (
+              record.job_id ??
+              record.jobId ??
+              record.job_id_id ??
+              record.id ??
+              null
+            );
+          };
 
           // Helper to build job label from a record that may have job_id/job_title
           const buildJobLabel = (record: any) => {
             if (!record) return '';
-            if (record.job_id != null) {
-              return formatRecordId(record.job_id, 'job');
+            if (record.job_id != null || record.jobId != null || record.job_id_id != null) {
+              const rawId = record.job_id ?? record.jobId ?? record.job_id_id;
+              return formatRecordId(rawId, 'job');
+            }
+            if (record.record_number != null) {
+              return formatRecordId(record.record_number, 'job');
             }
             return record.job_title || '';
           };
+
+          // Find applications by priority status
+          const appWithOffer = apps.find((a: any) => normalizeStatus(a?.status) === 'offer extended');
+          const appWithInterview = apps.find((a: any) => normalizeStatus(a?.status) === 'interview');
+          const appWithClientStatus = apps.find((a: any) => normalizeStatus(a?.status) === 'client submission');
 
           // 1) Highest priority: any application with Offer Extended
           if (appWithOffer) {
@@ -167,6 +224,8 @@ export default function CandidateFlowDashboard() {
               id: c.id,
               name: c.name,
               jobId: buildJobLabel(appWithOffer),
+              applicationId: appWithOffer.id,
+              jobNumericId: getJobIdFromRecord(appWithOffer),
             });
             return;
           }
@@ -177,6 +236,8 @@ export default function CandidateFlowDashboard() {
               id: c.id,
               name: c.name,
               jobId: buildJobLabel(appWithInterview),
+              applicationId: appWithInterview.id,
+              jobNumericId: getJobIdFromRecord(appWithInterview),
             });
             return;
           }
@@ -188,6 +249,8 @@ export default function CandidateFlowDashboard() {
               id: c.id,
               name: c.name,
               jobId: buildJobLabel(source),
+              applicationId: source?.application_id ?? source?.applicationId ?? null,
+              jobNumericId: getJobIdFromRecord(source),
             });
             return;
           }
@@ -203,6 +266,8 @@ export default function CandidateFlowDashboard() {
             id: c.id,
             name: c.name,
             jobId: buildJobLabel(latestApp),
+            applicationId: latestApp?.id,
+            jobNumericId: getJobIdFromRecord(latestApp),
           });
         });
 
@@ -320,13 +385,122 @@ export default function CandidateFlowDashboard() {
     setModalCandidate(null);
   };
 
+  const handleCloseAddNoteModal = () => {
+    setShowAddNote(false);
+    setNoteModalDefaults(null);
+  };
+
+  const openClientSubmissionModalFromBoard = (candidate: Candidate) => {
+    setClientSubmissionContext({
+      candidateId: candidate.id,
+      candidateName: candidate.name,
+      jobId: candidate.jobNumericId ?? null,
+    });
+  };
+
+  const goToInterviewPlannerFromBoard = (candidate: Candidate) => {
+    const params = new URLSearchParams();
+    params.set('addAppointment', '1');
+    params.set('participantType', 'job_seeker');
+    params.set('participantId', String(candidate.id));
+    if (candidate.jobNumericId != null) {
+      params.set('jobId', String(candidate.jobNumericId));
+    }
+    params.set('appointmentType', 'Interview');
+
+    router.push(`/dashboard/planner?${params.toString()}`);
+  };
+
+  const updateApplicationStatusFromBoard = async (
+    candidateId: number | string,
+    applicationId: number | string,
+    newStatus: string
+  ) => {
+    try {
+      const token = getToken();
+      const res = await fetch(
+        `/api/job-seekers/${candidateId}/applications/${applicationId}`,
+        {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: token ? `Bearer ${token}` : '',
+          },
+          body: JSON.stringify({ status: newStatus }),
+        }
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.message || 'Failed to update status');
+        return;
+      }
+      toast.success('Status updated');
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.error('Error updating application status from candidate flow:', err);
+      toast.error('Failed to update status');
+    }
+  };
+
+  const extendOfferFromBoard = (candidate: Candidate) => {
+    if (candidate.applicationId == null) {
+      toast.error('Missing application context for offer.');
+      return;
+    }
+
+    setPendingStatusChange({
+      candidateId: candidate.id,
+      applicationId: candidate.applicationId,
+      newStatus: 'Offer Extended',
+    });
+
+    const refs: {
+      id: string;
+      type: string;
+      display: string;
+      value: string;
+    }[] = [];
+
+    const jsName = candidate.name || `Job Seeker #${candidate.id}`;
+    const jsDisplay = `${formatRecordId(candidate.id, 'jobSeeker')} ${jsName}`;
+    refs.push({
+      id: String(candidate.id),
+      type: 'Job Seeker',
+      display: jsDisplay,
+      value: jsDisplay,
+    });
+
+    if (candidate.jobNumericId != null) {
+      const jobPrefix = formatRecordId(candidate.jobNumericId, 'job');
+      const jobDisplay = `${jobPrefix} ${candidate.jobId || ''}`.trim();
+      refs.push({
+        id: String(candidate.jobNumericId),
+        type: 'Job',
+        display: jobDisplay,
+        value: jobDisplay,
+      });
+    }
+
+    setNoteModalDefaults({
+      action: 'Offer Extended',
+      aboutReferences: refs,
+    });
+    setShowAddNote(true);
+  };
+
   const renderPrescreenedCard = (c: PrescreenedCandidate) => {
     return (
       <button
         type="button"
         key={c.id}
         draggable
-        onDragStart={() => setDraggedCandidate(c)}
+        onDragStart={() =>
+          setDragPayload({
+            fromColumnId: 'prescreened',
+            candidate: c,
+          })
+        }
         onClick={() => handleViewCandidate(c.id)}
         className="w-full text-left rounded-xl p-4 mb-3 bg-white border border-green-200 shadow-sm hover:shadow-md hover:border-green-400 transition-all group cursor-move"
       >
@@ -352,10 +526,17 @@ export default function CandidateFlowDashboard() {
     );
   };
 
-  const renderSubmittedCard = (candidate: Candidate) => (
+  const renderStageCard = (candidate: Candidate, fromColumnId: string) => (
     <div
       key={candidate.id}
-      className="w-full rounded-xl p-4 mb-3 bg-white border border-slate-200 shadow-sm flex flex-col justify-between"
+      draggable
+      onDragStart={() =>
+        setDragPayload({
+          fromColumnId,
+          candidate,
+        })
+      }
+      className="w-full rounded-xl p-4 mb-3 bg-white border border-slate-200 shadow-sm flex flex-col justify-between cursor-move"
     >
       <div>
         <div className="text-slate-800 font-medium truncate">{candidate.name}</div>
@@ -416,16 +597,54 @@ export default function CandidateFlowDashboard() {
               <div
                 className="flex-1 p-3 overflow-y-auto min-h-[360px]"
                 onDragOver={(e) => {
-                  if (column.id === 'submitted' && draggedCandidate) {
+                  if (!dragPayload) return;
+                  const from = dragPayload.fromColumnId;
+                  const to = column.id;
+
+                  const allowed =
+                    (from === 'prescreened' && to === 'submitted') ||
+                    (from === 'submitted' && to === 'client-submitted') ||
+                    (from === 'client-submitted' && to === 'interviews') ||
+                    (from === 'interviews' && to === 'offer');
+
+                  if (allowed) {
                     e.preventDefault();
                     e.dataTransfer.dropEffect = 'move';
                   }
                 }}
                 onDrop={(e) => {
-                  if (column.id === 'submitted' && draggedCandidate) {
+                  if (!dragPayload) return;
+                  const from = dragPayload.fromColumnId;
+                  const to = column.id;
+
+                  if (from === 'prescreened' && to === 'submitted') {
                     e.preventDefault();
-                    openSubmissionModalFor(draggedCandidate);
-                    setDraggedCandidate(null);
+                    const source = dragPayload.candidate as PrescreenedCandidate;
+                    openSubmissionModalFor(source);
+                    setDragPayload(null);
+                    return;
+                  }
+
+                  const candidate = dragPayload.candidate as Candidate;
+
+                  if (from === 'submitted' && to === 'client-submitted') {
+                    e.preventDefault();
+                    openClientSubmissionModalFromBoard(candidate);
+                    setDragPayload(null);
+                    return;
+                  }
+
+                  if (from === 'client-submitted' && to === 'interviews') {
+                    e.preventDefault();
+                    goToInterviewPlannerFromBoard(candidate);
+                    setDragPayload(null);
+                    return;
+                  }
+
+                  if (from === 'interviews' && to === 'offer') {
+                    e.preventDefault();
+                    void extendOfferFromBoard(candidate);
+                    setDragPayload(null);
                   }
                 }}
               >
@@ -453,7 +672,7 @@ export default function CandidateFlowDashboard() {
                       </p>
                     );
                   }
-                  return candidateList.map(renderSubmittedCard);
+                  return candidateList.map((c) => renderStageCard(c, column.id));
                 })()}
               </div>
             </div>
@@ -502,6 +721,61 @@ export default function CandidateFlowDashboard() {
           onSuccess={() => {
             closeSubmissionModal();
             setReloadKey((k) => k + 1);
+          }}
+        />
+      )}
+
+      {clientSubmissionContext && (
+        <ClientSubmissionModal
+          open={true}
+          onClose={() => setClientSubmissionContext(null)}
+          jobId={clientSubmissionContext.jobId}
+          job={null}
+          jobHiringManager={null}
+          candidates={[
+            {
+              id: clientSubmissionContext.candidateId,
+              name: clientSubmissionContext.candidateName,
+            },
+          ]}
+          initialCandidate={{
+            id: clientSubmissionContext.candidateId,
+            name: clientSubmissionContext.candidateName,
+          }}
+          currentUserName={user?.name || ''}
+          currentUserEmail={user?.email || ''}
+          onSuccess={() => {
+            setClientSubmissionContext(null);
+            setReloadKey((k) => k + 1);
+          }}
+        />
+      )}
+
+      {showAddNote && pendingStatusChange && noteModalDefaults && (
+        <AddNoteModal
+          open={showAddNote}
+          onClose={handleCloseAddNoteModal}
+          entityType="job-seeker"
+          entityId={String(pendingStatusChange.candidateId)}
+          entityDisplay={
+            noteModalDefaults.aboutReferences.find((ref) => ref.type === 'Job Seeker')
+              ?.display
+          }
+          defaultAction={noteModalDefaults.action}
+          defaultAboutReferences={noteModalDefaults.aboutReferences}
+          onSuccess={async () => {
+            if (
+              pendingStatusChange &&
+              pendingStatusChange.applicationId != null &&
+              pendingStatusChange.candidateId != null
+            ) {
+              await updateApplicationStatusFromBoard(
+                pendingStatusChange.candidateId,
+                pendingStatusChange.applicationId,
+                pendingStatusChange.newStatus
+              );
+              setPendingStatusChange(null);
+            }
           }}
         />
       )}
