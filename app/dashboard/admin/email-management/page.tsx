@@ -46,6 +46,11 @@ const SECTIONS: Section[] = [
     name: "Placements",
     description: "Placement delete request emails for payroll",
   },
+  {
+    id: "authentication",
+    name: "Authentication (new)",
+    description: "Authentication and login security templates like 2FA codes",
+  },
 ];
 
 export default function EmailManagementPage() {

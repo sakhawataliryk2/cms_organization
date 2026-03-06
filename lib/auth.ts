@@ -157,6 +157,7 @@ export function useAuth() {
             if (
                 currentPath !== '/auth/login' &&
                 currentPath !== '/auth/signup' &&
+                currentPath !== '/auth/forgot-password' &&
                 !currentPath.startsWith('/job-seeker-portal')
             ) {
                 // Store current URL in sessionStorage as backup (survives cookie clearing)
