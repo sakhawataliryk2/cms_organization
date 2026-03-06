@@ -406,9 +406,8 @@ const Planners = () => {
       setIsLoadingLookups(true);
       try {
         const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-        const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
-
-        console.log("apiUrl", apiUrl);
+        // Strip trailing slash to avoid double slash in URLs (e.g. ...vercel.app//api/...) which causes CORS preflight redirect errors
+        const apiUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080').replace(/\/$/, '');
 
         // Fetch job seekers
         try {
