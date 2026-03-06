@@ -1,6 +1,12 @@
 "use client";
 import Image from "next/image";
-import { useState, FormEvent } from "react";
+import {
+  useState,
+  FormEvent,
+  useRef,
+  KeyboardEvent,
+  ClipboardEvent,
+} from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { setCookie } from "cookies-next";
@@ -11,15 +17,104 @@ export default function Login() {
   const [password, setPassword] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>("");
+
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [otpValues, setOtpValues] = useState<string[]>(Array(6).fill(""));
+  const [otpError, setOtpError] = useState<string>("");
+  const [otpLoading, setOtpLoading] = useState<boolean>(false);
+  const otpInputsRef = useRef<Array<HTMLInputElement | null>>([]);
+
   const router = useRouter();
+
+  const completeLogin = (data: any) => {
+    if (!data?.token) {
+      throw new Error("No authentication token received from server");
+    }
+
+    setCookie("token", data.token, {
+      maxAge: 60 * 60 * 24 * 7,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      path: "/",
+    });
+
+    const user = data.user || {};
+    const userData = {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      userType: user.userType || user.user_type || user.role || "undefined",
+    };
+
+    setCookie("user", JSON.stringify(userData), {
+      maxAge: 60 * 60 * 24 * 7,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      path: "/",
+    });
+
+    let redirectUrl: string | null = null;
+
+    if (typeof window !== "undefined") {
+      redirectUrl = new URLSearchParams(window.location.search).get(
+        "redirect"
+      );
+
+      if (!redirectUrl) {
+        try {
+          redirectUrl = sessionStorage.getItem("auth_redirect");
+          if (redirectUrl) {
+            sessionStorage.removeItem("auth_redirect");
+          }
+        } catch {
+          // Ignore sessionStorage errors
+        }
+      }
+    }
+
+    const isSameSite = (url: string): boolean => {
+      if (typeof window === "undefined") return false;
+      try {
+        if (url.startsWith("/")) return true;
+        const urlObj = new URL(url, window.location.origin);
+        return urlObj.origin === window.location.origin;
+      } catch {
+        return false;
+      }
+    };
+
+    const isActionPage = (url: string): boolean => {
+      return (
+        (url.includes("/transfer/") &&
+          (url.includes("/approve") || url.includes("/deny"))) ||
+        (url.includes("/delete/") &&
+          (url.includes("/approve") || url.includes("/deny")))
+      );
+    };
+
+    if (redirectUrl) {
+      const decodedUrl = decodeURIComponent(redirectUrl);
+
+      if (isSameSite(decodedUrl)) {
+        if (isActionPage(decodedUrl)) {
+          router.push(decodedUrl);
+        } else {
+          router.push("/home");
+        }
+      } else {
+        window.location.href = decodedUrl;
+      }
+    } else {
+      router.push("/home");
+    }
+  };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    // Reset error
     setError("");
 
-    // Validate form inputs
     if (!email || !password) {
       setError("Email and password are required");
       return;
@@ -50,122 +145,118 @@ export default function Login() {
         throw new Error(data.message || "Invalid credentials");
       }
 
-      // Store user data in cookies with secure options
-      if (data.token) {
-        setCookie("token", data.token, {
-          maxAge: 60 * 60 * 24 * 7, // 7 days
-          secure: process.env.NODE_ENV === "production", // Only send over HTTPS in production
-          sameSite: "strict", // CSRF protection
-          path: "/", // Available across the site
-        });
-      } else {
-        throw new Error("No authentication token received from server");
+      if (data.requires2FA) {
+        setPendingEmail(email);
+        setShowOtpModal(true);
+        setOtpValues(Array(6).fill(""));
+        setOtpError("");
+        return;
       }
 
-      // Log the user data from the API response for debugging
-      console.log("API Response User Data:", data.user);
-      console.log(
-        "Token received:",
-        data.token ? data.token.substring(0, 20) + "..." : "No token received"
-      );
-
-      // Ensure all fields are properly captured
-      const userData = {
-        id: data.user.id,
-        name: data.user.name,
-        email: data.user.email,
-        userType:
-          data.user.userType ||
-          data.user.user_type ||
-          data.user.role ||
-          "undefined",
-      };
-      // Log what we're storing in the cookie
-      console.log("Storing in cookie:", userData);
-
-      setCookie("user", JSON.stringify(userData), {
-        maxAge: 60 * 60 * 24 * 7, // 7 days
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        path: "/",
-      });
-
-      // Get redirect URL from query params, sessionStorage, or default to home page
-      let redirectUrl: string | null = null;
-      
-      if (typeof window !== "undefined") {
-        // First priority: URL query params (most reliable - from middleware)
-        redirectUrl = new URLSearchParams(window.location.search).get("redirect");
-        
-        // Second priority: sessionStorage (fallback if cookies cleared but URL param lost)
-        if (!redirectUrl) {
-          try {
-            redirectUrl = sessionStorage.getItem('auth_redirect');
-            // Clear it after reading
-            if (redirectUrl) {
-              sessionStorage.removeItem('auth_redirect');
-            }
-          } catch (e) {
-            // Ignore sessionStorage errors (private browsing, etc.)
-          }
-        }
-      }
-
-      // Helper function to check if URL is from the same site
-      const isSameSite = (url: string): boolean => {
-        if (typeof window === 'undefined') return false;
-        try {
-          // If it's a relative path (starts with /), it's same site
-          if (url.startsWith('/')) return true;
-          
-          // If it's a full URL, check the origin
-          const urlObj = new URL(url, window.location.origin);
-          return urlObj.origin === window.location.origin;
-        } catch (e) {
-          // If URL parsing fails, assume it's not same site
-          return false;
-        }
-      };
-
-      // Helper function to check if URL is an action page (approve/deny) that should be preserved
-      const isActionPage = (url: string): boolean => {
-        return (url.includes('/transfer/') && (url.includes('/approve') || url.includes('/deny'))) ||
-               (url.includes('/delete/') && (url.includes('/approve') || url.includes('/deny')));
-      };
-
-      // Redirect logic: same site → home (except action pages), external site → redirect URL
-      if (redirectUrl) {
-        const decodedUrl = decodeURIComponent(redirectUrl);
-        
-        if (isSameSite(decodedUrl)) {
-          // Same site: check if it's an action page (approve/deny)
-          if (isActionPage(decodedUrl)) {
-            // Action pages: redirect back to the page itself
-            router.push(decodedUrl);
-          } else {
-            // Other same-site pages: redirect to home page
-            router.push("/home");
-          }
-        } else {
-          // External site: redirect to that URL
-          window.location.href = decodedUrl;
-        }
-      } else {
-        // No redirect URL: go to home page
-        router.push("/home");
-      }
-    } catch (error: any) {
-      setError(error.message || "Login failed. Please check your credentials.");
+      completeLogin(data);
+    } catch (err: any) {
+      setError(err.message || "Login failed. Please check your credentials.");
     } finally {
       setLoading(false);
     }
   };
 
+  const handleOtpChange = (index: number, value: string) => {
+    const cleaned = value.replace(/\D/g, "").slice(-1);
+    const next = [...otpValues];
+    next[index] = cleaned;
+    setOtpValues(next);
+
+    if (cleaned && index < otpValues.length - 1) {
+      const nextInput = otpInputsRef.current[index + 1];
+      nextInput?.focus();
+    }
+  };
+
+  const handleOtpKeyDown = (
+    index: number,
+    e: KeyboardEvent<HTMLInputElement>
+  ) => {
+    if (e.key === "Backspace" && !otpValues[index] && index > 0) {
+      const prevInput = otpInputsRef.current[index - 1];
+      const next = [...otpValues];
+      next[index - 1] = "";
+      setOtpValues(next);
+      prevInput?.focus();
+      e.preventDefault();
+    }
+  };
+
+  const handleOtpPaste = (e: ClipboardEvent<HTMLInputElement>) => {
+    const text = e.clipboardData.getData("text") || "";
+    const digits = text.replace(/\D/g, "").slice(0, otpValues.length).split("");
+    if (!digits.length) return;
+    const next = [...otpValues];
+    for (let i = 0; i < digits.length; i++) {
+      next[i] = digits[i];
+    }
+    setOtpValues(next);
+    const lastIndex = digits.length - 1;
+    otpInputsRef.current[lastIndex]?.focus();
+    e.preventDefault();
+  };
+
+  const handleVerifyOtp = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    setOtpError("");
+
+    const code = otpValues.join("");
+    if (code.length !== otpValues.length) {
+      setOtpError("Please enter the full 6-digit code.");
+      return;
+    }
+
+    const emailToUse = pendingEmail || email;
+    if (!emailToUse) {
+      setOtpError("Missing email. Please try logging in again.");
+      return;
+    }
+
+    setOtpLoading(true);
+
+    try {
+      const response = await fetch(
+        `${
+          process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000"
+        }/api/auth/verify-otp`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email: emailToUse,
+            otp: code,
+          }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.message || "Invalid or expired verification code."
+        );
+      }
+
+      setShowOtpModal(false);
+      completeLogin(data);
+    } catch (err: any) {
+      setOtpError(
+        err.message || "OTP verification failed. Please try again."
+      );
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
   return (
     <div className="flex h-screen">
-      {/* Blue sidebar */}
-      {/* <div className="w-60 bg-blue-500"></div> */}
-
       {/* Main content */}
       <div className="flex-1 flex flex-col items-center justify-center px-8">
         <div className="w-full max-w-md">
@@ -342,23 +433,122 @@ export default function Login() {
 
             {/* Forgot password link */}
             <div className="text-center mt-2">
-              <a href="#" className="text-blue-500 text-sm hover:underline">
+              <Link
+                href="/auth/forgot-password"
+                className="text-blue-500 text-sm hover:underline"
+              >
                 Forgot Password?
-              </a>
+              </Link>
             </div>
 
             {/* Sign up link */}
             {/* <div className="text-center mt-4">
-                            <p className="text-sm text-gray-600">
-                                Don't have an account?{" "}
-                                <Link href="/auth/signup" className="text-blue-500 hover:underline">
-                                    Sign Up
-                                </Link>
-                            </p>
-                        </div> */}
+              <p className="text-sm text-gray-600">
+                Don't have an account?{" "}
+                <Link href="/auth/signup" className="text-blue-500 hover:underline">
+                  Sign Up
+                </Link>
+              </p>
+            </div> */}
           </form>
         </div>
       </div>
+
+      {showOtpModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-md rounded-xl bg-white dark:bg-slate-900 shadow-xl p-6 relative">
+            <button
+              type="button"
+              className="absolute right-4 top-4 text-gray-400 hover:text-gray-600"
+              onClick={() => {
+                setShowOtpModal(false);
+                setOtpValues(Array(6).fill(""));
+              }}
+              aria-label="Close OTP verification"
+            >
+              ✕
+            </button>
+
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+              Enter verification code
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
+              We&apos;ve sent a 6-digit code to{" "}
+              <span className="font-medium">
+                {pendingEmail || email || "your email"}
+              </span>
+              . Enter it below to finish signing in.
+            </p>
+
+            {otpError && (
+              <div className="mb-3 rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {otpError}
+              </div>
+            )}
+
+            <form onSubmit={handleVerifyOtp} className="space-y-4">
+              <div className="flex justify-between gap-2">
+                {otpValues.map((value, index) => (
+                  <input
+                    key={index}
+                    ref={(el) => {
+                      otpInputsRef.current[index] = el;
+                    }}
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={1}
+                    className="h-12 w-12 rounded-md border border-gray-200 text-center text-lg font-semibold tracking-widest focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60 dark:bg-slate-800 dark:text-white"
+                    value={value}
+                    onChange={(e) => handleOtpChange(index, e.target.value)}
+                    onKeyDown={(e) => handleOtpKeyDown(index, e)}
+                    onPaste={index === 0 ? handleOtpPaste : undefined}
+                  />
+                ))}
+              </div>
+
+              <button
+                type="submit"
+                disabled={otpLoading}
+                className="mt-4 w-full rounded-md bg-blue-600 py-2.5 text-sm font-semibold text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-blue-300 flex items-center justify-center"
+              >
+                {otpLoading ? (
+                  <>
+                    <svg
+                      className="mr-2 h-4 w-4 animate-spin"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      ></circle>
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      ></path>
+                    </svg>
+                    Verifying...
+                  </>
+                ) : (
+                  "Verify and continue"
+                )}
+              </button>
+
+              <p className="mt-2 text-center text-xs text-gray-500">
+                Didn&apos;t receive the code? Check your spam folder or try
+                again after a short while.
+              </p>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

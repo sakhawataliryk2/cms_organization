@@ -779,6 +779,53 @@ const SECTION_CONFIG: Record<
       },
     },
   },
+  authentication: {
+    types: [
+      { value: "AUTH_2FA_EMAIL", label: "2FA Email Template" },
+      { value: "AUTH_RESET_PASSWORD_EMAIL", label: "Password Reset OTP Template" },
+    ],
+    placeholders: {
+      AUTH_2FA_EMAIL: ["{{userName}}", "{{email}}", "{{otp}}", "{{expiresAt}}"],
+      AUTH_RESET_PASSWORD_EMAIL: ["{{userName}}", "{{email}}", "{{otp}}", "{{expiresAt}}"],
+    },
+    required: {
+      AUTH_2FA_EMAIL: ["{{userName}}", "{{otp}}", "{{expiresAt}}"],
+      AUTH_RESET_PASSWORD_EMAIL: ["{{userName}}", "{{otp}}", "{{expiresAt}}"],
+    },
+    defaults: {
+      AUTH_2FA_EMAIL: {
+        template_name: "2FA email template",
+        subject: "Your login verification code",
+        body:
+          `<div>` +
+          `<h2>Two-factor authentication</h2>` +
+          `<p>Hello {{userName}},</p>` +
+          `<p>Use the verification code below to finish signing in:</p>` +
+          `<p style="font-size: 24px; font-weight: 600; letter-spacing: 0.3em; padding: 12px 18px; background:#eff6ff; border-radius:999px; display:inline-block; border:1px solid #bfdbfe; color:#1d4ed8;">{{otp}}</p>` +
+          `<p>This code will expire at <strong>{{expiresAt}}</strong>.</p>` +
+          `<p>If you did not try to sign in, you can safely ignore this email.</p>` +
+          `<hr/>` +
+          `<p style="font-size:12px;color:#6b7280;">Sent to {{email}} for secure access.</p>` +
+          `</div>`,
+      },
+      AUTH_RESET_PASSWORD_EMAIL: {
+        template_name: "Password reset OTP template",
+        subject: "Your password reset code",
+        body:
+          `<div>` +
+          `<h2>Password reset request</h2>` +
+          `<p>Hello {{userName}},</p>` +
+          `<p>We received a request to reset the password for your account.</p>` +
+          `<p>Use the verification code below to reset your password:</p>` +
+          `<p style="font-size: 24px; font-weight: 600; letter-spacing: 0.3em; padding: 12px 18px; background:#fef3c7; border-radius:999px; display:inline-block; border:1px solid #fcd34d; color:#92400e;">{{otp}}</p>` +
+          `<p>This code will expire at <strong>{{expiresAt}}</strong>.</p>` +
+          `<p>If you did not request a password reset, you can safely ignore this email and your password will remain unchanged.</p>` +
+          `<hr/>` +
+          `<p style="font-size:12px;color:#6b7280;">Sent to {{email}} for your security.</p>` +
+          `</div>`,
+      },
+    },
+  },
 };
 
 const SECTION_LABELS: Record<string, string> = {
@@ -789,6 +836,7 @@ const SECTION_LABELS: Record<string, string> = {
   leads: "Leads",
   tasks: "Tasks",
   placements: "Placements",
+  authentication: "Authentication",
 };
 
 export default function EmailManagementSectionPage() {
