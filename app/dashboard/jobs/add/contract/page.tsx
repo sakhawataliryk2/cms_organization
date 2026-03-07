@@ -2053,8 +2053,8 @@ export default function AddJob() {
           </div>
         )}
 
-        {/* Parse Job Order (AI) – only in add mode; never auto-save, recruiter reviews */}
-        {!isEditMode && (
+        {/* Parse Job Order (AI) – only in add mode; never auto-save, recruiter reviews – COMMENTED OUT */}
+        {/* {!isEditMode && (
           <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
             <h2 className="text-sm font-semibold text-gray-700 mb-2">
               Parse Job Order (PDF / DOC / DOCX / TXT)
@@ -2102,7 +2102,7 @@ export default function AddJob() {
               <p className="mt-2 text-sm text-red-600">{parseJobError}</p>
             )}
           </div>
-        )}
+        )} */}
 
         {/* Form: from org we already have HM; from job overview HM is inline (no modal) */}
         {/* Hide HM selection when already selected from org flow (organizationId + hiringManagerId in URL); show in simple add and edit mode */}
