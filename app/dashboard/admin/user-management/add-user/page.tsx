@@ -17,6 +17,7 @@ interface User {
     team: string;
     idNumber: string;
     isAdmin: boolean;
+    status: boolean;
 }
 
 interface Office {
@@ -74,7 +75,8 @@ export default function UserManagement() {
                         office: user.office_name || '',
                         team: user.team_name || '',
                         idNumber: user.id_number || '',
-                        isAdmin: user.is_admin || false
+                        isAdmin: user.is_admin || false,
+                        status: user.status !== false
                     };
                 });
                 setUsers(mappedUsers);
@@ -135,8 +137,45 @@ export default function UserManagement() {
         setSearchTerm('');
     };
 
+    const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+
     const handleFilterChange = (status: string) => {
         setFilterStatus(status);
+    };
+
+    const handleDeactivate = async (user: User) => {
+        if (!user.status) return;
+        const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
+        const confirmed = window.confirm(`Deactivate user "${fullName}"? They will no longer be able to log in.`);
+        if (!confirmed) return;
+
+        try {
+            setUpdatingUserId(user.id);
+            const response = await fetch(`/api/users/${user.id}/status`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ status: false }),
+            });
+
+            const data = await response.json();
+
+            if (!response.ok || !data.success) {
+                alert(data.message || 'Failed to deactivate user');
+                return;
+            }
+
+            // Update local state so UI reflects the change without full reload
+            setUsers(prev =>
+                prev.map(u => (u.id === user.id ? { ...u, status: false } : u))
+            );
+        } catch (error) {
+            console.error('Error deactivating user:', error);
+            alert('Failed to deactivate user. Please try again.');
+        } finally {
+            setUpdatingUserId(null);
+        }
     };
 
     const tableHeaders = [
@@ -150,7 +189,9 @@ export default function UserManagement() {
         { id: 'office', label: 'Office' },
         { id: 'team', label: 'Team' },
         { id: 'idNumber', label: 'ID Number' },
-        { id: 'isAdmin', label: 'Is Admin' }
+        { id: 'isAdmin', label: 'Is Admin' },
+        { id: 'status', label: 'Status' },
+        { id: 'actions', label: 'Actions' }
     ];
 
     return (
@@ -262,6 +303,25 @@ export default function UserManagement() {
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.team}</td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.idNumber}</td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.isAdmin ? 'Yes' : 'No'}</td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap">
+                                            <span className={user.status ? 'text-green-600' : 'text-red-600'}>
+                                                {user.status ? 'Enabled' : 'Disabled'}
+                                            </span>
+                                        </td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap">
+                                            {user.status ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleDeactivate(user)}
+                                                    disabled={updatingUserId === user.id}
+                                                    className="px-3 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                                                >
+                                                    {updatingUserId === user.id ? 'Deactivating...' : 'Deactivate'}
+                                                </button>
+                                            ) : (
+                                                <span className="text-xs text-gray-400">Inactive</span>
+                                            )}
+                                        </td>
                                     </tr>
                                 ))
                             ) : (
