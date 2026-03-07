@@ -18,6 +18,25 @@ interface User {
     idNumber: string;
     isAdmin: boolean;
     status: boolean;
+    role: string;
+}
+
+// User types: display label -> backend role value
+const USER_TYPES: { label: string; value: string }[] = [
+    { label: 'Developer', value: 'developer' },
+    { label: 'Owner', value: 'owner' },
+    { label: 'Administrator', value: 'administrator' },
+    { label: 'Payroll-Admin', value: 'payroll-admin' },
+    { label: 'Onboarding-admin', value: 'onboarding-admin' },
+    { label: 'Account manager-temp', value: 'account-manager-temp' },
+    { label: 'Account Manager-Perm', value: 'account-manager-perm' },
+    { label: 'Sales Rep', value: 'sales-rep' },
+    { label: 'Recruiter', value: 'recruiter' },
+];
+
+function roleToLabel(role: string): string {
+    const found = USER_TYPES.find(t => t.value === (role || '').toLowerCase());
+    return found ? found.label : (role || '—');
 }
 
 interface Office {
@@ -35,7 +54,7 @@ export default function UserManagement() {
     const router = useRouter();
     const [searchTerm, setSearchTerm] = useState('');
     const [isAddUserModalOpen, setIsAddUserModalOpen] = useState(false);
-    const [filterStatus, setFilterStatus] = useState('Enabled');
+    const [activeTab, setActiveTab] = useState<'active' | 'deactivated'>('active');
     const [users, setUsers] = useState<User[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -76,7 +95,8 @@ export default function UserManagement() {
                         team: user.team_name || '',
                         idNumber: user.id_number || '',
                         isAdmin: user.is_admin || false,
-                        status: user.status !== false
+                        status: user.status !== false,
+                        role: user.role || 'recruiter'
                     };
                 });
                 setUsers(mappedUsers);
@@ -98,8 +118,10 @@ export default function UserManagement() {
         fetchUsers();
     }, []);
 
-    // Filter users based on search term (includes user_id)
+    // Filter users by tab (active vs deactivated) then by search term
     const filteredUsers = users.filter(user => {
+        const matchTab = activeTab === 'active' ? user.status === true : user.status === false;
+        if (!matchTab) return false;
         if (!searchTerm.trim()) return true;
         const term = searchTerm.toLowerCase().trim();
         const searchableText = [
@@ -111,7 +133,8 @@ export default function UserManagement() {
             user.title,
             user.office,
             user.team,
-            user.idNumber
+            user.idNumber,
+            user.role
         ].filter(Boolean).join(' ').toLowerCase();
         return searchableText.includes(term);
     });
@@ -138,9 +161,60 @@ export default function UserManagement() {
     };
 
     const [updatingUserId, setUpdatingUserId] = useState<string | null>(null);
+    const [updatingRoleUserId, setUpdatingRoleUserId] = useState<string | null>(null);
 
-    const handleFilterChange = (status: string) => {
-        setFilterStatus(status);
+    const handleActivate = async (user: User) => {
+        if (user.status) return;
+        const fullName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email;
+        const confirmed = window.confirm(`Activate user "${fullName}"? They will be able to log in again.`);
+        if (!confirmed) return;
+
+        try {
+            setUpdatingUserId(user.id);
+            const response = await fetch(`/api/users/${user.id}/status`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: true }),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                alert(data.message || 'Failed to activate user');
+                return;
+            }
+            setUsers(prev =>
+                prev.map(u => (u.id === user.id ? { ...u, status: true } : u))
+            );
+        } catch (error) {
+            console.error('Error activating user:', error);
+            alert('Failed to activate user. Please try again.');
+        } finally {
+            setUpdatingUserId(null);
+        }
+    };
+
+    const handleRoleChange = async (user: User, newRole: string) => {
+        if ((user.role || '').toLowerCase() === newRole.toLowerCase()) return;
+        try {
+            setUpdatingRoleUserId(user.id);
+            const response = await fetch(`/api/users/${user.id}/role`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ role: newRole }),
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                alert(data.message || 'Failed to update user type');
+                return;
+            }
+            setUsers(prev =>
+                prev.map(u => (u.id === user.id ? { ...u, role: newRole } : u))
+            );
+        } catch (error) {
+            console.error('Error updating role:', error);
+            alert('Failed to update user type. Please try again.');
+        } finally {
+            setUpdatingRoleUserId(null);
+        }
     };
 
     const handleDeactivate = async (user: User) => {
@@ -189,6 +263,7 @@ export default function UserManagement() {
         { id: 'office', label: 'Office' },
         { id: 'team', label: 'Team' },
         { id: 'idNumber', label: 'ID Number' },
+        { id: 'userType', label: 'User Type' },
         { id: 'isAdmin', label: 'Is Admin' },
         { id: 'status', label: 'Status' },
         { id: 'actions', label: 'Actions' }
@@ -212,7 +287,11 @@ export default function UserManagement() {
                     >
                         Add User
                     </button>
-                    <button className="p-2 rounded hover:bg-gray-200">
+                    <button
+                        onClick={fetchUsers}
+                        className="p-2 rounded hover:bg-gray-200"
+                        title="Refresh list"
+                    >
                         <FiRefreshCw size={18} />
                     </button>
                     <button onClick={handleGoBack} className="p-2 rounded hover:bg-gray-200">
@@ -221,8 +300,25 @@ export default function UserManagement() {
                 </div>
             </div>
 
-            {/* Search and filter area */}
-            <div className="p-4 flex items-center space-x-4">
+            {/* Search and tabs */}
+            <div className="p-4 flex flex-wrap items-center gap-4">
+                <div className="flex border border-gray-300 rounded-md overflow-hidden">
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('active')}
+                        className={`px-4 py-2 text-sm font-medium ${activeTab === 'active' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                    >
+                        Active
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setActiveTab('deactivated')}
+                        className={`px-4 py-2 text-sm font-medium ${activeTab === 'deactivated' ? 'bg-blue-600 text-white' : 'bg-white text-gray-700 hover:bg-gray-50'}`}
+                    >
+                        Deactivated
+                    </button>
+                </div>
+
                 <div className="relative">
                     <input
                         type="text"
@@ -244,13 +340,6 @@ export default function UserManagement() {
                 <button onClick={handleClearSearch} className="bg-gray-200 px-4 py-2 rounded text-gray-700 hover:bg-gray-300">
                     Clear
                 </button>
-
-                <div className="relative">
-                    <button className="bg-white border border-gray-300 px-4 py-2 rounded flex items-center">
-                        {filterStatus}
-                        <FiChevronDown className="ml-2" />
-                    </button>
-                </div>
 
                 <div className="text-gray-500">
                     ( {filteredUsers.length} ) Records
@@ -302,6 +391,23 @@ export default function UserManagement() {
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.office}</td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.team}</td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.idNumber}</td>
+                                        <td className="px-4 py-3 text-sm whitespace-nowrap">
+                                            <select
+                                                value={(user.role || 'recruiter').toLowerCase()}
+                                                onChange={(e) => handleRoleChange(user, e.target.value)}
+                                                disabled={updatingRoleUserId === user.id}
+                                                className="border border-gray-300 rounded px-2 py-1 text-sm bg-white min-w-[140px] disabled:opacity-60"
+                                            >
+                                                {USER_TYPES.map((t) => (
+                                                    <option key={t.value} value={t.value}>
+                                                        {t.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            {updatingRoleUserId === user.id && (
+                                                <span className="ml-1 text-xs text-gray-500">Saving...</span>
+                                            )}
+                                        </td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">{user.isAdmin ? 'Yes' : 'No'}</td>
                                         <td className="px-4 py-3 text-sm whitespace-nowrap">
                                             <span className={user.status ? 'text-green-600' : 'text-red-600'}>
@@ -319,7 +425,14 @@ export default function UserManagement() {
                                                     {updatingUserId === user.id ? 'Deactivating...' : 'Deactivate'}
                                                 </button>
                                             ) : (
-                                                <span className="text-xs text-gray-400">Inactive</span>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleActivate(user)}
+                                                    disabled={updatingUserId === user.id}
+                                                    className="px-3 py-1 text-xs rounded bg-green-600 text-white hover:bg-green-700 disabled:opacity-60 disabled:cursor-not-allowed"
+                                                >
+                                                    {updatingUserId === user.id ? 'Activating...' : 'Activate'}
+                                                </button>
                                             )}
                                         </td>
                                     </tr>
@@ -375,6 +488,7 @@ function AddUserModal({ onClose, onUserAdded }: { onClose: () => void; onUserAdd
         officeId: '',
         teamId: '',
         idNumber: '',
+        userType: 'recruiter',
         isAdmin: false,
         password: '',
         confirmPassword: ''
@@ -508,14 +622,14 @@ function AddUserModal({ onClose, onUserAdded }: { onClose: () => void; onUserAdd
             const body: Record<string, unknown> = {
                 name: `${formData.firstName} ${formData.lastName}`,
                 email: formData.email,
-                userType: formData.isAdmin ? 'admin' : 'recruiter',
+                userType: formData.userType,
                 officeId: formData.officeId,
                 teamId: formData.teamId,
                 phone: formData.phone,
                 phone2: formData.phone2,
                 title: formData.title,
                 idNumber: formData.idNumber,
-                isAdmin: formData.isAdmin
+                isAdmin: ['admin', 'owner', 'developer', 'administrator'].includes(formData.userType)
             };
             if (passwordMode === 'manual') {
                 body.password = formData.password;
@@ -761,6 +875,24 @@ function AddUserModal({ onClose, onUserAdded }: { onClose: () => void; onUserAdd
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                                    User Type <span className="text-red-500">*</span>
+                                </label>
+                                <select
+                                    name="userType"
+                                    value={formData.userType}
+                                    onChange={handleChange}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                >
+                                    {USER_TYPES.map((t) => (
+                                        <option key={t.value} value={t.value}>
+                                            {t.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 mb-1">
                                     User ID
                                 </label>
                                 <input
@@ -842,16 +974,9 @@ function AddUserModal({ onClose, onUserAdded }: { onClose: () => void; onUserAdd
                             </div>
 
                             <div className="col-span-2">
-                                <label className="flex items-center space-x-2 mt-4">
-                                    <input
-                                        type="checkbox"
-                                        name="isAdmin"
-                                        checked={formData.isAdmin}
-                                        onChange={handleChange}
-                                        className="h-4 w-4 text-blue-600 rounded focus:ring-blue-500"
-                                    />
-                                    <span className="text-sm font-medium text-gray-700">Administrator</span>
-                                </label>
+                                <p className="text-xs text-gray-500">
+                                    Administrator, Owner, and Developer have elevated access. User type can be changed later from the user list.
+                                </p>
                             </div>
                         </div>
 
