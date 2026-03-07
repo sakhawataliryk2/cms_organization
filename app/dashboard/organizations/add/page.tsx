@@ -1459,8 +1459,8 @@ export default function AddOrganization() {
           </div>
         )}
 
-        {/* Parse Organization Document (AI) – only in create mode */}
-        {!isEditMode && (
+        {/* Parse Organization Document (AI) – only in create mode – COMMENTED OUT */}
+        {/* {!isEditMode && (
           <div className="mb-6 p-4 border border-gray-200 rounded-lg bg-gray-50">
             <h2 className="text-sm font-semibold text-gray-700 mb-2">
               Parse Organization Document (PDF / DOC / DOCX / TXT)
@@ -1509,7 +1509,7 @@ export default function AddOrganization() {
               <p className="mt-2 text-sm text-red-600">{parseOrganizationError}</p>
             )}
           </div>
-        )}
+        )} */}
 
         {/* Form */}
         <form onSubmit={handleSubmit} className="space-y-4">
