@@ -44,11 +44,11 @@ const COLUMN_CONFIG: { id: string; title: string; color: string; accent: string 
 ];
 
 const COLUMN_ID_TO_STATUS: Record<string, string> = {
-  'submission': 'Submission',
-  'client-submitted': 'Client Submitted',
-  'interview': 'Interview',
+  submission: 'Submitted',
+  'client-submitted': 'Client Submission',
+  interview: 'Interview',
   'offer-extended': 'Offer Extended',
-  'placement': 'Placement',
+  placement: 'Placement',
 };
 
 const DraggableCard = memo(function DraggableCard({

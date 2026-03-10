@@ -158,16 +158,23 @@ export default function SubmissionFormModal({
     }
     setIsSubmitting(true);
     try {
-      const res = await fetch(`/api/job-seekers/${jobSeekerId}/client-submissions`, {
+      const effectiveStatus = status || SUBMISSION_STATUS_DEFAULT;
+      const isClientSubmissionStatus =
+        effectiveStatus.trim().toLowerCase() === "client submission";
+
+      // From Prescreen and Job Seeker view, creations should go through the unified
+      // applications endpoint. Use type "submissions" by default and promote to
+      // "client_submissions" only when the status is explicitly "Client Submission".
+      const res = await fetch(`/api/job-seekers/${jobSeekerId}/applications`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${getToken()}`,
         },
         body: JSON.stringify({
-          type: "client_submissions",
+          type: isClientSubmissionStatus ? "client_submissions" : "submissions",
           job_id: Number(selectedJobId),
-          status: status || SUBMISSION_STATUS_DEFAULT,
+          status: effectiveStatus,
           submission_source: submissionSource || SUBMISSION_SOURCE_DEFAULT,
           comments: comments || undefined,
           attachment_ids: Array.from(selectedAttachmentIds),

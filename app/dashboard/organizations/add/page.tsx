@@ -69,10 +69,9 @@ export default function AddOrganization() {
     website: Array<{ id: string | number; name: string }>;
     email: Array<{ id: string | number; name: string }>;
   } | null>(null);
+  const [hasConfirmedDuplicateSave, setHasConfirmedDuplicateSave] = useState(false);
+  const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false);
   const hasFetchedRef = useRef(false); // Track if we've already fetched organization data
-  const [activeUsers, setActiveUsers] = useState<
-    Array<{ id: string; name: string; email: string }>
-  >([]);
   const [organizationContacts, setOrganizationContacts] = useState<
     Array<{ id: string; name: string; full_name?: string; first_name?: string; last_name?: string }>
   >([]);
@@ -285,29 +284,6 @@ export default function AddOrganization() {
     fetchOrganization,
   ]);
 
-  // Fetch active users for Owner dropdown
-  useEffect(() => {
-    const fetchActiveUsers = async () => {
-      try {
-        const response = await fetch("/api/users/active", {
-          headers: {
-            Authorization: `Bearer ${document.cookie.replace(
-              /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
-              "$1"
-            )}`,
-          },
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setActiveUsers(data.users || []);
-        }
-      } catch (error) {
-        console.error("Error fetching active users:", error);
-      }
-    };
-    fetchActiveUsers();
-  }, []);
-
   // Fetch organization contacts (hiring managers) for Contract Signed By dropdown
   useEffect(() => {
     const fetchOrganizationContacts = async () => {
@@ -341,53 +317,6 @@ export default function AddOrganization() {
     fetchOrganizationContacts();
   }, [organizationId]);
 
-  // Auto-populate Field_18 (Owner) field in UI when customFields are loaded
-  useEffect(() => {
-    // Wait for customFields to load
-    if (customFieldsLoading || customFields.length === 0) return;
-
-    // Find Field_18 specifically - check both field_name and field_label
-    const ownerField = customFields.find(
-      (f) =>
-        f.field_name === "Field_18" ||
-        f.field_name === "field_18" ||
-        f.field_name?.toLowerCase() === "field_18" ||
-        (f.field_label === "Owner" &&
-          (f.field_name?.includes("18") ||
-            f.field_name?.toLowerCase().includes("field_18")))
-    );
-
-    if (ownerField) {
-      const currentOwnerValue = customFieldValues[ownerField.field_name];
-      // Only auto-populate if field is empty (works in both create and edit mode)
-      if (!currentOwnerValue || currentOwnerValue.trim() === "") {
-        try {
-          const userDataStr = getCookie("user");
-          if (userDataStr) {
-            const userData = JSON.parse(userDataStr as string);
-            if (userData.name) {
-              setCustomFieldValues((prev) => ({
-                ...prev,
-                [ownerField.field_name]: userData.name,
-              }));
-              console.log(
-                "Auto-populated Field_18 (Owner) with current user:",
-                userData.name
-              );
-            }
-          }
-        } catch (e) {
-          console.error("Error parsing user data from cookie:", e);
-        }
-      }
-    }
-  }, [
-    customFields,
-    customFieldsLoading,
-    customFieldValues,
-    setCustomFieldValues,
-  ]);
-
   // Clear duplicate warning when user changes phone, website, or email so they can fix and save
   const phoneWebsiteEmailValuesKey = useMemo(() => {
     const labels = [
@@ -408,10 +337,106 @@ export default function AddOrganization() {
     return parts.join("|");
   }, [customFields, customFieldValues]);
 
+  // Reset user's duplicate confirmation whenever key phone/website/email values change
   useEffect(() => {
-    if (!duplicateWarning) return;
-    setDuplicateWarning(null);
+    setHasConfirmedDuplicateSave(false);
   }, [phoneWebsiteEmailValuesKey]);
+
+  // Real-time duplicate detection for phone / website / email
+  useEffect(() => {
+    let timeoutId: number | undefined;
+    let isCancelled = false;
+
+    const runCheck = async () => {
+      const customFieldsToSend = getCustomFieldsForSubmission();
+
+      const phoneForCheck = String(
+        customFieldsToSend["Contact Phone"] ??
+          customFieldsToSend["Main Phone"] ??
+          ""
+      ).trim();
+
+      const websiteForCheck = String(
+        customFieldsToSend["Website"] ??
+          customFieldsToSend["Organization Website"] ??
+          customFieldsToSend["URL"] ??
+          ""
+      ).trim();
+
+      const emailForCheck = String(
+        customFieldsToSend["Email"] ??
+          customFieldsToSend["Organization Email"] ??
+          customFieldsToSend["email"] ??
+          ""
+      ).trim();
+
+      if (!phoneForCheck && !websiteForCheck && !emailForCheck) {
+        if (!isCancelled) {
+          setDuplicateWarning(null);
+          setIsCheckingDuplicates(false);
+        }
+        return;
+      }
+
+      try {
+        setIsCheckingDuplicates(true);
+        const params = new URLSearchParams();
+        if (phoneForCheck) params.set("phone", phoneForCheck);
+        if (websiteForCheck) params.set("website", websiteForCheck);
+        if (emailForCheck) params.set("email", emailForCheck);
+        if (isEditMode && organizationId) params.set("excludeId", organizationId);
+
+        const dupRes = await fetch(
+          `/api/organizations/check-duplicates?${params.toString()}`
+        );
+        const dupData = await dupRes.json();
+
+        if (isCancelled) return;
+
+        if (dupData.success && dupData.duplicates) {
+          const { phone: dupPhone, website: dupWebsite, email: dupEmail } =
+            dupData.duplicates;
+          const hasDuplicates =
+            (dupPhone?.length ?? 0) > 0 ||
+            (dupWebsite?.length ?? 0) > 0 ||
+            (dupEmail?.length ?? 0) > 0;
+
+          if (hasDuplicates) {
+            setDuplicateWarning({
+              phone: dupPhone ?? [],
+              website: dupWebsite ?? [],
+              email: dupEmail ?? [],
+            });
+          } else {
+            setDuplicateWarning(null);
+          }
+        } else {
+          setDuplicateWarning(null);
+        }
+      } catch {
+        if (!isCancelled) {
+          setDuplicateWarning(null);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsCheckingDuplicates(false);
+        }
+      }
+    };
+
+    // Debounce real-time check to avoid spamming the API while typing
+    timeoutId = window.setTimeout(runCheck, 600);
+
+    return () => {
+      isCancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [
+    phoneWebsiteEmailValuesKey,
+    getCustomFieldsForSubmission,
+    isEditMode,
+    organizationId,
+  ]);
 
   // Shared helper: run AI parse on an organization file and apply to custom fields.
   const parseOrganizationWithFile = async (file: File) => {
@@ -745,17 +770,21 @@ export default function AddOrganization() {
               const names = (dupEmail as Array<{ name: string }>).map((o) => o.name).join(", ");
               messages.push(`Email is already used by: ${names}`);
             }
-            setError(
-              "Cannot save: the following are already in use by another organization. Please use different values or update the existing organization.\n\n" +
-              messages.join("\n")
-            );
             setDuplicateWarning({
               phone: dupPhone ?? [],
               website: dupWebsite ?? [],
               email: dupEmail ?? [],
             });
-            setIsSubmitting(false);
-            return;
+
+            if (!hasConfirmedDuplicateSave) {
+              setError(
+                "Possible duplicate organization(s) detected.\n\n" +
+                messages.join("\n") +
+                "\n\nReview the matches below. If you still want to create this record, confirm and click Save again."
+              );
+              setIsSubmitting(false);
+              return;
+            }
           }
         }
       }
@@ -768,74 +797,6 @@ export default function AddOrganization() {
       if (apiData.num_offices != null) {
         const n = parseInt(String(apiData.num_offices), 10);
         apiData.num_offices = !isNaN(n) ? n : null;
-      }
-
-      // Auto-populate Owner field (Field_18) if not set (only in create mode)
-      // Check both "Owner" label and Field_18 field_name
-      const ownerFieldKey =
-        Object.keys(customFieldsForDB).find(
-          (key) => key === "Owner" || key.toLowerCase().includes("owner")
-        ) ||
-        Object.keys(customFieldsToSend).find((key) => {
-          const field = customFields.find(
-            (f) => f.field_name === "Field_18" || f.field_name === "field_18"
-          );
-          return field && customFieldsToSend[field.field_label] !== undefined;
-        });
-
-      if (!isEditMode) {
-        // Find Field_18 in customFields
-        const ownerField = customFields.find(
-          (f) =>
-            f.field_name === "Field_18" ||
-            f.field_name === "field_18" ||
-            (f.field_label === "Owner" && f.field_name?.includes("18"))
-        );
-
-        if (ownerField) {
-          const ownerValue =
-            customFieldsForDB[ownerField.field_label] ||
-            customFieldValues[ownerField.field_name];
-
-          if (!ownerValue || ownerValue.trim() === "") {
-            try {
-              const userDataStr = getCookie("user");
-              if (userDataStr) {
-                const userData = JSON.parse(userDataStr as string);
-                if (userData.name) {
-                  customFieldsForDB[ownerField.field_label] = userData.name;
-                  console.log(
-                    "Auto-populated Field_18 (Owner) with current user:",
-                    userData.name
-                  );
-                }
-              }
-            } catch (e) {
-              console.error("Error parsing user data from cookie:", e);
-            }
-          }
-        } else if (
-          ownerFieldKey &&
-          (!customFieldsForDB[ownerFieldKey] ||
-            customFieldsForDB[ownerFieldKey].trim() === "")
-        ) {
-          // Fallback to old "Owner" key logic
-          try {
-            const userDataStr = getCookie("user");
-            if (userDataStr) {
-              const userData = JSON.parse(userDataStr as string);
-              if (userData.name) {
-                customFieldsForDB[ownerFieldKey] = userData.name;
-                console.log(
-                  "Auto-populated Owner with current user:",
-                  userData.name
-                );
-              }
-            }
-          } catch (e) {
-            console.error("Error parsing user data from cookie:", e);
-          }
-        }
       }
 
       // 🔍 DEBUG: Log the final payload
@@ -1823,14 +1784,17 @@ export default function AddOrganization() {
                   }
                   const fieldValue = customFieldValues[field.field_name] || "";
 
-                  // Special handling for Field_18 (Owner) - render as dropdown with active users
-                  const isOwnerField =
-                    field.field_name === "Field_18" ||
-                    field.field_name === "field_18" ||
-                    field.field_name?.toLowerCase() === "field_18" ||
-                    (field.field_label === "Owner" &&
-                      (field.field_name?.includes("18") ||
-                        field.field_name?.toLowerCase().includes("field_18")));
+                  const normalizedLabel = (field.field_label ?? "").toLowerCase();
+                  const isPhoneDuplicateField =
+                    normalizedLabel === "contact phone" ||
+                    normalizedLabel === "main phone";
+                  const isWebsiteDuplicateField =
+                    normalizedLabel === "website" ||
+                    normalizedLabel === "organization website" ||
+                    normalizedLabel === "url";
+                  const isEmailDuplicateField =
+                    normalizedLabel === "email" ||
+                    normalizedLabel === "organization email";
 
                   // Special handling for Field_8 (Contract Signed on File) - detect for conditional validation
                   const isContractSignedOnFileField =
@@ -2035,25 +1999,7 @@ export default function AddOrganization() {
                       </label>
 
                       <div className="flex-1 relative">
-                        {isOwnerField ? (
-                          <select
-                            value={fieldValue}
-                            onChange={(e) =>
-                              handleCustomFieldChange(
-                                field.field_name,
-                                e.target.value
-                              )
-                            }
-                            className="w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500"
-                          >
-                            <option value="">Select Owner</option>
-                            {activeUsers.map((user) => (
-                              <option key={user.id} value={user.name}>
-                                {user.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : isContractSignedByField ? (
+                        {isContractSignedByField ? (
                           <select
                             value={fieldValue}
                             onChange={(e) =>
@@ -2081,21 +2027,36 @@ export default function AddOrganization() {
                               );
                             })}
                           </select>
-                        ) : (
-                          <CustomFieldRenderer
-                            field={field}
-                            value={fieldValue}
-                            onChange={handleCustomFieldChange}
-                            allFields={customFields}
-                            values={customFieldValues}
-                            validationIndicator={
-                              field.is_required || isContractSignedByRequired
-                                ? isCustomFieldValueValid(field, fieldValue)
-                                  ? "valid"
-                                  : "required"
-                                : undefined
-                            }
-                          />
+                          ) : (
+                          <>
+                            <CustomFieldRenderer
+                              field={field}
+                              value={fieldValue}
+                              onChange={handleCustomFieldChange}
+                              allFields={customFields}
+                              values={customFieldValues}
+                              validationIndicator={
+                                field.is_required || isContractSignedByRequired
+                                  ? isCustomFieldValueValid(field, fieldValue)
+                                    ? "valid"
+                                    : "required"
+                                  : undefined
+                              }
+                            />
+                            {duplicateWarning && (
+                              <div className="mt-1 text-xs text-yellow-700">
+                                {isPhoneDuplicateField &&
+                                  (duplicateWarning.phone?.length ?? 0) > 0 &&
+                                  "This phone number matches an existing organization."}
+                                {isWebsiteDuplicateField &&
+                                  (duplicateWarning.website?.length ?? 0) > 0 &&
+                                  "This website matches an existing organization."}
+                                {isEmailDuplicateField &&
+                                  (duplicateWarning.email?.length ?? 0) > 0 &&
+                                  "This email matches an existing organization."}
+                              </div>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>
@@ -2128,6 +2089,87 @@ export default function AddOrganization() {
             )}
           </div>
 
+          {/* Duplicate warning section with links to possible matches and confirmation */}
+          {duplicateWarning && (
+            <div className="mb-4 p-4 border border-yellow-300 bg-yellow-50 rounded">
+              <div className="font-semibold text-yellow-800 mb-2">
+                Possible duplicate organization(s) detected
+              </div>
+              <div className="space-y-2 text-sm text-yellow-900">
+                {(duplicateWarning.phone?.length ?? 0) > 0 && (
+                  <div>
+                    <div className="font-medium">Same phone number:</div>
+                    <ul className="list-disc list-inside">
+                      {duplicateWarning.phone.map((org) => (
+                        <li key={org.id}>
+                          <a
+                            href={`/dashboard/organizations/view?id=${org.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {org.name}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {(duplicateWarning.website?.length ?? 0) > 0 && (
+                  <div>
+                    <div className="font-medium">Same website:</div>
+                    <ul className="list-disc list-inside">
+                      {duplicateWarning.website.map((org) => (
+                        <li key={org.id}>
+                          <a
+                            href={`/dashboard/organizations/view?id=${org.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {org.name}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {(duplicateWarning.email?.length ?? 0) > 0 && (
+                  <div>
+                    <div className="font-medium">Same email:</div>
+                    <ul className="list-disc list-inside">
+                      {duplicateWarning.email.map((org) => (
+                        <li key={org.id}>
+                          <a
+                            href={`/dashboard/organizations/view?id=${org.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {org.name}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-3 flex items-center gap-2 text-sm text-yellow-900">
+                <input
+                  id="confirm-duplicate-save"
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={hasConfirmedDuplicateSave}
+                  onChange={(e) => setHasConfirmedDuplicateSave(e.target.checked)}
+                />
+                <label htmlFor="confirm-duplicate-save">
+                  I have reviewed the possible duplicates and still want to save this organization.
+                </label>
+              </div>
+            </div>
+          )}
+
           {/* Spacer so content is not hidden behind sticky bar */}
           <div className="h-20" aria-hidden="true" />
 
@@ -2148,14 +2190,16 @@ export default function AddOrganization() {
                 (duplicateWarning !== null &&
                   ((duplicateWarning.phone?.length ?? 0) > 0 ||
                     (duplicateWarning.website?.length ?? 0) > 0 ||
-                    (duplicateWarning.email?.length ?? 0) > 0))
+                    (duplicateWarning.email?.length ?? 0) > 0) &&
+                  !hasConfirmedDuplicateSave)
               }
               className={`px-4 py-2 rounded ${isSubmitting ||
                 !isFormValid ||
                 (duplicateWarning !== null &&
                   ((duplicateWarning.phone?.length ?? 0) > 0 ||
                     (duplicateWarning.website?.length ?? 0) > 0 ||
-                    (duplicateWarning.email?.length ?? 0) > 0))
+                    (duplicateWarning.email?.length ?? 0) > 0) &&
+                  !hasConfirmedDuplicateSave)
                 ? "bg-gray-300 text-gray-500 cursor-not-allowed"
                 : "bg-blue-500 text-white hover:bg-blue-600"
                 }`}
