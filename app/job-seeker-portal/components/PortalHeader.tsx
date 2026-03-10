@@ -4,7 +4,7 @@ import { FiHelpCircle, FiUser, FiLogOut } from "react-icons/fi";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation"; 
-import ProfileModal from "../components/ProfileModal"; 
+import ProfileModal from "./ProfileModal"; 
 
 interface PortalHeaderProps {
   userName: string;

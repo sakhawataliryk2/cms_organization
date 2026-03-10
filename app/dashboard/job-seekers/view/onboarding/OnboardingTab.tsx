@@ -6,7 +6,7 @@ import SendOnboardingModal from "./SendOnboardingModal";
 // ✅ PDF overlay viewer
 import DocumentViewer, {
   DocumentViewerHandle,
-} from "./../../../../job-seeker-portal/components/DocumentViewer";
+} from "../../../../job-seeker-portal/components/DocumentViewer";
 
 type JobSeeker = {
   id: number;
