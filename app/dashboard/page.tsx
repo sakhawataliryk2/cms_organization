@@ -26,6 +26,22 @@ interface Task {
     lead_name?: string;
 }
 
+type TaskWithOwnerFields = Task & {
+    created_by?: string | number;
+    assigned_to?: string | number;
+};
+
+const isTaskOwnedByUser = (
+    task: TaskWithOwnerFields,
+    userId?: string | number
+): boolean => {
+    if (!userId) return false;
+    const idStr = String(userId);
+    if (task.created_by != null && String(task.created_by) === idStr) return true;
+    if (task.assigned_to != null && String(task.assigned_to) === idStr) return true;
+    return false;
+};
+
 interface Appointment {
     id: number;
     time: string;
@@ -469,6 +485,18 @@ export default function Dashboard() {
         return null;
     };
 
+    const sortTasksByRecent = (tasksToSort: Task[]): Task[] => {
+        return [...tasksToSort].sort((a, b) => {
+            const aDate = getTaskPrimaryDate(a);
+            const bDate = getTaskPrimaryDate(b);
+            if (!aDate && !bDate) return 0;
+            if (!aDate) return 1;
+            if (!bDate) return -1;
+            // Newest first
+            return bDate.getTime() - aDate.getTime();
+        });
+    };
+
     // Check if a date has tasks (by Date Added, falling back to due_date)
     const hasTasks = (date: Date) => {
         if (allTasks.length === 0) return false;
@@ -530,13 +558,19 @@ export default function Dashboard() {
             }
 
             const data = await response.json();
-            const allTasks = data.tasks || [];
+            const allTasks = (data.tasks || []) as TaskWithOwnerFields[];
+
+            const userId = user?.id;
+            const userTasks = userId
+                ? allTasks.filter((task) => isTaskOwnedByUser(task, userId))
+                : [];
 
             // Filter tasks for the selected date using primary date (Date Added, then due_date)
-            const tasksForDate = allTasks.filter((task: Task) => isTaskForDate(task, date));
+            const tasksForDate = userTasks.filter((task: Task) => isTaskForDate(task, date));
+            const sortedForDate = sortTasksByRecent(tasksForDate);
             
-            setTasks(tasksForDate);
-            setFilteredTasks(tasksForDate);
+            setTasks(sortedForDate);
+            setFilteredTasks(sortedForDate);
         } catch (err) {
             console.error('Error fetching tasks:', err);
             setTasksError(err instanceof Error ? err.message : 'An error occurred while fetching tasks');
@@ -600,7 +634,17 @@ export default function Dashboard() {
             }
 
             const data = await response.json();
-            const appointmentsList = data.appointments || data.data || [];
+            let appointmentsList = data.appointments || data.data || [];
+
+            // Keep only appointments that belong to the logged-in user
+            const userId = user?.id;
+            if (userId) {
+                const userIdStr = String(userId);
+                appointmentsList = appointmentsList.filter((apt: any) => {
+                    const createdBy = apt.created_by ?? apt.user_id ?? apt.owner_id;
+                    return createdBy != null && String(createdBy) === userIdStr;
+                });
+            }
             
             // Map API response to Appointment interface
             const mappedAppointments: Appointment[] = appointmentsList.map((apt: any) => ({
@@ -661,26 +705,34 @@ export default function Dashboard() {
             }
 
             const data = await response.json();
-            const allTasksData = data.tasks || [];
-            setAllTasks(allTasksData); // Store all tasks for calendar indicators
+            const allTasksData = (data.tasks || []) as TaskWithOwnerFields[];
+
+            const userId = user?.id;
+            const userTasks = userId
+                ? allTasksData.filter((task) => isTaskOwnedByUser(task, userId))
+                : [];
+
+            // Store all user tasks (unsliced) for calendar indicators
+            setAllTasks(userTasks);
 
             // Filter tasks by date range on frontend if backend doesn't support it,
             // using primary date (Date Added, then due_date)
-            let filteredTasksData = allTasksData;
+            let filteredTasksData: Task[] = userTasks;
             if (activityRange.start && activityRange.end) {
                 const startDate = new Date(activityRange.start);
                 const endDate = new Date(activityRange.end);
                 endDate.setHours(23, 59, 59, 999); // Include the entire end date
 
-                filteredTasksData = allTasksData.filter((task: Task) => {
+                filteredTasksData = userTasks.filter((task: Task) => {
                     const taskDate = getTaskPrimaryDate(task);
                     if (!taskDate) return false;
                     return taskDate >= startDate && taskDate <= endDate;
                 });
             }
-            
-            setTasks(filteredTasksData);
-            setFilteredTasks(filteredTasksData);
+
+            const sortedTasks = sortTasksByRecent(filteredTasksData);
+            setTasks(sortedTasks);
+            setFilteredTasks(sortedTasks);
         } catch (err) {
             console.error('Error fetching tasks:', err);
             setTasksError(err instanceof Error ? err.message : 'An error occurred while fetching tasks');

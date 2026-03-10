@@ -182,8 +182,11 @@ export default function CandidateFlowDashboard() {
           const apps = results[idx]?.applications || [];
           const clientSubs = results[idx]?.clientSubmissions || [];
 
+          // Always keep prescreened candidates in the Prescreen column
+          nextPrescreened.push(c);
+
+          // If there is no downstream activity yet, they only appear in Prescreen
           if (apps.length === 0 && clientSubs.length === 0) {
-            nextPrescreened.push(c);
             return;
           }
 
@@ -213,10 +216,21 @@ export default function CandidateFlowDashboard() {
             return record.job_title || '';
           };
 
-          // Find applications by priority status
-          const appWithOffer = apps.find((a: any) => normalizeStatus(a?.status) === 'offer extended');
-          const appWithInterview = apps.find((a: any) => normalizeStatus(a?.status) === 'interview');
-          const appWithClientStatus = apps.find((a: any) => normalizeStatus(a?.status) === 'client submission');
+          // Find applications by priority status (support both legacy and current labels)
+          const appWithOffer = apps.find(
+            (a: any) => normalizeStatus(a?.status) === 'offer extended'
+          );
+          const appWithInterview = apps.find(
+            (a: any) => normalizeStatus(a?.status) === 'interview'
+          );
+          const appWithClientStatus = apps.find((a: any) => {
+            const s = normalizeStatus(a?.status);
+            return s === 'client submission' || s === 'client submitted';
+          });
+          const clientSubWithClientStatus = clientSubs.find((cs: any) => {
+            const s = normalizeStatus(cs?.status);
+            return s === 'client submission' || s === 'client submitted';
+          });
 
           // 1) Highest priority: any application with Offer Extended
           if (appWithOffer) {
@@ -242,9 +256,9 @@ export default function CandidateFlowDashboard() {
             return;
           }
 
-          // 3) Next: any client submission row OR application with Client Submission status
-          if (clientSubs.length > 0 || appWithClientStatus) {
-            const source = appWithClientStatus || clientSubs[0];
+          // 3) Next: any client submission *with Client Submission status* OR application with Client Submission status
+          if (clientSubWithClientStatus || appWithClientStatus) {
+            const source = appWithClientStatus || clientSubWithClientStatus;
             nextClientSubmitted.push({
               id: c.id,
               name: c.name,
@@ -255,7 +269,21 @@ export default function CandidateFlowDashboard() {
             return;
           }
 
-          // 4) Fallback: they have applications but none of the above statuses → generic Submitted
+          // 4) If there are client submissions but none are yet marked Client Submission,
+          // treat them as generic Submitted (e.g. first-time submission from Prescreen).
+          if (apps.length === 0 && clientSubs.length > 0) {
+            const source = clientSubs[0];
+            nextSubmitted.push({
+              id: c.id,
+              name: c.name,
+              jobId: buildJobLabel(source),
+              applicationId: source?.application_id ?? source?.applicationId ?? null,
+              jobNumericId: getJobIdFromRecord(source),
+            });
+            return;
+          }
+
+          // 5) Fallback: they have applications but none of the above statuses → generic Submitted
           const latestApp = [...apps].sort(
             (a: any, b: any) =>
               new Date(b?.created_at || 0).getTime() -
@@ -562,7 +590,7 @@ export default function CandidateFlowDashboard() {
   const anyLoading = loading || stageLoading;
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="flex flex-col min-h-screen bg-slate-50">
       <button
         onClick={handleClose}
         className="absolute top-4 right-4 z-10 p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded-lg transition-colors"
@@ -571,20 +599,23 @@ export default function CandidateFlowDashboard() {
         <FiX size={24} />
       </button>
 
-      <div className="grow overflow-auto">
-        <div className="px-4 pt-4 pb-2">
+      <div className="grow flex flex-col">
+        <div className="px-4 pt-4 pb-2 flex-shrink-0">
           <h1 className="text-2xl font-bold text-slate-800">Job Seeker Flow</h1>
-          <p className="text-slate-600 text-sm mt-0.5">Pipeline by stage — PreScreened shows your last 30 days.</p>
+          <p className="text-slate-600 text-sm mt-0.5 whitespace-nowrap overflow-hidden text-ellipsis">
+            Pipeline by stage — PreScreened shows your last 30 days.
+          </p>
         </div>
-        <div className="flex overflow-x-auto gap-4 p-4 pb-8 min-h-[420px]">
+        <div className="flex-1 overflow-x-auto overflow-y-hidden px-4 pb-6">
+          <div className="flex gap-4 h-full min-h-[420px]">
           {columns.map((column) => (
             <div
               key={column.id}
-              className="shrink-0 w-[300px] max-w-[300px] flex flex-col rounded-2xl bg-white/80 backdrop-blur-sm shadow-md border border-slate-200 overflow-hidden"
+              className="shrink-0 w-[280px] max-w-[280px] flex flex-col rounded-xl bg-white shadow-sm border border-slate-200 overflow-y-auto max-h-[500px]"
             >
-              <div className={`px-4 py-3 border-b-2 ${column.accent} bg-white`}>
+              <div className={`px-4 py-3 border-b ${column.accent} bg-white`}>
                 <div className="flex items-center justify-between gap-2">
-                  <h2 className="font-semibold text-slate-800 text-sm leading-tight">
+                  <h2 className="font-semibold text-slate-800 text-sm leading-tight whitespace-nowrap overflow-hidden text-ellipsis">
                     {column.title}
                   </h2>
                   {column.count !== undefined && (
@@ -595,7 +626,7 @@ export default function CandidateFlowDashboard() {
                 </div>
               </div>
               <div
-                className="flex-1 p-3 overflow-y-auto min-h-[360px]"
+                className="flex-1 p-3 overflow-y-auto"
                 onDragOver={(e) => {
                   if (!dragPayload) return;
                   const from = dragPayload.fromColumnId;
@@ -677,6 +708,7 @@ export default function CandidateFlowDashboard() {
               </div>
             </div>
           ))}
+          </div>
         </div>
       </div>
 

@@ -222,7 +222,32 @@ export default function CustomFieldRenderer({
   context,
   validationIndicator,
 }: CustomFieldRendererProps) {
-  const readOnly = Boolean((field as any).is_read_only);
+  const rawValueStr = String(value ?? "").trim();
+  const hasRealDateValue =
+    rawValueStr !== "" &&
+    rawValueStr !== "-" &&
+    rawValueStr !== "—" &&
+    rawValueStr.toLowerCase() !== "n/a";
+
+  // Normalize "Date Added" label (allow minor variations like "Date Added:", "DATE_ADDED", etc.)
+  const normalizedDateLabel = String(field.field_label || "")
+    .toLowerCase()
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/[:]+$/g, "")
+    .trim();
+
+  const isDateAddedLabel =
+    normalizedDateLabel === "date added" ||
+    normalizedDateLabel.includes("date added");
+
+  // Treat "Date Added" fields with an existing value as read-only so they never change after first set
+  const baseReadOnly = Boolean((field as any).is_read_only);
+  const hasExistingValue =
+    field.field_type === "date" &&
+    isDateAddedLabel &&
+    hasRealDateValue;
+  const readOnly = baseReadOnly || hasExistingValue;
 
   // Dependent on another field: disabled until that field has a value
   const dependentOnFieldId = (field as any).dependent_on_field_id;
@@ -315,22 +340,18 @@ export default function CustomFieldRenderer({
     }
   }, []);
 
-  // Normalize "Date Added" label (allow minor variations like "Date Added:", "DATE_ADDED", etc.)
-  const normalizedDateLabel = String(field.field_label || "")
-    .toLowerCase()
-    .replace(/[_-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .replace(/[:]+$/g, "")
-    .trim();
-
-  const isDateAddedLabel =
-    normalizedDateLabel === "date added" ||
-    normalizedDateLabel.includes("date added");
-
   // Auto-populate today's date for "Date Added" fields by default
   React.useEffect(() => {
-    if (readOnly || isDisabledByDependency) return;
-    if (field.field_type === "date" && isDateAddedLabel && !value && !hasAutoFilledRef.current) {
+    // Even if the field is marked read-only (baseReadOnly), we still want to
+    // auto-fill it once when there is no existing value. We only skip when
+    // the field is disabled by dependency.
+    if (isDisabledByDependency) return;
+    if (
+      field.field_type === "date" &&
+      isDateAddedLabel &&
+      !hasRealDateValue &&
+      !hasAutoFilledRef.current
+    ) {
       // Get today's date in mm/dd/yyyy format
       const today = new Date();
       const month = String(today.getMonth() + 1).padStart(2, "0");
@@ -342,10 +363,19 @@ export default function CustomFieldRenderer({
       hasAutoFilledRef.current = true;
     }
     // Reset the ref if value changes externally (e.g., when editing)
-    if (value) {
+    if (hasRealDateValue) {
       hasAutoFilledRef.current = false;
     }
-  }, [field.field_type, field.field_label, field.field_name, isDateAddedLabel, isDisabledByDependency, onChange, readOnly, value]);
+  }, [
+    field.field_type,
+    field.field_label,
+    field.field_name,
+    isDateAddedLabel,
+    isDisabledByDependency,
+    onChange,
+    readOnly,
+    hasRealDateValue,
+  ]);
 
   const normalizedOptions = React.useMemo<string[]>(() => {
     if (!field.options) {
@@ -1853,6 +1883,19 @@ export function isCustomFieldValueValid(field: CustomFieldDefinition, value: any
   if (trimmed === "") return false;
 
   if (field.field_type === "date") {
+    // For generic "Date Added" style fields, accept any non-empty value so they don't block saves
+    const normalizedLabel = String(field.field_label || "")
+      .toLowerCase()
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .replace(/[:]+$/g, "")
+      .trim();
+    const isDateAdded =
+      normalizedLabel === "date added" || normalizedLabel.includes("date added");
+    if (isDateAdded && trimmed.length > 0) {
+      return true;
+    }
+
     let dateToValidate = trimmed;
     if (/^\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) {
       const [month, day, year] = trimmed.split("/");
