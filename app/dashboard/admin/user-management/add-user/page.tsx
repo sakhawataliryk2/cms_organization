@@ -139,6 +139,16 @@ export default function UserManagement() {
         return searchableText.includes(term);
     });
 
+    // Compute the next sequential ID number based on existing users.
+    // Falls back to "1" if there are no numeric ID numbers yet.
+    const getNextIdNumber = (): string => {
+        const numericIds = users
+            .map((u) => parseInt((u.idNumber || '').trim(), 10))
+            .filter((n) => !Number.isNaN(n));
+        const maxExisting = numericIds.length ? Math.max(...numericIds) : 0;
+        return String(maxExisting + 1);
+    };
+
     const handleAddUser = () => {
         setIsAddUserModalOpen(true);
     };
@@ -454,6 +464,7 @@ export default function UserManagement() {
                 <AddUserModal 
                     onClose={() => setIsAddUserModalOpen(false)} 
                     onUserAdded={handleUserAdded}
+                    initialIdNumber={getNextIdNumber()}
                 />
             )}
         </div>
@@ -477,7 +488,15 @@ function validateStrongPassword(p: string): { valid: boolean; message?: string }
 }
 
 // Add User Modal Component
-function AddUserModal({ onClose, onUserAdded }: { onClose: () => void; onUserAdded?: () => void }) {
+function AddUserModal({
+    onClose,
+    onUserAdded,
+    initialIdNumber,
+}: {
+    onClose: () => void;
+    onUserAdded?: () => void;
+    initialIdNumber?: string;
+}) {
     const [formData, setFormData] = useState({
         firstName: '',
         lastName: '',
@@ -487,7 +506,7 @@ function AddUserModal({ onClose, onUserAdded }: { onClose: () => void; onUserAdd
         title: '',
         officeId: '',
         teamId: '',
-        idNumber: '',
+        idNumber: initialIdNumber || '',
         userType: 'recruiter',
         isAdmin: false,
         password: '',

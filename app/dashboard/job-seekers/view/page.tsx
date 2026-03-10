@@ -8,7 +8,7 @@ import ActionDropdown from "@/components/ActionDropdown";
 import LoadingScreen from "@/components/LoadingScreen";
 import PanelWithHeader from "@/components/PanelWithHeader";
 import { sendEmailViaOffice365, isOffice365Authenticated, initializeOffice365Auth, sendCalendarInvite, type EmailMessage, type CalendarEvent } from "@/lib/office365";
-import { FiUsers, FiUpload, FiFile, FiX, FiLock, FiUnlock, FiArrowUp, FiArrowDown, FiFilter, FiSearch } from "react-icons/fi";
+import { FiUsers, FiUpload, FiFile, FiX, FiLock, FiUnlock, FiArrowUp, FiArrowDown, FiFilter, FiSearch, FiPhone } from "react-icons/fi";
 import { HiOutlineUser } from "react-icons/hi";
 import { BsFillPinAngleFill } from "react-icons/bs";
 import { TbGripVertical } from "react-icons/tb";
@@ -4597,6 +4597,68 @@ Best regards`;
       effectiveRows.push({ key, label: getDetailsLabel(key) });
     }
 
+    const handleStartZoomCall = async (phoneNumber?: string) => {
+      if (!jobSeekerId || !jobSeeker) {
+        toast.error("Job seeker not loaded");
+        return;
+      }
+
+      const rawNumber =
+        phoneNumber &&
+        phoneNumber !== "-" &&
+        phoneNumber !== "No phone provided"
+          ? phoneNumber
+          : (jobSeeker as any).mobilePhone &&
+            (jobSeeker as any).mobilePhone !== "No phone provided"
+          ? (jobSeeker as any).mobilePhone
+          : (jobSeeker as any).phone;
+
+      if (!rawNumber || rawNumber === "No phone provided") {
+        toast.error("No phone number available for this job seeker");
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/zoom/phone/call", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            jobSeekerId,
+            toNumber: rawNumber,
+          }),
+        });
+
+        const data = await response.json().catch(() => null);
+
+        if (!response.ok || !data?.success) {
+          const message =
+            data?.message ||
+            (response.status === 401
+              ? "Session expired. Please sign in again."
+              : "Failed to start Zoom call");
+          toast.error(message);
+          return;
+        }
+
+        const normalized =
+          (data && (data.normalizedTo as string)) || rawNumber;
+
+        if (typeof window !== "undefined") {
+          const zoomUri = `zoomphone://call?number=${encodeURIComponent(
+            normalized
+          )}`;
+          window.location.href = zoomUri;
+        }
+
+        toast.success("Opening Zoom Phone...");
+      } catch (error) {
+        console.error("Error starting Zoom Phone call:", error);
+        toast.error("Unable to start Zoom call. Please try again.");
+      }
+    };
+
     const renderJobSeekerDetailsRow = (key: string) => {
       const field = customFieldDefs.find(
         (f: any) =>
@@ -4612,10 +4674,14 @@ Best regards`;
       const fieldValue = value !== undefined && value !== null && String(value).trim() !== "" ? String(value) : "-";
       const lookupType = (field?.lookup_type || field?.lookupType || "") as any;
       const fieldInfo = { key, label, fieldType: field?.field_type ?? field?.fieldType, lookupType: field?.lookup_type ?? field?.lookupType, multiSelectLookupType: field?.multi_select_lookup_type ?? field?.multiSelectLookupType };
+      const isPhoneField = key === "mobilePhone" || key === "phone" || /phone/i.test(label);
+
       return (
         <div key={key} className="flex border-b border-gray-200 last:border-b-0">
-          <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
-          <div className="flex-1 p-2 text-sm">
+          <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">
+            {label}:
+          </div>
+          <div className="flex-1 p-2 text-sm flex items-center justify-between gap-2">
             <FieldValueRenderer
               value={fieldValue}
               fieldInfo={fieldInfo}
@@ -4624,6 +4690,17 @@ Best regards`;
               emptyPlaceholder="-"
               clickable
             />
+            {isPhoneField && fieldValue && fieldValue !== "-" && fieldValue !== "No phone provided" && (
+              <button
+                type="button"
+                onClick={() => handleStartZoomCall(fieldValue)}
+                className="inline-flex items-center px-2 py-1 text-xs font-medium text-blue-600 border border-blue-200 rounded hover:bg-blue-50"
+                title="Call via Zoom Phone"
+              >
+                <FiPhone className="mr-1 h-3 w-3" />
+                Call
+              </button>
+            )}
           </div>
         </div>
       );
