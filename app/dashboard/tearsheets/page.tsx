@@ -41,6 +41,7 @@ import Image from "next/image";
 interface Tearsheet {
   id: number;
   name: string;
+  record_number?: number | string | null;
   job_seeker_count: number;
   hiring_manager_count: number;
   job_order_count: number;
@@ -824,7 +825,6 @@ export default function TearsheetList() {
       label,
       url,
       recordNumber: r.record_number ?? r.id,
-      recordType: "tearsheet",
     });
     if (res.action === "limit") {
       toast.info("Maximum 10 pinned records reached");
