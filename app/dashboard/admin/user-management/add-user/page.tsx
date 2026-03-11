@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { FiPlus, FiRefreshCw, FiSearch, FiChevronDown, FiX, FiEye, FiEyeOff } from 'react-icons/fi';
+import Tooltip from '@/components/Tooltip';
 
 interface User {
     id: string;
@@ -139,11 +140,11 @@ export default function UserManagement() {
         return searchableText.includes(term);
     });
 
-    // Compute the next sequential ID number based on existing users.
-    // Falls back to "1" if there are no numeric ID numbers yet.
+    // Compute the next sequential primary key value based on existing users.
+    // Uses the numeric `id` from the backend and falls back to "1" if none exist.
     const getNextIdNumber = (): string => {
         const numericIds = users
-            .map((u) => parseInt((u.idNumber || '').trim(), 10))
+            .map((u) => parseInt((u.id || '').trim(), 10))
             .filter((n) => !Number.isNaN(n));
         const maxExisting = numericIds.length ? Math.max(...numericIds) : 0;
         return String(maxExisting + 1);
@@ -524,12 +525,98 @@ function AddUserModal({
     const [error, setError] = useState('');
     const [loadingOffices, setLoadingOffices] = useState(true);
     const [loadingTeams, setLoadingTeams] = useState(false);
+    const [duplicateWarning, setDuplicateWarning] = useState<{
+        email: { id: string | number; name: string }[];
+        phone: { id: string | number; name: string }[];
+    } | null>(null);
+    const [checkingDuplicates, setCheckingDuplicates] = useState(false);
+    const [emailStatus, setEmailStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
+    const [phoneStatus, setPhoneStatus] = useState<'idle' | 'checking' | 'ok' | 'duplicate'>('idle');
 
     // Fetch offices and teams on component mount
     useEffect(() => {
         fetchOffices();
         fetchTeams();
     }, []);
+
+    // Real-time duplicate detection for email / phone
+    useEffect(() => {
+        const controller = new AbortController();
+        const { email, phone } = formData;
+        const normEmail = (email || '').trim().toLowerCase();
+        const normPhone = (phone || '').replace(/\D/g, '').trim();
+
+        if (!normEmail && !normPhone) {
+            setDuplicateWarning(null);
+            setEmailStatus('idle');
+            setPhoneStatus('idle');
+            return;
+        }
+
+        // Set checking state for fields that have values
+        if (normEmail) setEmailStatus('checking');
+        if (normPhone) setPhoneStatus('checking');
+
+        const timeout = setTimeout(async () => {
+            try {
+                setCheckingDuplicates(true);
+                const params = new URLSearchParams();
+                if (normEmail) params.set('email', normEmail);
+                if (normPhone) params.set('phone', normPhone);
+
+                const res = await fetch(`/api/users/check-duplicates?${params.toString()}`, {
+                    method: 'GET',
+                    signal: controller.signal,
+                });
+
+                if (!res.ok) {
+                    setDuplicateWarning(null);
+                    if (normEmail) setEmailStatus('idle');
+                    if (normPhone) setPhoneStatus('idle');
+                    return;
+                }
+
+                const data = await res.json();
+                if (data.success && data.duplicates) {
+                    const { email: dupEmail = [], phone: dupPhone = [] } = data.duplicates;
+
+                    // Update per-field status
+                    if (normEmail) {
+                        setEmailStatus((dupEmail.length ?? 0) > 0 ? 'duplicate' : 'ok');
+                    } else {
+                        setEmailStatus('idle');
+                    }
+                    if (normPhone) {
+                        setPhoneStatus((dupPhone.length ?? 0) > 0 ? 'duplicate' : 'ok');
+                    } else {
+                        setPhoneStatus('idle');
+                    }
+
+                    // Store combined warning only when there is at least one duplicate
+                    if ((dupEmail.length ?? 0) > 0 || (dupPhone.length ?? 0) > 0) {
+                        setDuplicateWarning({ email: dupEmail, phone: dupPhone });
+                    } else {
+                        setDuplicateWarning(null);
+                    }
+                } else {
+                    setDuplicateWarning(null);
+                    if (normEmail) setEmailStatus('idle');
+                    if (normPhone) setPhoneStatus('idle');
+                }
+            } catch (err) {
+                if ((err as any).name !== 'AbortError') {
+                    console.error('Error checking user duplicates:', err);
+                }
+            } finally {
+                setCheckingDuplicates(false);
+            }
+        }, 500);
+
+        return () => {
+            controller.abort();
+            clearTimeout(timeout);
+        };
+    }, [formData.email, formData.phone]);
 
     // Debug: Log when teams or officeId changes
     useEffect(() => {
@@ -617,6 +704,10 @@ function AddUserModal({
 
         if (!formData.firstName || !formData.lastName || !formData.email) {
             setError('First name, last name, and email are required');
+            return;
+        }
+        if (emailStatus === 'duplicate' || phoneStatus === 'duplicate') {
+            setError('Email or phone already exists for another user. Please review and fix before saving.');
             return;
         }
         if (!formData.officeId || !formData.teamId) {
@@ -741,6 +832,38 @@ function AddUserModal({
                             {error}
                         </div>
                     )}
+                    {duplicateWarning && (
+                        <div className="bg-yellow-50 border border-yellow-300 text-yellow-800 px-4 py-3 rounded mb-4 text-sm">
+                            <p className="font-semibold mb-1">
+                                Possible duplicate user(s) detected. Email and phone must be unique.
+                            </p>
+                            {(duplicateWarning.email?.length ?? 0) > 0 && (
+                                <div className="mt-1">
+                                    <p className="font-medium">Matching email:</p>
+                                    <ul className="list-disc list-inside">
+                                        {duplicateWarning.email.map((u) => (
+                                            <li key={`dup-email-${u.id}`}>{u.name}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                            {(duplicateWarning.phone?.length ?? 0) > 0 && (
+                                <div className="mt-1">
+                                    <p className="font-medium">Matching phone:</p>
+                                    <ul className="list-disc list-inside">
+                                        {duplicateWarning.phone.map((u) => (
+                                            <li key={`dup-phone-${u.id}`}>{u.name}</li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                            {checkingDuplicates && (
+                                <p className="mt-1 text-xs text-yellow-700">
+                                    Re-checking duplicates...
+                                </p>
+                            )}
+                        </div>
+                    )}
 
                     <form onSubmit={handleSubmit}>
                         <div className="grid grid-cols-2 gap-6">
@@ -776,27 +899,63 @@ function AddUserModal({
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                     Email <span className="text-red-500">*</span>
                                 </label>
-                                <input
-                                    type="email"
-                                    name="email"
-                                    value={formData.email}
-                                    onChange={handleChange}
-                                    required
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                />
+                                <div className="relative">
+                                    <input
+                                        type="email"
+                                        name="email"
+                                        value={formData.email}
+                                        onChange={handleChange}
+                                        required
+                                        className="w-full px-3 py-2 pr-8 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    {emailStatus === 'ok' && (
+                                        <Tooltip
+                                            text="Email is available"
+                                            className="absolute right-2 top-1/2 -translate-y-1/2"
+                                        >
+                                            <span className="text-green-600 text-lg">✓</span>
+                                        </Tooltip>
+                                    )}
+                                    {emailStatus === 'duplicate' && (
+                                        <Tooltip
+                                            text="Email already exists"
+                                            className="absolute right-2 top-1/2 -translate-y-1/2"
+                                        >
+                                            <span className="text-red-600 text-lg">✕</span>
+                                        </Tooltip>
+                                    )}
+                                </div>
                             </div>
 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 mb-1">
                                     Phone
                                 </label>
-                                <input
-                                    type="tel"
-                                    name="phone"
-                                    value={formData.phone}
-                                    onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                />
+                                <div className="relative">
+                                    <input
+                                        type="tel"
+                                        name="phone"
+                                        value={formData.phone}
+                                        onChange={handleChange}
+                                        className="w-full px-3 py-2 pr-8 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    {phoneStatus === 'ok' && (
+                                        <Tooltip
+                                            text="Phone is available"
+                                            className="absolute right-2 top-1/2 -translate-y-1/2"
+                                        >
+                                            <span className="text-green-600 text-lg">✓</span>
+                                        </Tooltip>
+                                    )}
+                                    {phoneStatus === 'duplicate' && (
+                                        <Tooltip
+                                            text="Phone already exists"
+                                            className="absolute right-2 top-1/2 -translate-y-1/2"
+                                        >
+                                            <span className="text-red-600 text-lg">✕</span>
+                                        </Tooltip>
+                                    )}
+                                </div>
                             </div>
 
                             <div>
@@ -887,8 +1046,9 @@ function AddUserModal({
                                     type="text"
                                     name="idNumber"
                                     value={formData.idNumber}
-                                    onChange={handleChange}
-                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    readOnly
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-md bg-gray-50 text-gray-700 cursor-not-allowed"
+                                    title="Next primary key value (auto-generated)"
                                 />
                             </div>
 

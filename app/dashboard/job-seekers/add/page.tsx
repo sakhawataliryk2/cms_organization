@@ -4,15 +4,12 @@ import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 import LoadingScreen from "@/components/LoadingScreen";
-import { validateEmail } from "@/lib/validation/emailValidation";
-import { validateAddress } from "@/lib/validation/addressValidation";
 import CustomFieldRenderer, {
   useCustomFields,
   isCustomFieldValueValid,
 } from "@/components/CustomFieldRenderer";
 import AddressGroupRenderer, {
   getAddressFields,
-  isAddressGroupValid,
 } from "@/components/AddressGroupRenderer";
 
 interface CustomFieldDefinition {
@@ -323,6 +320,13 @@ export default function AddJobSeeker() {
     suggestions?: any[];
   }>({ isValid: true, message: "", isChecking: false });
 
+  const [duplicateWarning, setDuplicateWarning] = useState<{
+    email: Array<{ id: string | number; name: string }>;
+    phone: Array<{ id: string | number; name: string }>;
+  } | null>(null);
+  const [hasConfirmedDuplicateSave, setHasConfirmedDuplicateSave] = useState(false);
+  const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false);
+
   // This state will hold the dynamic form fields configuration
   const [formFields, setFormFields] = useState<FormField[]>([]);
   const [resumeFile, setResumeFile] = useState<File | null>(null);
@@ -353,6 +357,28 @@ export default function AddJobSeeker() {
     () => (addressFields.length ? addressFields[0].id : null),
     [addressFields]
   );
+
+  const emailPhoneValuesKey = useMemo(() => {
+    let emailVal = "";
+    let phoneVal = "";
+
+    customFields.forEach((f) => {
+      const label = f.field_label ?? "";
+      const value = customFieldValues[f.field_name];
+      const strValue = value != null ? String(value).trim() : "";
+
+      if (!strValue) return;
+
+      if (LABELS_FOR_EMAIL.includes(label)) {
+        emailVal = strValue;
+      }
+      if (LABELS_FOR_PHONE.includes(label)) {
+        phoneVal = strValue.replace(/\D/g, "");
+      }
+    });
+
+    return `${emailVal}|${phoneVal}`;
+  }, [customFields, customFieldValues]);
 
   // Initialize with default fields only once; never overwrite existing form data (fixes left column reset)
   useEffect(() => {
@@ -556,6 +582,92 @@ export default function AddJobSeeker() {
     ];
     });
   }, []);
+
+  // Reset user's duplicate confirmation whenever key email/phone values change
+  useEffect(() => {
+    setHasConfirmedDuplicateSave(false);
+  }, [emailPhoneValuesKey]);
+
+  // Real-time duplicate detection for email / phone
+  useEffect(() => {
+    let timeoutId: number | undefined;
+    let isCancelled = false;
+
+    const runCheck = async () => {
+      // Derive current email/phone values from custom fields
+      let emailForCheck = "";
+      let phoneForCheck = "";
+
+      customFields.forEach((f) => {
+        const label = f.field_label ?? "";
+        const value = customFieldValues[f.field_name];
+        const strValue = value != null ? String(value).trim() : "";
+        if (!strValue) return;
+
+        if (LABELS_FOR_EMAIL.includes(label)) {
+          emailForCheck = strValue;
+        }
+        if (LABELS_FOR_PHONE.includes(label)) {
+          phoneForCheck = strValue;
+        }
+      });
+
+      if (!emailForCheck && !phoneForCheck) {
+        if (!isCancelled) {
+          setDuplicateWarning(null);
+          setIsCheckingDuplicates(false);
+        }
+        return;
+      }
+
+      try {
+        setIsCheckingDuplicates(true);
+        const params = new URLSearchParams();
+        if (emailForCheck) params.set("email", emailForCheck);
+        if (phoneForCheck) params.set("phone", phoneForCheck);
+        if (isEditMode && jobSeekerId) params.set("excludeId", jobSeekerId);
+
+        const dupRes = await fetch(
+          `/api/job-seekers/check-duplicates?${params.toString()}`
+        );
+        const dupData = await dupRes.json();
+
+        if (isCancelled) return;
+
+        if (dupData.success && dupData.duplicates) {
+          const { email: dupEmail, phone: dupPhone } = dupData.duplicates;
+          const hasDuplicates =
+            (dupEmail?.length ?? 0) > 0 || (dupPhone?.length ?? 0) > 0;
+
+          if (hasDuplicates) {
+            setDuplicateWarning({
+              email: dupEmail ?? [],
+              phone: dupPhone ?? [],
+            });
+          } else {
+            setDuplicateWarning(null);
+          }
+        } else {
+          setDuplicateWarning(null);
+        }
+      } catch {
+        if (!isCancelled) {
+          setDuplicateWarning(null);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsCheckingDuplicates(false);
+        }
+      }
+    };
+
+    timeoutId = window.setTimeout(runCheck, 600);
+
+    return () => {
+      isCancelled = true;
+      if (timeoutId) window.clearTimeout(timeoutId);
+    };
+  }, [emailPhoneValuesKey, customFields, customFieldValues, isEditMode, jobSeekerId]);
 
   // Fetch active users
   const fetchActiveUsers = async () => {
@@ -1152,6 +1264,55 @@ export default function AddJobSeeker() {
         customFieldsForDB[label] = value;
       });
 
+      // Duplicate detection before save (email / phone)
+      const emailForCheck = String(apiDataDefaults.email ?? "").trim();
+      const phoneForCheck = String(apiDataDefaults.phone ?? "").trim();
+
+      if (emailForCheck || phoneForCheck) {
+        const params = new URLSearchParams();
+        if (emailForCheck) params.set("email", emailForCheck);
+        if (phoneForCheck) params.set("phone", phoneForCheck);
+        if (isEditMode && jobSeekerId) params.set("excludeId", jobSeekerId);
+
+        const dupRes = await fetch(
+          `/api/job-seekers/check-duplicates?${params.toString()}`
+        );
+        const dupData = await dupRes.json();
+
+        if (dupData.success && dupData.duplicates) {
+          const { email: dupEmail, phone: dupPhone } = dupData.duplicates;
+          const hasDuplicates =
+            (dupEmail?.length ?? 0) > 0 || (dupPhone?.length ?? 0) > 0;
+
+          if (hasDuplicates) {
+            const messages: string[] = [];
+            if ((dupEmail?.length ?? 0) > 0) {
+              const names = (dupEmail as Array<{ name: string }>).map((js) => js.name).join(", ");
+              messages.push(`Email is already used by: ${names}`);
+            }
+            if ((dupPhone?.length ?? 0) > 0) {
+              const names = (dupPhone as Array<{ name: string }>).map((js) => js.name).join(", ");
+              messages.push(`Phone number is already used by: ${names}`);
+            }
+
+            setDuplicateWarning({
+              email: dupEmail ?? [],
+              phone: dupPhone ?? [],
+            });
+
+            if (!hasConfirmedDuplicateSave) {
+              setError(
+                "Possible duplicate job seeker(s) detected.\n\n" +
+                  messages.join("\n") +
+                  "\n\nReview the matches below. If you still want to create this record, confirm and click Save again."
+              );
+              setIsSubmitting(false);
+              return;
+            }
+          }
+        }
+      }
+
       // Auto-populate Owner if not set (only in create mode)
       if (!isEditMode && (!apiDataDefaults.owner || String(apiDataDefaults.owner).trim() === "")) {
         try {
@@ -1514,6 +1675,19 @@ export default function AddJobSeeker() {
 
                 const fieldValue = customFieldValues[field.field_name] || "";
 
+                const normalizedLabel = (field.field_label ?? "").toLowerCase();
+                const isEmailDuplicateField =
+                  normalizedLabel === "email" ||
+                  normalizedLabel === "email 1" ||
+                  normalizedLabel === "email address" ||
+                  normalizedLabel === "e-mail";
+                const isPhoneDuplicateField =
+                  normalizedLabel === "phone" ||
+                  normalizedLabel === "phone number" ||
+                  normalizedLabel === "mobile number" ||
+                  normalizedLabel === "mobile phone" ||
+                  normalizedLabel === "telephone";
+
                 const isOwnerField =
                   field.field_name === "Field_17" ||
                   field.field_name === "field_17" ||
@@ -1597,18 +1771,30 @@ export default function AddJobSeeker() {
                           }
                         />
                       ) : (
-                        <CustomFieldRenderer
-                          field={field}
-                          value={fieldValue}
-                          onChange={handleCustomFieldChange}
-                          validationIndicator={
-                            field.is_required
-                              ? isCustomFieldValueValid(field, fieldValue)
-                                ? "valid"
-                                : "required"
-                              : undefined
-                          }
-                        />
+                        <>
+                          <CustomFieldRenderer
+                            field={field}
+                            value={fieldValue}
+                            onChange={handleCustomFieldChange}
+                            validationIndicator={
+                              field.is_required
+                                ? isCustomFieldValueValid(field, fieldValue)
+                                  ? "valid"
+                                  : "required"
+                                : undefined
+                            }
+                          />
+                          {duplicateWarning && (
+                            <div className="mt-1 text-xs text-yellow-700">
+                              {isEmailDuplicateField &&
+                                (duplicateWarning.email?.length ?? 0) > 0 &&
+                                "This email matches an existing job seeker."}
+                              {isPhoneDuplicateField &&
+                                (duplicateWarning.phone?.length ?? 0) > 0 &&
+                                "This phone number matches an existing job seeker."}
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
@@ -1774,6 +1960,68 @@ export default function AddJobSeeker() {
 
           </div>
 
+          {/* Duplicate warning section with links to possible matches and confirmation */}
+          {duplicateWarning && (
+            <div className="mb-4 p-4 border border-yellow-300 bg-yellow-50 rounded">
+              <div className="font-semibold text-yellow-800 mb-2">
+                Possible duplicate job seeker(s) detected
+              </div>
+              <div className="space-y-2 text-sm text-yellow-900">
+                {(duplicateWarning.email?.length ?? 0) > 0 && (
+                  <div>
+                    <div className="font-medium">Same email:</div>
+                    <ul className="list-disc list-inside">
+                      {duplicateWarning.email.map((js) => (
+                        <li key={js.id}>
+                          <a
+                            href={`/dashboard/job-seekers/view?id=${js.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {js.name}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {(duplicateWarning.phone?.length ?? 0) > 0 && (
+                  <div>
+                    <div className="font-medium">Same phone number:</div>
+                    <ul className="list-disc list-inside">
+                      {duplicateWarning.phone.map((js) => (
+                        <li key={js.id}>
+                          <a
+                            href={`/dashboard/job-seekers/view?id=${js.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-blue-600 hover:underline"
+                          >
+                            {js.name}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-3 flex items-center gap-2 text-sm text-yellow-900">
+                <input
+                  id="confirm-duplicate-save"
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={hasConfirmedDuplicateSave}
+                  onChange={(e) => setHasConfirmedDuplicateSave(e.target.checked)}
+                />
+                <label htmlFor="confirm-duplicate-save">
+                  I have reviewed the possible duplicates and still want to save this job seeker.
+                </label>
+              </div>
+            </div>
+          )}
+
           {/* Email validation message */}
           {!emailValidation.isValid && emailValidation.message && (
             <div className="text-red-500 text-sm">
@@ -1841,7 +2089,11 @@ export default function AddJobSeeker() {
                   formFields.some(
                     (f) =>
                       (f.id === "address" || f.id === "city") && f.value.trim()
-                  ))
+                  )) ||
+                (duplicateWarning !== null &&
+                  ((duplicateWarning.email?.length ?? 0) > 0 ||
+                    (duplicateWarning.phone?.length ?? 0) > 0) &&
+                  !hasConfirmedDuplicateSave)
               }
             >
               {isEditMode ? "Update" : "Save"}

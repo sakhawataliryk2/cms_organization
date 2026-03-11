@@ -621,7 +621,13 @@ export default function HiringManagerView() {
     let url = `/dashboard/hiring-managers/view?id=${hiringManager.id}`;
     if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
 
-    const res = togglePinnedRecord({ key, label, url });
+    const res = togglePinnedRecord({
+      key,
+      label,
+      url,
+      recordNumber: hiringManager.record_number ?? hiringManager.id,
+      recordType: "hiringManager",
+    });
     if (res.action === "limit") {
       toast.info("Maximum 10 pinned records reached");
     }

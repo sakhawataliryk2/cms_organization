@@ -448,6 +448,7 @@ const SECTION_CONFIG: Record<
         "{{status}}",
         "{{employmentType}}",
         "{{createdByName}}",
+          "{{jobDescription}}",
       ],
       JOB_DELETE_REQUEST: [
         "{{requestedBy}}",
@@ -491,6 +492,8 @@ const SECTION_CONFIG: Record<
           `<p><strong>Status:</strong> {{status}}</p>` +
           `<p><strong>Employment Type:</strong> {{employmentType}}</p>` +
           `<p><strong>Created by:</strong> {{createdByName}}</p>` +
+            `<p><strong>Job Description:</strong></p>` +
+            `<p>{{jobDescription}}</p>` +
           `<p><a href="{{jobLink}}">View job</a></p>` +
           `</div>`,
       },
@@ -783,14 +786,17 @@ const SECTION_CONFIG: Record<
     types: [
       { value: "AUTH_2FA_EMAIL", label: "2FA Email Template" },
       { value: "AUTH_RESET_PASSWORD_EMAIL", label: "Password Reset OTP Template" },
+      { value: "WELCOME_EMAIL", label: "Welcome Email Template" },
     ],
     placeholders: {
       AUTH_2FA_EMAIL: ["{{userName}}", "{{email}}", "{{otp}}", "{{expiresAt}}"],
       AUTH_RESET_PASSWORD_EMAIL: ["{{userName}}", "{{email}}", "{{otp}}", "{{expiresAt}}"],
+      WELCOME_EMAIL: ["{{userName}}", "{{email}}", "{{userType}}", "{{portalUrl}}"],
     },
     required: {
       AUTH_2FA_EMAIL: ["{{userName}}", "{{otp}}", "{{expiresAt}}"],
       AUTH_RESET_PASSWORD_EMAIL: ["{{userName}}", "{{otp}}", "{{expiresAt}}"],
+      WELCOME_EMAIL: ["{{userName}}", "{{email}}"],
     },
     defaults: {
       AUTH_2FA_EMAIL: {
@@ -822,6 +828,19 @@ const SECTION_CONFIG: Record<
           `<p>If you did not request a password reset, you can safely ignore this email and your password will remain unchanged.</p>` +
           `<hr/>` +
           `<p style="font-size:12px;color:#6b7280;">Sent to {{email}} for your security.</p>` +
+          `</div>`,
+      },
+      WELCOME_EMAIL: {
+        template_name: "Welcome email template",
+        subject: "Welcome to the ATS, {{userName}}",
+        body:
+          `<div>` +
+          `<h2>Welcome to Complete Staffing Solutions</h2>` +
+          `<p>Hello {{userName}},</p>` +
+          `<p>Your user account has been created with the email <strong>{{email}}</strong> and role <strong>{{userType}}</strong>.</p>` +
+          `<p>You can access the system here: <a href="{{portalUrl}}">{{portalUrl}}</a></p>` +
+          `<p>If you did not expect this account, please contact an administrator.</p>` +
+          `<p>Best Regards,<br/>Complete Staffing Solutions, Inc.</p>` +
           `</div>`,
       },
     },

@@ -1,7 +1,11 @@
+import type { RecordType } from "./recordIdFormatter";
+
 export type PinnedRecord = {
   key: string;
   label: string;
   url: string;
+  recordNumber?: number | string | null;
+  recordType?: RecordType;
 };
 
 export const PINNED_RECORDS_STORAGE_KEY = "pinnedRecords";
@@ -26,6 +30,8 @@ export function loadPinnedRecords(): PinnedRecord[] {
       key: String(x?.key || ""),
       label: String(x?.label || ""),
       url: String(x?.url || ""),
+      recordNumber: x?.recordNumber ?? null,
+      recordType: x?.recordType ?? undefined,
     }))
     .filter((x: PinnedRecord) => x.key && x.url);
 }

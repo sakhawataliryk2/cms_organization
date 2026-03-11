@@ -819,7 +819,13 @@ export default function TearsheetList() {
     const label = r.name || `TE ${r.id}`;
     const url = `/dashboard/tearsheets/view?id=${r.id}`;
 
-    const res = togglePinnedRecord({ key, label, url });
+    const res = togglePinnedRecord({
+      key,
+      label,
+      url,
+      recordNumber: r.record_number ?? r.id,
+      recordType: "tearsheet",
+    });
     if (res.action === "limit") {
       toast.info("Maximum 10 pinned records reached");
     }

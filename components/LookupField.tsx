@@ -6,6 +6,7 @@ interface LookupOption {
   id: string;
   name: string;
   record_number: string;
+  email?: string;
   [key: string]: any;
 }
 
@@ -97,6 +98,7 @@ export default function LookupField({
           .map((user: any) => ({
             id: user.id.toString(),
             name: user.name || user.email || '',
+            email: user.email || '',
             record_number: user.record_number || ''
           }));
       }
@@ -137,7 +139,11 @@ export default function LookupField({
       <option value="">{placeholder}</option>
       {options.map((option) => {
         const prefix = lookupType === 'organizations' ? 'O' : lookupType === 'hiring-managers' ? 'HM' : lookupType === 'job-seekers' ? 'JS' : lookupType === 'jobs' ? 'J' : lookupType === 'owner' ? 'U' : '';
-        const label = option.record_number ? `${prefix}${option.record_number} - ${option.name}` : option.name;
+        const baseLabel =
+          lookupType === 'owner'
+            ? option.email || option.name
+            : option.name;
+        const label = option.record_number ? `${prefix}${option.record_number} - ${baseLabel}` : baseLabel;
         return (
           <option key={option.id} value={option.id}>
             {label}

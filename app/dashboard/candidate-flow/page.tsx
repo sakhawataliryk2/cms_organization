@@ -519,38 +519,38 @@ export default function CandidateFlowDashboard() {
 
   const renderPrescreenedCard = (c: PrescreenedCandidate) => {
     return (
-      <button
-        type="button"
+      <div
         key={c.id}
         draggable
         onDragStart={() =>
           setDragPayload({
-            fromColumnId: 'prescreened',
+            fromColumnId: "prescreened",
             candidate: c,
           })
         }
-        onClick={() => handleViewCandidate(c.id)}
-        className="w-full text-left rounded-xl p-4 mb-3 bg-white border border-green-200 shadow-sm hover:shadow-md hover:border-green-400 transition-all group cursor-move"
+        className="w-full rounded-xl p-4 mb-3 bg-white border border-slate-200 shadow-sm flex flex-col justify-between cursor-move"
       >
-        <div className="flex items-center gap-2 text-gray-800 font-medium">
-          <FiUser className="text-green-600 shrink-0" size={16} />
-          <span className="truncate">
+        <div>
+          <div className="text-slate-800 font-medium truncate">
             {c.name || `Record #${c.record_number ?? c.id}`}
-          </span>
+          </div>
+  
+          <div className="text-slate-500 text-xs mt-0.5 truncate">
+            Record #{c.record_number ?? c.id}
+          </div>
         </div>
-        <div className="text-gray-500 text-sm mt-0.5">
-          Record #{c.record_number ?? c.id}
+  
+        <div className="mt-2 flex items-center justify-end text-teal-600 text-xs font-medium gap-1">
+          <FiEye size={14} />
+          <button
+            type="button"
+            onClick={() => handleViewCandidate(c.id)}
+            className="hover:underline"
+          >
+            View record
+          </button>
         </div>
-        <div className="mt-2 flex items-center justify-between text-green-600 text-xs font-medium opacity-0 group-hover:opacity-100 transition-opacity">
-          <span className="rounded-full px-2 py-0.5 bg-green-50 border border-green-200 text-[11px]">
-            Drag to "Job Seekers Submitted" to submit
-          </span>
-          <span className="flex items-center">
-            <FiEye className="mr-1" size={14} />
-            View
-          </span>
-        </div>
-      </button>
+      </div>
     );
   };
 

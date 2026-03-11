@@ -19,6 +19,7 @@ import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, us
 import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
+import { formatDisplayRecordNumber } from "@/lib/recordIdFormatter";
 // Import icons from react-icons
 import {
   FiHome,
@@ -116,7 +117,21 @@ function SortablePinnedTab({
     }
   };
 
-  const letterNum = `${getModuleCode(record.key)}${(index % 10) + 1}`;
+  const getRecordIdFromKey = (key: string): string => {
+    const parts = key.split(":");
+    // Use the part after the module prefix as the ID fallback
+    return parts.length > 1 ? parts[1] : "";
+  };
+
+  const letterNum = (() => {
+    // Prefer explicit recordNumber/recordType when available
+    if (record.recordType && record.recordNumber !== undefined && record.recordNumber !== null && record.recordNumber !== "") {
+      return formatDisplayRecordNumber(record.recordType, record.recordNumber, getRecordIdFromKey(record.key));
+    }
+
+    // Fallback to module code + ID from key (legacy pins)
+    return `${getModuleCode(record.key)}${getRecordIdFromKey(record.key)}`;
+  })();
 
   const style = {
     transform: CSS.Transform.toString(transform),

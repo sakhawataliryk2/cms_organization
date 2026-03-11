@@ -662,7 +662,13 @@ export default function PlacementView() {
     let url = `/dashboard/placements/view?id=${placement.id}`;
     if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
 
-    const res = togglePinnedRecord({ key, label, url });
+    const res = togglePinnedRecord({
+      key,
+      label,
+      url,
+      recordNumber: placement.record_number ?? placement.id,
+      recordType: "placement",
+    });
     if (res.action === "limit") {
       toast.info("Maximum 10 pinned records reached");
     }

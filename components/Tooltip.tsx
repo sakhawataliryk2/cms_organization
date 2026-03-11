@@ -20,10 +20,11 @@ export default function Tooltip({
   return (
     <span
       onClick={onClick}
-      className={`relative inline-block cursor-pointer ${className}`}
+      className={` ${className}`}
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
     >
+      <div className="relative inline-block cursor-pointer">
       {children}
 
       {show && (
@@ -32,6 +33,7 @@ export default function Tooltip({
           <div className="absolute top-4/5 left-1/2 -translate-x-1/2 w-2 h-2 bg-gray-800 rotate-45"></div>
         </div>
       )}
+      </div>
     </span>
   );
 }

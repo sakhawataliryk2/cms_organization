@@ -1312,7 +1312,13 @@ export default function JobView() {
     let url = `/dashboard/jobs/view?id=${job.id}`;
     if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
 
-    const res = togglePinnedRecord({ key, label, url });
+    const res = togglePinnedRecord({
+      key,
+      label,
+      url,
+      recordNumber: job.record_number ?? job.id,
+      recordType: "job",
+    });
     if (res.action === "limit") {
       toast.info("Maximum 10 pinned records reached");
     }

@@ -413,7 +413,13 @@ export default function LeadView() {
     let url = `/dashboard/leads/view?id=${lead.id}`;
     if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
 
-    const res = togglePinnedRecord({ key, label, url });
+    const res = togglePinnedRecord({
+      key,
+      label,
+      url,
+      recordNumber: lead.record_number ?? lead.id,
+      recordType: "lead",
+    });
     if (res.action === "limit") {
       toast.info("Maximum 10 pinned records reached");
     }

@@ -3350,7 +3350,13 @@ export default function OrganizationView() {
     if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
     if (hmFilter) url += `&hm=${encodeURIComponent(hmFilter)}`;
 
-    const res = togglePinnedRecord({ key, label, url });
+    const res = togglePinnedRecord({
+      key,
+      label,
+      url,
+      recordNumber: organization.record_number ?? organization.id,
+      recordType: "organization",
+    });
     if (res.action === "limit") {
       toast.info("Maximum 10 pinned records reached");
     }
