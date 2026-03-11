@@ -105,8 +105,68 @@ export default function BulkNoteModal({
             setShowAboutDropdown(false);
             setShowAdditionalRefDropdown(false);
             setShowEmailDropdown(false);
+
+            // Prefill About/Reference with selected records for job seekers
+            if (entityType === 'job-seeker' && entityIds && entityIds.length > 0) {
+                prefillAboutReferencesFromJobSeekers(entityIds);
+            }
         }
     }, [open]);
+
+    const prefillAboutReferencesFromJobSeekers = async (ids: string[]) => {
+        try {
+            const token = document.cookie.replace(
+                /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+                "$1"
+            );
+
+            const response = await fetch("/api/job-seekers", {
+                headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+            });
+
+            if (!response.ok) {
+                return;
+            }
+
+            const data = await response.json();
+            const allJobSeekers = data.jobSeekers || [];
+            const idSet = new Set(ids.map((id) => String(id)));
+
+            const prefilled = allJobSeekers
+                .filter((js: any) => idSet.has(String(js.id)))
+                .map((js: any) => {
+                    const name =
+                        `${js.first_name || ""} ${js.last_name || ""}`.trim() ||
+                        js.full_name ||
+                        "Unnamed";
+                    const num = js.record_number ?? js.id;
+                    const prefixLabel = formatRecordId(num, "jobSeeker");
+                    return {
+                        id: String(js.id),
+                        type: "Job Seeker",
+                        display: `${prefixLabel} ${name}`,
+                        value: prefixLabel,
+                    };
+                });
+
+            if (prefilled.length === 0) {
+                return;
+            }
+
+            setNoteForm((prev) => ({
+                ...prev,
+                aboutReferences: prefilled,
+                about: prefilled.map((ref) => ref.display).join(", "),
+            }));
+
+            setNoteFormErrors((prev) => ({
+                ...prev,
+                about: undefined,
+            }));
+        } catch (err) {
+            console.error("Error pre-filling job seeker references:", err);
+        }
+    };
 
     // Close dropdowns when clicking outside
     useEffect(() => {

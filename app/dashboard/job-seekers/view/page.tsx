@@ -1592,7 +1592,13 @@ Best regards`;
     let url = `/dashboard/job-seekers/view?id=${jobSeeker.id}`;
     if (activeTab && activeTab !== "summary") url += `&tab=${activeTab}`;
 
-    const res = togglePinnedRecord({ key, label, url });
+    const res = togglePinnedRecord({
+      key,
+      label,
+      url,
+      recordNumber: jobSeeker.record_number ?? jobSeeker.id,
+      recordType: "jobSeeker",
+    });
     if (res.action === "limit") {
       toast.info("Maximum 10 pinned records reached");
     }
