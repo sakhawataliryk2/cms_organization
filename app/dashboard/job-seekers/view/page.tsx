@@ -4619,20 +4619,20 @@ Best regards`;
       }
 
       try {
-        const response = await fetch("/api/zoom/phone/call", {
+        const response = await fetch("/api/calls/start", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            jobSeekerId,
-            toNumber: rawNumber,
+            candidateId: jobSeekerId,
+            phoneNumber: rawNumber,
           }),
         });
 
         const data = await response.json().catch(() => null);
 
-        if (!response.ok || !data?.success) {
+        if (!response.ok) {
           const message =
             data?.message ||
             (response.status === 401
@@ -4642,17 +4642,13 @@ Best regards`;
           return;
         }
 
-        const normalized =
-          (data && (data.normalizedTo as string)) || rawNumber;
-
-        if (typeof window !== "undefined") {
-          const zoomUri = `zoomphone://call?number=${encodeURIComponent(
-            normalized
-          )}`;
-          window.location.href = zoomUri;
+        const dialUrl = data?.dialUrl;
+        if (dialUrl && typeof window !== "undefined") {
+          window.location.href = dialUrl;
+          toast.success("Opening Zoom Phone...");
+        } else {
+          toast.error("No dial URL received. Please try again.");
         }
-
-        toast.success("Opening Zoom Phone...");
       } catch (error) {
         console.error("Error starting Zoom Phone call:", error);
         toast.error("Unable to start Zoom call. Please try again.");
