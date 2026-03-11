@@ -156,7 +156,9 @@ export default function BulkNoteModal({
             setNoteForm((prev) => ({
                 ...prev,
                 aboutReferences: prefilled,
-                about: prefilled.map((ref) => ref.display).join(", "),
+                about: prefilled
+                    .map((ref: NoteFormState["aboutReferences"][number]) => ref.display)
+                    .join(", "),
             }));
 
             setNoteFormErrors((prev) => ({
