@@ -101,11 +101,12 @@ function SortablePinnedTab({
       case "job":
         return "J";
       case "jobSeeker":
-        return "J";
+        return "JS";
       case "lead":
         return "L";
       case "hiringManager":
-        return "H";
+      case "hiring_manager":
+        return "HM";
       case "task":
         return "T";
       case "placement":
@@ -138,6 +139,7 @@ function SortablePinnedTab({
       // If recordType is missing but we still have a recordNumber,
       // infer a simple prefix from the key and show that number
       const moduleCode = getModuleCode(record.key.toString());
+      // Use prefix followed by a space and the record number
       return `${moduleCode} ${record.recordNumber}`;
     }
 
