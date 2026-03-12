@@ -581,8 +581,12 @@ export default function AddJob() {
 
   // From organization view (Add Job in dropdown): require HM first, then type selection. No modal.
   const fromOrganizationAddJob = Boolean(organizationIdFromUrl && !jobId);
+  // Only show the HM-first step when we DO NOT already know the hiring manager from the URL.
   const showOrgHmFirstStep =
-    fromOrganizationAddJob && !jobType && !orgHmStepCompleted;
+    fromOrganizationAddJob &&
+    !jobType &&
+    !orgHmStepCompleted &&
+    !hiringManagerIdFromUrl;
 
   // Show landing (type selection) when creating new job and not on org HM-first step
   const showLandingPage = !jobId && !jobType && !showOrgHmFirstStep;
