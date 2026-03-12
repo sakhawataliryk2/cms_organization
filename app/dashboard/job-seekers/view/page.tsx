@@ -4624,6 +4624,23 @@ Best regards`;
         return;
       }
 
+      // Normalize the phone number for Zoom Phone (E.164‑like where possible)
+      const digitsOnly = String(rawNumber).replace(/[^\d]/g, "");
+      let normalizedNumber = digitsOnly;
+
+      // If we have exactly 10 digits and no country code, assume US (+1)
+      if (digitsOnly.length === 10) {
+        normalizedNumber = `+1${digitsOnly}`;
+      } else if (digitsOnly.length > 10 && !digitsOnly.startsWith("0")) {
+        // If it already contains country code digits (no formatting), prefix '+'.
+        normalizedNumber = `+${digitsOnly}`;
+      }
+
+      if (!normalizedNumber) {
+        toast.error("Phone number format is invalid for Zoom Phone");
+        return;
+      }
+
       try {
         const response = await fetch("/api/calls/start", {
           method: "POST",
@@ -4632,7 +4649,7 @@ Best regards`;
           },
           body: JSON.stringify({
             candidateId: jobSeekerId,
-            phoneNumber: rawNumber,
+            phoneNumber: normalizedNumber,
           }),
         });
 
