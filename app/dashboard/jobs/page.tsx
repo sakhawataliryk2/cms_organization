@@ -16,7 +16,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { TbGripVertical } from "react-icons/tb";
-import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX } from "react-icons/fi";
+import { FiArrowUp, FiArrowDown, FiFilter, FiStar, FiChevronDown, FiX, FiFileText } from "react-icons/fi";
 import ActionDropdown from "@/components/ActionDropdown";
 import FieldValueRenderer from "@/components/FieldValueRenderer";
 import BulkActionsButton from "@/components/BulkActionsButton";
@@ -29,6 +29,7 @@ import AdvancedSearchPanel, {
   type AdvancedSearchCriterion,
 } from "@/components/AdvancedSearchPanel";
 import { matchesAdvancedValue } from "@/lib/advancedSearch";
+import { toast } from "sonner";
 
 interface Job {
   id: string;
@@ -319,6 +320,40 @@ export default function JobList() {
   const [showNoteModal, setShowNoteModal] = useState(false);
   const [selectedJobId, setSelectedJobId] = useState<string | null>(null);
 
+  // XML Feed In
+  const [showXmlFeedModal, setShowXmlFeedModal] = useState(false);
+  const [showXmlMappingModal, setShowXmlMappingModal] = useState(false);
+  const [xmlFeedInput, setXmlFeedInput] = useState("");
+  const [xmlFile, setXmlFile] = useState<File | null>(null);
+  const [xmlParsedJobs, setXmlParsedJobs] = useState<Record<string, string>[]>([]);
+  const [xmlFieldNames, setXmlFieldNames] = useState<string[]>([]);
+  const [xmlFieldMapping, setXmlFieldMapping] = useState<Record<string, string>>({});
+  const [xmlImportLoading, setXmlImportLoading] = useState(false);
+  const [xmlImportResult, setXmlImportResult] = useState<{ created: number; failed: number; errors: { index: number; message: string }[] } | null>(null);
+  const [xmlMappingSearch, setXmlMappingSearch] = useState("");
+  const [xmlMappingOpenFor, setXmlMappingOpenFor] = useState<string | null>(null);
+  const xmlMappingSearchRef = useRef<HTMLInputElement>(null);
+  const xmlMappingDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (xmlMappingOpenFor !== null) {
+      setXmlMappingSearch("");
+      const t = setTimeout(() => xmlMappingSearchRef.current?.focus(), 50);
+      return () => clearTimeout(t);
+    }
+  }, [xmlMappingOpenFor]);
+
+  useEffect(() => {
+    if (!showXmlMappingModal) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (xmlMappingDropdownRef.current?.contains(target) || target.closest?.("[data-xml-mapping-dropdown]")) return;
+      setXmlMappingOpenFor(null);
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showXmlMappingModal]);
+
   const [favorites, setFavorites] = useState<JobsFavorite[]>([]);
   const [selectedFavoriteId, setSelectedFavoriteId] = useState<string>("");
   const [favoritesMenuOpen, setFavoritesMenuOpen] = useState(false);
@@ -333,6 +368,30 @@ export default function JobList() {
   // =====================
   const [availableFields, setAvailableFields] = useState<any[]>([]);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
+  const xmlSystemFieldOptions = useMemo(() => {
+    // Only show admin custom fields here (non-hidden). No standard/system fields.
+    const custom = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any, idx: number) => {
+        const label = (f.field_label ?? f.field_name ?? "").trim() || "Unnamed";
+        const name = (f.field_name ?? f.id ?? `field_${idx}`).toString().trim();
+        return {
+          optionId: `custom-${name}-${idx}`,
+          label,
+          value: `custom:${label}`,
+        };
+      });
+    return custom;
+  }, [availableFields]);
+
+  const xmlSystemFieldOptionsFiltered = useMemo(() => {
+    const q = xmlMappingSearch.trim().toLowerCase();
+    if (!q) return xmlSystemFieldOptions;
+    return xmlSystemFieldOptions.filter(
+      (opt) => opt.label.toLowerCase().includes(q) || opt.value.toLowerCase().includes(q)
+    );
+  }, [xmlSystemFieldOptions, xmlMappingSearch]);
+
 
   useEffect(() => {
     const fetchAvailableFields = async () => {
@@ -523,20 +582,22 @@ export default function JobList() {
   const columnsCatalog = useMemo(() => {
     const fromApi = (availableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
-      .map((f: any) => {
+      .map((f: any, idx: number) => {
         const name = String((f as any)?.field_name ?? (f as any)?.fieldName ?? "").trim();
         const label = (f as any)?.field_label ?? (f as any)?.fieldLabel ?? (name ? humanize(name) : "");
         const isBackendCol = name && JOB_BACKEND_COLUMN_KEYS.includes(name);
         let filterType: "text" | "select" | "number" = "text";
         if (name === "status") filterType = "select";
+        const customKey = isBackendCol ? name : `custom:${label || name}:${name || `f${idx}`}`;
         return {
-          key: isBackendCol ? name : `custom:${label || name}`,
+          key: customKey,
           label: String(label || name),
           sortable: isBackendCol,
           filterType,
           fieldType: (f as any)?.field_type ?? (f as any)?.fieldType ?? "",
           lookupType: (f as any)?.lookup_type ?? (f as any)?.lookupType ?? "",
           multiSelectLookupType: (f as any)?.multiselect_lookup ?? (f as any)?.multiSelectLookupType ?? "",
+          customFieldLabel: isBackendCol ? undefined : (label || name),
         };
       });
 
@@ -549,7 +610,7 @@ export default function JobList() {
       Object.keys(cf).forEach((k) => customKeySet.add(k));
     });
     const alreadyHaveCustom = new Set(
-      fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => c.key.replace("custom:", ""))
+      fromApi.filter((c) => c.key.startsWith("custom:")).map((c) => (c as any).customFieldLabel ?? c.key.replace(/^custom:/, "").replace(/:[^:]+$/, ""))
     );
     const fromData = Array.from(customKeySet)
       .filter((k) => !alreadyHaveCustom.has(k))
@@ -558,10 +619,14 @@ export default function JobList() {
         label: humanize(k),
         sortable: false,
         filterType: "text" as const,
+        fieldType: "",
+        lookupType: "",
+        multiSelectLookupType: "",
+        customFieldLabel: k,
       }));
 
     const merged = [
-      { key: "record_number", label: "Record Number", sortable: true, filterType: "number" as const, fieldType: "", lookupType: "", multiSelectLookupType: "" },
+      { key: "record_number", label: "Record Number", sortable: true, filterType: "number" as const, fieldType: "", lookupType: "", multiSelectLookupType: "", customFieldLabel: undefined as string | undefined },
       ...fromApi,
       ...fromData,
     ];
@@ -614,9 +679,10 @@ export default function JobList() {
       return job.record_number ?? job.id;
     }
     if (key.startsWith("custom:")) {
-      const rawKey = key.replace("custom:", "");
+      const colInfo = getColumnInfo(key);
+      const lookupKey = (colInfo as any)?.customFieldLabel ?? key.replace("custom:", "").replace(/:[^:]+$/, "");
       const cf = job?.customFields || job?.custom_fields || {};
-      const val = cf?.[rawKey];
+      const val = cf?.[lookupKey];
       return val === undefined || val === null || val === ""
         ? "N/A"
         : String(val);
@@ -995,6 +1061,302 @@ export default function JobList() {
     setShowNoteModal(false);
   };
 
+  // ——— XML Feed In: parse XML string into jobs array and unique field names ———
+  function parseXmlFeed(xmlString: string): { jobs: Record<string, string>[]; fieldNames: string[] } {
+    let raw = xmlString.trim();
+    if (!raw) return { jobs: [], fieldNames: [] };
+
+    // If content looks like a fragment (starts with closing tag or has no single root), wrap in root so parser can parse it
+    if (raw.startsWith("</") || (!raw.startsWith("<?xml") && !raw.startsWith("<source") && !raw.startsWith("<jobs") && !raw.startsWith("<feed") && !raw.startsWith("<root") && !/^<[a-zA-Z][\w.-]*>/.test(raw))) {
+      raw = `<root>${raw}</root>`;
+    }
+
+    const parser = new DOMParser();
+    let doc = parser.parseFromString(raw, "text/xml");
+
+    // If parser put an error in the doc, try wrapping in root (handles fragments)
+    const parserError = doc.querySelector("parsererror");
+    if (parserError && raw.includes("<job")) {
+      doc = parser.parseFromString(`<root>${xmlString.trim()}</root>`, "text/xml");
+    }
+
+    // Collect <job> elements case-insensitively (XML getElementsByTagName is case-sensitive)
+    const jobElements: Element[] = [];
+    const walk = (node: Node) => {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        const el = node as Element;
+        if (el.tagName?.toLowerCase() === "job") jobElements.push(el);
+        for (let i = 0; i < el.children.length; i++) walk(el.children[i]);
+      }
+    };
+    walk(doc.documentElement || doc.body || doc);
+
+    const jobs: Record<string, string>[] = [];
+    const fieldNameSet = new Set<string>();
+
+    for (let i = 0; i < jobElements.length; i++) {
+      const jobEl = jobElements[i];
+      const row: Record<string, string> = {};
+      const children = jobEl.children;
+      for (let j = 0; j < children.length; j++) {
+        const child = children[j];
+        const tag = child.tagName?.toLowerCase?.() || "";
+        if (!tag) continue;
+        const text = (child.textContent || "").trim();
+        row[tag] = text;
+        fieldNameSet.add(tag);
+      }
+      jobs.push(row);
+    }
+
+    // If no jobs but XML clearly contains <job>, re-parse with content wrapped in root (handles fragments)
+    if (jobs.length === 0 && /<job[\s>]/i.test(xmlString)) {
+      const wrapped = `<root>${xmlString.trim()}</root>`;
+      const doc2 = parser.parseFromString(wrapped, "text/xml");
+      const jobElements2: Element[] = [];
+      const walk2 = (node: Node) => {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          const el = node as Element;
+          if (el.tagName?.toLowerCase() === "job") jobElements2.push(el);
+          for (let i = 0; i < el.children.length; i++) walk2(el.children[i]);
+        }
+      };
+      walk2(doc2.documentElement || doc2.body || doc2);
+      for (let i = 0; i < jobElements2.length; i++) {
+        const jobEl = jobElements2[i];
+        const row: Record<string, string> = {};
+        for (let j = 0; j < jobEl.children.length; j++) {
+          const child = jobEl.children[j];
+          const tag = child.tagName?.toLowerCase?.() || "";
+          if (!tag) continue;
+          row[tag] = (child.textContent || "").trim();
+          fieldNameSet.add(tag);
+        }
+        jobs.push(row);
+      }
+    }
+    return { jobs, fieldNames: Array.from(fieldNameSet).sort() };
+  }
+
+  // System field options: backend columns + admin custom fields (non-hidden only)
+ 
+  // Default XML tag → admin custom field mapping (used when opening mapping modal)
+  // Note: right-side options are custom fields only, so we map to `custom:<field_label>`
+  const normalizeForXmlAutoMap = (s: string) =>
+    String(s || "")
+      .toLowerCase()
+      .replace(/%/g, " percent ")
+      .replace(/[_\-]+/g, " ")
+      .replace(/[^\w\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  const xmlAutoMapCandidates: Record<string, string[]> = useMemo(
+    () => ({
+      title: ["Job Title", "Title"],
+      description: ["Job Description", "Description", "Job Description Going to Job Board"],
+      company: ["Company", "Organization", "Organization Name", "Client", "Client Name"],
+      jobtype: ["Job Type", "Type", "Employment Type"],
+      category: ["Category", "Department"],
+      salary: ["Salary", "Pay", "Compensation"],
+      streetaddress: ["Address", "Street Address", "Worksite Location", "Location"],
+      city: ["City", "Worksite City"],
+      state: ["State", "Worksite State"],
+      postalcode: ["Zip", "Postal Code", "Zip Code"],
+      country: ["Country"],
+      url: ["URL", "Job URL", "Link"],
+      referencenumber: ["Reference Number", "Reference #", "Job Id", "Job ID"],
+      firstname: ["First Name", "Contact First Name"],
+      lastname: ["Last Name", "Contact Last Name"],
+      applyemail: ["Apply Email", "Email", "Contact Email"],
+      expirationdate: ["Expiration Date", "Closing Date"],
+      date: ["Date", "Date Added", "Posted Date", "Date Posted"],
+      job_description: ["Job Description", "Description"],
+    }),
+    []
+  );
+
+  const nonHiddenCustomFieldLabels = useMemo(() => {
+    const labels = (availableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => String((f.field_label ?? f.field_name ?? "").trim()))
+      .filter(Boolean);
+    // Keep unique labels (some installs may have duplicates)
+    return Array.from(new Set(labels));
+  }, [availableFields]);
+
+  const findBestCustomFieldLabel = (xmlTagName: string): string | null => {
+    const xmlKeyNorm = normalizeForXmlAutoMap(xmlTagName);
+    const candidates = xmlAutoMapCandidates[xmlKeyNorm] || xmlAutoMapCandidates[xmlTagName.toLowerCase().trim()] || [];
+    const wanted = [xmlTagName, xmlKeyNorm, ...candidates].map(normalizeForXmlAutoMap).filter(Boolean);
+    if (wanted.length === 0) return null;
+
+    let best: { label: string; score: number } | null = null;
+    for (const label of nonHiddenCustomFieldLabels) {
+      const labelNorm = normalizeForXmlAutoMap(label);
+      if (!labelNorm) continue;
+      for (const w of wanted) {
+        if (labelNorm === w) return label; // exact match
+        let score = 0;
+        if (labelNorm.includes(w) || w.includes(labelNorm)) score = 0.8;
+        else {
+          const lw = new Set(labelNorm.split(" ").filter(Boolean));
+          const ww = w.split(" ").filter(Boolean);
+          const overlap = ww.filter((x) => lw.has(x)).length;
+          if (ww.length) score = overlap / ww.length;
+        }
+        if (score > 0.5 && (!best || score > best.score)) best = { label, score };
+      }
+    }
+    return best?.label ?? null;
+  };
+
+  const handleOpenXmlFeedModal = () => {
+    setXmlFeedInput("");
+    setXmlFile(null);
+    setXmlParsedJobs([]);
+    setXmlFieldNames([]);
+    setXmlFieldMapping({});
+    setXmlImportResult(null);
+    setXmlMappingOpenFor(null);
+    setXmlMappingSearch("");
+    setShowXmlMappingModal(false);
+    setShowXmlFeedModal(true);
+  };
+
+  const handleXmlFeedNext = () => {
+    let xml = xmlFeedInput.trim();
+    if (!xml) {
+      toast.error("Please paste XML content or select an XML file.");
+      return;
+    }
+    try {
+      const { jobs, fieldNames } = parseXmlFeed(xml);
+      if (jobs.length === 0 || fieldNames.length === 0) {
+        toast.error("No <job> elements or fields found in the XML.");
+        return;
+      }
+      setXmlParsedJobs(jobs);
+      setXmlFieldNames(fieldNames);
+      const initialMapping: Record<string, string> = {};
+      fieldNames.forEach((name) => {
+        const bestLabel = findBestCustomFieldLabel(name);
+        if (bestLabel) initialMapping[name] = `custom:${bestLabel}`;
+      });
+      setXmlFieldMapping(initialMapping);
+      setShowXmlFeedModal(false);
+      setShowXmlMappingModal(true);
+    } catch (e) {
+      toast.error("Invalid XML or no job elements found.");
+    }
+  };
+
+  const handleXmlFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".xml")) {
+      toast.error("Please select an .xml file.");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const text = (reader.result as string) || "";
+      setXmlFeedInput(text);
+      setXmlFile(file);
+      try {
+        const { jobs, fieldNames } = parseXmlFeed(text);
+        if (jobs.length === 0 || fieldNames.length === 0) {
+          toast.error("No <job> elements or fields found in the file.");
+          return;
+        }
+        setXmlParsedJobs(jobs);
+        setXmlFieldNames(fieldNames);
+        const initialMapping: Record<string, string> = {};
+        fieldNames.forEach((name) => {
+          const bestLabel = findBestCustomFieldLabel(name);
+          if (bestLabel) initialMapping[name] = `custom:${bestLabel}`;
+        });
+        setXmlFieldMapping(initialMapping);
+      } catch {
+        toast.error("Invalid XML in file.");
+      }
+    };
+    reader.readAsText(file, "UTF-8");
+  };
+
+  const handleXmlMappingImport = async () => {
+    setXmlImportLoading(true);
+    setXmlImportResult(null);
+    try {
+      const jobsToSend: any[] = [];
+      for (const row of xmlParsedJobs) {
+        const custom_fields: Record<string, string> = {};
+        const payload: Record<string, any> = { custom_fields };
+
+        for (const [xmlFieldName, systemValue] of Object.entries(xmlFieldMapping)) {
+          if (!systemValue || !xmlFieldName) continue;
+          const raw = row[xmlFieldName];
+          if (raw === undefined || raw === null) continue;
+          const value = String(raw).trim();
+          if (value === "") continue;
+
+          if (systemValue.startsWith("custom:")) {
+            const label = systemValue.replace(/^custom:/, "");
+            custom_fields[label] = value;
+          } else if (systemValue === "__salary") {
+            custom_fields["Salary"] = value;
+          } else {
+            payload[systemValue] = value;
+          }
+        }
+        payload.custom_fields = custom_fields;
+        jobsToSend.push(payload);
+      }
+
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1"
+      );
+      const BATCH_SIZE = 100;
+      let totalCreated = 0;
+      let totalFailed = 0;
+      const allErrors: { index: number; message: string }[] = [];
+
+      for (let offset = 0; offset < jobsToSend.length; offset += BATCH_SIZE) {
+        const batch = jobsToSend.slice(offset, offset + BATCH_SIZE);
+        const res = await fetch("/api/jobs/import", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ jobs: batch }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.message || "Import failed");
+        totalCreated += data.created ?? 0;
+        totalFailed += data.failed ?? 0;
+        const errors = (data.errors ?? []).map((e: { index: number; message: string }) => ({
+          index: e.index + offset,
+          message: e.message,
+        }));
+        allErrors.push(...errors);
+      }
+
+      setXmlImportResult({
+        created: totalCreated,
+        failed: totalFailed,
+        errors: allErrors,
+      });
+      if (totalCreated > 0) {
+        fetchJobs();
+        toast.success(`Imported ${totalCreated} job(s).`);
+      }
+      if (totalFailed > 0) toast.error(`${totalFailed} job(s) failed to import.`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setXmlImportLoading(false);
+    }
+  };
+
   const getStatusColor = (status: string) => {
     if (!status) return "bg-gray-100 text-gray-800";
     switch (status.toLowerCase()) {
@@ -1141,6 +1503,10 @@ export default function JobList() {
             />
           )}
           <button onClick={() => setShowColumnModal(true)} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">Columns</button>
+          <button onClick={handleOpenXmlFeedModal} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center gap-2" title="Import jobs from XML feed">
+            <FiFileText size={18} />
+            XML Feed In
+          </button>
           <button onClick={handleViewArchived} className="px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center">
             Archived
           </button>
@@ -1194,6 +1560,11 @@ export default function JobList() {
         )}
         <div className="w-full md:hidden">
           <button onClick={() => setShowColumnModal(true)} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center">Columns</button>
+        </div>
+        <div className="w-full md:hidden">
+          <button onClick={handleOpenXmlFeedModal} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center gap-2">
+            <FiFileText size={18} /> XML Feed In
+          </button>
         </div>
         <div className="w-full md:hidden">
           <button onClick={handleViewArchived} className="w-full px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 flex items-center justify-center">
@@ -1576,6 +1947,168 @@ export default function JobList() {
                 className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md shadow-sm transition-colors font-medium"
               >
                 Save Favorite
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* XML Feed In — Step 1: Paste or select XML */}
+      {showXmlFeedModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="font-semibold text-gray-800">XML Feed In</h3>
+              <button onClick={() => setShowXmlFeedModal(false)} className="text-gray-400 hover:text-gray-600">
+                <FiX size={20} />
+              </button>
+            </div>
+            <div className="p-4 space-y-4 overflow-y-auto flex-1">
+              <p className="text-sm text-gray-600">
+                Paste your XML feed below or select an .xml file. The feed should contain <code className="bg-gray-100 px-1 rounded">&lt;job&gt;</code> elements with child tags (e.g. title, description, company).
+              </p>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Paste XML or select file</label>
+                <textarea
+                  value={xmlFeedInput}
+                  onChange={(e) => setXmlFeedInput(e.target.value)}
+                  placeholder="Paste XML content here..."
+                  className="w-full h-40 p-3 border border-gray-300 rounded-md font-mono text-sm"
+                />
+                <div className="mt-2">
+                  <input
+                    type="file"
+                    accept=".xml"
+                    onChange={handleXmlFileChange}
+                    className="text-sm text-gray-600 file:mr-2 file:py-1.5 file:px-3 file:rounded file:border file:border-gray-300 file:bg-gray-50"
+                  />
+                  {xmlFile && <span className="ml-2 text-sm text-gray-500">{xmlFile.name}</span>}
+                </div>
+              </div>
+            </div>
+            <div className="p-4 border-t border-gray-200 flex justify-end gap-2">
+              <button onClick={() => setShowXmlFeedModal(false)} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-md">
+                Cancel
+              </button>
+              <button onClick={handleXmlFeedNext} className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md font-medium">
+                Next: Map fields
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* XML Feed In — Step 2: Map XML fields to system fields */}
+      {showXmlMappingModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="p-4 border-b border-gray-200 flex justify-between items-center">
+              <h3 className="font-semibold text-gray-800">Map XML fields to system fields</h3>
+              <button
+                onClick={() => {
+                  setShowXmlMappingModal(false);
+                  setXmlImportResult(null);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <FiX size={20} />
+              </button>
+            </div>
+            <div className="p-4 overflow-y-auto flex-1">
+              <p className="text-sm text-gray-600 mb-4">
+                Map each XML field (left) to a system or admin center field (right). Unmapped fields are ignored. Found <strong>{xmlParsedJobs.length}</strong> job(s).
+              </p>
+              {xmlImportResult && (
+                <div className="mb-4 p-3 rounded-md bg-gray-50 border border-gray-200 text-sm">
+                  <span className="text-green-600 font-medium">{xmlImportResult.created} created</span>
+                  {xmlImportResult.failed > 0 && (
+                    <span className="text-red-600 font-medium ml-2">{xmlImportResult.failed} failed</span>
+                  )}
+                  {xmlImportResult.errors.length > 0 && (
+                    <ul className="mt-1 text-red-600 list-disc list-inside">
+                      {xmlImportResult.errors.slice(0, 5).map((err, i) => (
+                        <li key={i}>Row {err.index + 1}: {err.message}</li>
+                      ))}
+                      {xmlImportResult.errors.length > 5 && (
+                        <li>… and {xmlImportResult.errors.length - 5} more</li>
+                      )}
+                    </ul>
+                  )}
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="font-medium text-gray-700">XML field name</div>
+                <div className="font-medium text-gray-700">Map to system field</div>
+                {xmlFieldNames.map((name) => {
+                  const value = xmlFieldMapping[name] ?? "";
+                  const selectedOpt = xmlSystemFieldOptions.find((o) => o.value === value);
+                  const isOpen = xmlMappingOpenFor === name;
+                  return (
+                    <div key={name} className="contents">
+                      <label className="text-sm text-gray-800 truncate" title={name}>{name}</label>
+                      <div className="relative" data-xml-mapping-dropdown ref={isOpen ? xmlMappingDropdownRef : undefined}>
+                        {!isOpen ? (
+                          <button
+                            type="button"
+                            onClick={() => setXmlMappingOpenFor(name)}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm text-left bg-white hover:bg-gray-50 flex items-center justify-between gap-1"
+                          >
+                            <span className="truncate">{selectedOpt?.label ?? "— Select field —"}</span>
+                            <FiChevronDown className="shrink-0 text-gray-400" size={14} />
+                          </button>
+                        ) : (
+                          <div className="border border-gray-300 rounded text-sm bg-white shadow-lg overflow-hidden">
+                            <input
+                              ref={xmlMappingSearchRef}
+                              type="text"
+                              value={xmlMappingSearch}
+                              onChange={(e) => setXmlMappingSearch(e.target.value)}
+                              placeholder="Search fields..."
+                              className="w-full px-2 py-1.5 border-b border-gray-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                            />
+                            <div className="max-h-48 overflow-y-auto">
+                              {xmlSystemFieldOptionsFiltered.length === 0 ? (
+                                <div className="px-2 py-2 text-gray-500 text-xs">No matches</div>
+                              ) : (
+                                xmlSystemFieldOptionsFiltered.map((opt) => (
+                                  <button
+                                    key={opt.optionId}
+                                    type="button"
+                                    onClick={() => {
+                                      setXmlFieldMapping((prev) => ({ ...prev, [name]: opt.value }));
+                                      setXmlMappingOpenFor(null);
+                                    }}
+                                    className={`w-full text-left px-2 py-1.5 hover:bg-blue-50 text-sm ${opt.value === value ? "bg-blue-50 font-medium" : ""}`}
+                                  >
+                                    {opt.label}
+                                  </button>
+                                ))
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <div className="p-4 border-t border-gray-200 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setShowXmlMappingModal(false);
+                  setXmlImportResult(null);
+                }}
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-md"
+              >
+                Close
+              </button>
+              <button
+                onClick={handleXmlMappingImport}
+                disabled={xmlImportLoading}
+                className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md font-medium disabled:opacity-50"
+              >
+                {xmlImportLoading ? "Importing…" : "Import jobs"}
               </button>
             </div>
           </div>

@@ -3812,6 +3812,10 @@ export default function JobView() {
         params.set("jobId", String(effectiveJobId));
       }
       params.set("appointmentType", "Interview");
+      if (applicationId != null) {
+        params.set("applicationId", String(applicationId));
+        params.set("candidateId", String(jobSeekerId ?? ""));
+      }
 
       router.push(`/dashboard/planner?${params.toString()}`);
       return;

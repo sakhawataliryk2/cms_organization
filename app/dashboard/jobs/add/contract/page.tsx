@@ -396,7 +396,17 @@ export default function AddJob() {
   const leadId = searchParams.get("leadId") || searchParams.get("lead_id");
   const organizationIdFromUrl =
     searchParams.get("organizationId") || searchParams.get("organization_id");
-  const hiringManagerIdFromUrl = searchParams.get("hiringManagerId");
+  const relatedEntity =
+    searchParams.get("relatedEntity") || searchParams.get("related_entity");
+  const relatedEntityId =
+    searchParams.get("relatedEntityId") || searchParams.get("related_entity_id");
+  const isHiringManagerRelated =
+    String(relatedEntity || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[_\s]+/g, "-") === "hiring-manager";
+  const hiringManagerIdFromUrl =
+    searchParams.get("hiringManagerId") || (isHiringManagerRelated ? relatedEntityId : null);
   const hasPrefilledFromLeadRef = useRef(false);
   const hasPrefilledOrgRef = useRef(false);
   const [selectedJobType, setSelectedJobType] = useState<string>("");
@@ -425,11 +435,34 @@ export default function AddJob() {
   const handleJobTypeSelect = (type: string) => {
     setSelectedJobType(type);
     // Preserve all params from URL and state when switching type
-    const params = new URLSearchParams();
-    if (leadId) params.append("leadId", leadId);
-    if (organizationIdFromUrl) params.append("organizationId", organizationIdFromUrl);
-    const hmId = hiringManagerIdFromUrl?.trim() || hiringManagerValue?.trim() || "";
-    if (hmId) params.append("hiringManagerId", hmId);
+    const params = new URLSearchParams(searchParams.toString());
+
+    const orgId =
+      params.get("organizationId") ||
+      params.get("organization_id") ||
+      organizationIdFromUrl ||
+      "";
+    const hmId =
+      (
+        params.get("hiringManagerId") ||
+        (String(params.get("relatedEntity") || params.get("related_entity") || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[_\s]+/g, "-") === "hiring-manager"
+          ? params.get("relatedEntityId") || params.get("related_entity_id")
+          : null) ||
+        hiringManagerValue ||
+        ""
+      ).trim();
+    const lead = params.get("leadId") || params.get("lead_id") || leadId || "";
+
+    if (orgId) params.set("organizationId", orgId);
+    if (hmId) params.set("hiringManagerId", hmId);
+    if (lead) params.set("leadId", lead);
+
+    params.delete("organization_id");
+    params.delete("lead_id");
+
     const queryString = params.toString();
     const query = queryString ? `?${queryString}` : "";
 

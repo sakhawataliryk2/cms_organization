@@ -435,6 +435,10 @@ export default function CandidateFlowDashboard() {
       params.set('jobId', String(candidate.jobNumericId));
     }
     params.set('appointmentType', 'Interview');
+    if (candidate.applicationId != null) {
+      params.set('applicationId', String(candidate.applicationId));
+      params.set('candidateId', String(candidate.id));
+    }
 
     router.push(`/dashboard/planner?${params.toString()}`);
   };

@@ -335,7 +335,17 @@ export default function AddExecutiveSearchJob() {
   const cloneFrom = searchParams.get("cloneFrom"); // Clone from this job ID (prefill, new job)
   const leadId = searchParams.get("leadId") || searchParams.get("lead_id");
   const organizationIdFromUrl = searchParams.get("organizationId") || searchParams.get("organization_id");
-  const hiringManagerIdFromUrl = searchParams.get("hiringManagerId");
+  const relatedEntity =
+    searchParams.get("relatedEntity") || searchParams.get("related_entity");
+  const relatedEntityId =
+    searchParams.get("relatedEntityId") || searchParams.get("related_entity_id");
+  const isHiringManagerRelated =
+    String(relatedEntity || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[_\s]+/g, "-") === "hiring-manager";
+  const hiringManagerIdFromUrl =
+    searchParams.get("hiringManagerId") || (isHiringManagerRelated ? relatedEntityId : null);
   const requireHiringManagerFromUrl = Boolean(organizationIdFromUrl || hiringManagerIdFromUrl);
   const hasPrefilledFromLeadRef = useRef(false);
   const hasPrefilledOrgRef = useRef(false);
@@ -409,6 +419,82 @@ export default function AddExecutiveSearchJob() {
       });
     }
   }, [jobId, hiringManagerIdFromUrl, hiringManagerCustomField, setCustomFieldValues]);
+
+  // Prefill Organization based on hiringManagerId when coming from Hiring Manager view
+  const hasPrefilledOrgFromHmRef = useRef(false);
+  useEffect(() => {
+    if (jobId) return; // don't override edit mode
+    if (hasPrefilledOrgFromHmRef.current) return;
+    if (organizationIdFromUrl) return; // already provided
+    if (!hiringManagerIdFromUrl) return;
+    if (customFieldsLoading || customFields.length === 0) return;
+
+    hasPrefilledOrgFromHmRef.current = true;
+
+    const run = async () => {
+      try {
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\\s*)token\\s*=\\s*([^;]*).*$)|^.*$/,
+          "$1"
+        );
+
+        const res = await fetch(`/api/hiring-managers/${encodeURIComponent(hiringManagerIdFromUrl)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const hm = data?.hiringManager || data?.hiring_manager || data?.data?.hiringManager || data;
+        const orgIdRaw =
+          hm?.organization_id ??
+          hm?.organizationId ??
+          hm?.organization?.id ??
+          hm?.organization?.organization_id;
+        const orgId = orgIdRaw != null ? String(orgIdRaw) : "";
+        if (!orgId) return;
+
+        setCurrentOrganizationId(orgId);
+
+        // Executive Search currently uses Field_3 for Organization (name), so fetch org name if possible.
+        let orgName = "";
+        try {
+          const orgRes = await fetch(`/api/organizations/${encodeURIComponent(orgId)}`);
+          if (orgRes.ok) {
+            const orgData = await orgRes.json();
+            orgName = orgData?.organization?.name || "";
+          }
+        } catch {
+          // ignore
+        }
+
+        const orgField = customFields.find((f) => f.field_name === "Field_3");
+        if (orgField) {
+          setCustomFieldValues((prev) => {
+            if (prev[orgField.field_name]) return prev;
+            return { ...prev, [orgField.field_name]: orgName || orgId };
+          });
+        }
+
+        setFormFields((prev) =>
+          prev.map((f) =>
+            f.name === "organizationId"
+              ? { ...f, value: orgName || orgId, locked: true }
+              : f
+          )
+        );
+      } catch (e) {
+        console.error("Prefill org from hiring manager failed (executive-search):", e);
+      }
+    };
+
+    void run();
+  }, [
+    jobId,
+    organizationIdFromUrl,
+    hiringManagerIdFromUrl,
+    customFieldsLoading,
+    customFields,
+    setCustomFieldValues,
+  ]);
 
   useEffect(() => {
     setJobStep(jobId || cloneFrom ? 3 : 2);
