@@ -497,7 +497,7 @@ export default function Dashboard() {
         });
     };
 
-    // Check if a date has tasks (by Date Added, falling back to due_date)
+    // Check has tasks (by Date Added, falling back to due_date)
     const hasTasks = (date: Date) => {
         if (allTasks.length === 0) return false;
         const target = formatDateForAPI(date);

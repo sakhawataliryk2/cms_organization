@@ -124,12 +124,24 @@ function SortablePinnedTab({
   };
 
   const letterNum = (() => {
-    // Prefer explicit recordNumber/recordType when available
-    if (record.recordType && record.recordNumber !== undefined && record.recordNumber !== null && record.recordNumber !== "") {
-      return formatDisplayRecordNumber(record.recordType, record.recordNumber, getRecordIdFromKey(record.key));
+    // Prefer business recordNumber when available
+    if (record.recordNumber !== undefined && record.recordNumber !== null && record.recordNumber !== "") {
+      // If we know the recordType, use the shared display formatter
+      if (record.recordType) {
+        return formatDisplayRecordNumber(
+          record.recordType,
+          record.recordNumber,
+          getRecordIdFromKey(record.key.toString())
+        );
+      }
+
+      // If recordType is missing but we still have a recordNumber,
+      // infer a simple prefix from the key and show that number
+      const moduleCode = getModuleCode(record.key.toString());
+      return `${moduleCode} ${record.recordNumber}`;
     }
 
-    // Fallback to module code + ID from key (legacy pins)
+    // Fallback to module code + primary key ID from key (legacy pins without recordNumber)
     return `${getModuleCode(record.key)}${getRecordIdFromKey(record.key)}`;
   })();
 

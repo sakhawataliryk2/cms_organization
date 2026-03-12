@@ -320,6 +320,7 @@ const Planners = () => {
 
   // One-time handler: open Add Appointment modal with pre-filled data when requested via URL
   const hasInitializedFromUrl = useRef(false);
+  const pendingApplicationStatusUpdate = useRef<{ candidateId: string; applicationId: string } | null>(null);
   useEffect(() => {
     if (hasInitializedFromUrl.current) return;
     const addParam = searchParams?.get('addAppointment');
@@ -331,6 +332,11 @@ const Planners = () => {
     const participantIdParam = searchParams?.get('participantId') || '';
     const jobIdParam = searchParams?.get('jobId') || '';
     const appointmentTypeParam = searchParams?.get('appointmentType') || 'Interview';
+    const applicationIdParam = searchParams?.get('applicationId') || '';
+    const candidateIdParam = searchParams?.get('candidateId') || '';
+    if (applicationIdParam && candidateIdParam) {
+      pendingApplicationStatusUpdate.current = { candidateId: candidateIdParam, applicationId: applicationIdParam };
+    }
 
     const today = new Date();
     const dateStr = today.toISOString().split('T')[0];
@@ -896,6 +902,11 @@ const Planners = () => {
     setShowAddModal(true);
   };
 
+  const closeAddModal = () => {
+    pendingApplicationStatusUpdate.current = null;
+    setShowAddModal(false);
+  };
+
   // Handle Save Appointment
   const handleSaveAppointment = async () => {
     if (!appointmentForm.date || !appointmentForm.time || !appointmentForm.type) {
@@ -969,8 +980,37 @@ const Planners = () => {
       }
 
       toast.success('Appointment created successfully!');
-      setShowAddModal(false);
-      
+      closeAddModal();
+
+      // If we opened from "Interview" flow (jobs applied / candidate flow), update application status to Interview
+      const pending = pendingApplicationStatusUpdate.current;
+      if (pending?.candidateId && pending?.applicationId) {
+        try {
+          const patchRes = await fetch(
+            `/api/job-seekers/${pending.candidateId}/applications/${pending.applicationId}`,
+            {
+              method: 'PATCH',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${token}`,
+              },
+              body: JSON.stringify({ status: 'Interview' }),
+            }
+          );
+          const patchData = await patchRes.json().catch(() => ({}));
+          if (patchRes.ok) {
+            toast.success('Application status set to Interview.');
+          } else {
+            toast.error(patchData.message || 'Appointment created but failed to update application status.');
+          }
+        } catch (patchErr) {
+          console.error('Error updating application status after appointment:', patchErr);
+          toast.error('Appointment created but failed to update application status.');
+        } finally {
+          pendingApplicationStatusUpdate.current = null;
+        }
+      }
+
       // Reset form
       setAppointmentForm({
         date: '',
@@ -2049,7 +2089,7 @@ const Planners = () => {
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-2xl font-semibold text-gray-800">Add Appointment</h3>
               <button
-                onClick={() => setShowAddModal(false)}
+                onClick={closeAddModal}
                 className="text-gray-500 hover:text-gray-700"
               >
                 <FiX size={24} />
@@ -2212,7 +2252,7 @@ const Planners = () => {
             {/* Buttons */}
             <div className="flex justify-end space-x-4 mt-6">
               <button
-                onClick={() => setShowAddModal(false)}
+                onClick={closeAddModal}
                 className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-50"
                 disabled={isSavingAppointment}
               >

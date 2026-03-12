@@ -361,7 +361,17 @@ export default function AddJob() {
   const leadId = searchParams.get("leadId") || searchParams.get("lead_id");
   const organizationIdFromUrl =
     searchParams.get("organizationId") || searchParams.get("organization_id");
-  const hiringManagerIdFromUrl = searchParams.get("hiringManagerId");
+  const relatedEntity =
+    searchParams.get("relatedEntity") || searchParams.get("related_entity");
+  const relatedEntityId =
+    searchParams.get("relatedEntityId") || searchParams.get("related_entity_id");
+  const isHiringManagerRelated =
+    String(relatedEntity || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[_\s]+/g, "-") === "hiring-manager";
+  const hiringManagerIdFromUrl =
+    searchParams.get("hiringManagerId") || (isHiringManagerRelated ? relatedEntityId : null);
   const hasPrefilledFromLeadRef = useRef(false);
   const hasPrefilledOrgRef = useRef(false);
   const [selectedJobType, setSelectedJobType] = useState<string>("");
@@ -392,23 +402,38 @@ export default function AddJob() {
   const handleJobTypeSelect = (type: string) => {
     setSelectedJobType(type);
 
-    // Preserve params from URL first, then fall back to state (so params never disappear)
-    const orgId =
-      searchParams.get("organizationId") ||
-      searchParams.get("organization_id") ||
-      organizationIdFromUrl;
-    const hmId =
-      searchParams.get("hiringManagerId")?.trim() ||
-      hiringManagerValue?.trim() ||
-      "";
-    const lead = searchParams.get("leadId") || searchParams.get("lead_id") || leadId;
-    const shouldParseJob = searchParams.get("parseJob") === "1";
+    // Preserve *all* existing URL params, then ensure the critical ones stay present.
+    // This prevents "param wipe" when switching job types.
+    const params = new URLSearchParams(searchParams.toString());
 
-    const params = new URLSearchParams();
+    const orgId =
+      params.get("organizationId") ||
+      params.get("organization_id") ||
+      currentOrganizationId ||
+      organizationIdFromUrl ||
+      "";
+    const hmId =
+      (
+        params.get("hiringManagerId") ||
+        (String(params.get("relatedEntity") || params.get("related_entity") || "")
+          .trim()
+          .toLowerCase()
+          .replace(/[_\s]+/g, "-") === "hiring-manager"
+          ? params.get("relatedEntityId") || params.get("related_entity_id")
+          : null) ||
+        hiringManagerValue ||
+        ""
+      ).trim();
+    const lead = params.get("leadId") || params.get("lead_id") || leadId || "";
+
     if (orgId) params.set("organizationId", orgId);
     if (hmId) params.set("hiringManagerId", hmId);
     if (lead) params.set("leadId", lead);
-    if (shouldParseJob) params.set("parseJob", "1");
+
+    // normalize: we always use organizationId/leadId (camel) going forward
+    params.delete("organization_id");
+    params.delete("lead_id");
+
     const queryString = params.toString();
     const query = queryString ? `?${queryString}` : "";
 
@@ -466,6 +491,93 @@ export default function AddJob() {
       });
     }
   }, [jobId, hiringManagerIdFromUrl, hiringManagerCustomField, setCustomFieldValues]);
+
+  // Prefill Organization based on hiringManagerId (when redirected from Hiring Manager view)
+  // If URL has hiringManagerId but not organizationId, fetch the HM to resolve organization_id and fill Organization.
+  const hasPrefilledOrgFromHmRef = useRef(false);
+  useEffect(() => {
+    if (jobId) return; // don't override edit mode
+    if (hasPrefilledOrgFromHmRef.current) return;
+    if (organizationIdFromUrl) return; // already provided
+    if (!hiringManagerIdFromUrl) return;
+    if (customFieldsLoading || customFields.length === 0) return;
+
+    hasPrefilledOrgFromHmRef.current = true;
+
+    const run = async () => {
+      try {
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1"
+        );
+
+        const res = await fetch(`/api/hiring-managers/${encodeURIComponent(hiringManagerIdFromUrl)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const hm = data?.hiringManager || data?.hiring_manager || data?.data?.hiringManager || data;
+        const orgIdRaw =
+          hm?.organization_id ??
+          hm?.organizationId ??
+          hm?.organization?.id ??
+          hm?.organization?.organization_id;
+        const orgId = orgIdRaw != null ? String(orgIdRaw) : "";
+        if (!orgId) return;
+
+        // Set current org id immediately for dependent lookups (contacts / HM filtering)
+        setCurrentOrganizationId(orgId);
+
+        // Fetch org name for display (and to fill Field_3 correctly)
+        let orgName = "";
+        try {
+          const orgRes = await fetch(`/api/organizations/${encodeURIComponent(orgId)}`);
+          if (orgRes.ok) {
+            const orgData = await orgRes.json();
+            orgName = orgData?.organization?.name || "";
+          }
+        } catch {
+          // ignore
+        }
+
+        const orgField = customFields.find((f) => f.field_name === "Field_3");
+        if (orgField) {
+          setCustomFieldValues((prev) => {
+            if (prev[orgField.field_name]) return prev;
+            return { ...prev, [orgField.field_name]: orgName || orgId };
+          });
+        }
+
+        // Keep the legacy field in sync for any code paths still reading it
+        setFormFields((prev) =>
+          prev.map((f) =>
+            f.name === "organizationId"
+              ? { ...f, value: orgName || orgId, locked: true }
+              : f
+          )
+        );
+
+        // Also persist org in the URL so subsequent navigations preserve it
+        const next = new URLSearchParams(searchParams.toString());
+        next.set("organizationId", orgId);
+        next.delete("organization_id");
+        router.replace(`/dashboard/jobs/add?${next.toString()}`, { scroll: false });
+      } catch (e) {
+        console.error("Prefill org from hiring manager failed:", e);
+      }
+    };
+
+    void run();
+  }, [
+    jobId,
+    organizationIdFromUrl,
+    hiringManagerIdFromUrl,
+    customFieldsLoading,
+    customFields,
+    searchParams,
+    router,
+    setCustomFieldValues,
+  ]);
 
   // From organization view (Add Job in dropdown): require HM first, then type selection. No modal.
   const fromOrganizationAddJob = Boolean(organizationIdFromUrl && !jobId);
