@@ -21,14 +21,15 @@ export type RecordType = keyof typeof RECORD_PREFIXES;
 export function formatRecordId(id: number | string | null | undefined, type: RecordType): string {
     if (!id && id !== 0) return '';
     const prefix = RECORD_PREFIXES[type];
+    // Use prefix followed by a space and the id
     return `${prefix} ${id}`;
 }
 
-/** Types that use business record_number for display (prefix + '-' + number) */
-const DISPLAY_RECORD_NUMBER_TYPES: RecordType[] = ['task', 'job', 'organization'];
+/** Types that use business record_number for display (prefix + number) */
+const DISPLAY_RECORD_NUMBER_TYPES: RecordType[] = ['task', 'job', 'organization', 'hiringManager', 'lead', 'jobSeeker'];
 
 /**
- * Display format for task/job/organization: prefix + '-' + record_number (e.g. T-15, J-4, O-22).
+ * Display format for supported types: prefix + space + record_number (e.g. "T 15", "J 4", "O 22", "HM 6").
  * Use when the API returns record_number. For other types, falls back to formatRecordId(id, type).
  */
 export function formatDisplayRecordNumber(
@@ -38,7 +39,8 @@ export function formatDisplayRecordNumber(
 ): string {
     if (DISPLAY_RECORD_NUMBER_TYPES.includes(type) && recordNumber !== null && recordNumber !== undefined && recordNumber !== '') {
         const prefix = RECORD_PREFIXES[type];
-        return `${prefix}-${recordNumber}`;
+        // Use prefix followed by a space and the record number
+        return `${prefix} ${recordNumber}`;
     }
     if (fallbackId !== null && fallbackId !== undefined && fallbackId !== '') return formatRecordId(fallbackId, type);
     return '';

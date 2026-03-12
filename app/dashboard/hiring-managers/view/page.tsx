@@ -4262,7 +4262,7 @@ export default function HiringManagerView() {
             <FiUserCheck size={20} />
           </div>
           <h1 className="text-xl font-semibold text-gray-700">
-            HM {hiringManager.id} {hiringManager.fullName}
+            HM {formatRecordId(hiringManager.record_number ?? hiringManager.id, "hiringManager")} {hiringManager.fullName}
           </h1>
           {
             hiringManager.archived_at && (
