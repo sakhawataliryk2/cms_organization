@@ -242,6 +242,52 @@ export default function AddPlacementLanding() {
     load();
   }, [searchParams]);
 
+  // If jobId is already in the URL (coming from Jobs → Applied → Placement),
+  // skip the job-selection screen and immediately redirect to the correct
+  // placement type step, preserving jobSeekerId if present.
+  useEffect(() => {
+    const placementId = searchParams.get("id");
+    const jobId = searchParams.get("jobId");
+    if (placementId || !jobId) return;
+
+    let cancelled = false;
+    const run = async () => {
+      setSelectError(null);
+      try {
+        const res = await fetch(`/api/jobs/${jobId}`);
+        if (cancelled) return;
+        if (!res.ok) {
+          setSelectError("Could not load job details. Please try another job.");
+          return;
+        }
+        const data = await res.json();
+        const job = data.job;
+        const jobType = job?.job_type ?? job?.jobType ?? "";
+        if (!isKnownJobType(jobType) && jobType !== "") {
+          setSelectError(
+            "This job's type is not configured for placements. Please choose another job or contact your administrator."
+          );
+          return;
+        }
+        const segment = jobTypeToPlacementSegment(jobType);
+        const jobSeekerId = searchParams.get("jobSeekerId");
+        const qs = new URLSearchParams();
+        qs.set("jobId", String(jobId));
+        if (jobSeekerId) qs.set("jobSeekerId", jobSeekerId);
+        router.replace(`/dashboard/placements/add/${segment}?${qs.toString()}`);
+      } catch {
+        if (!cancelled) {
+          setSelectError("Could not load job details. Please try again.");
+        }
+      }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchParams, router]);
+
   const jobOptions = useMemo((): JobSearchSelectOption[] => {
     return jobs.map((job) => {
       const id = String(job.id);
@@ -271,7 +317,11 @@ export default function AddPlacementLanding() {
         return;
       }
       const segment = jobTypeToPlacementSegment(jobType);
-      router.push(`/dashboard/placements/add/${segment}?jobId=${jobId}`);
+      const jobSeekerId = searchParams.get("jobSeekerId");
+      const qs = new URLSearchParams();
+      qs.set("jobId", jobId);
+      if (jobSeekerId) qs.set("jobSeekerId", jobSeekerId);
+      router.push(`/dashboard/placements/add/${segment}?${qs.toString()}`);
     } catch {
       setSelectError("Could not load job details. Please try again.");
     }

@@ -8,7 +8,6 @@ import ActionDropdown from '@/components/ActionDropdown';
 import LoadingScreen from '@/components/LoadingScreen';
 import PanelWithHeader from '@/components/PanelWithHeader';
 import { FiBriefcase, FiSearch } from "react-icons/fi";
-import { HiOutlineUser, HiOutlineOfficeBuilding } from "react-icons/hi";
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { useHeaderConfig } from "@/hooks/useHeaderConfig";
 import RequestActionModal from '@/components/RequestActionModal';
@@ -3790,18 +3789,18 @@ export default function JobView() {
       return;
     }
 
+    const jobSeekerId = candidate?.id;
+    const candidateJobId =
+      candidate?.applicationId != null || candidate?.rawApplication
+        ? candidate?.rawApplication?.job_id ??
+          candidate?.rawApplication?.jobId ??
+          candidate?.rawApplication?.job_id_id ??
+          null
+        : null;
+    const effectiveJobId = candidateJobId ?? jobId;
+
     // Interview: open appointment planner, but DO NOT change status automatically here
     if (newStatus === "Interview") {
-      const jobSeekerId = candidate?.id;
-      const candidateJobId =
-        candidate?.applicationId != null || candidate?.rawApplication
-          ? candidate?.rawApplication?.job_id ??
-            candidate?.rawApplication?.jobId ??
-            candidate?.rawApplication?.job_id_id ??
-            null
-          : null;
-      const effectiveJobId = candidateJobId ?? jobId;
-
       const params = new URLSearchParams();
       params.set("addAppointment", "1");
       params.set("participantType", "job_seeker");
@@ -3818,6 +3817,20 @@ export default function JobView() {
       }
 
       router.push(`/dashboard/planner?${params.toString()}`);
+      return;
+    }
+
+    // Placed: open Add Placement flow and prefill job + job seeker
+    if (newStatus === "Placed" || newStatus === "Placement") {
+      const params = new URLSearchParams();
+      if (effectiveJobId) {
+        params.set("jobId", String(effectiveJobId));
+      }
+      if (jobSeekerId != null) {
+        params.set("jobSeekerId", String(jobSeekerId));
+      }
+
+      router.push(`/dashboard/placements/add?${params.toString()}`);
       return;
     }
 
