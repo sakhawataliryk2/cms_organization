@@ -39,6 +39,7 @@ export default function AddPlacement() {
   const searchParams = useSearchParams() ?? new URLSearchParams();
   const placementId = searchParams.get("id");
   const jobIdFromUrl = searchParams.get("jobId");
+  const jobSeekerIdFromUrl = searchParams.get("jobSeekerId");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoading, setIsLoading] = useState(!!placementId);
@@ -145,6 +146,17 @@ export default function AddPlacement() {
       }
     }
   }, [selectedJob, jobField, organizationField, handleCustomFieldChange]);
+
+  // Prefill Job Seeker when coming from Jobs → Applied → Placement flow
+  useEffect(() => {
+    if (!jobSeekerIdFromUrl || placementId) return;
+    // Prefer admin-configured lookup field when available
+    const targetFieldName =
+      jobSeekerLookupField?.field_name || candidateField?.field_name;
+    if (!targetFieldName) return;
+    if (!jobSeekerIdFromUrl.trim()) return;
+    handleCustomFieldChange(targetFieldName, jobSeekerIdFromUrl);
+  }, [jobSeekerIdFromUrl, placementId, jobSeekerLookupField, candidateField, handleCustomFieldChange]);
 
   // Fetch job seekers and jobs on mount (for Job/Candidate dropdown options)
   useEffect(() => {

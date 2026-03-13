@@ -17,7 +17,8 @@ import {
     FiCheck,
     FiMail,
     FiAlertCircle,
-    FiActivity
+    FiActivity,
+    FiFilter
 } from 'react-icons/fi';
 import { FaRegFolderOpen } from "react-icons/fa";
 import { MdDriveFolderUpload } from "react-icons/md";
@@ -78,6 +79,21 @@ interface ModuleFieldConfig {
     [moduleId: string]: CustomFieldDefinition[];
 }
 
+const JOB_XML_STATUS_OPTIONS = [
+    { value: "", label: "Default (Active / Open only)" },
+    { value: "open", label: "Open" },
+    { value: "closed", label: "Closed" },
+    { value: "inactive", label: "Inactive" },
+    { value: "all", label: "All statuses" },
+];
+
+const JOB_XML_TYPE_OPTIONS = [
+    { value: "", label: "All types" },
+    { value: "contract", label: "Contract" },
+    { value: "direct-hire", label: "Direct Hire" },
+    { value: "executive-search", label: "Executive Search" },
+];
+
 export default function AdminCenter() {
     const router = useRouter();
     const searchParams = useSearchParams() ?? new URLSearchParams();
@@ -113,6 +129,12 @@ export default function AdminCenter() {
     const [isParsingCsv, setIsParsingCsv] = useState(false);
     const [parseProgress, setParseProgress] = useState(0);
     const csvFileInputRef = useRef<HTMLInputElement>(null);
+
+    // Jobs XML modal state
+    const [showJobsXmlModal, setShowJobsXmlModal] = useState(false);
+    const [jobsXmlStatus, setJobsXmlStatus] = useState<string>('');
+    const [jobsXmlType, setJobsXmlType] = useState<string>('');
+    const [isGeneratingJobsXml, setIsGeneratingJobsXml] = useState(false);
 
     // Convert APYHub/SharpAPI resume parse result to one row with label-style keys for job-seeker auto-mapping
     const resumeResultToRow = (result: Record<string, any>): Record<string, string> => {
@@ -1288,6 +1310,12 @@ export default function AdminCenter() {
             path: '/dashboard/admin/downloader'
         },
         {
+            id: 'jobs-xml',
+            name: 'Jobs XML Feed',
+            icon: <FiDownload size={50} color="white" />,
+            path: '/dashboard/admin/jobs-xml'
+        },
+        {
             id: 'data-scraper',
             name: 'Data Scraper',
             icon: <FiArrowRight size={50} color="white" />,
@@ -1335,8 +1363,32 @@ export default function AdminCenter() {
         // If it's the downloader module, open export modal instead of navigating
         if (moduleId === 'downloader') {
             setShowDownloadModal(true);
-        } else {
-            router.push(path);
+            return;
+        }
+        // Open Jobs XML feed in a modal
+        if (moduleId === 'jobs-xml') {
+            setShowJobsXmlModal(true);
+            return;
+        }
+        router.push(path);
+    };
+
+    const handleGenerateJobsXmlFeed = () => {
+        try {
+            setIsGeneratingJobsXml(true);
+
+            const params = new URLSearchParams();
+            if (jobsXmlStatus) params.set('status', jobsXmlStatus);
+            if (jobsXmlType) params.set('type', jobsXmlType);
+
+            const query = params.toString();
+            const url = `/api/jobs/xml${query ? `?${query}` : ''}`;
+
+            if (typeof window !== 'undefined') {
+                window.open(url, '_blank', 'noopener,noreferrer');
+            }
+        } finally {
+            setIsGeneratingJobsXml(false);
         }
     };
 
@@ -1623,6 +1675,103 @@ export default function AdminCenter() {
                                         <span>Export</span>
                                     </>
                                 )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Jobs XML Feed Modal */}
+            {showJobsXmlModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="bg-white rounded-lg shadow-xl max-w-xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+                        {/* Modal Header */}
+                        <div className="bg-gray-100 p-4 border-b flex justify-between items-center sticky top-0">
+                            <div>
+                                <h2 className="text-xl font-semibold text-gray-800">Jobs XML Feed</h2>
+                                <p className="text-xs text-gray-600 mt-1">
+                                    Generate an XML feed of jobs for external job boards and integrations.
+                                </p>
+                            </div>
+                            <button
+                                onClick={() => setShowJobsXmlModal(false)}
+                                className="text-gray-500 hover:text-gray-700"
+                            >
+                                <FiX size={22} />
+                            </button>
+                        </div>
+
+                        {/* Modal Content */}
+                        <div className="p-6 space-y-6">
+                            <div className="flex items-center gap-2">
+                                <FiFilter className="text-gray-500" />
+                                <h3 className="text-sm font-medium text-gray-800">Feed Filters</h3>
+                            </div>
+
+                            <p className="text-xs text-gray-600">
+                                Use these filters to control which jobs are included in the XML feed. If you leave a filter
+                                empty, the default behavior will be used.
+                            </p>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                                        Job Status
+                                    </label>
+                                    <select
+                                        value={jobsXmlStatus}
+                                        onChange={(e) => setJobsXmlStatus(e.target.value)}
+                                        className="w-full p-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        {JOB_XML_STATUS_OPTIONS.map((opt) => (
+                                            <option key={opt.value || 'default'} value={opt.value}>
+                                                {opt.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        Default: only jobs marked as active/open are included.
+                                    </p>
+                                </div>
+
+                                <div>
+                                    <label className="block text-xs font-medium text-gray-700 mb-1">
+                                        Job Type
+                                    </label>
+                                    <select
+                                        value={jobsXmlType}
+                                        onChange={(e) => setJobsXmlType(e.target.value)}
+                                        className="w-full p-2 border border-gray-300 rounded-md text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    >
+                                        {JOB_XML_TYPE_OPTIONS.map((opt) => (
+                                            <option key={opt.value || 'all-types'} value={opt.value}>
+                                                {opt.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <p className="mt-1 text-xs text-gray-500">
+                                        Filter by internal job type if you use categories like Contract, Direct Hire, etc.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="bg-gray-50 p-4 border-t flex justify-end gap-3 sticky bottom-0">
+                            <button
+                                onClick={() => setShowJobsXmlModal(false)}
+                                className="px-4 py-2 border border-gray-300 rounded text-gray-700 hover:bg-gray-100"
+                                disabled={isGeneratingJobsXml}
+                            >
+                                Close
+                            </button>
+                            <button
+                                onClick={handleGenerateJobsXmlFeed}
+                                disabled={isGeneratingJobsXml}
+                                className="px-6 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2"
+                            >
+                                <FiDownload size={16} />
+                                <span>{isGeneratingJobsXml ? 'Generating...' : 'Export XML Feed'}</span>
                             </button>
                         </div>
                     </div>
