@@ -93,6 +93,13 @@ export default function Login() {
       );
     };
 
+    // If backend indicates a mandatory password change (first login with temp password),
+    // always route to the change-password screen instead of the normal target.
+    if (data?.mustChangePassword) {
+      router.push("/auth/change-password?firstLogin=1");
+      return;
+    }
+
     if (redirectUrl) {
       const decodedUrl = decodeURIComponent(redirectUrl);
 
