@@ -23,13 +23,17 @@ export async function GET(
     }
 
     const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
-    const response = await fetch(`${apiUrl}/api/job-seekers/${id}/applications`, {
-      method: "GET",  
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
+    const search = new URL(request.url).search || "";
+    const response = await fetch(
+      `${apiUrl}/api/job-seekers/${id}/applications${search}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
       },
-    });
+    );
 
     const responseText = await response.text();
 
