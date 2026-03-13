@@ -6,7 +6,7 @@ import { cookies } from "next/headers";
  * Proxies to the backend /api/job-seekers/{id}/client-submissions endpoint.
  */
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -23,7 +23,8 @@ export async function GET(
     }
 
     const apiUrl = process.env.API_BASE_URL || "http://localhost:8080";
-    const backendUrl = `${apiUrl}/api/job-seekers/${id}/client-submissions`;
+    const search = new URL(request.url).search || "";
+    const backendUrl = `${apiUrl}/api/job-seekers/${id}/client-submissions${search}`;
 
     const response = await fetch(backendUrl, {
       method: "GET",

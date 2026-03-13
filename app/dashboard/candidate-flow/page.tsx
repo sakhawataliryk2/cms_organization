@@ -159,10 +159,10 @@ export default function CandidateFlowDashboard() {
           prescreenedList.map(async (c) => {
             try {
               const [appsRes, clientSubsRes] = await Promise.all([
-                fetch(`/api/job-seekers/${c.id}/applications`, {
+                fetch(`/api/job-seekers/${c.id}/applications?scope=current-user`, {
                   credentials: 'include',
                 }),
-                fetch(`/api/job-seekers/${c.id}/client-submissions`, {
+                fetch(`/api/job-seekers/${c.id}/client-submissions?scope=current-user`, {
                   credentials: 'include',
                 }),
               ]);
