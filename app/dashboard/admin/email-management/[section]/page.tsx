@@ -791,11 +791,12 @@ const SECTION_CONFIG: Record<
     placeholders: {
       AUTH_2FA_EMAIL: ["{{userName}}", "{{email}}", "{{otp}}", "{{expiresAt}}"],
       AUTH_RESET_PASSWORD_EMAIL: ["{{userName}}", "{{email}}", "{{otp}}", "{{expiresAt}}"],
-      WELCOME_EMAIL: ["{{userName}}", "{{email}}", "{{userType}}", "{{portalUrl}}"],
+      WELCOME_EMAIL: ["{{userName}}", "{{email}}", "{{userType}}", "{{portalUrl}}", "{{password}}"],
     },
     required: {
       AUTH_2FA_EMAIL: ["{{userName}}", "{{otp}}", "{{expiresAt}}"],
       AUTH_RESET_PASSWORD_EMAIL: ["{{userName}}", "{{otp}}", "{{expiresAt}}"],
+      // Keep password optional so template can omit it if desired.
       WELCOME_EMAIL: ["{{userName}}", "{{email}}"],
     },
     defaults: {
@@ -838,6 +839,7 @@ const SECTION_CONFIG: Record<
           `<h2>Welcome to Complete Staffing Solutions</h2>` +
           `<p>Hello {{userName}},</p>` +
           `<p>Your user account has been created with the email <strong>{{email}}</strong> and role <strong>{{userType}}</strong>.</p>` +
+          `<p>Your temporary password is: <strong>{{password}}</strong></p>` +
           `<p>You can access the system here: <a href="{{portalUrl}}">{{portalUrl}}</a></p>` +
           `<p>If you did not expect this account, please contact an administrator.</p>` +
           `<p>Best Regards,<br/>Complete Staffing Solutions, Inc.</p>` +

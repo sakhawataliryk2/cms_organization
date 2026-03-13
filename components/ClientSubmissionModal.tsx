@@ -506,10 +506,7 @@ export default function ClientSubmissionModal({
     }
 
     const attachments = Array.from(selectedDocumentIds);
-    if (attachments.length === 0) {
-      toast.error("Please select at least one document to submit.");
-      return;
-    }
+    // Documents are optional: allow submission with or without attachments.
 
     const comments_html = commentHtml || undefined;
     const comments = extractPlainText(commentHtml || "") || undefined;
@@ -532,8 +529,6 @@ export default function ClientSubmissionModal({
           Array.from(selectedInternalUserIds).join(",") || null,
         submitted_by_name: currentUserName || undefined,
         submitted_by_email: currentUserEmail || undefined,
-        // Always send backend email notifications (for internal users and HMs)
-        // regardless of whether the user selects "Compose Email" or "Add Without Email".
         send_email: true,
       };
 
@@ -554,7 +549,7 @@ export default function ClientSubmissionModal({
 
       toast.success("Client submission created successfully.");
 
-      // If user chose Compose Email, open their email client
+      // If user chose Compose Email, open their email client with selected attachments listed in body
       if (mode === "compose" && typeof window !== "undefined") {
         const toEmails = Array.from(selectedHiringManagerIds)
           .map((id: string) => {
@@ -570,10 +565,18 @@ export default function ClientSubmissionModal({
           const subject = encodeURIComponent(
             `Candidate submission for ${displayJob} - ${candidateName}`,
           );
-          const body = encodeURIComponent(
-            comments ||
-              `Please see attached documents for ${candidateName} submitted to ${displayJob}.`,
-          );
+          const selectedDocNames = documents
+            .filter((d) => d.id && selectedDocumentIds.has(String(d.id)))
+            .map((d) => d.document_name || d.name || "Untitled");
+          const attachmentList =
+            selectedDocNames.length > 0
+              ? `\n\nDocuments to attach (included in this submission):\n${selectedDocNames.map((n) => `• ${n}`).join("\n")}`
+              : "";
+          const bodyText =
+            (comments ||
+              `Please see attached documents for ${candidateName} submitted to ${displayJob}.`) +
+            attachmentList;
+          const body = encodeURIComponent(bodyText);
           window.location.href = `mailto:${toEmails.join(
             ",",
           )}?subject=${subject}&body=${body}`;
@@ -617,7 +620,11 @@ export default function ClientSubmissionModal({
           {/* Candidate lookup */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Candidate <span className="text-red-500">*</span>
+              Candidate {initialCandidate ? (
+                <span className="text-green-500">✓</span>
+              ) : (
+                <span className="text-red-500">*</span>
+              )}
             </label>
             {initialCandidate ? (
               <div className="flex items-center gap-2 p-2 border border-gray-300 rounded bg-gray-50">
@@ -1169,11 +1176,7 @@ export default function ClientSubmissionModal({
             type="button"
             onClick={() => handleSubmit("compose")}
             className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={
-              isSubmitting ||
-              !selectedCandidateId ||
-              selectedDocumentIds.size === 0
-            }
+            disabled={isSubmitting || !selectedCandidateId}
           >
             {isSubmitting ? "Submitting..." : "Compose Email"}
           </button>
@@ -1181,11 +1184,7 @@ export default function ClientSubmissionModal({
             type="button"
             onClick={() => handleSubmit("no-email")}
             className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            disabled={
-              isSubmitting ||
-              !selectedCandidateId 
-              // selectedDocumentIds.size === 0
-            }
+            disabled={isSubmitting || !selectedCandidateId}
           >
             {isSubmitting ? "Submitting..." : "Add Without Email"}
           </button>

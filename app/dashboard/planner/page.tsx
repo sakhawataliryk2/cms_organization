@@ -1,21 +1,41 @@
-'use client';
+"use client";
 
-import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
-import { createPortal } from 'react-dom';
-import { toast } from 'sonner';
-import { useRouter, useSearchParams } from 'next/navigation';
-import { FiX, FiPrinter, FiLock, FiUnlock, FiArrowUp, FiArrowDown, FiFilter } from 'react-icons/fi';
-import { initializeOffice365Auth, isOffice365Authenticated, disconnectOffice365 } from '@/lib/office365';
-import { TbGripVertical } from 'react-icons/tb';
-import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useLayoutEffect,
+} from "react";
+import { createPortal } from "react-dom";
+import { toast } from "sonner";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  FiX,
+  FiPrinter,
+  FiLock,
+  FiUnlock,
+  FiArrowUp,
+  FiArrowDown,
+  FiFilter,
+  FiRefreshCw,
+} from "react-icons/fi";
+import {
+  isOffice365Authenticated,
+  sendCalendarInvite,
+  type CalendarEvent,
+} from "@/lib/office365";
+import { formatDisplayRecordNumber } from "@/lib/recordIdFormatter";
+import { TbGripVertical } from "react-icons/tb";
+import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
   SortableContext,
   useSortable,
   horizontalListSortingStrategy,
   arrayMove,
-} from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
-import RecordNameResolver from '@/components/RecordNameResolver';
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import RecordNameResolver from "@/components/RecordNameResolver";
 
 interface Appointment {
   id: number;
@@ -34,7 +54,7 @@ interface Appointment {
   description?: string;
   location?: string;
   duration?: number;
-  status?: 'scheduled' | 'live' | 'completed';
+  status?: "scheduled" | "live" | "completed";
   zoom_meeting_id?: number;
   zoom_join_url?: string;
   zoom_start_url?: string;
@@ -85,7 +105,11 @@ function SortableColumnHeader({
   const filterRef = useRef<HTMLDivElement>(null);
   const filterToggleRef = useRef<HTMLButtonElement>(null);
   const thRef = useRef<HTMLTableCellElement | null>(null);
-  const [filterPosition, setFilterPosition] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [filterPosition, setFilterPosition] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
 
   useLayoutEffect(() => {
     if (!showFilter || !filterToggleRef.current || !thRef.current) {
@@ -114,7 +138,8 @@ function SortableColumnHeader({
 
     if (showFilter) {
       document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
+      return () =>
+        document.removeEventListener("mousedown", handleClickOutside);
     }
   }, [showFilter, id]);
 
@@ -149,7 +174,13 @@ function SortableColumnHeader({
             onSort();
           }}
           className="text-gray-400 hover:text-gray-600 transition-colors"
-          title={sortState === "asc" ? "Sort descending" : sortState === "desc" ? "Sort ascending" : "Sort"}
+          title={
+            sortState === "asc"
+              ? "Sort descending"
+              : sortState === "desc"
+                ? "Sort ascending"
+                : "Sort"
+          }
         >
           {sortState === "asc" ? (
             <FiArrowUp size={14} />
@@ -168,8 +199,9 @@ function SortableColumnHeader({
             e.stopPropagation();
             setShowFilter(!showFilter);
           }}
-          className={`text-gray-400 hover:text-gray-600 transition-colors ${filterValue ? "text-blue-600" : ""
-            }`}
+          className={`text-gray-400 hover:text-gray-600 transition-colors ${
+            filterValue ? "text-blue-600" : ""
+          }`}
           title="Filter column"
         >
           <FiFilter size={14} />
@@ -177,67 +209,70 @@ function SortableColumnHeader({
       </div>
 
       {/* Filter Dropdown (portal so it stays on top) */}
-      {showFilter && filterPosition && typeof document !== "undefined" && createPortal(
-        <div
-          ref={filterRef}
-          className="bg-white border border-gray-300 shadow-lg rounded p-2 z-50 min-w-[150px]"
-          style={{
-            position: "fixed",
-            top: filterPosition.top,
-            left: filterPosition.left,
-            width: filterPosition.width,
-          }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          {filterType === "text" && (
-            <input
-              type="text"
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              placeholder={`Filter ${label.toLowerCase()}...`}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            />
-          )}
-          {filterType === "number" && (
-            <input
-              type="number"
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              placeholder={`Filter ${label.toLowerCase()}...`}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            />
-          )}
-          {filterType === "select" && filterOptions && (
-            <select
-              value={filterValue || ""}
-              onChange={(e) => onFilterChange(e.target.value)}
-              className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
-              autoFocus
-            >
-              <option value="">All</option>
-              {filterOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          )}
-          {filterValue && (
-            <button
-              onClick={() => {
-                onFilterChange("");
-                setShowFilter(false);
-              }}
-              className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
-            >
-              Clear Filter
-            </button>
-          )}
-        </div>,
-        document.body
-      )}
+      {showFilter &&
+        filterPosition &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            ref={filterRef}
+            className="bg-white border border-gray-300 shadow-lg rounded p-2 z-50 min-w-[150px]"
+            style={{
+              position: "fixed",
+              top: filterPosition.top,
+              left: filterPosition.left,
+              width: filterPosition.width,
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {filterType === "text" && (
+              <input
+                type="text"
+                value={filterValue || ""}
+                onChange={(e) => onFilterChange(e.target.value)}
+                placeholder={`Filter ${label.toLowerCase()}...`}
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                autoFocus
+              />
+            )}
+            {filterType === "number" && (
+              <input
+                type="number"
+                value={filterValue || ""}
+                onChange={(e) => onFilterChange(e.target.value)}
+                placeholder={`Filter ${label.toLowerCase()}...`}
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                autoFocus
+              />
+            )}
+            {filterType === "select" && filterOptions && (
+              <select
+                value={filterValue || ""}
+                onChange={(e) => onFilterChange(e.target.value)}
+                className="w-full px-2 py-1 text-sm border border-gray-300 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                autoFocus
+              >
+                <option value="">All</option>
+                {filterOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            )}
+            {filterValue && (
+              <button
+                onClick={() => {
+                  onFilterChange("");
+                  setShowFilter(false);
+                }}
+                className="mt-2 w-full px-2 py-1 text-xs text-red-600 hover:bg-red-50 rounded"
+              >
+                Clear Filter
+              </button>
+            )}
+          </div>,
+          document.body,
+        )}
     </th>
   );
 }
@@ -246,7 +281,9 @@ const Planners = () => {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
-  const [viewType, setViewType] = useState<'Month' | 'Week' | 'Day' | 'List'>('Month');
+  const [viewType, setViewType] = useState<"Month" | "Week" | "Day" | "List">(
+    "Month",
+  );
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
   const [isPinned, setIsPinned] = useState(false);
@@ -254,17 +291,18 @@ const Planners = () => {
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
   const [appointmentForm, setAppointmentForm] = useState({
-    date: '',
-    time: '',
-    type: '',
-    participant_type: '',
-    participant_id: '',
-    job_id: '',
-    description: '',
+    date: "",
+    time: "",
+    type: "",
+    participant_type: "",
+    participant_id: "",
+    job_id: "",
+    description: "",
     duration: 30,
+    sendInvites: true,
   });
   const [isSavingAppointment, setIsSavingAppointment] = useState(false);
-  
+
   // Lookup data for participants
   const [jobSeekers, setJobSeekers] = useState<any[]>([]);
   const [hiringManagers, setHiringManagers] = useState<any[]>([]);
@@ -272,34 +310,57 @@ const Planners = () => {
   const [jobs, setJobs] = useState<any[]>([]);
   const [isLoadingLookups, setIsLoadingLookups] = useState(false);
 
+  // Internal users for planner filter (owner dropdown)
+  const [internalUsers, setInternalUsers] = useState<
+    { id: number; name: string; email?: string }[]
+  >([]);
+  const [ownerFilter, setOwnerFilter] = useState<"all" | number>("all");
+
   // Column management for List view
   const [columnFields, setColumnFields] = useState<string[]>([
-    'date', 'time', 'type', 'status', 'participant', 'job', 'duration', 'zoom'
+    "date",
+    "time",
+    "type",
+    "status",
+    "participant",
+    "job",
+    "duration",
+    "zoom",
   ]);
-  const [columnSorts, setColumnSorts] = useState<Record<string, ColumnSortState>>({});
-  const [columnFilters, setColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+  const [columnSorts, setColumnSorts] = useState<
+    Record<string, ColumnSortState>
+  >({});
+  const [columnFilters, setColumnFilters] = useState<
+    Record<string, ColumnFilterState>
+  >({});
 
   // Column management for Month view table (below calendar)
-  const [monthTableColumnFields, setMonthTableColumnFields] = useState<string[]>([
-    'time', 'type', 'status', 'participant', 'job', 'zoom', 'duration'
-  ]);
-  const [monthTableColumnSorts, setMonthTableColumnSorts] = useState<Record<string, ColumnSortState>>({});
-  const [monthTableColumnFilters, setMonthTableColumnFilters] = useState<Record<string, ColumnFilterState>>({});
+  const [monthTableColumnFields, setMonthTableColumnFields] = useState<
+    string[]
+  >(["time", "type", "status", "participant", "job", "zoom", "duration"]);
+  const [monthTableColumnSorts, setMonthTableColumnSorts] = useState<
+    Record<string, ColumnSortState>
+  >({});
+  const [monthTableColumnFilters, setMonthTableColumnFilters] = useState<
+    Record<string, ColumnFilterState>
+  >({});
   const [monthTableCurrentPage, setMonthTableCurrentPage] = useState(1);
   const [monthTableItemsPerPage, setMonthTableItemsPerPage] = useState(10);
 
   const searchParams = useSearchParams();
-  // const router = useRouter();
-  const [isOffice365Connected, setIsOffice365Connected] = useState(false);
-  const [highlightAppointmentId, setHighlightAppointmentId] = useState<number | null>(null);
-  const [listViewFilterDate, setListViewFilterDate] = useState<string | null>(null);
+  const [highlightAppointmentId, setHighlightAppointmentId] = useState<
+    number | null
+  >(null);
+  const [listViewFilterDate, setListViewFilterDate] = useState<string | null>(
+    null,
+  );
   const listViewRowRef = useRef<HTMLTableRowElement | null>(null);
 
   // Apply date/view/appointmentId from URL (e.g. from dashboard appointment click)
   useEffect(() => {
-    const dateParam = searchParams?.get('date');
-    const viewParam = searchParams?.get('view');
-    const appointmentIdParam = searchParams?.get('appointmentId');
+    const dateParam = searchParams?.get("date");
+    const viewParam = searchParams?.get("view");
+    const appointmentIdParam = searchParams?.get("appointmentId");
     if (dateParam) {
       const d = new Date(dateParam);
       if (!Number.isNaN(d.getTime())) {
@@ -309,8 +370,8 @@ const Planners = () => {
         setCurrentPage(1);
       }
     }
-    if (viewParam === 'List') {
-      setViewType('List');
+    if (viewParam === "List") {
+      setViewType("List");
     }
     if (appointmentIdParam) {
       const id = parseInt(appointmentIdParam, 10);
@@ -320,31 +381,39 @@ const Planners = () => {
 
   // One-time handler: open Add Appointment modal with pre-filled data when requested via URL
   const hasInitializedFromUrl = useRef(false);
-  const pendingApplicationStatusUpdate = useRef<{ candidateId: string; applicationId: string } | null>(null);
+  const pendingApplicationStatusUpdate = useRef<{
+    candidateId: string;
+    applicationId: string;
+  } | null>(null);
   useEffect(() => {
     if (hasInitializedFromUrl.current) return;
-    const addParam = searchParams?.get('addAppointment');
-    if (!addParam || (addParam !== '1' && addParam.toLowerCase() !== 'true')) return;
+    const addParam = searchParams?.get("addAppointment");
+    if (!addParam || (addParam !== "1" && addParam.toLowerCase() !== "true"))
+      return;
 
     hasInitializedFromUrl.current = true;
 
-    const participantTypeParam = searchParams?.get('participantType') || '';
-    const participantIdParam = searchParams?.get('participantId') || '';
-    const jobIdParam = searchParams?.get('jobId') || '';
-    const appointmentTypeParam = searchParams?.get('appointmentType') || 'Interview';
-    const applicationIdParam = searchParams?.get('applicationId') || '';
-    const candidateIdParam = searchParams?.get('candidateId') || '';
+    const participantTypeParam = searchParams?.get("participantType") || "";
+    const participantIdParam = searchParams?.get("participantId") || "";
+    const jobIdParam = searchParams?.get("jobId") || "";
+    const appointmentTypeParam =
+      searchParams?.get("appointmentType") || "Interview";
+    const applicationIdParam = searchParams?.get("applicationId") || "";
+    const candidateIdParam = searchParams?.get("candidateId") || "";
     if (applicationIdParam && candidateIdParam) {
-      pendingApplicationStatusUpdate.current = { candidateId: candidateIdParam, applicationId: applicationIdParam };
+      pendingApplicationStatusUpdate.current = {
+        candidateId: candidateIdParam,
+        applicationId: applicationIdParam,
+      };
     }
 
     const today = new Date();
-    const dateStr = today.toISOString().split('T')[0];
+    const dateStr = today.toISOString().split("T")[0];
 
     setAppointmentForm((prev) => ({
       ...prev,
       date: prev.date || dateStr,
-      time: prev.time || '',
+      time: prev.time || "",
       type: prev.type || appointmentTypeParam,
       participant_type: participantTypeParam || prev.participant_type,
       participant_id: participantIdParam || prev.participant_id,
@@ -355,8 +424,15 @@ const Planners = () => {
 
   // Scroll highlighted row into view when List view has loaded
   useEffect(() => {
-    if (highlightAppointmentId != null && viewType === 'List' && listViewRowRef.current) {
-      listViewRowRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (
+      highlightAppointmentId != null &&
+      viewType === "List" &&
+      listViewRowRef.current
+    ) {
+      listViewRowRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
     }
   }, [highlightAppointmentId, viewType, appointments.length]);
 
@@ -370,8 +446,8 @@ const Planners = () => {
       if (!apt.date) return false;
       const aptDate = new Date(apt.date);
       const y = aptDate.getFullYear();
-      const m = String(aptDate.getMonth() + 1).padStart(2, '0');
-      const d = String(aptDate.getDate()).padStart(2, '0');
+      const m = String(aptDate.getMonth() + 1).padStart(2, "0");
+      const d = String(aptDate.getDate()).padStart(2, "0");
       return `${y}-${m}-${d}` === listViewFilterDate;
     });
     const index = filtered.findIndex((a) => a.id === highlightAppointmentId);
@@ -381,27 +457,10 @@ const Planners = () => {
     }
   }, [highlightAppointmentId, listViewFilterDate, appointments, itemsPerPage]);
 
-  // Office 365 connection status and callback handling
-  useEffect(() => {
-    setIsOffice365Connected(isOffice365Authenticated());
-  }, []);
-  useEffect(() => {
-    const connected = searchParams?.get('connected');
-    const error = searchParams?.get('error');
-    if (connected === 'true') {
-      toast.success('Microsoft 365 connected. You can now send calendar invites from appointments.');
-      setIsOffice365Connected(true);
-      router.replace('/dashboard/planner', { scroll: false });
-    } else if (error) {
-      toast.error(`Microsoft 365 sign-in failed: ${decodeURIComponent(error)}`);
-      router.replace('/dashboard/planner', { scroll: false });
-    }
-  }, [searchParams, router]);
-
   // Load pinned state from localStorage
   useEffect(() => {
-    const pinned = localStorage.getItem('plannerPinned');
-    if (pinned === 'true') {
+    const pinned = localStorage.getItem("plannerPinned");
+    if (pinned === "true") {
       setIsPinned(true);
     }
   }, []);
@@ -411,63 +470,68 @@ const Planners = () => {
     const fetchLookups = async () => {
       setIsLoadingLookups(true);
       try {
-        const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1",
+        );
         // Strip trailing slash to avoid double slash in URLs (e.g. ...vercel.app//api/...) which causes CORS preflight redirect errors
-        const apiUrl = (process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080').replace(/\/$/, '');
+        const apiUrl = (
+          process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080"
+        ).replace(/\/$/, "");
 
         // Fetch job seekers
         try {
           const jsResponse = await fetch(`${apiUrl}/api/job-seekers`, {
-            headers: { 'Authorization': `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${token}` },
           });
           if (jsResponse.ok) {
             const jsData = await jsResponse.json();
             setJobSeekers(jsData.jobSeekers || jsData.data || []);
           }
         } catch (jsError) {
-          console.error('Error fetching job seekers:', jsError);
+          console.error("Error fetching job seekers:", jsError);
         }
 
         // Fetch hiring managers
         try {
           const hmResponse = await fetch(`${apiUrl}/api/hiring-managers`, {
-            headers: { 'Authorization': `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${token}` },
           });
           if (hmResponse.ok) {
             const hmData = await hmResponse.json();
             setHiringManagers(hmData.hiringManagers || hmData.data || []);
           }
         } catch (hmError) {
-          console.error('Error fetching hiring managers:', hmError);
+          console.error("Error fetching hiring managers:", hmError);
         }
 
         // Fetch organizations
         try {
           const orgResponse = await fetch(`${apiUrl}/api/organizations`, {
-            headers: { 'Authorization': `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${token}` },
           });
           if (orgResponse.ok) {
             const orgData = await orgResponse.json();
             setOrganizations(orgData.organizations || orgData.data || []);
           }
         } catch (orgError) {
-          console.error('Error fetching organizations:', orgError);
+          console.error("Error fetching organizations:", orgError);
         }
 
         // Fetch jobs
         try {
           const jobResponse = await fetch(`${apiUrl}/api/jobs`, {
-            headers: { 'Authorization': `Bearer ${token}` },
+            headers: { Authorization: `Bearer ${token}` },
           });
           if (jobResponse.ok) {
             const jobData = await jobResponse.json();
             setJobs(jobData.jobs || jobData.data || []);
           }
         } catch (jobError) {
-          console.error('Error fetching jobs:', jobError);
+          console.error("Error fetching jobs:", jobError);
         }
       } catch (error) {
-        console.error('Error fetching lookup data:', error);
+        console.error("Error fetching lookup data:", error);
       } finally {
         setIsLoadingLookups(false);
       }
@@ -476,28 +540,76 @@ const Planners = () => {
     fetchLookups();
   }, []);
 
+  // Fetch internal users for owner filter
+  useEffect(() => {
+    const fetchInternalUsers = async () => {
+      try {
+        const token = document.cookie.replace(
+          /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+          "$1",
+        );
+        const res = await fetch("/api/users/active", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const list = data.users || data.data || [];
+          setInternalUsers(
+            Array.isArray(list)
+              ? list.map((u: any) => ({
+                  id: u.id,
+                  name: u.name || u.full_name || u.email || `User ${u.id}`,
+                  email: u.email,
+                }))
+              : [],
+          );
+        }
+      } catch (e) {
+        console.error("Error fetching internal users:", e);
+      }
+    };
+    fetchInternalUsers();
+  }, []);
+
   // Fetch appointments from API
   const fetchAppointments = async () => {
     setIsLoadingAppointments(true);
     try {
-      const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
-      const startOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
-      const endOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0);
-      
-      const queryParams = new URLSearchParams({
-        startDate: startOfMonth.toISOString().split('T')[0],
-        endDate: endOfMonth.toISOString().split('T')[0],
-      });
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1",
+      );
+      const startOfMonth = new Date(
+        currentMonth.getFullYear(),
+        currentMonth.getMonth(),
+        1,
+      );
+      const endOfMonth = new Date(
+        currentMonth.getFullYear(),
+        currentMonth.getMonth() + 1,
+        0,
+      );
 
-      const response = await fetch(`/api/planner/appointments?${queryParams.toString()}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
+      const queryParams = new URLSearchParams({
+        startDate: startOfMonth.toISOString().split("T")[0],
+        endDate: endOfMonth.toISOString().split("T")[0],
       });
+      if (ownerFilter !== "all" && typeof ownerFilter === "number") {
+        queryParams.set("ownerId", String(ownerFilter));
+      }
+
+      const response = await fetch(
+        `/api/planner/appointments?${queryParams.toString()}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
 
       if (!response.ok) {
         const errorText = await response.text();
-        let errorMessage = 'Failed to fetch appointments';
+        let errorMessage = "Failed to fetch appointments";
         try {
           const errorData = JSON.parse(errorText);
           errorMessage = errorData.message || errorMessage;
@@ -513,104 +625,109 @@ const Planners = () => {
       try {
         data = JSON.parse(responseText);
       } catch (parseError) {
-        console.error('Error parsing appointments response:', parseError);
-        console.error('Response text:', responseText);
-        throw new Error('Invalid response from server');
+        console.error("Error parsing appointments response:", parseError);
+        console.error("Response text:", responseText);
+        throw new Error("Invalid response from server");
       }
 
       // Ensure we have valid data
       if (!data || (!data.appointments && !data.data && !Array.isArray(data))) {
-        console.warn('Unexpected appointments response format:', data);
+        console.warn("Unexpected appointments response format:", data);
         setAppointments([]);
         return;
       }
 
-      const appointmentsList = Array.isArray(data.appointments) 
-        ? data.appointments 
-        : Array.isArray(data.data) 
-        ? data.data 
-        : Array.isArray(data) 
-        ? data 
-        : [];
-      
+      const appointmentsList = Array.isArray(data.appointments)
+        ? data.appointments
+        : Array.isArray(data.data)
+          ? data.data
+          : Array.isArray(data)
+            ? data
+            : [];
+
       // Map API response to Appointment interface
-      const mappedAppointments: Appointment[] = appointmentsList.map((apt: any) => {
-        try {
-          // Handle time field - PostgreSQL TIME returns "HH:MM:SS" format
-          let timeValue = apt.start_time || apt.time || '';
-          if (timeValue && typeof timeValue === 'string') {
-            // If it's a full datetime, extract time part
-            if (timeValue.includes('T') || timeValue.includes(' ')) {
-              const parts = timeValue.split(/[T ]/);
-              if (parts.length > 1) {
-                timeValue = parts[1].substring(0, 8); // Extract HH:MM:SS
+      const mappedAppointments: Appointment[] = appointmentsList.map(
+        (apt: any) => {
+          try {
+            // Handle time field - PostgreSQL TIME returns "HH:MM:SS" format
+            let timeValue = apt.start_time || apt.time || "";
+            if (timeValue && typeof timeValue === "string") {
+              // If it's a full datetime, extract time part
+              if (timeValue.includes("T") || timeValue.includes(" ")) {
+                const parts = timeValue.split(/[T ]/);
+                if (parts.length > 1) {
+                  timeValue = parts[1].substring(0, 8); // Extract HH:MM:SS
+                }
+              }
+              // If it's "HH:MM:SS", convert to "HH:MM" for display
+              if (timeValue.length === 8 && timeValue.includes(":")) {
+                timeValue = timeValue.substring(0, 5); // HH:MM
               }
             }
-            // If it's "HH:MM:SS", convert to "HH:MM" for display
-            if (timeValue.length === 8 && timeValue.includes(':')) {
-              timeValue = timeValue.substring(0, 5); // HH:MM
+
+            // Determine participant display name based on participant_type
+            let participantName = "";
+            if (apt.participant_type && apt.participant_id) {
+              // We'll fetch participant names separately, but store the info
+              participantName = apt.participant_name || apt.client || "";
+            } else {
+              // Fallback to client field if participant info not available
+              participantName = apt.client || apt.organization_name || "";
             }
+
+            // Determine job display name
+            const jobDisplayName =
+              apt.job ||
+              apt.job_title ||
+              (apt.job_id ? `Job #${apt.job_id}` : "");
+
+            return {
+              id: apt.id || 0,
+              date: apt.date || apt.start_date || "",
+              time: timeValue,
+              start_time: apt.start_time || apt.time || "",
+              type: apt.type || "",
+              participant_type: apt.participant_type || null,
+              participant_id: apt.participant_id || null,
+              job_id: apt.job_id || null,
+              client: participantName, // Use participant name as client display
+              job: jobDisplayName,
+              references: Array.isArray(apt.references) ? apt.references : [],
+              owner: apt.owner || apt.created_by_name || apt.owner_name || "",
+              owner_id: apt.owner_id || null,
+              description: apt.description || "",
+              location: apt.location || "",
+              duration: apt.duration || 30,
+              status: apt.status || "scheduled",
+              zoom_meeting_id: apt.zoom_meeting_id || null,
+              zoom_join_url: apt.zoom_join_url || null,
+              zoom_start_url: apt.zoom_start_url || null,
+              zoom_password: apt.zoom_password || null,
+            };
+          } catch (mapError) {
+            console.error("Error mapping appointment:", mapError, apt);
+            // Return a minimal valid appointment object
+            return {
+              id: apt.id || 0,
+              date: apt.date || "",
+              time: apt.start_time || apt.time || "",
+              start_time: apt.start_time || apt.time || "",
+              type: apt.type || "",
+              client: "",
+              job: "",
+              references: [],
+              owner: "",
+              duration: 30,
+              status: "scheduled",
+            };
           }
-
-          // Determine participant display name based on participant_type
-          let participantName = '';
-          if (apt.participant_type && apt.participant_id) {
-            // We'll fetch participant names separately, but store the info
-            participantName = apt.participant_name || apt.client || '';
-          } else {
-            // Fallback to client field if participant info not available
-            participantName = apt.client || apt.organization_name || '';
-          }
-
-          // Determine job display name
-          const jobDisplayName = apt.job || apt.job_title || (apt.job_id ? `Job #${apt.job_id}` : '');
-
-          return {
-            id: apt.id || 0,
-            date: apt.date || apt.start_date || '',
-            time: timeValue,
-            start_time: apt.start_time || apt.time || '',
-            type: apt.type || '',
-            participant_type: apt.participant_type || null,
-            participant_id: apt.participant_id || null,
-            job_id: apt.job_id || null,
-            client: participantName, // Use participant name as client display
-            job: jobDisplayName,
-            references: Array.isArray(apt.references) ? apt.references : [],
-            owner: apt.owner || apt.created_by_name || apt.owner_name || '',
-            owner_id: apt.owner_id || null,
-            description: apt.description || '',
-            location: apt.location || '',
-            duration: apt.duration || 30,
-            status: apt.status || 'scheduled',
-            zoom_meeting_id: apt.zoom_meeting_id || null,
-            zoom_join_url: apt.zoom_join_url || null,
-            zoom_start_url: apt.zoom_start_url || null,
-            zoom_password: apt.zoom_password || null,
-          };
-        } catch (mapError) {
-          console.error('Error mapping appointment:', mapError, apt);
-          // Return a minimal valid appointment object
-          return {
-            id: apt.id || 0,
-            date: apt.date || '',
-            time: apt.start_time || apt.time || '',
-            start_time: apt.start_time || apt.time || '',
-            type: apt.type || '',
-            client: '',
-            job: '',
-            references: [],
-            owner: '',
-            duration: 30,
-            status: 'scheduled',
-          };
-        }
-      });
+        },
+      );
 
       setAppointments(mappedAppointments);
     } catch (err) {
-      console.error('Error fetching appointments:', err);
-      toast.error('Failed to load appointments. Please try again.');
+      console.error("Error fetching appointments:", err);
+      toast.error("Failed to load appointments. Please try again.");
       setAppointments([]);
     } finally {
       setIsLoadingAppointments(false);
@@ -619,7 +736,7 @@ const Planners = () => {
 
   useEffect(() => {
     fetchAppointments();
-  }, [currentMonth]);
+  }, [currentMonth, ownerFilter]);
 
   // Reset current page when filters change
   useEffect(() => {
@@ -630,108 +747,118 @@ const Planners = () => {
   const getCalendarData = (currentMonth: Date) => {
     const year = currentMonth.getFullYear();
     const month = currentMonth.getMonth();
-    
+
     const firstDay = new Date(year, month, 1);
     const firstDayOfWeek = firstDay.getDay();
-    
+
     const lastDay = new Date(year, month + 1, 0);
     const daysInMonth = lastDay.getDate();
-    
+
     const daysFromPrevMonth = firstDayOfWeek;
     const prevMonth = new Date(year, month, 0);
     const daysInPrevMonth = prevMonth.getDate();
-    
-    const calendarData: Array<{ day: number; appointmentCount: number; isCurrentMonth: boolean; isToday: boolean; date: Date }> = [];
-    
+
+    const calendarData: Array<{
+      day: number;
+      appointmentCount: number;
+      isCurrentMonth: boolean;
+      isToday: boolean;
+      date: Date;
+    }> = [];
+
     // Helper function to normalize date strings for comparison
     const normalizeDateString = (date: Date): string => {
       const year = date.getFullYear();
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
       return `${year}-${month}-${day}`;
     };
-    
+
     // Helper function to normalize appointment date
     const normalizeAppointmentDate = (dateStr: string): string => {
-      if (!dateStr) return '';
+      if (!dateStr) return "";
       // Handle various date formats
       const date = new Date(dateStr);
       if (isNaN(date.getTime())) return dateStr; // Return as-is if invalid
       return normalizeDateString(date);
     };
-    
+
     // Add days from previous month
     for (let i = daysFromPrevMonth - 1; i >= 0; i--) {
       const day = daysInPrevMonth - i;
       const date = new Date(year, month - 1, day);
       const dateString = normalizeDateString(date);
-      const dayAppointments = appointments.filter(apt => {
+      const dayAppointments = appointments.filter((apt) => {
         const aptDateStr = normalizeAppointmentDate(apt.date);
         return aptDateStr === dateString;
       });
-      
+
       calendarData.push({
         day,
         appointmentCount: dayAppointments.length,
         isCurrentMonth: false,
         isToday: false,
-        date
+        date,
       });
     }
-    
+
     // Add days from current month
     const today = new Date();
     for (let day = 1; day <= daysInMonth; day++) {
       const date = new Date(year, month, day);
       const dateString = normalizeDateString(date);
-      const dayAppointments = appointments.filter(apt => {
+      const dayAppointments = appointments.filter((apt) => {
         const aptDateStr = normalizeAppointmentDate(apt.date);
         return aptDateStr === dateString;
       });
-      const isToday = date.getDate() === today.getDate() &&
-                      date.getMonth() === today.getMonth() &&
-                      date.getFullYear() === today.getFullYear();
-      
+      const isToday =
+        date.getDate() === today.getDate() &&
+        date.getMonth() === today.getMonth() &&
+        date.getFullYear() === today.getFullYear();
+
       calendarData.push({
         day,
         appointmentCount: dayAppointments.length,
         isCurrentMonth: true,
         isToday,
-        date
+        date,
       });
     }
-    
+
     // Add days from next month to fill the grid (42 days total for 6 weeks)
     const remainingDays = 42 - calendarData.length;
     for (let day = 1; day <= remainingDays; day++) {
       const date = new Date(year, month + 1, day);
       const dateString = normalizeDateString(date);
-      const dayAppointments = appointments.filter(apt => {
+      const dayAppointments = appointments.filter((apt) => {
         const aptDateStr = normalizeAppointmentDate(apt.date);
         return aptDateStr === dateString;
       });
-      
+
       calendarData.push({
         day,
         appointmentCount: dayAppointments.length,
         isCurrentMonth: false,
         isToday: false,
-        date
+        date,
       });
     }
-    
+
     return calendarData;
   };
 
   const calendarData = getCalendarData(currentMonth);
-  const selectedDayAppointments = appointments.filter(apt => {
+  const selectedDayAppointments = appointments.filter((apt) => {
     const aptDate = new Date(apt.date);
     return aptDate.toDateString() === selectedDate.toDateString();
   });
 
   // Column info helper
   const getColumnInfo = (key: string) => {
-    const columnMap: Record<string, { filterType: "text" | "select" | "number"; label: string }> = {
+    const columnMap: Record<
+      string,
+      { filterType: "text" | "select" | "number"; label: string }
+    > = {
       date: { filterType: "text", label: "Date" },
       time: { filterType: "text", label: "Time" },
       type: { filterType: "select", label: "Type" },
@@ -745,13 +872,15 @@ const Planners = () => {
   };
 
   // Helper to map participant_type to RecordType
-  const getParticipantRecordType = (participantType: string | null | undefined): string | null => {
+  const getParticipantRecordType = (
+    participantType: string | null | undefined,
+  ): string | null => {
     if (!participantType) return null;
     const typeMap: Record<string, string> = {
-      'job_seeker': 'job-seeker',
-      'hiring_manager': 'hiring-manager',
-      'organization': 'organization',
-      'internal': 'owner', // Internal users might not be clickable
+      job_seeker: "job-seeker",
+      hiring_manager: "hiring-manager",
+      organization: "organization",
+      internal: "owner", // Internal users might not be clickable
     };
     return typeMap[participantType] || null;
   };
@@ -759,24 +888,24 @@ const Planners = () => {
   // Column value getter
   const getColumnValue = (apt: Appointment, key: string): any => {
     switch (key) {
-      case 'date':
+      case "date":
         return new Date(apt.date).toLocaleDateString();
-      case 'time':
-        return apt.time || '—';
-      case 'type':
-        return apt.type || '—';
-      case 'status':
-        return apt.status || '—';
-      case 'participant':
-        return apt.client || '—';
-      case 'job':
-        return apt.job || '—';
-      case 'duration':
-        return apt.duration ? `${apt.duration} min` : '—';
-      case 'zoom':
-        return apt.zoom_join_url ? 'Yes' : 'No';
+      case "time":
+        return apt.time || "—";
+      case "type":
+        return apt.type || "—";
+      case "status":
+        return apt.status || "—";
+      case "participant":
+        return apt.client || "—";
+      case "job":
+        return apt.job || "—";
+      case "duration":
+        return apt.duration ? `${apt.duration} min` : "—";
+      case "zoom":
+        return apt.zoom_join_url ? "Yes" : "No";
       default:
-        return '—';
+        return "—";
     }
   };
 
@@ -795,7 +924,7 @@ const Planners = () => {
 
     // Apply sorts
     const sortKeys = Object.keys(monthTableColumnSorts).filter(
-      (key) => monthTableColumnSorts[key] !== null
+      (key) => monthTableColumnSorts[key] !== null,
     );
     if (sortKeys.length > 0) {
       filtered.sort((a, b) => {
@@ -819,8 +948,8 @@ const Planners = () => {
     } else {
       // Default sort by time if no sort is applied
       filtered.sort((a, b) => {
-        const timeA = a.time || '';
-        const timeB = b.time || '';
+        const timeA = a.time || "";
+        const timeB = b.time || "";
         return timeA.localeCompare(timeB);
       });
     }
@@ -866,16 +995,34 @@ const Planners = () => {
   }, [monthTableColumnFilters, monthTableColumnSorts, selectedDate]);
 
   const monthNames = [
-    'January', 'February', 'March', 'April', 'May', 'June',
-    'July', 'August', 'September', 'October', 'November', 'December'
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
   ];
-  
-  const dayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
-  
-  const navigateMonth = (direction: 'prev' | 'next') => {
-    setCurrentMonth(prev => {
+
+  const dayNames = [
+    "SUNDAY",
+    "MONDAY",
+    "TUESDAY",
+    "WEDNESDAY",
+    "THURSDAY",
+    "FRIDAY",
+    "SATURDAY",
+  ];
+
+  const navigateMonth = (direction: "prev" | "next") => {
+    setCurrentMonth((prev) => {
       const newMonth = new Date(prev);
-      if (direction === 'prev') {
+      if (direction === "prev") {
         newMonth.setMonth(prev.getMonth() - 1);
       } else {
         newMonth.setMonth(prev.getMonth() + 1);
@@ -883,59 +1030,78 @@ const Planners = () => {
       return newMonth;
     });
   };
-  
-  const totalAppointments = calendarData.reduce((sum, day) => sum + day.appointmentCount, 0);
+
+  const totalAppointments = calendarData.reduce(
+    (sum, day) => sum + day.appointmentCount,
+    0,
+  );
 
   // Handle Add Appointment
   const handleAddClick = () => {
     const today = new Date();
     setAppointmentForm({
-      date: today.toISOString().split('T')[0],
-      time: '',
-      type: '',
-      participant_type: '',
-      participant_id: '',
-      job_id: '',
-      description: '',
+      date: today.toISOString().split("T")[0],
+      time: "",
+      type: "",
+      participant_type: "",
+      participant_id: "",
+      job_id: "",
+      description: "",
       duration: 30,
+      sendInvites: true,
     });
     setShowAddModal(true);
   };
 
   const closeAddModal = () => {
-    pendingApplicationStatusUpdate.current = null;
+    // Only hide the modal here; do not clear pendingApplicationStatusUpdate.
+    // That ref is intentionally cleared after any follow-up status PATCH logic
+    // in handleSaveAppointment's finally block.
     setShowAddModal(false);
   };
 
   // Handle Save Appointment
   const handleSaveAppointment = async () => {
-    if (!appointmentForm.date || !appointmentForm.time || !appointmentForm.type) {
-      toast.error('Please fill in all required fields (Date, Time, Type)');
+    if (
+      !appointmentForm.date ||
+      !appointmentForm.time ||
+      !appointmentForm.type
+    ) {
+      toast.error("Please fill in all required fields (Date, Time, Type)");
       return;
     }
 
     setIsSavingAppointment(true);
     try {
-      const token = document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+      const token = document.cookie.replace(
+        /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+        "$1",
+      );
 
       // Safely parse participant_id and job_id
-      const participantId = appointmentForm.participant_id && appointmentForm.participant_id.trim() !== ''
-        ? parseInt(appointmentForm.participant_id, 10)
-        : null;
-      
-      const jobId = appointmentForm.job_id && appointmentForm.job_id.trim() !== ''
-        ? parseInt(appointmentForm.job_id, 10)
-        : null;
+      const participantId =
+        appointmentForm.participant_id &&
+        appointmentForm.participant_id.trim() !== ""
+          ? parseInt(appointmentForm.participant_id, 10)
+          : null;
+
+      const jobId =
+        appointmentForm.job_id && appointmentForm.job_id.trim() !== ""
+          ? parseInt(appointmentForm.job_id, 10)
+          : null;
 
       // Validate parsed values
-      if (appointmentForm.participant_id && (isNaN(participantId!) || participantId! <= 0)) {
-        toast.error('Invalid participant selected');
+      if (
+        appointmentForm.participant_id &&
+        (isNaN(participantId!) || participantId! <= 0)
+      ) {
+        toast.error("Invalid participant selected");
         setIsSavingAppointment(false);
         return;
       }
 
       if (appointmentForm.job_id && (isNaN(jobId!) || jobId! <= 0)) {
-        toast.error('Invalid job selected');
+        toast.error("Invalid job selected");
         setIsSavingAppointment(false);
         return;
       }
@@ -944,43 +1110,99 @@ const Planners = () => {
         date: appointmentForm.date,
         time: appointmentForm.time,
         type: appointmentForm.type,
-        participant_type: appointmentForm.participant_type && appointmentForm.participant_type.trim() !== '' 
-          ? appointmentForm.participant_type 
-          : null,
+        participant_type:
+          appointmentForm.participant_type &&
+          appointmentForm.participant_type.trim() !== ""
+            ? appointmentForm.participant_type
+            : null,
         participant_id: participantId,
         job_id: jobId,
-        description: appointmentForm.description && appointmentForm.description.trim() !== '' 
-          ? appointmentForm.description 
-          : null,
+        description:
+          appointmentForm.description &&
+          appointmentForm.description.trim() !== ""
+            ? appointmentForm.description
+            : null,
         duration: appointmentForm.duration || 30,
+        sendInvites: appointmentForm.sendInvites ?? false,
       };
 
-      const response = await fetch('/api/planner/appointments', {
-        method: 'POST',
+      const response = await fetch("/api/planner/appointments", {
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify(requestBody),
       });
 
       const responseText = await response.text();
       let responseData;
-      
+
       try {
         responseData = JSON.parse(responseText);
       } catch (parseError) {
-        console.error('Error parsing response:', parseError);
-        console.error('Response text:', responseText);
-        throw new Error('Invalid response from server');
+        console.error("Error parsing response:", parseError);
+        console.error("Response text:", responseText);
+        throw new Error("Invalid response from server");
       }
 
       if (!response.ok) {
-        throw new Error(responseData.message || responseData.error || 'Failed to create appointment');
+        throw new Error(
+          responseData.message ||
+            responseData.error ||
+            "Failed to create appointment",
+        );
       }
 
-      toast.success('Appointment created successfully!');
+      toast.success("Appointment created successfully!");
       closeAddModal();
+
+      // If user chose to send calendar invites and Office 365 is authenticated, send invite to participant
+      if (
+        appointmentForm.sendInvites &&
+        isOffice365Authenticated() &&
+        participantId &&
+        appointmentForm.participant_type
+      ) {
+        let attendeeEmails: string[] = [];
+        if (appointmentForm.participant_type === "job_seeker") {
+          const js = jobSeekers.find((j: any) => j.id === participantId);
+          if (js?.email) attendeeEmails.push(js.email);
+        } else if (appointmentForm.participant_type === "hiring_manager") {
+          const hm = hiringManagers.find((h: any) => h.id === participantId);
+          if (hm?.email) attendeeEmails.push(hm.email);
+        }
+        if (attendeeEmails.length > 0) {
+          try {
+            const duration = appointmentForm.duration || 30;
+            const start = new Date(
+              `${appointmentForm.date}T${appointmentForm.time}`,
+            );
+            const end = new Date(start.getTime() + duration * 60 * 1000);
+            const event: CalendarEvent = {
+              subject: appointmentForm.type || "Appointment",
+              start: {
+                dateTime: start.toISOString(),
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              },
+              end: {
+                dateTime: end.toISOString(),
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              },
+              body: appointmentForm.description
+                ? { contentType: "text", content: appointmentForm.description }
+                : undefined,
+            };
+            await sendCalendarInvite(event, attendeeEmails);
+            toast.success("Calendar invite sent to participant(s).");
+          } catch (inviteErr) {
+            console.error("Error sending calendar invite:", inviteErr);
+            toast.error(
+              "Appointment created but calendar invite could not be sent.",
+            );
+          }
+        }
+      }
 
       // If we opened from "Interview" flow (jobs applied / candidate flow), update application status to Interview
       const pending = pendingApplicationStatusUpdate.current;
@@ -989,23 +1211,31 @@ const Planners = () => {
           const patchRes = await fetch(
             `/api/job-seekers/${pending.candidateId}/applications/${pending.applicationId}`,
             {
-              method: 'PATCH',
+              method: "PATCH",
               headers: {
-                'Content-Type': 'application/json',
+                "Content-Type": "application/json",
                 Authorization: `Bearer ${token}`,
               },
-              body: JSON.stringify({ status: 'Interview' }),
-            }
+              body: JSON.stringify({ status: "Interview" }),
+            },
           );
           const patchData = await patchRes.json().catch(() => ({}));
           if (patchRes.ok) {
-            toast.success('Application status set to Interview.');
+            toast.success("Application status set to Interview.");
           } else {
-            toast.error(patchData.message || 'Appointment created but failed to update application status.');
+            toast.error(
+              patchData.message ||
+                "Appointment created but failed to update application status.",
+            );
           }
         } catch (patchErr) {
-          console.error('Error updating application status after appointment:', patchErr);
-          toast.error('Appointment created but failed to update application status.');
+          console.error(
+            "Error updating application status after appointment:",
+            patchErr,
+          );
+          toast.error(
+            "Appointment created but failed to update application status.",
+          );
         } finally {
           pendingApplicationStatusUpdate.current = null;
         }
@@ -1013,20 +1243,22 @@ const Planners = () => {
 
       // Reset form
       setAppointmentForm({
-        date: '',
-        time: '',
-        type: '',
-        participant_type: '',
-        participant_id: '',
-        job_id: '',
-        description: '',
+        date: "",
+        time: "",
+        type: "",
+        participant_type: "",
+        participant_id: "",
+        job_id: "",
+        description: "",
         duration: 30,
+        sendInvites: true,
       });
-      
+
       fetchAppointments();
     } catch (err) {
-      console.error('Error saving appointment:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to save appointment';
+      console.error("Error saving appointment:", err);
+      const errorMessage =
+        err instanceof Error ? err.message : "Failed to save appointment";
       toast.error(errorMessage);
     } finally {
       setIsSavingAppointment(false);
@@ -1040,14 +1272,14 @@ const Planners = () => {
 
   // Handle Close
   const handleClose = () => {
-    router.push('/dashboard');
+    router.push("/dashboard");
   };
 
   // Handle Pin Toggle
   const handlePinToggle = () => {
     const newPinnedState = !isPinned;
     setIsPinned(newPinnedState);
-    localStorage.setItem('plannerPinned', newPinnedState ? 'true' : 'false');
+    localStorage.setItem("plannerPinned", newPinnedState ? "true" : "false");
   };
 
   // Get appointments for List view (sorted chronologically)
@@ -1062,7 +1294,10 @@ const Planners = () => {
       const dateB = new Date(`${b.date}T${b.time}`);
       return dateA.getTime() - dateB.getTime();
     });
-    return sorted.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+    return sorted.slice(
+      (currentPage - 1) * itemsPerPage,
+      currentPage * itemsPerPage,
+    );
   };
 
   // Render Week View
@@ -1070,7 +1305,7 @@ const Planners = () => {
     const startOfWeek = new Date(selectedDate);
     const day = startOfWeek.getDay();
     startOfWeek.setDate(startOfWeek.getDate() - day);
-    
+
     const weekDays = [];
     for (let i = 0; i < 7; i++) {
       const date = new Date(startOfWeek);
@@ -1082,42 +1317,62 @@ const Planners = () => {
       <div className="px-6 py-6">
         <div className="grid grid-cols-7 gap-1">
           {weekDays.map((date, index) => {
-            const dateString = date.toISOString().split('T')[0];
+            const dateString = date.toISOString().split("T")[0];
             const dayAppointments = appointments
-              .filter(apt => apt.date === dateString)
-              .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+              .filter((apt) => apt.date === dateString)
+              .sort((a, b) => (a.time || "").localeCompare(b.time || ""));
             const isToday = date.toDateString() === new Date().toDateString();
-            
+
             return (
               <div
                 key={index}
-                className={`min-h-[400px] border border-gray-200 p-2 ${isToday ? 'bg-blue-50 border-blue-300' : ''}`}
+                className={`min-h-[400px] border border-gray-200 p-2 ${isToday ? "bg-blue-50 border-blue-300" : ""}`}
               >
-                <div className={`text-sm font-medium mb-2 ${isToday ? 'text-blue-600' : 'text-gray-700'}`}>
+                <div
+                  className={`text-sm font-medium mb-2 ${isToday ? "text-blue-600" : "text-gray-700"}`}
+                >
                   {dayNames[date.getDay()]}
                 </div>
-                <div className={`text-lg font-bold mb-2 ${isToday ? 'text-blue-600' : 'text-gray-900'}`}>
+                <div
+                  className={`text-lg font-bold mb-2 ${isToday ? "text-blue-600" : "text-gray-900"}`}
+                >
                   {date.getDate()}
                 </div>
                 <div className="space-y-1">
                   {dayAppointments.length === 0 ? (
-                    <div className="text-xs text-gray-400 text-center py-2">No appointments</div>
+                    <div className="text-xs text-gray-400 text-center py-2">
+                      No appointments
+                    </div>
                   ) : (
-                    dayAppointments.map(apt => (
-                      <div key={apt.id} className="p-2 bg-blue-100 rounded text-xs hover:bg-blue-200 transition-colors">
-                        <div className="font-medium text-gray-900">{apt.time || '—'}</div>
-                        <div className="text-gray-700 capitalize">{apt.type || '—'}</div>
+                    dayAppointments.map((apt) => (
+                      <div
+                        key={apt.id}
+                        className="p-2 bg-blue-100 rounded text-xs hover:bg-blue-200 transition-colors"
+                      >
+                        <div className="font-medium text-gray-900">
+                          {apt.time || "—"}
+                        </div>
+                        <div className="text-gray-700 capitalize">
+                          {apt.type || "—"}
+                        </div>
                         {apt.client && (
-                          <div className="text-gray-600 truncate" title={apt.client}>
+                          <div
+                            className="text-gray-600 truncate"
+                            title={apt.client}
+                          >
                             {apt.client}
                           </div>
                         )}
                         {apt.status && (
-                          <div className={`text-[10px] mt-1 px-1 rounded inline-block ${
-                            apt.status === 'live' ? 'bg-red-500 text-white' :
-                            apt.status === 'completed' ? 'bg-green-500 text-white' :
-                            'bg-gray-200 text-gray-700'
-                          }`}>
+                          <div
+                            className={`text-[10px] mt-1 px-1 rounded inline-block ${
+                              apt.status === "live"
+                                ? "bg-red-500 text-white"
+                                : apt.status === "completed"
+                                  ? "bg-green-500 text-white"
+                                  : "bg-gray-200 text-gray-700"
+                            }`}
+                          >
                             {apt.status}
                           </div>
                         )}
@@ -1146,40 +1401,60 @@ const Planners = () => {
 
   // Render Day View
   const renderDayView = () => {
-    const dateString = selectedDate.toISOString().split('T')[0];
+    const dateString = selectedDate.toISOString().split("T")[0];
     const dayAppointments = appointments
-      .filter(apt => apt.date === dateString)
-      .sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+      .filter((apt) => apt.date === dateString)
+      .sort((a, b) => (a.time || "").localeCompare(b.time || ""));
     const isToday = selectedDate.toDateString() === new Date().toDateString();
 
     return (
       <div className="px-6 py-6">
-        <div className={`border border-gray-200 p-4 rounded ${isToday ? 'bg-blue-50 border-blue-300' : ''}`}>
-          <div className={`text-lg font-bold mb-4 ${isToday ? 'text-blue-600' : 'text-gray-900'}`}>
-            {dayNames[selectedDate.getDay()]}, {monthNames[selectedDate.getMonth()]} {selectedDate.getDate()}, {selectedDate.getFullYear()}
+        <div
+          className={`border border-gray-200 p-4 rounded ${isToday ? "bg-blue-50 border-blue-300" : ""}`}
+        >
+          <div
+            className={`text-lg font-bold mb-4 ${isToday ? "text-blue-600" : "text-gray-900"}`}
+          >
+            {dayNames[selectedDate.getDay()]},{" "}
+            {monthNames[selectedDate.getMonth()]} {selectedDate.getDate()},{" "}
+            {selectedDate.getFullYear()}
           </div>
           <div className="space-y-3">
             {dayAppointments.length === 0 ? (
-              <div className="text-gray-500 text-center py-8">No appointments for this day</div>
+              <div className="text-gray-500 text-center py-8">
+                No appointments for this day
+              </div>
             ) : (
-              dayAppointments.map(apt => (
-                <div key={apt.id} className="border border-gray-200 p-4 rounded bg-white shadow-sm hover:shadow-md transition-shadow">
+              dayAppointments.map((apt) => (
+                <div
+                  key={apt.id}
+                  className="border border-gray-200 p-4 rounded bg-white shadow-sm hover:shadow-md transition-shadow"
+                >
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-3">
-                      <div className="font-medium text-lg text-gray-900">{apt.time || '—'}</div>
-                      <div className="text-gray-600 capitalize">{apt.type || '—'}</div>
+                      <div className="font-medium text-lg text-gray-900">
+                        {apt.time || "—"}
+                      </div>
+                      <div className="text-gray-600 capitalize">
+                        {apt.type || "—"}
+                      </div>
                     </div>
                     {apt.status && (
-                      <span className={`px-2 py-1 rounded text-xs font-medium ${
-                        apt.status === 'live' ? 'bg-red-100 text-red-800' :
-                        apt.status === 'completed' ? 'bg-green-100 text-green-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
-                        {apt.status.charAt(0).toUpperCase() + apt.status.slice(1)}
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-medium ${
+                          apt.status === "live"
+                            ? "bg-red-100 text-red-800"
+                            : apt.status === "completed"
+                              ? "bg-green-100 text-green-800"
+                              : "bg-gray-100 text-gray-800"
+                        }`}
+                      >
+                        {apt.status.charAt(0).toUpperCase() +
+                          apt.status.slice(1)}
                       </span>
                     )}
                   </div>
-                  
+
                   <div className="grid grid-cols-2 gap-2 text-sm">
                     {apt.client && (
                       <div>
@@ -1196,17 +1471,19 @@ const Planners = () => {
                     {apt.duration && (
                       <div>
                         <span className="text-gray-500">Duration:</span>
-                        <span className="ml-2 text-gray-900">{apt.duration} minutes</span>
+                        <span className="ml-2 text-gray-900">
+                          {apt.duration} minutes
+                        </span>
                       </div>
                     )}
                   </div>
-                  
+
                   {apt.description && (
                     <div className="text-gray-600 mt-3 p-2 bg-gray-50 rounded">
                       {apt.description}
                     </div>
                   )}
-                  
+
                   {apt.zoom_join_url && (
                     <div className="mt-3 flex gap-2">
                       <a
@@ -1281,8 +1558,8 @@ const Planners = () => {
         if (!apt.date) return false;
         const aptDate = new Date(apt.date);
         const y = aptDate.getFullYear();
-        const m = String(aptDate.getMonth() + 1).padStart(2, '0');
-        const d = String(aptDate.getDate()).padStart(2, '0');
+        const m = String(aptDate.getMonth() + 1).padStart(2, "0");
+        const d = String(aptDate.getDate()).padStart(2, "0");
         return `${y}-${m}-${d}` === target;
       });
     }
@@ -1298,7 +1575,7 @@ const Planners = () => {
 
     // Apply sorts
     const sortKeys = Object.keys(columnSorts).filter(
-      (key) => columnSorts[key] !== null
+      (key) => columnSorts[key] !== null,
     );
     if (sortKeys.length > 0) {
       filtered.sort((a, b) => {
@@ -1328,8 +1605,13 @@ const Planners = () => {
   const renderListView = () => {
     const startIndex = (currentPage - 1) * itemsPerPage;
     const endIndex = startIndex + itemsPerPage;
-    const paginatedAppointments = filteredAndSortedAppointments.slice(startIndex, endIndex);
-    const totalPages = Math.ceil(filteredAndSortedAppointments.length / itemsPerPage);
+    const paginatedAppointments = filteredAndSortedAppointments.slice(
+      startIndex,
+      endIndex,
+    );
+    const totalPages = Math.ceil(
+      filteredAndSortedAppointments.length / itemsPerPage,
+    );
     const totalItems = filteredAndSortedAppointments.length;
 
     const typeOptions = [
@@ -1357,7 +1639,9 @@ const Planners = () => {
       <div className="px-6 pb-6">
         {listViewFilterDate && (
           <div className="mb-2 flex items-center gap-2">
-            <span className="text-sm text-gray-600">Showing appointments for {listViewFilterDate}</span>
+            <span className="text-sm text-gray-600">
+              Showing appointments for {listViewFilterDate}
+            </span>
             <button
               type="button"
               onClick={() => setListViewFilterDate(null)}
@@ -1368,7 +1652,10 @@ const Planners = () => {
           </div>
         )}
         <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-          <DndContext collisionDetection={closestCenter} onDragEnd={handleColumnDragEnd}>
+          <DndContext
+            collisionDetection={closestCenter}
+            onDragEnd={handleColumnDragEnd}
+          >
             <div className="overflow-x-auto">
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
@@ -1390,13 +1677,18 @@ const Planners = () => {
                             sortState={columnSorts[key] || null}
                             filterValue={columnFilters[key] || null}
                             onSort={() => handleColumnSort(key)}
-                            onFilterChange={(value) => handleColumnFilter(key, value)}
+                            onFilterChange={(value) =>
+                              handleColumnFilter(key, value)
+                            }
                             filterType={columnInfo.filterType}
                             filterOptions={
-                              key === "type" ? typeOptions :
-                              key === "status" ? statusOptions :
-                              key === "zoom" ? zoomOptions :
-                              undefined
+                              key === "type"
+                                ? typeOptions
+                                : key === "status"
+                                  ? statusOptions
+                                  : key === "zoom"
+                                    ? zoomOptions
+                                    : undefined
                             }
                           />
                         );
@@ -1407,57 +1699,87 @@ const Planners = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {paginatedAppointments.length > 0 ? (
                     paginatedAppointments.map((appointment) => {
-                      const isHighlighted = appointment.id === highlightAppointmentId;
+                      const isHighlighted =
+                        appointment.id === highlightAppointmentId;
                       return (
-                      <tr
-                        key={appointment.id}
-                        ref={isHighlighted ? (el) => { listViewRowRef.current = el; } : undefined}
-                        className={`hover:bg-gray-50 ${isHighlighted ? 'bg-blue-100 ring-1 ring-blue-300' : ''}`}
-                      >
-                        {columnFields.map((key) => {
-                          const value = getColumnValue(appointment, key);
-                          return (
-                            <td key={key} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {key === 'status' && appointment.status ? (
-                                <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                  appointment.status === 'live' ? 'bg-red-100 text-red-800' :
-                                  appointment.status === 'completed' ? 'bg-green-100 text-green-800' :
-                                  'bg-gray-100 text-gray-800'
-                                }`}>
-                                  {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
-                                </span>
-                              ) : key === 'participant' && appointment.participant_type && appointment.participant_id ? (
-                                <RecordNameResolver
-                                  id={appointment.participant_id}
-                                  type={getParticipantRecordType(appointment.participant_type) || 'organization'}
-                                  clickable={appointment.participant_type !== 'internal'}
-                                  fallback={appointment.client || '—'}
-                                  className="text-sm"
-                                />
-                              ) : key === 'zoom' && appointment.zoom_join_url ? (
-                                <a
-                                  href={appointment.zoom_join_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-blue-600 hover:text-blue-800"
-                                  onClick={(e) => e.stopPropagation()}
-                                >
-                                  Join
-                                </a>
-                              ) : key === 'type' ? (
-                                <span className="capitalize">{value}</span>
-                              ) : (
-                                value
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
+                        <tr
+                          key={appointment.id}
+                          ref={
+                            isHighlighted
+                              ? (el) => {
+                                  listViewRowRef.current = el;
+                                }
+                              : undefined
+                          }
+                          className={`hover:bg-gray-50 ${isHighlighted ? "bg-blue-100 ring-1 ring-blue-300" : ""}`}
+                        >
+                          {columnFields.map((key) => {
+                            const value = getColumnValue(appointment, key);
+                            return (
+                              <td
+                                key={key}
+                                className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                              >
+                                {key === "status" && appointment.status ? (
+                                  <span
+                                    className={`px-2 py-1 rounded text-xs font-medium ${
+                                      appointment.status === "live"
+                                        ? "bg-red-100 text-red-800"
+                                        : appointment.status === "completed"
+                                          ? "bg-green-100 text-green-800"
+                                          : "bg-gray-100 text-gray-800"
+                                    }`}
+                                  >
+                                    {appointment.status
+                                      .charAt(0)
+                                      .toUpperCase() +
+                                      appointment.status.slice(1)}
+                                  </span>
+                                ) : key === "participant" &&
+                                  appointment.participant_type &&
+                                  appointment.participant_id ? (
+                                  <RecordNameResolver
+                                    id={appointment.participant_id}
+                                    type={
+                                      getParticipantRecordType(
+                                        appointment.participant_type,
+                                      ) || "organization"
+                                    }
+                                    clickable={
+                                      appointment.participant_type !==
+                                      "internal"
+                                    }
+                                    fallback={appointment.client || "—"}
+                                    className="text-sm"
+                                  />
+                                ) : key === "zoom" &&
+                                  appointment.zoom_join_url ? (
+                                  <a
+                                    href={appointment.zoom_join_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 hover:text-blue-800"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    Join
+                                  </a>
+                                ) : key === "type" ? (
+                                  <span className="capitalize">{value}</span>
+                                ) : (
+                                  value
+                                )}
+                              </td>
+                            );
+                          })}
+                        </tr>
                       );
                     })
                   ) : (
                     <tr>
-                      <td colSpan={columnFields.length} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                      <td
+                        colSpan={columnFields.length}
+                        className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
+                      >
                         {Object.keys(columnFilters).length > 0
                           ? "No appointments found matching your filters."
                           : "No appointments found."}
@@ -1475,14 +1797,16 @@ const Planners = () => {
           <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
             <div className="flex-1 flex justify-between sm:hidden">
               <button
-                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
                 disabled={currentPage === 1}
                 className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Previous
               </button>
               <button
-                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                onClick={() =>
+                  setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                }
                 disabled={currentPage === totalPages}
                 className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -1492,9 +1816,15 @@ const Planners = () => {
             <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
               <div>
                 <p className="text-sm text-gray-700">
-                  Showing <span className="font-medium">{totalItems === 0 ? 0 : startIndex + 1}</span> to{" "}
-                  <span className="font-medium">{Math.min(endIndex, totalItems)}</span> of{" "}
-                  <span className="font-medium">{totalItems}</span> results
+                  Showing{" "}
+                  <span className="font-medium">
+                    {totalItems === 0 ? 0 : startIndex + 1}
+                  </span>{" "}
+                  to{" "}
+                  <span className="font-medium">
+                    {Math.min(endIndex, totalItems)}
+                  </span>{" "}
+                  of <span className="font-medium">{totalItems}</span> results
                 </p>
               </div>
               {totalPages > 1 && (
@@ -1504,7 +1834,9 @@ const Planners = () => {
                     aria-label="Pagination"
                   >
                     <button
-                      onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                      onClick={() =>
+                        setCurrentPage((prev) => Math.max(1, prev - 1))
+                      }
                       disabled={currentPage === 1}
                       className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -1523,39 +1855,46 @@ const Planners = () => {
                         />
                       </svg>
                     </button>
-                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
-                      if (
-                        page === 1 ||
-                        page === totalPages ||
-                        (page >= currentPage - 1 && page <= currentPage + 1)
-                      ) {
-                        return (
-                          <button
-                            key={page}
-                            onClick={() => setCurrentPage(page)}
-                            className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
-                              currentPage === page
-                                ? "z-10 bg-blue-50 border-blue-500 text-blue-600"
-                                : "bg-white border-gray-300 text-gray-500 hover:bg-gray-50"
-                            }`}
-                          >
-                            {page}
-                          </button>
-                        );
-                      } else if (page === currentPage - 2 || page === currentPage + 2) {
-                        return (
-                          <span
-                            key={page}
-                            className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700"
-                          >
-                            ...
-                          </span>
-                        );
-                      }
-                      return null;
-                    })}
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(
+                      (page) => {
+                        if (
+                          page === 1 ||
+                          page === totalPages ||
+                          (page >= currentPage - 1 && page <= currentPage + 1)
+                        ) {
+                          return (
+                            <button
+                              key={page}
+                              onClick={() => setCurrentPage(page)}
+                              className={`relative inline-flex items-center px-4 py-2 border text-sm font-medium ${
+                                currentPage === page
+                                  ? "z-10 bg-blue-50 border-blue-500 text-blue-600"
+                                  : "bg-white border-gray-300 text-gray-500 hover:bg-gray-50"
+                              }`}
+                            >
+                              {page}
+                            </button>
+                          );
+                        } else if (
+                          page === currentPage - 2 ||
+                          page === currentPage + 2
+                        ) {
+                          return (
+                            <span
+                              key={page}
+                              className="relative inline-flex items-center px-4 py-2 border border-gray-300 bg-white text-sm font-medium text-gray-700"
+                            >
+                              ...
+                            </span>
+                          );
+                        }
+                        return null;
+                      },
+                    )}
                     <button
-                      onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                      onClick={() =>
+                        setCurrentPage((prev) => Math.min(totalPages, prev + 1))
+                      }
                       disabled={currentPage === totalPages}
                       className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -1604,68 +1943,107 @@ const Planners = () => {
             <div className="flex items-center space-x-4">
               {/* Calendar Icon */}
               <div className="w-8 h-8 bg-gray-600 rounded flex items-center justify-center">
-                <svg className="w-5 h-5 text-white" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z" clipRule="evenodd" />
+                <svg
+                  className="w-5 h-5 text-white"
+                  fill="currentColor"
+                  viewBox="0 0 20 20"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 5a1 1 0 000 2h8a1 1 0 100-2H6z"
+                    clipRule="evenodd"
+                  />
                 </svg>
               </div>
-              
+
               {/* Month Navigation */}
               <div className="flex items-center space-x-2">
-                <button 
-                  onClick={() => navigateMonth('prev')}
+                <button
+                  onClick={() => navigateMonth("prev")}
                   className="text-gray-600 hover:text-gray-800"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M15 19l-7-7 7-7"
+                    />
                   </svg>
                 </button>
                 <span className="text-lg font-medium text-gray-900">
-                  {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+                  {monthNames[currentMonth.getMonth()]}{" "}
+                  {currentMonth.getFullYear()}
                 </span>
-                <button 
-                  onClick={() => navigateMonth('next')}
+                <button
+                  onClick={() => navigateMonth("next")}
                   className="text-gray-600 hover:text-gray-800"
                 >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M9 5l7 7-7 7"
+                    />
                   </svg>
                 </button>
               </div>
-              
+
               {/* Total Appointments */}
               <div className="text-sm text-gray-600">
                 {totalAppointments} APPOINTMENTS
               </div>
             </div>
-            
+
             {/* Right Side */}
             <div className="flex items-center space-x-4">
               {/* Add Button */}
-              <button 
+              <button
                 onClick={handleAddClick}
                 className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2"
               >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                <svg
+                  className="w-4 h-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M12 4v16m8-8H4"
+                  />
                 </svg>
                 <span>ADD</span>
               </button>
-              
+
               {/* View Type Selector */}
               <div className="flex bg-gray-100 rounded-lg p-1">
-                {(['Month', 'Week', 'Day', 'List'] as const).map((view) => (
+                {(["Month", "Week", "Day", "List"] as const).map((view) => (
                   <button
                     key={view}
                     onClick={() => {
                       setViewType(view);
-                      if (view === 'Week' || view === 'Day') {
+                      if (view === "Week" || view === "Day") {
                         setSelectedDate(new Date());
                       }
                     }}
                     className={`px-3 py-1 rounded text-sm font-medium ${
                       viewType === view
-                        ? 'bg-blue-600 text-white'
-                        : 'text-gray-600 hover:text-gray-800'
+                        ? "bg-blue-600 text-white"
+                        : "text-gray-600 hover:text-gray-800"
                     }`}
                   >
                     {view}
@@ -1673,45 +2051,21 @@ const Planners = () => {
                 ))}
               </div>
 
-              {/* Microsoft 365 Connect — for calendar invites from Job Seeker / Hiring Manager / Jobs views */}
-              {isOffice365Connected ? (
-                <div className="flex items-center gap-2">
-                  <span className="flex items-center gap-2 text-sm text-green-700 bg-green-50 px-3 py-1.5 rounded-lg border border-green-200">
-                    <span className="w-2 h-2 rounded-full bg-green-500" aria-hidden />
-                    Microsoft 365 connected
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      disconnectOffice365();
-                      setIsOffice365Connected(false);
-                      toast.info('Microsoft 365 disconnected.');
-                    }}
-                    className="text-xs text-gray-500 hover:text-gray-700"
-                  >
-                    Disconnect
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    initializeOffice365Auth().catch((err) => toast.error(err?.message || 'Failed to start sign-in'));
-                  }}
-                  className="text-sm text-blue-600 hover:text-blue-800 font-medium px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100"
-                >
-                  Connect Microsoft 365
-                </button>
-              )}
-              
               {/* Action Icons */}
               <div className="flex items-center space-x-2">
                 <button
                   onClick={handlePinToggle}
                   className="p-2 text-gray-600 hover:text-gray-800"
-                  title={isPinned ? 'Unpin' : 'Pin'}
+                  title={isPinned ? "Unpin" : "Pin"}
                 >
                   {isPinned ? <FiLock size={20} /> : <FiUnlock size={20} />}
+                </button>
+                <button
+                  onClick={() => fetchAppointments()}
+                  className="p-2 text-gray-600 hover:text-gray-800"
+                  title="Refresh"
+                >
+                  <FiRefreshCw size={20} />
                 </button>
                 <button
                   onClick={handlePrint}
@@ -1732,37 +2086,78 @@ const Planners = () => {
           </div>
         </div>
 
+        {/* Internal user filter: All or specific user's appointments */}
+        <div className="flex items-center gap-2 px-6 py-4 no-print self-end">
+          <label
+            htmlFor="planner-owner-filter"
+            className="text-sm text-gray-600 whitespace-nowrap"
+          >
+            Show:
+          </label>
+          <select
+            id="planner-owner-filter"
+            value={ownerFilter === "all" ? "all" : ownerFilter}
+            onChange={(e) => {
+              const v = e.target.value;
+              setOwnerFilter(v === "all" ? "all" : parseInt(v, 10));
+            }}
+            className="border border-gray-300 rounded px-2 py-1.5 text-sm bg-white min-w-[160px]"
+          >
+            <option value="all">All internal users&apos; appointments</option>
+            {internalUsers.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name} ({u.email})
+              </option>
+            ))}
+          </select>
+        </div>
+
         {/* Calendar Content */}
-        {viewType === 'Month' && (
+        {viewType === "Month" && (
           <div className="px-6 py-6">
             {/* Day Headers */}
             <div className="grid grid-cols-7 gap-1 mb-2">
               {dayNames.map((day) => (
-                <div key={day} className="text-center text-sm font-medium text-gray-600 py-2">
+                <div
+                  key={day}
+                  className="text-center text-sm font-medium text-gray-600 py-2"
+                >
                   {day}
                 </div>
               ))}
             </div>
-            
+
             {/* Calendar Days */}
             <div className="grid grid-cols-7 gap-1">
               {calendarData.map((dayData, index) => (
                 <div
                   key={index}
                   className={`min-h-[80px] border border-gray-200 p-2 cursor-pointer hover:bg-gray-50 ${
-                    dayData.isToday ? 'bg-blue-100 border-blue-300' : ''
+                    dayData.isToday ? "bg-blue-100 border-blue-300" : ""
                   }`}
                   onClick={() => setSelectedDate(dayData.date)}
                 >
                   <div className="flex flex-col h-full">
-                    <div className={`text-sm ${
-                      dayData.isToday ? 'text-blue-600 font-semibold' : dayData.isCurrentMonth ? 'text-gray-700' : 'text-gray-300'
-                    }`}>
+                    <div
+                      className={`text-sm ${
+                        dayData.isToday
+                          ? "text-blue-600 font-semibold"
+                          : dayData.isCurrentMonth
+                            ? "text-gray-700"
+                            : "text-gray-300"
+                      }`}
+                    >
                       {dayData.day}
                     </div>
-                    <div className={`text-lg font-bold mt-1 ${
-                      dayData.isToday ? 'text-blue-600' : dayData.isCurrentMonth ? 'text-blue-500' : 'text-gray-300'
-                    }`}>
+                    <div
+                      className={`text-lg font-bold mt-1 ${
+                        dayData.isToday
+                          ? "text-blue-600"
+                          : dayData.isCurrentMonth
+                            ? "text-blue-500"
+                            : "text-gray-300"
+                      }`}
+                    >
                       {dayData.appointmentCount || 0}
                     </div>
                   </div>
@@ -1772,24 +2167,43 @@ const Planners = () => {
           </div>
         )}
 
-        {viewType === 'Week' && renderWeekView()}
-        {viewType === 'Day' && renderDayView()}
-        {viewType === 'List' && renderListView()}
+        {viewType === "Week" && renderWeekView()}
+        {viewType === "Day" && renderDayView()}
+        {viewType === "List" && renderListView()}
 
         {/* Available Section (Month View) - between Calendar and Appointments */}
-        {viewType === 'Month' && (
+        {viewType === "Month" && (
           <div className="px-6 pb-4 no-print">
-            <section className="bg-white border border-gray-200 rounded-lg overflow-hidden" aria-label="Available">
+            <section
+              className="bg-white border border-gray-200 rounded-lg overflow-hidden"
+              aria-label="Available"
+            >
               <h3 className="text-sm font-semibold text-gray-700 px-4 py-3 border-b border-gray-200 bg-gray-50">
                 Available
               </h3>
               <div className="p-4 min-h-[60px]">
                 {selectedDate ? (
                   <p className="text-sm text-gray-600">
-                    Selected: {selectedDate.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })} — {appointments.filter((apt) => apt.date === selectedDate.toISOString().split('T')[0]).length} appointment(s) this day
+                    Selected:{" "}
+                    {selectedDate.toLocaleDateString(undefined, {
+                      weekday: "short",
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}{" "}
+                    —{" "}
+                    {
+                      appointments.filter(
+                        (apt) =>
+                          apt.date === selectedDate.toISOString().split("T")[0],
+                      ).length
+                    }{" "}
+                    appointment(s) this day
                   </p>
                 ) : (
-                  <p className="text-sm text-gray-500">Select a day in the calendar above.</p>
+                  <p className="text-sm text-gray-500">
+                    Select a day in the calendar above.
+                  </p>
                 )}
               </div>
             </section>
@@ -1797,15 +2211,17 @@ const Planners = () => {
         )}
 
         {/* Appointments Section (Month View) - directly below Available */}
-        {viewType === 'Month' && (
+        {viewType === "Month" && (
           <div className="px-6 pb-6 no-print">
-            <h3 className="text-sm font-semibold text-gray-700 mb-2">Appointments</h3>
+            <h3 className="text-sm font-semibold text-gray-700 mb-2">
+              Appointments
+            </h3>
             {/* Items Per Page */}
             <div className="bg-gray-50 px-4 py-2 border-x border-gray-200">
               <div className="flex items-center space-x-2 text-sm text-gray-600">
                 <span>ITEMS PER PAGE:</span>
-                <select 
-                  value={monthTableItemsPerPage} 
+                <select
+                  value={monthTableItemsPerPage}
                   onChange={(e) => {
                     setMonthTableItemsPerPage(Number(e.target.value));
                     setMonthTableCurrentPage(1);
@@ -1818,10 +2234,13 @@ const Planners = () => {
                 </select>
               </div>
             </div>
-            
+
             {/* Appointments Table */}
             <div className="bg-white border border-gray-200 rounded-b-lg overflow-hidden">
-              <DndContext collisionDetection={closestCenter} onDragEnd={handleMonthTableColumnDragEnd}>
+              <DndContext
+                collisionDetection={closestCenter}
+                onDragEnd={handleMonthTableColumnDragEnd}
+              >
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-gray-200">
                     <thead className="bg-gray-50">
@@ -1862,15 +2281,22 @@ const Planners = () => {
                                 columnKey={key}
                                 label={columnInfo.label}
                                 sortState={monthTableColumnSorts[key] || null}
-                                filterValue={monthTableColumnFilters[key] || null}
+                                filterValue={
+                                  monthTableColumnFilters[key] || null
+                                }
                                 onSort={() => handleMonthTableColumnSort(key)}
-                                onFilterChange={(value) => handleMonthTableColumnFilter(key, value)}
+                                onFilterChange={(value) =>
+                                  handleMonthTableColumnFilter(key, value)
+                                }
                                 filterType={columnInfo.filterType}
                                 filterOptions={
-                                  key === "type" ? typeOptions :
-                                  key === "status" ? statusOptions :
-                                  key === "zoom" ? zoomOptions :
-                                  undefined
+                                  key === "type"
+                                    ? typeOptions
+                                    : key === "status"
+                                      ? statusOptions
+                                      : key === "zoom"
+                                        ? zoomOptions
+                                        : undefined
                                 }
                               />
                             );
@@ -1880,16 +2306,28 @@ const Planners = () => {
                     </thead>
                     <tbody className="bg-white divide-y divide-gray-200">
                       {(() => {
-                        const startIndex = (monthTableCurrentPage - 1) * monthTableItemsPerPage;
+                        const startIndex =
+                          (monthTableCurrentPage - 1) * monthTableItemsPerPage;
                         const endIndex = startIndex + monthTableItemsPerPage;
-                        const paginatedAppointments = filteredAndSortedSelectedDayAppointments.slice(startIndex, endIndex);
-                        const totalPages = Math.ceil(filteredAndSortedSelectedDayAppointments.length / monthTableItemsPerPage);
-                        const totalItems = filteredAndSortedSelectedDayAppointments.length;
+                        const paginatedAppointments =
+                          filteredAndSortedSelectedDayAppointments.slice(
+                            startIndex,
+                            endIndex,
+                          );
+                        const totalPages = Math.ceil(
+                          filteredAndSortedSelectedDayAppointments.length /
+                            monthTableItemsPerPage,
+                        );
+                        const totalItems =
+                          filteredAndSortedSelectedDayAppointments.length;
 
                         if (paginatedAppointments.length === 0) {
                           return (
                             <tr>
-                              <td colSpan={monthTableColumnFields.length} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center">
+                              <td
+                                colSpan={monthTableColumnFields.length}
+                                className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 text-center"
+                              >
                                 {Object.keys(monthTableColumnFilters).length > 0
                                   ? "No appointments found matching your filters."
                                   : "No appointments for selected date"}
@@ -1903,24 +2341,44 @@ const Planners = () => {
                             {monthTableColumnFields.map((key) => {
                               const value = getColumnValue(appointment, key);
                               return (
-                                <td key={key} className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                                  {key === 'status' && appointment.status ? (
-                                    <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                      appointment.status === 'live' ? 'bg-red-100 text-red-800' :
-                                      appointment.status === 'completed' ? 'bg-green-100 text-green-800' :
-                                      'bg-gray-100 text-gray-800'
-                                    }`}>
-                                      {appointment.status.charAt(0).toUpperCase() + appointment.status.slice(1)}
+                                <td
+                                  key={key}
+                                  className="px-6 py-4 whitespace-nowrap text-sm text-gray-500"
+                                >
+                                  {key === "status" && appointment.status ? (
+                                    <span
+                                      className={`px-2 py-1 rounded text-xs font-medium ${
+                                        appointment.status === "live"
+                                          ? "bg-red-100 text-red-800"
+                                          : appointment.status === "completed"
+                                            ? "bg-green-100 text-green-800"
+                                            : "bg-gray-100 text-gray-800"
+                                      }`}
+                                    >
+                                      {appointment.status
+                                        .charAt(0)
+                                        .toUpperCase() +
+                                        appointment.status.slice(1)}
                                     </span>
-                                  ) : key === 'participant' && appointment.participant_type && appointment.participant_id ? (
+                                  ) : key === "participant" &&
+                                    appointment.participant_type &&
+                                    appointment.participant_id ? (
                                     <RecordNameResolver
                                       id={appointment.participant_id}
-                                      type={getParticipantRecordType(appointment.participant_type) || 'organization'}
-                                      clickable={appointment.participant_type !== 'internal'}
-                                      fallback={appointment.client || '—'}
+                                      type={
+                                        getParticipantRecordType(
+                                          appointment.participant_type,
+                                        ) || "organization"
+                                      }
+                                      clickable={
+                                        appointment.participant_type !==
+                                        "internal"
+                                      }
+                                      fallback={appointment.client || "—"}
                                       className="text-sm"
                                     />
-                                  ) : key === 'zoom' && appointment.zoom_join_url ? (
+                                  ) : key === "zoom" &&
+                                    appointment.zoom_join_url ? (
                                     <div className="flex flex-col gap-1">
                                       <a
                                         href={appointment.zoom_join_url}
@@ -1944,7 +2402,7 @@ const Planners = () => {
                                         </a>
                                       )}
                                     </div>
-                                  ) : key === 'type' ? (
+                                  ) : key === "type" ? (
                                     <span className="capitalize">{value}</span>
                                   ) : (
                                     value
@@ -1959,13 +2417,18 @@ const Planners = () => {
                   </table>
                 </div>
               </DndContext>
-              
+
               {/* Pagination */}
               {(() => {
-                const startIndex = (monthTableCurrentPage - 1) * monthTableItemsPerPage;
+                const startIndex =
+                  (monthTableCurrentPage - 1) * monthTableItemsPerPage;
                 const endIndex = startIndex + monthTableItemsPerPage;
-                const totalPages = Math.ceil(filteredAndSortedSelectedDayAppointments.length / monthTableItemsPerPage);
-                const totalItems = filteredAndSortedSelectedDayAppointments.length;
+                const totalPages = Math.ceil(
+                  filteredAndSortedSelectedDayAppointments.length /
+                    monthTableItemsPerPage,
+                );
+                const totalItems =
+                  filteredAndSortedSelectedDayAppointments.length;
 
                 if (totalPages <= 1) return null;
 
@@ -1973,14 +2436,22 @@ const Planners = () => {
                   <div className="px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6 overflow-x-auto min-w-0">
                     <div className="flex-1 flex justify-between sm:hidden">
                       <button
-                        onClick={() => setMonthTableCurrentPage(prev => Math.max(1, prev - 1))}
+                        onClick={() =>
+                          setMonthTableCurrentPage((prev) =>
+                            Math.max(1, prev - 1),
+                          )
+                        }
                         disabled={monthTableCurrentPage === 1}
                         className="relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
                         Previous
                       </button>
                       <button
-                        onClick={() => setMonthTableCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                        onClick={() =>
+                          setMonthTableCurrentPage((prev) =>
+                            Math.min(totalPages, prev + 1),
+                          )
+                        }
                         disabled={monthTableCurrentPage === totalPages}
                         className="ml-3 relative inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                       >
@@ -1990,9 +2461,16 @@ const Planners = () => {
                     <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
                       <div>
                         <p className="text-sm text-gray-700">
-                          Showing <span className="font-medium">{totalItems === 0 ? 0 : startIndex + 1}</span> to{" "}
-                          <span className="font-medium">{Math.min(endIndex, totalItems)}</span> of{" "}
-                          <span className="font-medium">{totalItems}</span> results
+                          Showing{" "}
+                          <span className="font-medium">
+                            {totalItems === 0 ? 0 : startIndex + 1}
+                          </span>{" "}
+                          to{" "}
+                          <span className="font-medium">
+                            {Math.min(endIndex, totalItems)}
+                          </span>{" "}
+                          of <span className="font-medium">{totalItems}</span>{" "}
+                          results
                         </p>
                       </div>
                       <div>
@@ -2001,7 +2479,11 @@ const Planners = () => {
                           aria-label="Pagination"
                         >
                           <button
-                            onClick={() => setMonthTableCurrentPage(prev => Math.max(1, prev - 1))}
+                            onClick={() =>
+                              setMonthTableCurrentPage((prev) =>
+                                Math.max(1, prev - 1),
+                              )
+                            }
                             disabled={monthTableCurrentPage === 1}
                             className="relative inline-flex items-center px-2 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
@@ -2020,11 +2502,15 @@ const Planners = () => {
                               />
                             </svg>
                           </button>
-                          {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+                          {Array.from(
+                            { length: totalPages },
+                            (_, i) => i + 1,
+                          ).map((page) => {
                             if (
                               page === 1 ||
                               page === totalPages ||
-                              (page >= monthTableCurrentPage - 1 && page <= monthTableCurrentPage + 1)
+                              (page >= monthTableCurrentPage - 1 &&
+                                page <= monthTableCurrentPage + 1)
                             ) {
                               return (
                                 <button
@@ -2039,7 +2525,10 @@ const Planners = () => {
                                   {page}
                                 </button>
                               );
-                            } else if (page === monthTableCurrentPage - 2 || page === monthTableCurrentPage + 2) {
+                            } else if (
+                              page === monthTableCurrentPage - 2 ||
+                              page === monthTableCurrentPage + 2
+                            ) {
                               return (
                                 <span
                                   key={page}
@@ -2052,7 +2541,11 @@ const Planners = () => {
                             return null;
                           })}
                           <button
-                            onClick={() => setMonthTableCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                            onClick={() =>
+                              setMonthTableCurrentPage((prev) =>
+                                Math.min(totalPages, prev + 1),
+                              )
+                            }
                             disabled={monthTableCurrentPage === totalPages}
                             className="relative inline-flex items-center px-2 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
                           >
@@ -2087,7 +2580,9 @@ const Planners = () => {
         <div className="fixed inset-0 bg-black/50 flex justify-center items-center px-4 z-50">
           <div className="bg-white p-8 rounded-lg shadow-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center mb-6">
-              <h3 className="text-2xl font-semibold text-gray-800">Add Appointment</h3>
+              <h3 className="text-2xl font-semibold text-gray-800">
+                Add Appointment
+              </h3>
               <button
                 onClick={closeAddModal}
                 className="text-gray-500 hover:text-gray-700"
@@ -2102,12 +2597,22 @@ const Planners = () => {
                 {/* Date */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Date <span className="text-red-500">*</span>
+                    Date{" "}
+                    {appointmentForm.date ? (
+                      <span className="text-green-600">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
                   </label>
                   <input
                     type="date"
                     value={appointmentForm.date}
-                    onChange={(e) => setAppointmentForm(prev => ({ ...prev, date: e.target.value }))}
+                    onChange={(e) =>
+                      setAppointmentForm((prev) => ({
+                        ...prev,
+                        date: e.target.value,
+                      }))
+                    }
                     className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
                   />
@@ -2116,12 +2621,22 @@ const Planners = () => {
                 {/* Time */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Time <span className="text-red-500">*</span>
+                    Time{" "}
+                    {appointmentForm.time ? (
+                      <span className="text-green-600">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
                   </label>
                   <input
                     type="time"
                     value={appointmentForm.time}
-                    onChange={(e) => setAppointmentForm(prev => ({ ...prev, time: e.target.value }))}
+                    onChange={(e) =>
+                      setAppointmentForm((prev) => ({
+                        ...prev,
+                        time: e.target.value,
+                      }))
+                    }
                     className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
                   />
@@ -2130,11 +2645,21 @@ const Planners = () => {
                 {/* Type */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Type <span className="text-red-500">*</span>
+                    Type{" "}
+                    {appointmentForm.type ? (
+                      <span className="text-green-600">✓</span>
+                    ) : (
+                      <span className="text-red-500">*</span>
+                    )}
                   </label>
                   <select
                     value={appointmentForm.type}
-                    onChange={(e) => setAppointmentForm(prev => ({ ...prev, type: e.target.value }))}
+                    onChange={(e) =>
+                      setAppointmentForm((prev) => ({
+                        ...prev,
+                        type: e.target.value,
+                      }))
+                    }
                     className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     required
                   >
@@ -2151,11 +2676,18 @@ const Planners = () => {
 
                 {/* Duration */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Duration (minutes)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Duration (minutes)
+                  </label>
                   <input
                     type="number"
                     value={appointmentForm.duration}
-                    onChange={(e) => setAppointmentForm(prev => ({ ...prev, duration: parseInt(e.target.value) || 30 }))}
+                    onChange={(e) =>
+                      setAppointmentForm((prev) => ({
+                        ...prev,
+                        duration: parseInt(e.target.value) || 30,
+                      }))
+                    }
                     min="15"
                     step="15"
                     className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -2165,84 +2697,200 @@ const Planners = () => {
 
               {/* Right Column */}
               <div className="space-y-4">
-                {/* Participant Type */}
+                {/* Participant: Job Seekers and Hiring Managers only, with Name + Record Number */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Participant Type
+                    Participant (optional)
                   </label>
                   <select
-                    value={appointmentForm.participant_type}
-                    onChange={(e) => setAppointmentForm(prev => ({ ...prev, participant_type: e.target.value, participant_id: '' }))}
+                    value={
+                      appointmentForm.participant_type &&
+                      appointmentForm.participant_id
+                        ? `${appointmentForm.participant_type}:${appointmentForm.participant_id}`
+                        : ""
+                    }
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (!v) {
+                        setAppointmentForm((prev) => ({
+                          ...prev,
+                          participant_type: "",
+                          participant_id: "",
+                        }));
+                        return;
+                      }
+                      const [type, id] = v.split(":");
+                      setAppointmentForm((prev) => ({
+                        ...prev,
+                        participant_type: type,
+                        participant_id: id,
+                      }));
+                    }}
                     className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={isLoadingLookups}
                   >
-                    <option value="">Select participant type</option>
-                    <option value="job_seeker">Job Seeker</option>
-                    <option value="hiring_manager">Hiring Manager</option>
-                    <option value="organization">Organization</option>
-                    <option value="internal">Internal</option>
+                    <option value="">Select participant (optional)</option>
+                    <optgroup label="Job Seekers">
+                      {jobSeekers.map((js: any) => {
+                        const name =
+                          js.full_name ||
+                          [js.first_name, js.last_name]
+                            .filter(Boolean)
+                            .join(" ") ||
+                          `#${js.id}`;
+                        const recNum = formatDisplayRecordNumber(
+                          "jobSeeker",
+                          js.record_number,
+                          js.id,
+                        );
+                        return (
+                          <option
+                            key={`js-${js.id}`}
+                            value={`job_seeker:${js.id}`}
+                          >
+                            {recNum} - {name}
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                    <optgroup label="Hiring Managers">
+                      {hiringManagers.map((hm: any) => {
+                        const name =
+                          hm.full_name ||
+                          [hm.first_name, hm.last_name]
+                            .filter(Boolean)
+                            .join(" ") ||
+                          `#${hm.id}`;
+                        const recNum = formatDisplayRecordNumber(
+                          "hiringManager",
+                          hm.record_number,
+                          hm.id,
+                        );
+                        return (
+                          <option
+                            key={`hm-${hm.id}`}
+                            value={`hiring_manager:${hm.id}`}
+                          >
+                            {recNum} - {name}
+                          </option>
+                        );
+                      })}
+                    </optgroup>
                   </select>
                 </div>
 
-                {/* Participant Selector */}
-                {appointmentForm.participant_type && (
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      {appointmentForm.participant_type === 'job_seeker' ? 'Job Seeker' :
-                       appointmentForm.participant_type === 'hiring_manager' ? 'Hiring Manager' :
-                       appointmentForm.participant_type === 'organization' ? 'Organization' : 'Internal User'}
-                    </label>
-                    <select
-                      value={appointmentForm.participant_id}
-                      onChange={(e) => setAppointmentForm(prev => ({ ...prev, participant_id: e.target.value }))}
-                      className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      disabled={isLoadingLookups}
-                    >
-                      <option value="">Select {appointmentForm.participant_type.replace('_', ' ')}</option>
-                      {appointmentForm.participant_type === 'job_seeker' && jobSeekers.map((js: any) => (
-                        <option key={js.id} value={js.id}>
-                          {js.full_name || `${js.first_name} ${js.last_name}`}
-                        </option>
-                      ))}
-                      {appointmentForm.participant_type === 'hiring_manager' && hiringManagers.map((hm: any) => (
-                        <option key={hm.id} value={hm.id}>
-                          {hm.full_name || `${hm.first_name} ${hm.last_name}`}
-                        </option>
-                      ))}
-                      {appointmentForm.participant_type === 'organization' && organizations.map((org: any) => (
-                        <option key={org.id} value={org.id}>
-                          {org.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
                 {/* Job Selector */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Job (Optional)</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Job (Optional)
+                  </label>
                   <select
                     value={appointmentForm.job_id}
-                    onChange={(e) => setAppointmentForm(prev => ({ ...prev, job_id: e.target.value }))}
+                    onChange={(e) =>
+                      setAppointmentForm((prev) => ({
+                        ...prev,
+                        job_id: e.target.value,
+                      }))
+                    }
                     className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                     disabled={isLoadingLookups}
                   >
                     <option value="">Select job (optional)</option>
-                    {jobs.map((job: any) => (
-                      <option key={job.id} value={job.id}>
-                        {job.job_title}
-                      </option>
-                    ))}
+                    {jobs.map((job: any) => {
+                      const recNum = formatDisplayRecordNumber(
+                        "job",
+                        job.record_number,
+                        job.id,
+                      );
+                      return (
+                        <option key={job.id} value={job.id}>
+                          {recNum} - {job.job_title || "Untitled Job"}
+                        </option>
+                      );
+                    })}
                   </select>
                 </div>
               </div>
             </div>
 
+            {/* Invitations: who will receive the invite + Send / Not send */}
+            <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">
+                Invitations
+              </h4>
+              <p className="text-xs text-gray-500 mb-2">
+                People who will receive the calendar invite (when &quot;Send to
+                participants&quot; is enabled):
+              </p>
+              <ul className="text-sm text-gray-700 list-disc list-inside mb-3 min-h-6">
+                {appointmentForm.participant_type &&
+                appointmentForm.participant_id ? (
+                  (() => {
+                    const id = parseInt(appointmentForm.participant_id, 10);
+                    if (appointmentForm.participant_type === "job_seeker") {
+                      const js = jobSeekers.find((j: any) => j.id === id);
+                      const name = js
+                        ? js.full_name ||
+                          [js.first_name, js.last_name]
+                            .filter(Boolean)
+                            .join(" ") ||
+                          `#${js.id}`
+                        : `Participant #${id}`;
+                      return <li key="p">{name}</li>;
+                    }
+                    if (appointmentForm.participant_type === "hiring_manager") {
+                      const hm = hiringManagers.find((h: any) => h.id === id);
+                      const name = hm
+                        ? hm.full_name ||
+                          [hm.first_name, hm.last_name]
+                            .filter(Boolean)
+                            .join(" ") ||
+                          `#${hm.id}`
+                        : `Participant #${id}`;
+                      return <li key="p">{name}</li>;
+                    }
+                    return null;
+                  })()
+                ) : (
+                  <li className="text-gray-400">No participant selected</li>
+                )}
+              </ul>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={appointmentForm.sendInvites}
+                  onChange={(e) =>
+                    setAppointmentForm((prev) => ({
+                      ...prev,
+                      sendInvites: e.target.checked,
+                    }))
+                  }
+                  className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700">
+                  Send calendar invite to participants
+                </span>
+              </label>
+              {!appointmentForm.sendInvites && (
+                <p className="text-xs text-gray-500 mt-1">
+                  Not sending to participants
+                </p>
+              )}
+            </div>
+
             {/* Description - Full Width */}
             <div className="mt-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Description / Notes</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Description / Notes
+              </label>
               <textarea
                 value={appointmentForm.description}
-                onChange={(e) => setAppointmentForm(prev => ({ ...prev, description: e.target.value }))}
+                onChange={(e) =>
+                  setAppointmentForm((prev) => ({
+                    ...prev,
+                    description: e.target.value,
+                  }))
+                }
                 rows={4}
                 className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
                 placeholder="Add any notes or description for this appointment..."
@@ -2260,10 +2908,15 @@ const Planners = () => {
               </button>
               <button
                 onClick={handleSaveAppointment}
-                disabled={isSavingAppointment || !appointmentForm.date || !appointmentForm.time || !appointmentForm.type}
+                disabled={
+                  isSavingAppointment ||
+                  !appointmentForm.date ||
+                  !appointmentForm.time ||
+                  !appointmentForm.type
+                }
                 className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isSavingAppointment ? 'Saving...' : 'Save Appointment'}
+                {isSavingAppointment ? "Saving..." : "Save Appointment"}
               </button>
             </div>
           </div>

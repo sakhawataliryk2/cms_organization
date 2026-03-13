@@ -11,6 +11,7 @@ import ClientSubmissionModal from '@/components/ClientSubmissionModal';
 import AddNoteModal from '@/components/AddNoteModal';
 import { formatRecordId } from '@/lib/recordIdFormatter';
 import { toast } from 'sonner';
+import { getRecordNumberFromId } from '@/lib/getRecordNumberFromId';
 
 interface PrescreenedCandidate {
   id: number;
@@ -59,6 +60,21 @@ const PLACEHOLDER_COLUMNS: Omit<CandidateColumn, 'candidates' | 'count'>[] = [
   { id: 'starting', title: 'Job Seekers Starting', color: 'bg-sky-50', accent: 'border-sky-400' },
   { id: 'assignment', title: 'Job Seekers on Assignment', color: 'bg-violet-50', accent: 'border-violet-400' },
 ];
+
+/** Fetches and displays job record number in client-safe way (useEffect). */
+function JobRecordNumber({ jobNumericId }: { jobNumericId: number }) {
+  const [recordNumber, setRecordNumber] = useState<number | null>(null);
+  useEffect(() => {
+    if (!jobNumericId || jobNumericId < 1) return;
+    let cancelled = false;
+    getRecordNumberFromId(jobNumericId, 'job').then((num) => {
+      if (!cancelled && num != null) setRecordNumber(num);
+    });
+    return () => { cancelled = true; };
+  }, [jobNumericId]);
+  const display = recordNumber ?? jobNumericId;
+  return <>{formatRecordId(display, 'job')}</>;
+}
 
 export default function CandidateFlowDashboard() {
   const { user } = useAuth();
@@ -381,6 +397,8 @@ export default function CandidateFlowDashboard() {
       candidates: [],
     }));
 
+    console.log(columns);
+
     setColumns([
       prescreenedColumn,
       submittedColumn,
@@ -540,7 +558,7 @@ export default function CandidateFlowDashboard() {
           </div>
   
           <div className="text-slate-500 text-xs mt-0.5 truncate">
-            Record #{c.record_number ?? c.id}
+            {formatRecordId(c.record_number ?? c.id, 'jobSeeker')}
           </div>
         </div>
   
@@ -572,11 +590,11 @@ export default function CandidateFlowDashboard() {
     >
       <div>
         <div className="text-slate-800 font-medium truncate">{candidate.name}</div>
-        {candidate.jobId && (
+        {candidate.jobId && candidate.jobNumericId ? (
           <div className="text-slate-500 text-xs mt-0.5 truncate">
-            {candidate.jobId}
+            <JobRecordNumber jobNumericId={Number(candidate.jobNumericId)} />
           </div>
-        )}
+        ) : null}
       </div>
       <div className="mt-2 flex items-center justify-end text-teal-600 text-xs font-medium gap-1">
         <FiEye size={14} />
@@ -693,6 +711,7 @@ export default function CandidateFlowDashboard() {
                   )
                 ) : (() => {
                   const candidateList = column.candidates as Candidate[];
+                  console.log(candidateList);
                   if (candidateList.length === 0 && !anyLoading) {
                     if (column.id === 'submitted') {
                       return (

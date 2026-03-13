@@ -9,9 +9,21 @@ export const SUBMISSION_STATUS_DEFAULT = "Submitted";
 export const SUBMISSION_SOURCE_DEFAULT = "Recruiter";
 
 const SUBMISSION_TEMPLATES = [
-  { label: "Standard candidate summary", value: "Candidate has been pre-screened and is a strong fit for this role. Relevant experience and availability confirmed." },
-  { label: "Technical role summary", value: "Technical pre-screen completed. Skills align with job requirements. Ready for client submission." },
-  { label: "Senior/lead summary", value: "Senior candidate with leadership experience. Pre-screen positive. Notice period and salary expectations discussed." },
+  {
+    label: "Standard candidate summary",
+    value:
+      "Candidate has been pre-screened and is a strong fit for this role. Relevant experience and availability confirmed.",
+  },
+  {
+    label: "Technical role summary",
+    value:
+      "Technical pre-screen completed. Skills align with job requirements. Ready for client submission.",
+  },
+  {
+    label: "Senior/lead summary",
+    value:
+      "Senior candidate with leadership experience. Pre-screen positive. Notice period and salary expectations discussed.",
+  },
 ];
 
 interface Job {
@@ -60,9 +72,13 @@ export default function SubmissionFormModal({
   const [selectedJobId, setSelectedJobId] = useState<string>("");
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [status, setStatus] = useState(SUBMISSION_STATUS_DEFAULT);
-  const [submissionSource, setSubmissionSource] = useState(SUBMISSION_SOURCE_DEFAULT);
+  const [submissionSource, setSubmissionSource] = useState(
+    SUBMISSION_SOURCE_DEFAULT,
+  );
   const [comments, setComments] = useState("");
-  const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<Set<string>>(new Set());
+  const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<
+    Set<string>
+  >(new Set());
   const [jobSearchQuery, setJobSearchQuery] = useState("");
   const [jobsList, setJobsList] = useState<Job[]>([]);
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
@@ -74,7 +90,10 @@ export default function SubmissionFormModal({
   const templatesDropdownRef = useRef<HTMLDivElement>(null);
 
   const getToken = () =>
-    document.cookie.replace(/(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/, "$1");
+    document.cookie.replace(
+      /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+      "$1",
+    );
 
   useEffect(() => {
     if (!open) return;
@@ -113,7 +132,9 @@ export default function SubmissionFormModal({
     ? jobsList.filter((j) => {
         const q = jobSearchQuery.toLowerCase();
         const title = (j.job_title || "").toLowerCase();
-        const rec = String(formatRecordId(j.record_number ?? j.id, "job")).toLowerCase();
+        const rec = String(
+          formatRecordId(j.record_number ?? j.id, "job"),
+        ).toLowerCase();
         const id = String(j.id).toLowerCase();
         return title.includes(q) || rec.includes(q) || id.includes(q);
       })
@@ -121,8 +142,16 @@ export default function SubmissionFormModal({
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (jobDropdownRef.current && !jobDropdownRef.current.contains(e.target as Node)) setShowJobDropdown(false);
-      if (templatesDropdownRef.current && !templatesDropdownRef.current.contains(e.target as Node)) setShowTemplatesDropdown(false);
+      if (
+        jobDropdownRef.current &&
+        !jobDropdownRef.current.contains(e.target as Node)
+      )
+        setShowJobDropdown(false);
+      if (
+        templatesDropdownRef.current &&
+        !templatesDropdownRef.current.contains(e.target as Node)
+      )
+        setShowTemplatesDropdown(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
@@ -190,7 +219,9 @@ export default function SubmissionFormModal({
       onSuccess();
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Failed to create submission");
+      toast.error(
+        e instanceof Error ? e.message : "Failed to create submission",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -206,7 +237,9 @@ export default function SubmissionFormModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 overflow-y-auto p-4">
       <div className="flex flex-col max-h-[80vh] bg-white rounded-lg shadow-xl w-full max-w-2xl my-8">
         <div className="flex justify-between items-center p-4 border-b border-gray-200 shrink-0">
-          <h2 className="text-lg font-semibold text-gray-900">Submission Form</h2>
+          <h2 className="text-lg font-semibold text-gray-900">
+            Submission Form
+          </h2>
           <button
             type="button"
             onClick={onClose}
@@ -220,13 +253,17 @@ export default function SubmissionFormModal({
         <div className="p-4 space-y-4 overflow-y-auto min-h-0 flex-1">
           {!hasPrescreenNote && (
             <div className="bg-amber-50 border border-amber-200 rounded p-3 text-sm text-amber-800">
-              <strong>Tip:</strong> Consider logging a Pre-Screen note first (Notes → Add Note → Action: Pre-Screen) to record candidate evaluation before submission.
+              <strong>Tip:</strong> Consider logging a Pre-Screen note first
+              (Notes → Add Note → Action: Pre-Screen) to record candidate
+              evaluation before submission.
             </div>
           )}
 
           {/* Added By */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Added By</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Added By
+            </label>
             <div className="flex items-center gap-2 p-2 border border-gray-300 rounded bg-gray-50">
               <span className="text-gray-900">{currentUserName || "—"}</span>
               <FiCheck className="text-green-600 shrink-0" size={18} />
@@ -236,7 +273,12 @@ export default function SubmissionFormModal({
           {/* Jobs (required) */}
           <div ref={jobDropdownRef}>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Jobs <span className="text-red-500">*</span>
+              Jobs{" "}
+              {selectedJob ? (
+                <span className="text-green-500">✓</span>
+              ) : (
+                <span className="text-red-500">*</span>
+              )}
             </label>
             <div className="relative">
               <div className="flex border border-gray-300 rounded focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
@@ -282,9 +324,13 @@ export default function SubmissionFormModal({
               {showJobDropdown && (
                 <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-56 overflow-y-auto">
                   {isLoadingJobs ? (
-                    <div className="p-3 text-sm text-gray-500">Loading jobs...</div>
+                    <div className="p-3 text-sm text-gray-500">
+                      Loading jobs...
+                    </div>
                   ) : filteredJobs.length === 0 ? (
-                    <div className="p-3 text-sm text-gray-500">No jobs found</div>
+                    <div className="p-3 text-sm text-gray-500">
+                      No jobs found
+                    </div>
                   ) : (
                     filteredJobs.slice(0, 50).map((job) => (
                       <button
@@ -299,10 +345,13 @@ export default function SubmissionFormModal({
                         className="w-full text-left px-3 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0"
                       >
                         <span className="font-medium text-gray-900">
-                          {formatRecordId(job.record_number ?? job.id, "job")} {job.job_title || "Untitled"}
+                          {formatRecordId(job.record_number ?? job.id, "job")}{" "}
+                          {job.job_title || "Untitled"}
                         </span>
                         {job.organization_name && (
-                          <span className="block text-xs text-gray-500">{job.organization_name}</span>
+                          <span className="block text-xs text-gray-500">
+                            {job.organization_name}
+                          </span>
                         )}
                       </button>
                     ))
@@ -314,18 +363,26 @@ export default function SubmissionFormModal({
 
           {/* Candidates (read-only) */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Candidates</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Candidates
+            </label>
             <div className="flex items-center gap-2 p-2 border border-gray-300 rounded bg-gray-50">
-              <span className="inline-block w-2 h-2 rounded-full bg-green-500 shrink-0" aria-hidden />
+              <span
+                className="inline-block w-2 h-2 rounded-full bg-green-500 shrink-0"
+                aria-hidden
+              />
               <span className="text-gray-900">
-                {jobSeekerRecordId ? `${jobSeekerRecordId} ` : ""}{jobSeekerName || "—"}
+                {jobSeekerRecordId ? `${jobSeekerRecordId} ` : ""}
+                {jobSeekerName || "—"}
               </span>
             </div>
           </div>
 
           {/* Status */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Status
+            </label>
             <div className="flex items-center gap-2">
               <select
                 value={status}
@@ -345,7 +402,9 @@ export default function SubmissionFormModal({
 
           {/* Submission Source */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Submission Source</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Submission Source
+            </label>
             <select
               value={submissionSource}
               onChange={(e) => setSubmissionSource(e.target.value)}
@@ -360,16 +419,24 @@ export default function SubmissionFormModal({
 
           {/* Comments + Templates */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Comments</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Comments
+            </label>
             <div className="flex gap-2 mb-2" ref={templatesDropdownRef}>
               <div className="relative">
                 <button
                   type="button"
-                  onClick={() => setShowTemplatesDropdown(!showTemplatesDropdown)}
+                  onClick={() =>
+                    setShowTemplatesDropdown(!showTemplatesDropdown)
+                  }
                   className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 flex items-center gap-1"
                 >
                   SUBMISSION TEMPLATES
-                  <span className={`inline-block transition ${showTemplatesDropdown ? "rotate-180" : ""}`}>▼</span>
+                  <span
+                    className={`inline-block transition ${showTemplatesDropdown ? "rotate-180" : ""}`}
+                  >
+                    ▼
+                  </span>
                 </button>
                 {showTemplatesDropdown && (
                   <div className="absolute z-10 mt-1 left-0 min-w-[220px] bg-white border border-gray-300 rounded shadow-lg py-1">
@@ -399,7 +466,9 @@ export default function SubmissionFormModal({
           {/* Select Attachments */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <label className="block text-sm font-medium text-gray-700">SELECT ATTACHMENTS</label>
+              <label className="block text-sm font-medium text-gray-700">
+                SELECT ATTACHMENTS
+              </label>
               <div className="flex gap-2">
                 <button
                   type="button"
@@ -419,20 +488,31 @@ export default function SubmissionFormModal({
             </div>
             <p className="text-xs text-gray-500 mb-2">{jobSeekerName}</p>
             {documents.length === 0 ? (
-              <p className="text-sm text-gray-500 italic p-3 border border-gray-200 rounded">No documents available</p>
+              <p className="text-sm text-gray-500 italic p-3 border border-gray-200 rounded">
+                No documents available
+              </p>
             ) : (
               <div className="border border-gray-200 rounded overflow-hidden">
                 <table className="w-full border-collapse text-sm">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-200">
-                      <th className="text-left p-2 font-medium text-gray-700">Name</th>
-                      <th className="text-left p-2 font-medium text-gray-700">Date Added</th>
-                      <th className="text-left p-2 font-medium text-gray-700">Type</th>
+                      <th className="text-left p-2 font-medium text-gray-700">
+                        Name
+                      </th>
+                      <th className="text-left p-2 font-medium text-gray-700">
+                        Date Added
+                      </th>
+                      <th className="text-left p-2 font-medium text-gray-700">
+                        Type
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
                     {documents.map((doc) => (
-                      <tr key={doc.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <tr
+                        key={doc.id}
+                        className="border-b border-gray-100 hover:bg-gray-50"
+                      >
                         <td className="p-2">
                           <label className="flex items-center gap-2 cursor-pointer">
                             <input
@@ -441,13 +521,19 @@ export default function SubmissionFormModal({
                               onChange={() => toggleAttachment(doc.id)}
                               className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                             />
-                            <span>{doc.document_name || doc.name || "Untitled"}</span>
+                            <span>
+                              {doc.document_name || doc.name || "Untitled"}
+                            </span>
                           </label>
                         </td>
                         <td className="p-2 text-gray-600">
-                          {doc.created_at ? new Date(doc.created_at).toLocaleString() : "—"}
+                          {doc.created_at
+                            ? new Date(doc.created_at).toLocaleString()
+                            : "—"}
                         </td>
-                        <td className="p-2 text-gray-600">{doc.document_type || doc.type || "—"}</td>
+                        <td className="p-2 text-gray-600">
+                          {doc.document_type || doc.type || "—"}
+                        </td>
                       </tr>
                     ))}
                   </tbody>

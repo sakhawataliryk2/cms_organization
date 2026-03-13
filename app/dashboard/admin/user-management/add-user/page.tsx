@@ -514,9 +514,8 @@ function AddUserModal({
         confirmPassword: ''
     });
 
-    const [passwordMode, setPasswordMode] = useState<'manual' | 'auto'>('manual');
-    const [showPassword, setShowPassword] = useState(false);
-    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    // Passwords are always auto-generated; manual entry removed.
+    const [passwordMode] = useState<'manual' | 'auto'>('auto');
     const [createdPassword, setCreatedPassword] = useState<string | null>(null);
     const [offices, setOffices] = useState<Office[]>([]);
     const [teams, setTeams] = useState<Team[]>([]);
@@ -714,17 +713,6 @@ function AddUserModal({
             setError('Office and team selection are required');
             return;
         }
-        if (passwordMode === 'manual') {
-            if (formData.password !== formData.confirmPassword) {
-                setError('Passwords do not match');
-                return;
-            }
-            const pv = validateStrongPassword(formData.password);
-            if (!pv.valid) {
-                setError(pv.message || 'Invalid password');
-                return;
-            }
-        }
 
         setLoading(true);
 
@@ -741,9 +729,7 @@ function AddUserModal({
                 idNumber: formData.idNumber,
                 isAdmin: ['admin', 'owner', 'developer', 'administrator'].includes(formData.userType)
             };
-            if (passwordMode === 'manual') {
-                body.password = formData.password;
-            }
+            // No manual password; backend will auto-generate a strong temporary password.
 
             const response = await fetch('/api/users', {
                 method: 'POST',
@@ -1086,70 +1072,9 @@ function AddUserModal({
 
                             <div className="col-span-2">
                                 <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-                                <div className="flex gap-4 items-center mb-2">
-                                    <label className="flex items-center gap-2">
-                                        <input
-                                            type="radio"
-                                            name="passwordMode"
-                                            checked={passwordMode === 'manual'}
-                                            onChange={() => setPasswordMode('manual')}
-                                            className="text-blue-600"
-                                        />
-                                        <span className="text-sm">Enter manually</span>
-                                    </label>
-                                    <label className="flex items-center gap-2">
-                                        <input
-                                            type="radio"
-                                            name="passwordMode"
-                                            checked={passwordMode === 'auto'}
-                                            onChange={() => setPasswordMode('auto')}
-                                            className="text-blue-600"
-                                        />
-                                        <span className="text-sm">Auto-generate strong password</span>
-                                    </label>
-                                </div>
-                                {passwordMode === 'manual' && (
-                                    <>
-                                        <div className="relative flex gap-2">
-                                            <input
-                                                type={showPassword ? 'text' : 'password'}
-                                                name="password"
-                                                value={formData.password}
-                                                onChange={handleChange}
-                                                required={passwordMode === 'manual'}
-                                                placeholder="Min 8 chars, upper, lower, number, special"
-                                                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowPassword(!showPassword)}
-                                                className="p-2 border border-gray-300 rounded-md hover:bg-gray-50"
-                                                title={showPassword ? 'Hide' : 'Show'}
-                                            >
-                                                {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
-                                            </button>
-                                        </div>
-                                        <div className="relative flex gap-2 mt-2">
-                                            <input
-                                                type={showConfirmPassword ? 'text' : 'password'}
-                                                name="confirmPassword"
-                                                value={formData.confirmPassword}
-                                                onChange={handleChange}
-                                                required={passwordMode === 'manual'}
-                                                placeholder="Confirm password"
-                                                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            />
-                                            <button
-                                                type="button"
-                                                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                                                className="p-2 border border-gray-300 rounded-md hover:bg-gray-50"
-                                                title={showConfirmPassword ? 'Hide' : 'Show'}
-                                            >
-                                                {showConfirmPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
-                                            </button>
-                                        </div>
-                                    </>
-                                )}
+                                <p className="text-sm text-gray-600">
+                                    A strong temporary password will be auto-generated and sent to the user in their welcome email. They will be required to change it on first login.
+                                </p>
                             </div>
 
                             <div className="col-span-2">
