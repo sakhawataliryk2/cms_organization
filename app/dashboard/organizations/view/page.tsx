@@ -4889,7 +4889,7 @@ export default function OrganizationView() {
                               {actionLabel}
                             </span>
                           )}
-                          {/* Source Module Badge */}
+                          {/* Source / Author Badge */}
                           {(note as any).source_type === "hiring_manager" ? (
                             <span className="text-xs px-2 py-0.5 bg-amber-100 text-amber-800 rounded border border-amber-200 font-medium inline-flex items-center gap-1">
                               From Hiring Manager:{" "}
@@ -4902,7 +4902,7 @@ export default function OrganizationView() {
                             </span>
                           ) : (
                             <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded border">
-                              Organization
+                              {note.created_by_name || "Unknown User"}
                             </span>
                           )}
                         </div>
