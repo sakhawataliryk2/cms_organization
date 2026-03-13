@@ -3957,7 +3957,7 @@ export default function HiringManagerView() {
                             </span>
                           )}
                           <span className="text-xs px-2 py-0.5 bg-gray-100 text-gray-700 rounded border">
-                            Hiring Manager
+                            {note.created_by_name || "Unknown User"}
                           </span>
                         </div>
                         <div className="text-xs text-gray-500">
