@@ -1285,7 +1285,77 @@ const Planners = () => {
         return;
       }
 
-      const requestBody = {
+      // Resolve invitee emails before create so the backend can send invite emails
+      const apiUrl = (
+        process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080"
+      ).replace(/\/$/, "");
+      const byId = (list: any[], id: number) =>
+        list.find((r: any) => Number(r.id) === Number(id));
+      const fetchEmailForInvitee = async (
+        type: "job_seeker" | "hiring_manager" | "internal",
+        id: number
+      ): Promise<string | undefined> => {
+        if (type === "internal") {
+          const u = byId(internalUsers, id);
+          return u?.email;
+        }
+        try {
+          const path =
+            type === "job_seeker"
+              ? `${apiUrl}/api/job-seekers/${id}`
+              : `${apiUrl}/api/hiring-managers/${id}`;
+          const res = await fetch(path, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const record = data.jobSeeker ?? data.hiringManager ?? data;
+            return record?.email;
+          }
+        } catch (_) {
+          /* ignore */
+        }
+        return undefined;
+      };
+      const inviteeEmailsForBackend: string[] = [];
+      if (appointmentForm.sendInvites) {
+        const seen = new Set<string>();
+        const add = (email: string | undefined) => {
+          if (email && email.trim() && !seen.has(email.trim().toLowerCase())) {
+            seen.add(email.trim().toLowerCase());
+            inviteeEmailsForBackend.push(email.trim());
+          }
+        };
+        for (const { type, id } of invitees) {
+          if (type === "job_seeker") {
+            const js = byId(jobSeekers, id);
+            add(js?.email ?? (await fetchEmailForInvitee("job_seeker", id)));
+          } else if (type === "hiring_manager") {
+            const hm = byId(hiringManagers, id);
+            add(hm?.email ?? (await fetchEmailForInvitee("hiring_manager", id)));
+          } else if (type === "internal") {
+            const u = byId(internalUsers, id);
+            add(u?.email);
+          }
+        }
+        if (participantId && appointmentForm.participant_type) {
+          if (appointmentForm.participant_type === "job_seeker") {
+            const js = byId(jobSeekers, participantId);
+            add(
+              js?.email ??
+                (await fetchEmailForInvitee("job_seeker", participantId))
+            );
+          } else if (appointmentForm.participant_type === "hiring_manager") {
+            const hm = byId(hiringManagers, participantId);
+            add(
+              hm?.email ??
+                (await fetchEmailForInvitee("hiring_manager", participantId))
+            );
+          }
+        }
+      }
+
+      const requestBody: Record<string, unknown> = {
         date: appointmentForm.date,
         time: appointmentForm.time,
         type: appointmentForm.type,
@@ -1304,6 +1374,9 @@ const Planners = () => {
         duration: appointmentForm.duration || 30,
         sendInvites: appointmentForm.sendInvites ?? false,
       };
+      if (appointmentForm.sendInvites && inviteeEmailsForBackend.length > 0) {
+        requestBody.invitee_emails = inviteeEmailsForBackend;
+      }
 
       const response = await fetch("/api/planner/appointments", {
         method: "POST",
@@ -1338,6 +1411,9 @@ const Planners = () => {
 
       // If user chose to send calendar invites and Office 365 is authenticated, send invite to all invitees + primary participant
       if (appointmentForm.sendInvites && isOffice365Authenticated()) {
+        const apiUrl = (
+          process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080"
+        ).replace(/\/$/, "");
         const seen = new Set<string>();
         const attendeeEmails: string[] = [];
         const addEmail = (email: string | undefined) => {
@@ -1346,27 +1422,65 @@ const Planners = () => {
             attendeeEmails.push(email.trim());
           }
         };
+        // Helper: resolve email from list with coerced id (API may return number or string)
+        const byId = (list: any[], id: number) =>
+          list.find((r: any) => Number(r.id) === Number(id));
+        // Helper: fetch email from API when not in list (e.g. list pagination or missing field)
+        const fetchEmailForInvitee = async (
+          type: "job_seeker" | "hiring_manager" | "internal",
+          id: number
+        ): Promise<string | undefined> => {
+          if (type === "internal") {
+            const u = byId(internalUsers, id);
+            return u?.email;
+          }
+          try {
+            const path =
+              type === "job_seeker"
+                ? `${apiUrl}/api/job-seekers/${id}`
+                : `${apiUrl}/api/hiring-managers/${id}`;
+            const res = await fetch(path, {
+              headers: { Authorization: `Bearer ${token}` },
+            });
+            if (res.ok) {
+              const data = await res.json();
+              const record = data.jobSeeker ?? data.hiringManager ?? data;
+              return record?.email;
+            }
+          } catch (_) {
+            /* ignore */
+          }
+          return undefined;
+        };
         // Add emails from invitees (Job Seekers, Hiring Managers, Internal users)
         for (const { type, id } of invitees) {
           if (type === "job_seeker") {
-            const js = jobSeekers.find((j: any) => j.id === id);
-            addEmail(js?.email);
+            const js = byId(jobSeekers, id);
+            addEmail(js?.email ?? (await fetchEmailForInvitee("job_seeker", id)));
           } else if (type === "hiring_manager") {
-            const hm = hiringManagers.find((h: any) => h.id === id);
-            addEmail(hm?.email);
+            const hm = byId(hiringManagers, id);
+            addEmail(
+              hm?.email ?? (await fetchEmailForInvitee("hiring_manager", id))
+            );
           } else if (type === "internal") {
-            const u = internalUsers.find((u) => u.id === id);
+            const u = byId(internalUsers, id);
             addEmail(u?.email);
           }
         }
         // Add primary participant email if set and not already in invitees
         if (participantId && appointmentForm.participant_type) {
           if (appointmentForm.participant_type === "job_seeker") {
-            const js = jobSeekers.find((j: any) => j.id === participantId);
-            addEmail(js?.email);
+            const js = byId(jobSeekers, participantId);
+            addEmail(
+              js?.email ??
+                (await fetchEmailForInvitee("job_seeker", participantId))
+            );
           } else if (appointmentForm.participant_type === "hiring_manager") {
-            const hm = hiringManagers.find((h: any) => h.id === participantId);
-            addEmail(hm?.email);
+            const hm = byId(hiringManagers, participantId);
+            addEmail(
+              hm?.email ??
+                (await fetchEmailForInvitee("hiring_manager", participantId))
+            );
           }
         }
         if (attendeeEmails.length > 0) {
@@ -1398,6 +1512,13 @@ const Planners = () => {
               "Appointment created but calendar invite could not be sent.",
             );
           }
+        } else if (
+          invitees.length > 0 ||
+          (participantId && appointmentForm.participant_type)
+        ) {
+          toast.warning(
+            "No valid email addresses could be found for the selected invitees. Calendar invites were not sent.",
+          );
         }
       }
 

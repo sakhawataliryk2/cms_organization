@@ -86,6 +86,9 @@ export async function POST(request: NextRequest) {
         if (body.attendees && Array.isArray(body.attendees)) {
             appointmentData.attendees = body.attendees;
         }
+        if (body.invitee_emails && Array.isArray(body.invitee_emails)) {
+            appointmentData.invitee_emails = body.invitee_emails;
+        }
         if (body.sendInvites !== undefined) {
             appointmentData.send_invites = body.sendInvites;
         }
