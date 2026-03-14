@@ -32,6 +32,7 @@ interface Job {
   record_number?: number | string;
   organization_name?: string;
   status?: string;
+  archived_at?: string | null;
 }
 
 interface Document {
@@ -117,7 +118,14 @@ export default function SubmissionFormModal({
       const data = await res.json();
       if (res.ok) {
         const list = data.jobs ?? data.data ?? [];
-        setJobsList(Array.isArray(list) ? list : []);
+        const all = Array.isArray(list) ? list : [];
+        // Only show open, non-archived jobs for submission
+        const openNonArchived = all.filter(
+          (j: Job) =>
+            String(j.status ?? "").toLowerCase() === "open" &&
+            (j.archived_at == null || j.archived_at === "")
+        );
+        setJobsList(openNonArchived);
       } else {
         setJobsList([]);
       }

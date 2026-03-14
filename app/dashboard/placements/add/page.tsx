@@ -5,6 +5,7 @@ import { useState, useEffect, useRef, useMemo } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
+import { formatRecordId } from "@/lib/recordIdFormatter";
 
 /** Map job_type from API to placement add segment (URL path). */
 function jobTypeToPlacementSegment(jobType: string): string {
@@ -30,6 +31,10 @@ type JobItem = {
   organization_name?: string;
   organizationName?: string;
   status?: string;
+  archived_at?: string | null;
+  archivedAt?: string | null;
+  record_number?: number | string | null;
+  recordNumber?: number | string | null;
 };
 
 interface JobSearchSelectOption {
@@ -64,7 +69,11 @@ function JobSearchSelect({
   const listRef = useRef<HTMLDivElement>(null);
 
   const selectedOption = options.find((o) => String(o.id) === value);
-  const displayValue = selectedOption ? (selectedOption.sub ? `${selectedOption.name} · ${selectedOption.sub}` : selectedOption.name) : "";
+  const displayValue = selectedOption
+    ? selectedOption.sub
+      ? `${selectedOption.name} · ${selectedOption.sub}`
+      : selectedOption.name
+    : "";
 
   const filteredOptions = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -289,12 +298,16 @@ export default function AddPlacementLanding() {
   }, [searchParams, router]);
 
   const jobOptions = useMemo((): JobSearchSelectOption[] => {
-    return jobs.map((job) => {
+    const nonArchived = jobs.filter(
+      (job) => (job.archived_at ?? job.archivedAt) == null
+    );
+    return nonArchived.map((job) => {
       const id = String(job.id);
-      const name = job.job_title ?? job.jobTitle ?? "Untitled Job";
+      const recordNum = job.record_number ?? job.recordNumber ?? job.id;
+      const title = job.job_title ?? job.jobTitle ?? "Untitled Job";
+      const name = `${formatRecordId(recordNum, "job")} - ${title}`;
       const org = job.organization_name ?? job.organizationName ?? "";
-      const sub = [job.category, org].filter(Boolean).join(" · ");
-      return { id, name, sub: sub || undefined };
+      return { id, name, sub: org || undefined };
     });
   }, [jobs]);
 

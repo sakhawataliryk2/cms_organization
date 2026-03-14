@@ -208,6 +208,17 @@ export default function CandidateFlowDashboard() {
 
           const normalizeStatus = (s: any) => String(s || '').toLowerCase();
 
+          // Exclude from all stages from Submitted through Assignment if Withdrew or Client rejected
+          const hasWithdrew =
+            apps.some((a: any) => normalizeStatus(a?.status) === 'withdrew') ||
+            clientSubs.some((cs: any) => normalizeStatus(cs?.status) === 'withdrew');
+          const hasClientRejected =
+            apps.some((a: any) => normalizeStatus(a?.status) === 'client rejected') ||
+            clientSubs.some((cs: any) => normalizeStatus(cs?.status) === 'client rejected');
+          if (hasWithdrew || hasClientRejected) {
+            return;
+          }
+
           const getJobIdFromRecord = (record: any) => {
             if (!record) return null;
             return (
@@ -396,8 +407,6 @@ export default function CandidateFlowDashboard() {
       ...col,
       candidates: [],
     }));
-
-    console.log(columns);
 
     setColumns([
       prescreenedColumn,
@@ -711,7 +720,6 @@ export default function CandidateFlowDashboard() {
                   )
                 ) : (() => {
                   const candidateList = column.candidates as Candidate[];
-                  console.log(candidateList);
                   if (candidateList.length === 0 && !anyLoading) {
                     if (column.id === 'submitted') {
                       return (

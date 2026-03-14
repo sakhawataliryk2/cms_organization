@@ -1267,11 +1267,13 @@ export default function AddDirectHireJob() {
       }
 
       const resultId = isEditMode ? jobId : data.job?.id;
-      // Navigate based on where we came from
-      if (organizationIdFromUrl && !isEditMode) {
+      // After add/edit: go to the job view page (so "Add Job" from org summary lands on the new job)
+      if (resultId) {
+        router.push(`/dashboard/jobs/view?id=${resultId}`);
+      } else if (organizationIdFromUrl && !isEditMode) {
         router.push(`/dashboard/organizations/view?id=${organizationIdFromUrl}`);
       } else {
-        router.push(resultId ? `/dashboard/jobs/view?id=${resultId}` : "/dashboard/jobs");
+        router.push("/dashboard/jobs");
       }
     } catch (err) {
       console.error(`Error ${isEditMode ? "updating" : "creating"} Direct Hire job:`, err);

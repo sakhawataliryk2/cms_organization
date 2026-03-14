@@ -26,7 +26,10 @@ interface CustomFieldDefinition {
 
 /** Optional context for lookups (e.g. organizationId to filter hiring-managers by org) */
 export interface CustomFieldRendererContext {
+  /** @deprecated Use organizationIdOnlyForBillingContacts to filter only Billing contacts, not Reporting to */
   organizationId?: string;
+  /** When set, only fields whose label includes "billing" (e.g. Billing contacts) get HM/contacts filtered by this org. Reporting to stays unfiltered. */
+  organizationIdOnlyForBillingContacts?: string;
 }
 
 /** Renders * (required) or ✔ (valid) before the input when provided by parent */
@@ -205,10 +208,12 @@ interface CustomFieldRendererProps {
   allFields?: CustomFieldDefinition[];
   /** Full values record (needed for composite so sub-fields get values by field_name) */
   values?: Record<string, any>;
-  /** Optional context (e.g. organizationId) for lookup filtering */
+  /** Optional context (e.g. organizationIdOnlyForBillingContacts) for lookup filtering */
   context?: CustomFieldRendererContext;
   /** When set, render * (required) or ✔ (valid) before the input instead of next to the label */
   validationIndicator?: "required" | "valid";
+  /** When true, render this field as read-only regardless of field config */
+  forceReadOnly?: boolean;
 }
 
 export default function CustomFieldRenderer({
@@ -221,6 +226,7 @@ export default function CustomFieldRenderer({
   values: valuesRecord,
   context,
   validationIndicator,
+  forceReadOnly = false,
 }: CustomFieldRendererProps) {
   const rawValueStr = String(value ?? "").trim();
   const hasRealDateValue =
@@ -247,7 +253,7 @@ export default function CustomFieldRenderer({
     field.field_type === "date" &&
     isDateAddedLabel &&
     hasRealDateValue;
-  const readOnly = baseReadOnly || hasExistingValue;
+  const readOnly = baseReadOnly || hasExistingValue || forceReadOnly;
 
   // Dependent on another field: disabled until that field has a value
   const dependentOnFieldId = (field as any).dependent_on_field_id;
@@ -1696,6 +1702,13 @@ export default function CustomFieldRenderer({
           required={field.is_required}
           className={className}
           disabled={readOnly || isDisabledByDependency}
+          filterByParam={(() => {
+            if (field.lookup_type !== "hiring-managers" && (field as any).lookup_type !== "contacts") return undefined;
+            const orgId = context?.organizationIdOnlyForBillingContacts != null
+              ? ((field.field_label || "").toLowerCase().includes("billing") ? context.organizationIdOnlyForBillingContacts : undefined)
+              : context?.organizationId;
+            return orgId ? { key: "organization_id", value: orgId } : undefined;
+          })()}
         />
       );
     case "multiselect_lookup":
@@ -1709,22 +1722,29 @@ export default function CustomFieldRenderer({
                 ? String(value)
                 : "—"}
         </div>
-      ) : (
-        <MultiSelectLookupField
-          value={value ?? []}
-          onChange={(val) => onChange(field.field_name, Array.isArray(val) ? val : val)}
-          lookupType={(field.lookup_type as MultiSelectLookupType) || "organizations"}
-          placeholder={field.placeholder || "Type to search..."}
-          required={field.is_required}
-          className={className}
-          disabled={readOnly || isDisabledByDependency}
-          filterByParam={
-            field.lookup_type === "hiring-managers" && context?.organizationId
-              ? { key: "organization_id", value: context.organizationId }
-              : undefined
-          }
-        />
-      );
+      ) : (() => {
+        let filterByParam: { key: string; value: string } | undefined;
+        if (field.lookup_type === "hiring-managers") {
+          const orgId = context?.organizationIdOnlyForBillingContacts != null
+            ? ((field.field_label || "").toLowerCase().includes("billing") ? context.organizationIdOnlyForBillingContacts : undefined)
+            : context?.organizationId;
+          filterByParam = orgId ? { key: "organization_id", value: orgId } : undefined;
+        } else {
+          filterByParam = undefined;
+        }
+        return (
+          <MultiSelectLookupField
+            value={value ?? []}
+            onChange={(val) => onChange(field.field_name, Array.isArray(val) ? val : val)}
+            lookupType={(field.lookup_type as MultiSelectLookupType) || "organizations"}
+            placeholder={field.placeholder || "Type to search..."}
+            required={field.is_required}
+            className={className}
+            disabled={readOnly || isDisabledByDependency}
+            filterByParam={filterByParam}
+          />
+        );
+      })();
     default:
       // Check if this is a ZIP code field (label/type only — no field_name)
       const isZipCodeField =

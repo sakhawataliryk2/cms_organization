@@ -107,6 +107,8 @@ function SortablePinnedTab({
       case "hiringManager":
       case "hiring_manager":
         return "HM";
+      case "planner":
+        return "PL";
       case "task":
         return "T";
       case "placement":
