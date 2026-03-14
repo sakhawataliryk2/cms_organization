@@ -704,6 +704,26 @@ export default function AddPlacement() {
         }
 
         setCustomFieldValues((prev: Record<string, any>) => ({ ...prev, ...mapped }));
+
+        // Set billing contacts org when editing so Billing contact dropdown filters by org from first paint
+        const placementOrgId = placement.organization_id ?? placement.organizationId ?? placement.organization?.id;
+        if (placementOrgId != null) {
+          setBillingContactsOrganizationId(String(placementOrgId));
+        } else if (placement.job_id && jobs.length > 0) {
+          const job = jobs.find((j: any) => String(j.id) === String(placement.job_id));
+          const jobOrgId = job?.organization_id ?? job?.organizationId ?? job?.organization?.id;
+          if (jobOrgId != null) setBillingContactsOrganizationId(String(jobOrgId));
+        } else if (placement.job_seeker_id) {
+          try {
+            const jsRes = await fetch(`/api/job-seekers/${placement.job_seeker_id}`);
+            if (jsRes.ok) {
+              const jsData = await jsRes.json();
+              const js = jsData.jobSeeker ?? jsData.job_seeker ?? jsData;
+              const orgId = js?.organization_id ?? js?.organizationId ?? js?.organization?.id;
+              if (orgId != null) setBillingContactsOrganizationId(String(orgId));
+            }
+          } catch (_) { /* ignore */ }
+        }
       } catch (err) {
         console.error("Error fetching placement:", err);
         setError(err instanceof Error ? err.message : "An error occurred while fetching placement details");
@@ -1043,8 +1063,9 @@ export default function AddPlacement() {
                   labelNorm.includes("full") && labelNorm.includes("address");
                 if (isFullAddressField) return null;
 
+                const billingLabel = String((field.field_label ?? (field as any).label ?? field.field_name ?? "")).trim().toLowerCase();
                 const isBillingContactLookup =
-                  ((field.field_label || "").toLowerCase().includes("billing")) &&
+                  billingLabel.includes("billing") &&
                   field.field_type === "lookup" &&
                   ((field as any).lookup_type === "hiring-managers" || (field as any).lookup_type === "contacts");
                 const isStatusReadOnlyFromRedirect = Boolean(

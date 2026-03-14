@@ -847,6 +847,46 @@ const SECTION_CONFIG: Record<
       },
     },
   },
+  planner: {
+    types: [
+      { value: "PLANNER_APPOINTMENT_INVITE", label: "Planner – Appointment Invite" },
+    ],
+    placeholders: {
+      PLANNER_APPOINTMENT_INVITE: [
+        "{{appointmentType}}",
+        "{{appointmentDate}}",
+        "{{appointmentTime}}",
+        "{{duration}}",
+        "{{description}}",
+        "{{plannerUrl}}",
+        "{{recipientName}}",
+      ],
+    },
+    required: {
+      PLANNER_APPOINTMENT_INVITE: ["{{appointmentType}}", "{{appointmentDate}}", "{{appointmentTime}}"],
+    },
+    defaults: {
+      PLANNER_APPOINTMENT_INVITE: {
+        template_name: "Planner Appointment Invite",
+        subject: "Calendar invite: {{appointmentType}} on {{appointmentDate}} at {{appointmentTime}}",
+        body:
+          `<div>` +
+          `<h2>Appointment Invitation</h2>` +
+          `<p>Hello {{recipientName}},</p>` +
+          `<p>You are invited to the following appointment:</p>` +
+          `<ul>` +
+          `<li><strong>Type:</strong> {{appointmentType}}</li>` +
+          `<li><strong>Date:</strong> {{appointmentDate}}</li>` +
+          `<li><strong>Time:</strong> {{appointmentTime}}</li>` +
+          `<li><strong>Duration:</strong> {{duration}} minutes</li>` +
+          `</ul>` +
+          `<p><strong>Notes:</strong> {{description}}</p>` +
+          `<p><a href="{{plannerUrl}}">View in Planner</a></p>` +
+          `<p><em>This is an automated notification from the ATS.</em></p>` +
+          `</div>`,
+      },
+    },
+  },
 };
 
 const SECTION_LABELS: Record<string, string> = {
@@ -858,6 +898,7 @@ const SECTION_LABELS: Record<string, string> = {
   tasks: "Tasks",
   placements: "Placements",
   authentication: "Authentication",
+  planner: "Planner",
 };
 
 export default function EmailManagementSectionPage() {

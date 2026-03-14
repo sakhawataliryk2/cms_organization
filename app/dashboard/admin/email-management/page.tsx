@@ -51,6 +51,11 @@ const SECTIONS: Section[] = [
     name: "Authentication (new)",
     description: "Authentication and login security templates like 2FA codes",
   },
+  {
+    id: "planner",
+    name: "Planner",
+    description: "Planner appointment invite email template (calendar invite notifications)",
+  },
 ];
 
 export default function EmailManagementPage() {
