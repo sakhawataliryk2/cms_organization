@@ -28,8 +28,28 @@ interface CustomFieldDefinition {
 export interface CustomFieldRendererContext {
   /** @deprecated Use organizationIdOnlyForBillingContacts to filter only Billing contacts, not Reporting to */
   organizationId?: string;
-  /** When set, only fields whose label includes "billing" (e.g. Billing contacts) get HM/contacts filtered by this org. Reporting to stays unfiltered. */
+  /** When set, only fields whose label includes "billing" (e.g. Billing contact, Billing contacts) get HM/contacts filtered by this org. Reporting to stays unfiltered. */
   organizationIdOnlyForBillingContacts?: string;
+}
+
+/** True when the field is a billing-contact-style lookup (label or field_name contains "billing"); uses .includes() so "Billing contact" and "Billing contacts" both match. */
+function isBillingContactLookupField(
+  field: { field_label?: string | null; field_type?: string; lookup_type?: string; field_name?: string; [k: string]: any },
+): boolean {
+  const rawLabel =
+    field.field_label ??
+    (field as any).fieldLabel ??
+    field.label ??
+    "";
+  const label = String(rawLabel).trim().toLowerCase().replace(/\s+/g, " ");
+  const fieldName = String(field.field_name ?? "").trim().toLowerCase();
+  const hasBillingInLabel = label.includes("billing");
+  const hasBillingInName = fieldName.includes("billing");
+  if (!hasBillingInLabel && !hasBillingInName) return false;
+  const lt = String(
+    (field.lookup_type ?? (field as any).lookup_type) ?? "",
+  ).toLowerCase();
+  return lt === "hiring-managers" || lt === "hiring_managers" || lt === "contacts";
 }
 
 /** Renders * (required) or ✔ (valid) before the input when provided by parent */
@@ -1705,7 +1725,7 @@ export default function CustomFieldRenderer({
           filterByParam={(() => {
             if (field.lookup_type !== "hiring-managers" && (field as any).lookup_type !== "contacts") return undefined;
             const orgId = context?.organizationIdOnlyForBillingContacts != null
-              ? ((field.field_label || "").toLowerCase().includes("billing") ? context.organizationIdOnlyForBillingContacts : undefined)
+              ? (isBillingContactLookupField(field) ? context.organizationIdOnlyForBillingContacts : undefined)
               : context?.organizationId;
             return orgId ? { key: "organization_id", value: orgId } : undefined;
           })()}
@@ -1726,7 +1746,7 @@ export default function CustomFieldRenderer({
         let filterByParam: { key: string; value: string } | undefined;
         if (field.lookup_type === "hiring-managers") {
           const orgId = context?.organizationIdOnlyForBillingContacts != null
-            ? ((field.field_label || "").toLowerCase().includes("billing") ? context.organizationIdOnlyForBillingContacts : undefined)
+            ? (isBillingContactLookupField(field) ? context.organizationIdOnlyForBillingContacts : undefined)
             : context?.organizationId;
           filterByParam = orgId ? { key: "organization_id", value: orgId } : undefined;
         } else {

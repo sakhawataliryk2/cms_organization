@@ -67,6 +67,7 @@ interface Appointment {
 
 type ColumnSortState = "asc" | "desc" | null;
 type ColumnFilterState = string | null;
+type InviteeType = "job_seeker" | "hiring_manager" | "internal";
 
 // Sortable Column Header Component
 function SortableColumnHeader({
@@ -471,6 +472,9 @@ const Planners = () => {
     duration: 30,
     sendInvites: true,
   });
+  const [invitees, setInvitees] = useState<
+    { type: InviteeType; id: number }[]
+  >([]);
   const [isSavingAppointment, setIsSavingAppointment] = useState(false);
 
   // Lookup data for participants
@@ -589,6 +593,7 @@ const Planners = () => {
       participant_id: participantIdParam || prev.participant_id,
       job_id: jobIdParam || prev.job_id,
     }));
+    setInvitees([]);
     setShowAddModal(true);
   }, [searchParams]);
 
@@ -1223,6 +1228,7 @@ const Planners = () => {
       duration: 30,
       sendInvites: true,
     });
+    setInvitees([]);
     setShowAddModal(true);
   };
 
@@ -1330,20 +1336,38 @@ const Planners = () => {
       toast.success("Appointment created successfully!");
       closeAddModal();
 
-      // If user chose to send calendar invites and Office 365 is authenticated, send invite to participant
-      if (
-        appointmentForm.sendInvites &&
-        isOffice365Authenticated() &&
-        participantId &&
-        appointmentForm.participant_type
-      ) {
-        let attendeeEmails: string[] = [];
-        if (appointmentForm.participant_type === "job_seeker") {
-          const js = jobSeekers.find((j: any) => j.id === participantId);
-          if (js?.email) attendeeEmails.push(js.email);
-        } else if (appointmentForm.participant_type === "hiring_manager") {
-          const hm = hiringManagers.find((h: any) => h.id === participantId);
-          if (hm?.email) attendeeEmails.push(hm.email);
+      // If user chose to send calendar invites and Office 365 is authenticated, send invite to all invitees + primary participant
+      if (appointmentForm.sendInvites && isOffice365Authenticated()) {
+        const seen = new Set<string>();
+        const attendeeEmails: string[] = [];
+        const addEmail = (email: string | undefined) => {
+          if (email && email.trim() && !seen.has(email.trim().toLowerCase())) {
+            seen.add(email.trim().toLowerCase());
+            attendeeEmails.push(email.trim());
+          }
+        };
+        // Add emails from invitees (Job Seekers, Hiring Managers, Internal users)
+        for (const { type, id } of invitees) {
+          if (type === "job_seeker") {
+            const js = jobSeekers.find((j: any) => j.id === id);
+            addEmail(js?.email);
+          } else if (type === "hiring_manager") {
+            const hm = hiringManagers.find((h: any) => h.id === id);
+            addEmail(hm?.email);
+          } else if (type === "internal") {
+            const u = internalUsers.find((u) => u.id === id);
+            addEmail(u?.email);
+          }
+        }
+        // Add primary participant email if set and not already in invitees
+        if (participantId && appointmentForm.participant_type) {
+          if (appointmentForm.participant_type === "job_seeker") {
+            const js = jobSeekers.find((j: any) => j.id === participantId);
+            addEmail(js?.email);
+          } else if (appointmentForm.participant_type === "hiring_manager") {
+            const hm = hiringManagers.find((h: any) => h.id === participantId);
+            addEmail(hm?.email);
+          }
         }
         if (attendeeEmails.length > 0) {
           try {
@@ -1426,6 +1450,7 @@ const Planners = () => {
         duration: 30,
         sendInvites: true,
       });
+      setInvitees([]);
 
       fetchAppointments();
     } catch (err) {
@@ -2971,6 +2996,151 @@ const Planners = () => {
                     })}
                   </select>
                 </div>
+
+                {/* Invitees: multiple people to receive the calendar invite (Job Seekers, Hiring Managers, Internal users) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Invite to calendar (emails will receive the invite)
+                  </label>
+                  <select
+                    value=""
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      e.target.value = "";
+                      if (!v) return;
+                      const [type, idStr] = v.split(":");
+                      const id = parseInt(idStr, 10);
+                      if (!id || !type) return;
+                      const t = type as InviteeType;
+                      if (
+                        invitees.some((i) => i.type === t && i.id === id)
+                      )
+                        return;
+                      setInvitees((prev) => [...prev, { type: t, id }]);
+                    }}
+                    className="w-full p-2 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    disabled={isLoadingLookups}
+                  >
+                    <option value="">Add person to invite...</option>
+                    <optgroup label="Job Seekers">
+                      {jobSeekers.map((js: any) => {
+                        const name =
+                          js.full_name ||
+                          [js.first_name, js.last_name]
+                            .filter(Boolean)
+                            .join(" ") ||
+                          `#${js.id}`;
+                        const recNum = formatDisplayRecordNumber(
+                          "jobSeeker",
+                          js.record_number,
+                          js.id,
+                        );
+                        return (
+                          <option
+                            key={`inv-js-${js.id}`}
+                            value={`job_seeker:${js.id}`}
+                          >
+                            {recNum} - {name}
+                            {js.email ? ` (${js.email})` : ""}
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                    <optgroup label="Hiring Managers">
+                      {hiringManagers.map((hm: any) => {
+                        const name =
+                          hm.full_name ||
+                          [hm.first_name, hm.last_name]
+                            .filter(Boolean)
+                            .join(" ") ||
+                          `#${hm.id}`;
+                        const recNum = formatDisplayRecordNumber(
+                          "hiringManager",
+                          hm.record_number,
+                          hm.id,
+                        );
+                        return (
+                          <option
+                            key={`inv-hm-${hm.id}`}
+                            value={`hiring_manager:${hm.id}`}
+                          >
+                            {recNum} - {name}
+                            {hm.email ? ` (${hm.email})` : ""}
+                          </option>
+                        );
+                      })}
+                    </optgroup>
+                    <optgroup label="Internal users">
+                      {internalUsers.map((u) => (
+                        <option
+                          key={`inv-internal-${u.id}`}
+                          value={`internal:${u.id}`}
+                        >
+                          {u.name}
+                          {u.email ? ` (${u.email})` : ""}
+                        </option>
+                      ))}
+                    </optgroup>
+                  </select>
+                  {invitees.length > 0 && (
+                    <ul className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                      {invitees.map((inv, idx) => {
+                        let label = "";
+                        if (inv.type === "job_seeker") {
+                          const js = jobSeekers.find(
+                            (j: any) => j.id === inv.id,
+                          );
+                          label =
+                            js?.full_name ||
+                            [js?.first_name, js?.last_name]
+                              .filter(Boolean)
+                              .join(" ") ||
+                            `Job Seeker #${inv.id}`;
+                        } else if (inv.type === "hiring_manager") {
+                          const hm = hiringManagers.find(
+                            (h: any) => h.id === inv.id,
+                          );
+                          label =
+                            hm?.full_name ||
+                            [hm?.first_name, hm?.last_name]
+                              .filter(Boolean)
+                              .join(" ") ||
+                            `Hiring Manager #${inv.id}`;
+                        } else {
+                          const u = internalUsers.find(
+                            (u) => u.id === inv.id,
+                          );
+                          label = u?.name || `User #${inv.id}`;
+                        }
+                        return (
+                          <li
+                            key={`${inv.type}-${inv.id}-${idx}`}
+                            className="flex items-center justify-between text-sm bg-gray-50 rounded px-2 py-1.5"
+                          >
+                            <span className="text-gray-800 truncate">
+                              {label}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setInvitees((prev) =>
+                                  prev.filter(
+                                    (i) =>
+                                      !(i.type === inv.type && i.id === inv.id),
+                                  ),
+                                )
+                              }
+                              className="text-red-600 hover:text-red-800 ml-2 shrink-0"
+                              aria-label="Remove invitee"
+                            >
+                              <FiX size={14} />
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -2980,8 +3150,10 @@ const Planners = () => {
                 Invitations
               </h4>
               <p className="text-xs text-gray-500 mb-2">
-                People who will receive the calendar invite (when &quot;Send to
-                participants&quot; is enabled):
+                When &quot;Send calendar invite to participants&quot; is
+                enabled, the invite is sent to the email of: the primary
+                participant above (if set), and everyone added under &quot;Invite
+                to calendar&quot;.
               </p>
               <ul className="text-sm text-gray-700 list-disc list-inside mb-3 min-h-6">
                 {appointmentForm.participant_type &&
@@ -2997,7 +3169,7 @@ const Planners = () => {
                             .join(" ") ||
                           `#${js.id}`
                         : `Participant #${id}`;
-                      return <li key="p">{name}</li>;
+                      return <li key="p">Primary: {name}</li>;
                     }
                     if (appointmentForm.participant_type === "hiring_manager") {
                       const hm = hiringManagers.find((h: any) => h.id === id);
@@ -3008,12 +3180,17 @@ const Planners = () => {
                             .join(" ") ||
                           `#${hm.id}`
                         : `Participant #${id}`;
-                      return <li key="p">{name}</li>;
+                      return <li key="p">Primary: {name}</li>;
                     }
                     return null;
                   })()
                 ) : (
-                  <li className="text-gray-400">No participant selected</li>
+                  <li className="text-gray-400">No primary participant</li>
+                )}
+                {invitees.length > 0 && (
+                  <li key="inv-count">
+                    {invitees.length} invitee(s) from &quot;Invite to calendar&quot;
+                  </li>
                 )}
               </ul>
               <label className="flex items-center gap-2 cursor-pointer">
