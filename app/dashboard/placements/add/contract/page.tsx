@@ -10,7 +10,8 @@ import CustomFieldRenderer, {
 } from "@/components/CustomFieldRenderer";
 import JobSummaryCard from "../JobSummaryCard";
 import Link from "next/link";
-import { FiX } from "react-icons/fi";
+import { FiX, FiInfo } from "react-icons/fi";
+import Tooltip from "@/components/Tooltip";
 
 // Map admin field labels to placement backend columns (all fields driven by admin; no hardcoded standard fields)
 const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
@@ -33,6 +34,115 @@ const BACKEND_COLUMN_BY_LABEL: Record<string, string> = {
 const PLACEMENT_SEGMENT = "contract" as const;
 /** Job type must include this to match this form. */
 const EXPECTED_JOB_TYPE = "contract";
+
+/** Normalize job type (admin-driven) to Employment Type: Executive-Search | Direct-Hire | Contract. Uses .includes() for flexible matching. */
+function getEmploymentTypeFromJob(job: any): string | null {
+  const fromJob =
+    job?.job_type ??
+    job?.jobType ??
+    job?.employment_type ??
+    job?.employmentType;
+  let raw = String(fromJob ?? "").trim();
+  if (!raw && job?.custom_fields) {
+    const cf = typeof job.custom_fields === "string" ? tryParseJson(job.custom_fields) : job.custom_fields;
+    if (cf && typeof cf === "object") {
+      raw = String(
+        cf["Job Type"] ?? cf["job_type"] ?? cf["Employment Type"] ?? cf["employment_type"] ?? ""
+      ).trim();
+    }
+  }
+  if (!raw) return null;
+  const lower = raw.toLowerCase();
+  if (lower.includes("executive-search") || lower.includes("executive search")) return "Executive-Search";
+  if (lower.includes("direct-hire") || lower.includes("direct hire")) return "Direct-Hire";
+  if (lower.includes("contract")) return "Contract";
+  return null;
+}
+function tryParseJson(s: string): object | null {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
+/** Resolve value to set for employment type field: use admin option that matches normalized type (via .includes) or the normalized string. */
+function resolveEmploymentTypeOptionValue(field: any, normalizedType: string): string {
+  const opts = field?.options;
+  const keysToTry: string[] = [
+    normalizedType.toLowerCase().replace(/-/g, " "),
+    normalizedType.toLowerCase().replace(/-/g, ""),
+    normalizedType.toLowerCase(),
+  ];
+  if (normalizedType === "Direct-Hire") keysToTry.push("direct hire", "direct");
+  else if (normalizedType === "Executive-Search") keysToTry.push("executive search", "executive");
+  else if (normalizedType === "Contract") keysToTry.push("contract");
+  const matchOption = (o: string) => keysToTry.some((k) => String(o).toLowerCase().includes(k));
+  const isPlaceholder = (o: string) => {
+    const s = String(o).toLowerCase().trim();
+    return !s || s === "select an option" || s === "select" || s === "choose";
+  };
+  if (Array.isArray(opts)) {
+    const found = opts.find((o: string) => {
+      const v = String(o).trim();
+      return v && !isPlaceholder(v) && matchOption(v);
+    });
+    if (found) return String(found).trim();
+  }
+  if (opts && typeof opts === "object" && !Array.isArray(opts)) {
+    const entries = Object.entries(opts);
+    const found = entries.find(([, v]) => {
+      const s = String(v).trim();
+      return s && !isPlaceholder(s) && matchOption(s);
+    });
+    if (found) return String(found[1]).trim();
+  }
+  return normalizedType;
+}
+
+/** Normalize label for comparison: lowercase, collapse spaces, normalize % and punctuation (same as Job add contract). */
+function normalizeLabelForMatch(label: string | null | undefined): string {
+  if (label == null) return "";
+  return String(label)
+    .toLowerCase()
+    .replace(/%/g, " percent ")
+    .replace(/[_\s]+/g, " ")
+    .trim();
+}
+
+/** Find the custom field whose label best matches one of the candidate labels (exact > includes > word overlap). Same as Job add contract. */
+function findFieldByLabelMatch<T extends { field_label?: string | null }>(
+  fields: T[],
+  ...candidateLabels: string[]
+): T | null {
+  if (!fields?.length || !candidateLabels.length) return null;
+  const normalizedCandidates = candidateLabels.map(normalizeLabelForMatch).filter(Boolean);
+  if (!normalizedCandidates.length) return null;
+
+  let best: { field: T; score: number } | null = null;
+
+  for (const field of fields) {
+    const fieldNorm = normalizeLabelForMatch(field.field_label);
+    if (!fieldNorm) continue;
+    for (const cand of normalizedCandidates) {
+      if (fieldNorm === cand) {
+        return field; // exact match wins
+      }
+      let score = 0;
+      if (fieldNorm.includes(cand) || cand.includes(fieldNorm)) score = 0.8;
+      else {
+        const fieldWords = new Set(fieldNorm.split(/\s+/).filter(Boolean));
+        const candWords = cand.split(/\s+/).filter(Boolean);
+        const overlap = candWords.filter((w) => fieldWords.has(w)).length;
+        if (candWords.length) score = overlap / candWords.length;
+      }
+      if (score > 0 && (!best || score > best.score)) {
+        best = { field, score };
+      }
+    }
+  }
+  return best?.field ?? null;
+}
 
 export default function AddPlacement() {
   const router = useRouter();
@@ -64,6 +174,10 @@ export default function AddPlacement() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [isLoadingJobSeekers, setIsLoadingJobSeekers] = useState(false);
   const [isLoadingJobs, setIsLoadingJobs] = useState(false);
+  /** Job seeker's organization ID — used to filter Billing contacts / HM lookups to those under the job seeker's org */
+  const [billingContactsOrganizationId, setBillingContactsOrganizationId] = useState<string | undefined>(undefined);
+  /** Full job fetched when user selects job from dropdown (list may not include start_date/pay_rate) */
+  const [fetchedJobForPrefill, setFetchedJobForPrefill] = useState<any>(null);
 
   const sortedCustomFields = useMemo(() => {
     return [...customFields]
@@ -83,6 +197,92 @@ export default function AddPlacement() {
   const jobField = fieldByColumn.job_id;
   const candidateField = fieldByColumn.job_seeker_id;
   const organizationField = fieldByColumn.organization_id;
+  const statusField = fieldByColumn.status;
+
+  // Employment type field: admin-driven label (prefer "Employment Type" / "Employee Type", else "Job Type")
+  const employmentTypeField = useMemo(() => {
+    const withEmployment = sortedCustomFields.find((f: any) => {
+      const label = String(f.field_label || "").toLowerCase().replace(/\s+/g, " ").trim();
+      return label.includes("employment") || label === "employee type";
+    });
+    if (withEmployment) return withEmployment;
+    return sortedCustomFields.find((f: any) => {
+      const label = String(f.field_label || "").toLowerCase().replace(/\s+/g, " ").trim();
+      return label.includes("job") && label.includes("type");
+    }) ?? null;
+  }, [sortedCustomFields]);
+
+  // Pay Rate, Mark-up %, and Client Bill Rate — same label resolution as Job add contract
+  const payRateField = useMemo(
+    () => findFieldByLabelMatch(customFields, "Pay Rate", "pay rate"),
+    [customFields]
+  );
+  const markUpField = useMemo(
+    () =>
+      findFieldByLabelMatch(
+        customFields,
+        "Mark-up %",
+        "Mark-up",
+        "Mark up",
+        "Mark up %",
+        "mark up percent",
+        "Markup %",
+        "Markup"
+      ),
+    [customFields]
+  );
+  const clientBillRateField = useMemo(
+    () =>
+      findFieldByLabelMatch(
+        customFields,
+        "Client Bill Rate",
+        "client bill rate"
+      ),
+    [customFields]
+  );
+
+  const startDateField = fieldByColumn.start_date ?? findFieldByLabelMatch(customFields, "Start Date", "start date");
+  const effectiveDateField = useMemo(
+    () => findFieldByLabelMatch(customFields, "Effective Date", "Effective date", "effective date"),
+    [customFields]
+  );
+
+  /** Get start date from job as YYYY-MM-DD for date inputs. Checks top-level and custom_fields. */
+  const getStartDateFromJob = useCallback((job: any): string => {
+    let raw = job?.start_date ?? job?.startDate ?? "";
+    if (!raw && job?.custom_fields) {
+      const cf = typeof job.custom_fields === "string" ? tryParseJson(job.custom_fields) : job.custom_fields;
+      if (cf && typeof cf === "object") {
+        raw = (cf as any)["Start Date"] ?? (cf as any).start_date ?? (cf as any).startDate ?? (cf as any)["Start date"] ?? "";
+      }
+    }
+    if (!raw) return "";
+    const s = String(raw).trim();
+    if (s.includes("T")) return s.split("T")[0];
+    return s;
+  }, []);
+
+  /** Get pay rate from job (top-level or custom_fields). */
+  const getPayRateFromJob = useCallback((job: any): string => {
+    const fromTop = job?.pay_rate ?? job?.payRate;
+    if (fromTop != null && String(fromTop).trim() !== "") return String(fromTop).trim();
+    const cf = typeof job?.custom_fields === "string" ? tryParseJson(job.custom_fields) : job?.custom_fields;
+    if (cf && typeof cf === "object") {
+      const v = (cf as any)["Pay Rate"] ?? (cf as any).pay_rate ?? (cf as any).payRate ?? (cf as any)["Pay rate"];
+      if (v != null && String(v).trim() !== "") return String(v).trim();
+    }
+    return "";
+  }, []);
+
+  // When redirected from job application status changed to "placed" (jobId + jobSeekerId in URL), default status to Pending
+  useEffect(() => {
+    if (!statusField || placementId) return;
+    if (!jobIdFromUrl || !jobSeekerIdFromUrl) return;
+    const current = customFieldValues[statusField.field_name] ?? "";
+    if (String(current).trim() === "") {
+      handleCustomFieldChange(statusField.field_name, "Pending");
+    }
+  }, [statusField, jobIdFromUrl, jobSeekerIdFromUrl, placementId, handleCustomFieldChange, customFieldValues[statusField?.field_name ?? ""]]);
 
   // Prefer admin-configured lookup field for Job Seekers when available
   const jobSeekerLookupField = useMemo(
@@ -122,6 +322,11 @@ export default function AddPlacement() {
           return;
         }
         setSelectedJob(job);
+        // Set billing contacts filter from job immediately so Billing contacts dropdown is filtered from first render
+        const jobOrgId = job?.organization_id ?? job?.organizationId ?? job?.organization?.id;
+        if (jobOrgId != null) {
+          setBillingContactsOrganizationId(String(jobOrgId));
+        }
       } catch {
         if (!cancelled) setJobFetchError("Could not load job details. Please try again.");
       } finally {
@@ -132,7 +337,7 @@ export default function AddPlacement() {
     return () => { cancelled = true; };
   }, [jobIdFromUrl, placementId]);
 
-  // Prefill Job (and org) when selectedJob is set from job-first flow
+  // Prefill Job (and org, employment type, start date, pay rate, effective date) when selectedJob is set from job-first flow
   useEffect(() => {
     if (!jobField || !selectedJob) return;
     const id = selectedJob.id ?? selectedJob.Id;
@@ -145,7 +350,24 @@ export default function AddPlacement() {
         handleCustomFieldChange(organizationField.field_name, String(orgId));
       }
     }
-  }, [selectedJob, jobField, organizationField, handleCustomFieldChange]);
+    if (employmentTypeField) {
+      const empType = getEmploymentTypeFromJob(selectedJob);
+      if (empType) {
+        const valueToSet = resolveEmploymentTypeOptionValue(employmentTypeField, empType);
+        if (valueToSet) handleCustomFieldChange(employmentTypeField.field_name, valueToSet);
+      }
+    }
+    const startDateVal = getStartDateFromJob(selectedJob);
+    if (startDateField && startDateVal) {
+      handleCustomFieldChange(startDateField.field_name, startDateVal);
+      if (effectiveDateField) handleCustomFieldChange(effectiveDateField.field_name, startDateVal);
+    }
+    const payRateVal = getPayRateFromJob(selectedJob);
+    if (payRateField && payRateVal) {
+      handleCustomFieldChange(payRateField.field_name, payRateVal);
+    }
+  // getStartDateFromJob and getPayRateFromJob are stable (useCallback []); omit from deps to keep array length constant
+  }, [selectedJob, jobField, organizationField, employmentTypeField, startDateField, effectiveDateField, payRateField, handleCustomFieldChange]);
 
   // Prefill Job Seeker when coming from Jobs → Applied → Placement flow
   useEffect(() => {
@@ -158,6 +380,59 @@ export default function AddPlacement() {
     handleCustomFieldChange(targetFieldName, jobSeekerIdFromUrl);
   }, [jobSeekerIdFromUrl, placementId, jobSeekerLookupField, candidateField, handleCustomFieldChange]);
 
+  // Resolve organization for Billing contacts: job seeker's organization (or job's org as fallback)
+  const effectiveJobSeekerId = (() => {
+    if (jobSeekerIdFromUrl?.trim()) return jobSeekerIdFromUrl.trim();
+    const fromLookup = jobSeekerLookupField && customFieldValues[jobSeekerLookupField.field_name];
+    const s1 = fromLookup != null && String(fromLookup).trim() !== "" ? String(fromLookup).trim() : null;
+    if (s1) return s1;
+    const fromCandidate = candidateField && customFieldValues[candidateField.field_name];
+    return (fromCandidate != null && String(fromCandidate).trim() !== "" ? String(fromCandidate).trim() : null) || null;
+  })();
+
+  useEffect(() => {
+    if (!effectiveJobSeekerId) {
+      // No job seeker selected: use job's organization so HM/contacts still filter by job org if any
+      let jobOrgId = selectedJob?.organization_id ?? selectedJob?.organizationId ?? selectedJob?.organization?.id;
+      if (jobOrgId == null && jobField && jobs.length > 0) {
+        const formJobId = customFieldValues[jobField.field_name];
+        const job = formJobId ? jobs.find((j: any) => String(j.id) === String(formJobId)) : null;
+        jobOrgId = job?.organization_id ?? job?.organizationId ?? job?.organization?.id;
+      }
+      setBillingContactsOrganizationId(jobOrgId != null ? String(jobOrgId) : undefined);
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const res = await fetch(`/api/job-seekers/${effectiveJobSeekerId}`);
+        if (cancelled) return;
+        if (!res.ok) {
+          const jobOrgId = selectedJob?.organization_id ?? selectedJob?.organizationId ?? selectedJob?.organization?.id;
+          if (jobOrgId != null) setBillingContactsOrganizationId(String(jobOrgId));
+          return;
+        }
+        const data = await res.json();
+        const js = data.jobSeeker ?? data.job_seeker ?? data;
+        const orgId = js?.organization_id ?? js?.organizationId ?? js?.organization?.id;
+        if (cancelled) return;
+        if (orgId != null) {
+          setBillingContactsOrganizationId(String(orgId));
+        } else {
+          const jobOrgId = selectedJob?.organization_id ?? selectedJob?.organizationId ?? selectedJob?.organization?.id;
+          if (jobOrgId != null) setBillingContactsOrganizationId(String(jobOrgId));
+        }
+      } catch {
+        if (!cancelled) {
+          const jobOrgId = selectedJob?.organization_id ?? selectedJob?.organizationId ?? selectedJob?.organization?.id;
+          if (jobOrgId != null) setBillingContactsOrganizationId(String(jobOrgId));
+        }
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [effectiveJobSeekerId, selectedJob?.id, selectedJob?.organization_id, selectedJob?.organizationId, selectedJob?.organization?.id, jobField?.field_name, jobs, customFieldValues[jobField?.field_name ?? ""]]);
+
   // Fetch job seekers and jobs on mount (for Job/Candidate dropdown options)
   useEffect(() => {
     fetchJobSeekers();
@@ -166,19 +441,119 @@ export default function AddPlacement() {
 
   // Auto-populate organization when job is selected and jobs are loaded
   useEffect(() => {
-    if (jobField && organizationField && jobs.length > 0) {
-      const selectedJobId = customFieldValues[jobField.field_name];
-      if (selectedJobId && (!customFieldValues[organizationField.field_name] || customFieldValues[organizationField.field_name] === "")) {
-        const job = jobs.find((j: any) => String(j.id) === String(selectedJobId));
-        if (job) {
-          const orgId = job.organization_id ?? job.organizationId ?? job.organization?.id;
-          if (orgId != null) {
-            handleCustomFieldChange(organizationField.field_name, String(orgId));
-          }
-        }
+    if (!jobField || jobs.length === 0) return;
+    const selectedJobId = customFieldValues[jobField.field_name];
+    const job = selectedJobId ? jobs.find((j: any) => String(j.id) === String(selectedJobId)) : null;
+    if (!job) return;
+    if (organizationField && (!customFieldValues[organizationField.field_name] || customFieldValues[organizationField.field_name] === "")) {
+      const orgId = job.organization_id ?? job.organizationId ?? job.organization?.id;
+      if (orgId != null) {
+        handleCustomFieldChange(organizationField.field_name, String(orgId));
       }
     }
-  }, [jobs, customFieldValues, jobField, organizationField, handleCustomFieldChange]);
+    if (employmentTypeField) {
+      const empType = getEmploymentTypeFromJob(job);
+      if (empType) {
+        const valueToSet = resolveEmploymentTypeOptionValue(employmentTypeField, empType);
+        if (valueToSet) handleCustomFieldChange(employmentTypeField.field_name, valueToSet);
+      }
+    }
+    const startDateVal = getStartDateFromJob(job);
+    if (startDateField && startDateVal) {
+      handleCustomFieldChange(startDateField.field_name, startDateVal);
+      if (effectiveDateField) handleCustomFieldChange(effectiveDateField.field_name, startDateVal);
+    }
+    const payRateVal = getPayRateFromJob(job);
+    if (payRateField && payRateVal) {
+      handleCustomFieldChange(payRateField.field_name, payRateVal);
+    }
+  // getStartDateFromJob and getPayRateFromJob are stable (useCallback []); omit from deps to keep array length constant
+  }, [jobs, customFieldValues, jobField, organizationField, employmentTypeField, startDateField, effectiveDateField, payRateField, handleCustomFieldChange]);
+
+  // When user selects a job from the dropdown, fetch full job so we have start_date, pay_rate (list may omit them)
+  const formJobId = jobField ? customFieldValues[jobField.field_name] : null;
+  useEffect(() => {
+    if (!formJobId || String(formJobId).trim() === "") {
+      setFetchedJobForPrefill(null);
+      return;
+    }
+    if (selectedJob && String(selectedJob.id ?? selectedJob.Id) === String(formJobId)) {
+      setFetchedJobForPrefill(selectedJob);
+      return;
+    }
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const res = await fetch(`/api/jobs/${formJobId}`);
+        if (cancelled) return;
+        if (!res.ok) return;
+        const data = await res.json();
+        const job = data.job;
+        if (cancelled) return;
+        setFetchedJobForPrefill(job || null);
+      } catch {
+        if (!cancelled) setFetchedJobForPrefill(null);
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [formJobId, selectedJob?.id, selectedJob?.Id]);
+
+  // Current job for prefilling: from URL (selectedJob) or from dropdown (fetchedJobForPrefill or list)
+  const currentJobForPrefill = selectedJob ?? fetchedJobForPrefill ?? (jobField && formJobId && jobs.length > 0 ? jobs.find((j: any) => String(j.id) === String(formJobId)) : null);
+
+  // Dedicated effect: set employment type whenever we have a current job and the field exists.
+  useEffect(() => {
+    if (!employmentTypeField || !currentJobForPrefill) return;
+    const empType = getEmploymentTypeFromJob(currentJobForPrefill);
+    if (!empType) return;
+    const valueToSet = resolveEmploymentTypeOptionValue(employmentTypeField, empType);
+    if (valueToSet) handleCustomFieldChange(employmentTypeField.field_name, valueToSet);
+  }, [employmentTypeField, currentJobForPrefill, handleCustomFieldChange]);
+
+  // Dedicated effect: set start date, pay rate, effective date from job when fields exist (runs when fields load or job becomes available)
+  useEffect(() => {
+    if (!currentJobForPrefill) return;
+    const startDateVal = getStartDateFromJob(currentJobForPrefill);
+    if (startDateField && startDateVal) {
+      handleCustomFieldChange(startDateField.field_name, startDateVal);
+      if (effectiveDateField) handleCustomFieldChange(effectiveDateField.field_name, startDateVal);
+    }
+    const payRateVal = getPayRateFromJob(currentJobForPrefill);
+    if (payRateField && payRateVal) {
+      handleCustomFieldChange(payRateField.field_name, payRateVal);
+    }
+  }, [currentJobForPrefill, startDateField, effectiveDateField, payRateField, handleCustomFieldChange]);
+
+  // Compute Client Bill Rate from Pay Rate × (1 + Mark-up % / 100) — same as Job add contract
+  useEffect(() => {
+    if (!clientBillRateField || !payRateField || !markUpField) return;
+    const payRaw = customFieldValues[payRateField.field_name];
+    const markUpRaw = customFieldValues[markUpField.field_name];
+    const payNum = parseFloat(String(payRaw ?? "").trim());
+    const markUpNum = parseFloat(String(markUpRaw ?? "").replace(/%/g, "").trim());
+    if (Number.isNaN(payNum) || Number.isNaN(markUpNum)) {
+      return;
+    }
+    const computed = payNum * (1 + markUpNum / 100);
+    const formatted =
+      computed % 1 === 0
+        ? String(Math.round(computed))
+        : computed.toFixed(2);
+    const current = customFieldValues[clientBillRateField.field_name];
+    if (current === formatted) return;
+    setCustomFieldValues((prev: Record<string, any>) => ({
+      ...prev,
+      [clientBillRateField.field_name]: formatted,
+    }));
+  }, [
+    clientBillRateField,
+    payRateField,
+    markUpField,
+    customFieldValues[payRateField?.field_name ?? ""],
+    customFieldValues[markUpField?.field_name ?? ""],
+    setCustomFieldValues,
+  ]);
 
   const fetchJobSeekers = async () => {
     setIsLoadingJobSeekers(true);
@@ -214,18 +589,38 @@ export default function AddPlacement() {
     (fieldName: string, value: any) => {
       handleCustomFieldChange(fieldName, value);
       const field = sortedCustomFields.find((f: any) => f.field_name === fieldName);
-      if (field && BACKEND_COLUMN_BY_LABEL[field.field_label] === "job_id" && organizationField) {
+      if (field && BACKEND_COLUMN_BY_LABEL[field.field_label] === "job_id") {
         const job = jobs.find((j: any) => String(j.id) === String(value));
         if (job) {
-          // Store organization ID instead of name
-          const orgId = job.organization_id ?? job.organizationId ?? job.organization?.id;
-          if (orgId != null) {
-            handleCustomFieldChange(organizationField.field_name, String(orgId));
+          if (organizationField) {
+            const orgId = job.organization_id ?? job.organizationId ?? job.organization?.id;
+            if (orgId != null) {
+              handleCustomFieldChange(organizationField.field_name, String(orgId));
+            }
+          }
+          if (employmentTypeField) {
+            const empType = getEmploymentTypeFromJob(job);
+            if (empType) {
+              const valueToSet = resolveEmploymentTypeOptionValue(employmentTypeField, empType);
+              if (valueToSet) handleCustomFieldChange(employmentTypeField.field_name, valueToSet);
+            }
+          }
+          const startDateVal = getStartDateFromJob(job);
+          if (startDateField && startDateVal) {
+            handleCustomFieldChange(startDateField.field_name, startDateVal);
+            if (effectiveDateField) handleCustomFieldChange(effectiveDateField.field_name, startDateVal);
+          }
+          const payRateVal = getPayRateFromJob(job);
+          if (payRateField && payRateVal) {
+            handleCustomFieldChange(payRateField.field_name, payRateVal);
           }
         }
       }
+      if (startDateField && effectiveDateField && fieldName === startDateField.field_name && value != null && String(value).trim() !== "") {
+        handleCustomFieldChange(effectiveDateField.field_name, String(value).trim());
+      }
     },
-    [handleCustomFieldChange, sortedCustomFields, organizationField, jobs]
+    [handleCustomFieldChange, sortedCustomFields, organizationField, employmentTypeField, startDateField, effectiveDateField, payRateField, jobs]
   );
 
   const fetchPlacement = useCallback(
@@ -648,10 +1043,49 @@ export default function AddPlacement() {
                   labelNorm.includes("full") && labelNorm.includes("address");
                 if (isFullAddressField) return null;
 
+                const isBillingContactLookup =
+                  ((field.field_label || "").toLowerCase().includes("billing")) &&
+                  field.field_type === "lookup" &&
+                  ((field as any).lookup_type === "hiring-managers" || (field as any).lookup_type === "contacts");
+                const isStatusReadOnlyFromRedirect = Boolean(
+                  statusField && field.field_name === statusField.field_name && jobIdFromUrl && jobSeekerIdFromUrl && !placementId
+                );
+                const isClientBillRateField = clientBillRateField && field.id === clientBillRateField.id;
+                const isClientBillRateEditable = isClientBillRateField && !field.is_read_only;
+                const handlePlacementChangeWithBillRateClear = (name: string, value: any) => {
+                  handlePlacementFieldChange(name, value);
+                  if (
+                    isClientBillRateField &&
+                    name === clientBillRateField!.field_name &&
+                    payRateField &&
+                    markUpField
+                  ) {
+                    setCustomFieldValues((prev: Record<string, any>) => ({
+                      ...prev,
+                      [payRateField.field_name]: "",
+                      [markUpField.field_name]: "",
+                    }));
+                  }
+                };
                 return (
-                  <div key={field.id} className="flex items-center gap-4">
-                    <label className="w-48 font-medium shrink-0">
+                  <div
+                    key={
+                      isBillingContactLookup
+                        ? `${field.id}-org-${billingContactsOrganizationId ?? "none"}`
+                        : field.id
+                    }
+                    className="flex items-center gap-4"
+                  >
+                    <label className="w-48 font-medium shrink-0 flex items-center">
                       {field.field_label}
+                      {isClientBillRateEditable && (
+                        <Tooltip
+                          text="Changing this value will clear Pay Rate and Mark-up %."
+                          className="ml-2"
+                        >
+                          <FiInfo className="w-5 h-5 text-gray-600 shrink-0" aria-hidden />
+                        </Tooltip>
+                      )}
                     </label>
                     <div className="flex-1">
                       <CustomFieldRenderer
@@ -659,7 +1093,13 @@ export default function AddPlacement() {
                         value={fieldValue}
                         allFields={customFields}
                         values={customFieldValues}
-                        onChange={handlePlacementFieldChange}
+                        onChange={isClientBillRateField ? handlePlacementChangeWithBillRateClear : handlePlacementFieldChange}
+                        context={
+                          billingContactsOrganizationId
+                            ? { organizationIdOnlyForBillingContacts: billingContactsOrganizationId }
+                            : undefined
+                        }
+                        forceReadOnly={isStatusReadOnlyFromRedirect}
                         validationIndicator={
                           field.is_required
                             ? isCustomFieldValueValid(field, fieldValue)

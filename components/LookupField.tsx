@@ -18,6 +18,8 @@ interface LookupFieldProps {
   required?: boolean;
   className?: string;
   disabled?: boolean;
+  /** Optional: filter options by query param (e.g. organization_id for hiring-managers) */
+  filterByParam?: { key: string; value: string };
 }
 
 export default function LookupField({
@@ -27,7 +29,8 @@ export default function LookupField({
   placeholder = 'Select an option',
   required = false,
   className = "w-full p-2 border-b border-gray-300 focus:outline-none focus:border-blue-500",
-  disabled = false
+  disabled = false,
+  filterByParam,
 }: LookupFieldProps) {
   const [options, setOptions] = useState<LookupOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -35,14 +38,19 @@ export default function LookupField({
 
   useEffect(() => {
     fetchOptions();
-  }, [lookupType]);
+  }, [lookupType, filterByParam?.key, filterByParam?.value]);
 
   const fetchOptions = async () => {
     setIsLoading(true);
     setError(null);
 
     try {
-      const apiEndpoint = lookupType === 'owner' ? '/api/users/active' : `/api/${lookupType}`;
+      let apiEndpoint = lookupType === 'owner' ? '/api/users/active' : `/api/${lookupType}`;
+      if (filterByParam?.value && lookupType !== 'owner') {
+        const u = new URL(apiEndpoint, window.location.origin);
+        u.searchParams.set(filterByParam.key, filterByParam.value);
+        apiEndpoint = u.pathname + u.search;
+      }
       const response = await fetch(apiEndpoint);
 
       if (!response.ok) {
@@ -69,7 +77,7 @@ export default function LookupField({
             record_number: org.record_number || ''
           }));
       } else if (lookupType === 'hiring-managers') {
-        fetchedOptions = (data.hiringManagers || [])
+        fetchedOptions = (data.hiringManagers || data.hiring_managers || [])
           .filter(isNotArchived)
           .map((hm: any) => ({
             id: hm.id.toString(),

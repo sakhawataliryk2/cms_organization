@@ -13,19 +13,23 @@ import { useRouter, useSearchParams } from "next/navigation";
 import {
   FiX,
   FiPrinter,
-  FiLock,
-  FiUnlock,
   FiArrowUp,
   FiArrowDown,
   FiFilter,
   FiRefreshCw,
 } from "react-icons/fi";
+import { BsFillPinAngleFill } from "react-icons/bs";
 import {
   isOffice365Authenticated,
   sendCalendarInvite,
   type CalendarEvent,
 } from "@/lib/office365";
 import { formatDisplayRecordNumber } from "@/lib/recordIdFormatter";
+import {
+  isPinnedRecord,
+  togglePinnedRecord,
+  PINNED_RECORDS_CHANGED_EVENT,
+} from "@/lib/pinnedRecords";
 import { TbGripVertical } from "react-icons/tb";
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
 import {
@@ -277,6 +281,172 @@ function SortableColumnHeader({
   );
 }
 
+// Searchable "Show" owner filter for planner top bar
+function OwnerSearchSelect({
+  value,
+  options,
+  onChange,
+  placeholder = "Search and select...",
+}: {
+  value: "all" | number;
+  options: { id: number; name: string; email?: string }[];
+  onChange: (v: "all" | number) => void;
+  placeholder?: string;
+}) {
+  const [search, setSearch] = useState("");
+  const [isOpen, setIsOpen] = useState(false);
+  const [highlightIndex, setHighlightIndex] = useState(0);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const allOptions = useMemo(
+    () => [
+      { id: "all" as const, name: "All internal users' appointments" },
+      ...options.map((u) => ({
+        id: u.id as number,
+        name: `${u.name}${u.email ? ` (${u.email})` : ""}`,
+      })),
+    ],
+    [options],
+  );
+
+  const selectedOption = allOptions.find(
+    (o) => o.id === (value === "all" ? "all" : value),
+  );
+  const displayValue = selectedOption?.name ?? "";
+
+  const filteredOptions = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allOptions;
+    return allOptions.filter(
+      (opt) =>
+        opt.name.toLowerCase().includes(q) ||
+        (typeof opt.id === "number" &&
+          options.find((u) => u.id === opt.id)?.email?.toLowerCase().includes(q)),
+    );
+  }, [search, allOptions, options]);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(event.target as Node)
+      ) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    setHighlightIndex(0);
+  }, [search, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !listRef.current) return;
+    const el = listRef.current.querySelector(
+      `[data-index="${highlightIndex}"]`,
+    );
+    el?.scrollIntoView({ block: "nearest" });
+  }, [highlightIndex, isOpen]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (!isOpen) {
+      if (e.key === "Enter" || e.key === " " || e.key === "ArrowDown") {
+        e.preventDefault();
+        setIsOpen(true);
+      }
+      return;
+    }
+    if (e.key === "Escape") {
+      setIsOpen(false);
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightIndex((i) =>
+        Math.min(i + 1, filteredOptions.length - 1),
+      );
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightIndex((i) => Math.max(i - 1, 0));
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const opt = filteredOptions[highlightIndex];
+      if (opt) {
+        onChange(opt.id === "all" ? "all" : opt.id);
+        setIsOpen(false);
+        setSearch("");
+      }
+    }
+  };
+
+  const handleSelect = (opt: (typeof allOptions)[number]) => {
+    onChange(opt.id === "all" ? "all" : opt.id);
+    setIsOpen(false);
+    setSearch("");
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative min-w-[200px] max-w-[240px]">
+      <div className="w-full flex items-center gap-2 border border-gray-300 rounded px-2 py-1.5 bg-white text-sm">
+        <span className="text-gray-600 whitespace-nowrap shrink-0">Show:</span>
+        <input
+          type="text"
+          value={isOpen ? search : displayValue}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          onKeyDown={handleKeyDown}
+          placeholder={displayValue ? "" : placeholder}
+          className="flex-1 min-w-0 outline-none bg-transparent"
+          autoComplete="off"
+        />
+      </div>
+      {isOpen && (
+        <div
+          ref={listRef}
+          className="absolute z-20 mt-1 left-0 right-0 bg-white border border-gray-200 rounded shadow-lg max-h-56 overflow-auto"
+        >
+          {filteredOptions.length === 0 ? (
+            <div className="px-3 py-4 text-sm text-gray-500 text-center">
+              No users match your search.
+            </div>
+          ) : (
+            filteredOptions.map((opt, idx) => (
+              <button
+                key={opt.id === "all" ? "all" : `user-${opt.id}`}
+                type="button"
+                data-index={idx}
+                onClick={() => handleSelect(opt)}
+                className={`w-full text-left px-3 py-2.5 text-sm text-gray-800 hover:bg-gray-50 ${
+                  idx === highlightIndex ? "bg-blue-50" : ""
+                } ${
+                  (value === "all" && opt.id === "all") ||
+                  (typeof value === "number" && opt.id === value)
+                    ? "font-medium text-blue-700"
+                    : ""
+                }`}
+              >
+                {opt.name}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const PLANNER_PINNED_KEY = "planner";
+
 const Planners = () => {
   const router = useRouter();
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -286,7 +456,7 @@ const Planners = () => {
   );
   const [itemsPerPage, setItemsPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
-  const [isPinned, setIsPinned] = useState(false);
+  const [isRecordPinned, setIsRecordPinned] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -457,12 +627,15 @@ const Planners = () => {
     }
   }, [highlightAppointmentId, listViewFilterDate, appointments, itemsPerPage]);
 
-  // Load pinned state from localStorage
+  // Sync pinned state with DashboardNav (pinned records bar)
   useEffect(() => {
-    const pinned = localStorage.getItem("plannerPinned");
-    if (pinned === "true") {
-      setIsPinned(true);
-    }
+    const syncPinned = () => {
+      setIsRecordPinned(isPinnedRecord(PLANNER_PINNED_KEY));
+    };
+    syncPinned();
+    window.addEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
+    return () =>
+      window.removeEventListener(PINNED_RECORDS_CHANGED_EVENT, syncPinned);
   }, []);
 
   // Fetch lookup data for participants
@@ -1275,11 +1448,16 @@ const Planners = () => {
     router.push("/dashboard");
   };
 
-  // Handle Pin Toggle
+  // Handle Pin Toggle (same as other modules: adds/removes tab in DashboardNav)
   const handlePinToggle = () => {
-    const newPinnedState = !isPinned;
-    setIsPinned(newPinnedState);
-    localStorage.setItem("plannerPinned", newPinnedState ? "true" : "false");
+    const res = togglePinnedRecord({
+      key: PLANNER_PINNED_KEY,
+      label: "Planner",
+      url: "/dashboard/planner",
+    });
+    if (res.action === "limit") {
+      toast.info("Maximum 10 pinned records reached");
+    }
   };
 
   // Get appointments for List view (sorted chronologically)
@@ -2051,14 +2229,23 @@ const Planners = () => {
                 ))}
               </div>
 
+              {/* Show: searchable owner filter */}
+              <OwnerSearchSelect
+                value={ownerFilter}
+                options={internalUsers}
+                onChange={setOwnerFilter}
+                placeholder="Search and select..."
+              />
+
               {/* Action Icons */}
               <div className="flex items-center space-x-2">
                 <button
                   onClick={handlePinToggle}
-                  className="p-2 text-gray-600 hover:text-gray-800"
-                  title={isPinned ? "Unpin" : "Pin"}
+                  className={`p-2 rounded ${isRecordPinned ? "text-yellow-600 hover:text-yellow-700" : "text-gray-600 hover:text-gray-800"}`}
+                  title={isRecordPinned ? "Unpin" : "Pin"}
+                  aria-label={isRecordPinned ? "Unpin" : "Pin"}
                 >
-                  {isPinned ? <FiLock size={20} /> : <FiUnlock size={20} />}
+                  <BsFillPinAngleFill size={20} />
                 </button>
                 <button
                   onClick={() => fetchAppointments()}
@@ -2084,32 +2271,6 @@ const Planners = () => {
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Internal user filter: All or specific user's appointments */}
-        <div className="flex items-center gap-2 px-6 py-4 no-print self-end">
-          <label
-            htmlFor="planner-owner-filter"
-            className="text-sm text-gray-600 whitespace-nowrap"
-          >
-            Show:
-          </label>
-          <select
-            id="planner-owner-filter"
-            value={ownerFilter === "all" ? "all" : ownerFilter}
-            onChange={(e) => {
-              const v = e.target.value;
-              setOwnerFilter(v === "all" ? "all" : parseInt(v, 10));
-            }}
-            className="border border-gray-300 rounded px-2 py-1.5 text-sm bg-white min-w-[160px]"
-          >
-            <option value="all">All internal users&apos; appointments</option>
-            {internalUsers.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name} ({u.email})
-              </option>
-            ))}
-          </select>
         </div>
 
         {/* Calendar Content */}

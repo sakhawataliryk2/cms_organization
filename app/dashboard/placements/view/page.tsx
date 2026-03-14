@@ -61,9 +61,13 @@ import AddNoteModal from "@/components/AddNoteModal";
 // Default header fields for Placements module - defined outside component to ensure stable reference
 const PLACEMENT_DEFAULT_HEADER_FIELDS = ["status", "owner"];
 
-// Storage keys for Placement Details and Details panels – field lists come from admin (custom field definitions)
+// Storage keys for all summary panels – field lists come from admin (custom field definitions)
+const CANDIDATE_DETAILS_STORAGE_KEY = "placementSummaryCandidateFields";
+const COMPANY_DETAILS_STORAGE_KEY = "placementSummaryCompanyFields";
+const BILLING_CONTACT_STORAGE_KEY = "placementSummaryBillingContactFields";
+const TIMESHEET_APPROVER_STORAGE_KEY = "placementSummaryTimesheetApproverFields";
+const JOB_DETAILS_STORAGE_KEY = "placementSummaryJobFields";
 const PLACEMENT_DETAILS_STORAGE_KEY = "placementDetailsFields";
-const DETAILS_STORAGE_KEY = "placementDetailsPanelFields";
 
 type ColumnSortState = "asc" | "desc" | null;
 type ColumnFilterState = string | null;
@@ -453,9 +457,17 @@ export default function PlacementView() {
     left: string[];
     right: string[];
   }>({
-    left: ["placementDetails"],
-    right: ["details", "recentNotes", "openTasks"],
+    left: ["candidateDetails", "companyDetails", "billingContactDetails", "timesheetApproverDetails"],
+    right: ["jobDetails", "placementDetails", "recentNotes", "openTasks"],
   });
+
+  // Related entities for summary panels (Candidate, Company, Contacts, Job)
+  const [candidate, setCandidate] = useState<any>(null);
+  const [company, setCompany] = useState<any>(null);
+  const [job, setJob] = useState<any>(null);
+  const [billingContact, setBillingContact] = useState<any>(null);
+  const [timesheetApprover, setTimesheetApprover] = useState<any>(null);
+  const [isLoadingRelated, setIsLoadingRelated] = useState(false);
 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [isPinned, setIsPinned] = useState(false);
@@ -511,34 +523,6 @@ export default function PlacementView() {
         }
       }
     }
-  }, []);
-
-  // Initialize Placement Details field order/visibility from localStorage (persists across all records)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = localStorage.getItem(PLACEMENT_DETAILS_STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const unique = Array.from(new Set(parsed));
-        setVisibleFields((prev) => ({ ...prev, placementDetails: unique }));
-      }
-    } catch (_) {
-      /* keep default */
-    }
-  }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const saved = localStorage.getItem(DETAILS_STORAGE_KEY);
-    if (!saved) return;
-    try {
-      const parsed = JSON.parse(saved);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        setVisibleFields((prev) => ({ ...prev, details: parsed }));
-      }
-    } catch (_) { }
   }, []);
 
   const prevColumnsRef = useRef<string>("");
@@ -707,39 +691,53 @@ export default function PlacementView() {
     }
   }, [tabFromUrl]);
 
-  // Field management – panels driven from admin field definitions only
+  // Field management – all panels driven from admin field definitions
   const [availableFields, setAvailableFields] = useState<any[]>([]);
+  const [candidateAvailableFields, setCandidateAvailableFields] = useState<any[]>([]);
+  const [companyAvailableFields, setCompanyAvailableFields] = useState<any[]>([]);
+  const [hiringManagerAvailableFields, setHiringManagerAvailableFields] = useState<any[]>([]);
+  const [jobAvailableFields, setJobAvailableFields] = useState<any[]>([]);
   const [visibleFields, setVisibleFields] = useState<Record<string, string[]>>(() => {
     if (typeof window === "undefined") {
-      return { placementDetails: [], details: [], recentNotes: ["notes"] };
+      return {
+        candidateDetails: [], companyDetails: [], billingContactDetails: [], timesheetApproverDetails: [],
+        jobDetails: [], placementDetails: [], recentNotes: ["notes"],
+      };
     }
-    let placementDetails: string[] = [];
-    let details: string[] = [];
-    try {
-      const pd = localStorage.getItem(PLACEMENT_DETAILS_STORAGE_KEY);
-      if (pd) {
-        const parsed = JSON.parse(pd);
-        if (Array.isArray(parsed) && parsed.length > 0) placementDetails = Array.from(new Set(parsed));
-      }
-    } catch (_) { }
-    try {
-      const d = localStorage.getItem(DETAILS_STORAGE_KEY);
-      if (d) {
-        const parsed = JSON.parse(d);
-        if (Array.isArray(parsed) && parsed.length > 0) details = Array.from(new Set(parsed));
-      }
-    } catch (_) { }
-    return { placementDetails, details, recentNotes: ["notes"] };
+    const read = (key: string): string[] => {
+      try {
+        const s = localStorage.getItem(key);
+        if (!s) return [];
+        const p = JSON.parse(s);
+        return Array.isArray(p) && p.length > 0 ? Array.from(new Set(p)) : [];
+      } catch { return []; }
+    };
+    return {
+      candidateDetails: read(CANDIDATE_DETAILS_STORAGE_KEY),
+      companyDetails: read(COMPANY_DETAILS_STORAGE_KEY),
+      billingContactDetails: read(BILLING_CONTACT_STORAGE_KEY),
+      timesheetApproverDetails: read(TIMESHEET_APPROVER_STORAGE_KEY),
+      jobDetails: read(JOB_DETAILS_STORAGE_KEY),
+      placementDetails: read(PLACEMENT_DETAILS_STORAGE_KEY),
+      recentNotes: ["notes"],
+    };
   });
   const [editingPanel, setEditingPanel] = useState<string | null>(null);
   const [isLoadingFields, setIsLoadingFields] = useState(false);
 
-  // Modal-local state for Placement Details edit
+  // Modal-local state for each panel's edit (sorting/toggling)
+  const [modalCandidateOrder, setModalCandidateOrder] = useState<string[]>([]);
+  const [modalCandidateVisible, setModalCandidateVisible] = useState<Record<string, boolean>>({});
+  const [modalCompanyOrder, setModalCompanyOrder] = useState<string[]>([]);
+  const [modalCompanyVisible, setModalCompanyVisible] = useState<Record<string, boolean>>({});
+  const [modalBillingContactOrder, setModalBillingContactOrder] = useState<string[]>([]);
+  const [modalBillingContactVisible, setModalBillingContactVisible] = useState<Record<string, boolean>>({});
+  const [modalTimesheetApproverOrder, setModalTimesheetApproverOrder] = useState<string[]>([]);
+  const [modalTimesheetApproverVisible, setModalTimesheetApproverVisible] = useState<Record<string, boolean>>({});
+  const [modalJobDetailsOrder, setModalJobDetailsOrder] = useState<string[]>([]);
+  const [modalJobDetailsVisible, setModalJobDetailsVisible] = useState<Record<string, boolean>>({});
   const [modalPlacementDetailsOrder, setModalPlacementDetailsOrder] = useState<string[]>([]);
   const [modalPlacementDetailsVisible, setModalPlacementDetailsVisible] = useState<Record<string, boolean>>({});
-
-  const [modalDetailsOrder, setModalDetailsOrder] = useState<string[]>([]);
-  const [modalDetailsVisible, setModalDetailsVisible] = useState<Record<string, boolean>>({});
 
   // =====================
   // HEADER FIELDS (Top Row)
@@ -833,12 +831,246 @@ export default function PlacementView() {
     }
   }, [placementId]);
 
-  // Fetch available fields after placement is loaded
+  // Fetch available fields and summary panel field catalogs after placement is loaded
   useEffect(() => {
     if (placement && placementId) {
       fetchAvailableFields();
+      fetchSummaryPanelFieldCatalogs();
     }
   }, [placement, placementId]);
+
+  const fetchSummaryPanelFieldCatalogs = async () => {
+    const token = document.cookie.replace(
+      /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+      "$1"
+    );
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+    try {
+      const [jsRes, orgRes, hmRes, jobRes] = await Promise.allSettled([
+        fetch("/api/admin/field-management/job-seekers", { headers }),
+        fetch("/api/admin/field-management/organizations", { headers }),
+        fetch("/api/admin/field-management/hiring-managers", { headers }),
+        fetch("/api/admin/field-management/jobs", { headers }),
+      ]);
+      if (jsRes.status === "fulfilled" && jsRes.value.ok) {
+        const d = await jsRes.value.json();
+        setCandidateAvailableFields(d.customFields || []);
+      }
+      if (orgRes.status === "fulfilled" && orgRes.value.ok) {
+        const d = await orgRes.value.json();
+        setCompanyAvailableFields(d.customFields || []);
+      }
+      if (hmRes.status === "fulfilled" && hmRes.value.ok) {
+        const d = await hmRes.value.json();
+        setHiringManagerAvailableFields(d.customFields || []);
+      }
+      if (jobRes.status === "fulfilled" && jobRes.value.ok) {
+        const d = await jobRes.value.json();
+        setJobAvailableFields(d.customFields || []);
+      }
+    } catch (err) {
+      console.error("Error fetching summary panel field catalogs:", err);
+    }
+  };
+
+  // Fetch related entities for summary panels (candidate, company, job, billing contact, timesheet approver)
+  useEffect(() => {
+    if (!placement) {
+      setCandidate(null);
+      setCompany(null);
+      setJob(null);
+      setBillingContact(null);
+      setTimesheetApprover(null);
+      return;
+    }
+    const jobSeekerId = placement.jobSeekerId || placement.job_seeker_id;
+    const organizationId = placement.organizationId ?? placement.organization_id;
+    const jobId = placement.jobId || placement.job_id;
+    if (!jobSeekerId && !organizationId && !jobId) return;
+
+    const token = document.cookie.replace(
+      /(?:(?:^|.*;\s*)token\s*=\s*([^;]*).*$)|^.*$/,
+      "$1"
+    );
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+
+    setIsLoadingRelated(true);
+    (async () => {
+      try {
+        const [candidateRes, orgRes, jobRes] = await Promise.allSettled([
+          jobSeekerId ? fetch(`/api/job-seekers/${jobSeekerId}`, { headers }) : Promise.reject(new Error("no id")),
+          organizationId ? fetch(`/api/organizations/${organizationId}`, { headers }) : Promise.reject(new Error("no id")),
+          jobId ? fetch(`/api/jobs/${jobId}`, { headers }) : Promise.reject(new Error("no id")),
+        ]);
+
+        if (candidateRes.status === "fulfilled" && candidateRes.value.ok) {
+          const data = await candidateRes.value.json();
+          const js = data.jobSeeker ?? data.job_seeker ?? data;
+          let customFieldsObj: Record<string, unknown> = {};
+          if (js.custom_fields) {
+            try {
+              customFieldsObj = typeof js.custom_fields === "string" ? JSON.parse(js.custom_fields) : js.custom_fields;
+            } catch { }
+          }
+          setCandidate({
+            id: js.id,
+            full_name: js.full_name || [js.first_name, js.last_name].filter(Boolean).join(" ") || "Unknown",
+            first_name: js.first_name,
+            last_name: js.last_name,
+            ownership: js.record_owner ?? js.owner ?? js.ownership,
+            status: js.status,
+            ssn: js.ssn,
+            birthday: js.birthday ?? js.date_of_birth,
+            date_available: js.date_available,
+            source: js.source,
+            address: js.address,
+            primary_phone: js.primary_phone ?? js.phone ?? js.phone_number,
+            email: js.email ?? js.email1,
+            customFields: customFieldsObj,
+          });
+        } else {
+          setCandidate(null);
+        }
+
+        if (orgRes.status === "fulfilled" && orgRes.value.ok) {
+          const data = await orgRes.value.json();
+          const org = data.organization ?? data;
+          let customFieldsObj: Record<string, unknown> = {};
+          if (org.custom_fields) {
+            try {
+              customFieldsObj = typeof org.custom_fields === "string" ? JSON.parse(org.custom_fields) : org.custom_fields;
+            } catch { }
+          }
+          setCompany({
+            id: org.id,
+            name: org.name ?? org.company_name,
+            address: org.address,
+            customFields: customFieldsObj,
+          });
+        } else {
+          setCompany(null);
+        }
+
+        if (jobRes.status === "fulfilled" && jobRes.value.ok) {
+          const data = await jobRes.value.json();
+          const j = data.job ?? data.job_data ?? data;
+          let customFieldsObj: Record<string, unknown> = {};
+          if (j.custom_fields) {
+            try {
+              customFieldsObj = typeof j.custom_fields === "string" ? JSON.parse(j.custom_fields) : j.custom_fields;
+            } catch { }
+          }
+          // Resolve billing contact id: direct column, then custom_fields key containing "billing", then contacts array
+          const resolveBillingContactId = (): string | number | null => {
+            const direct = j.billing_contact_id ?? j.billingContactId;
+            if (direct != null && String(direct).trim() !== "") return direct;
+            for (const [key, val] of Object.entries(customFieldsObj)) {
+              if (!/billing\s*contact/i.test(key)) continue;
+              if (val == null) continue;
+              if (typeof val === "number") return val;
+              if (typeof val === "object" && val !== null && "id" in (val as object)) return (val as { id: number }).id;
+              if (typeof val === "string" && /^\d+$/.test(val.trim())) return val.trim();
+            }
+            if (Array.isArray(j.contacts)) {
+              const billing = j.contacts.find((c: any) => String(c?.type ?? c?.contact_type ?? "").toLowerCase().includes("billing"));
+              const id = billing?.id ?? billing?.hiring_manager_id ?? billing?.contact_id;
+              if (id != null) return id;
+            }
+            return null;
+          };
+          const resolveTimecardApproverId = (): string | number | null => {
+            const direct = j.timecard_approver_id ?? j.timecardApproverId;
+            if (direct != null && String(direct).trim() !== "") return direct;
+            for (const [key, val] of Object.entries(customFieldsObj)) {
+              if (!/timecard|timesheet|approver/i.test(key)) continue;
+              if (val == null) continue;
+              if (typeof val === "number") return val;
+              if (typeof val === "object" && val !== null && "id" in (val as object)) return (val as { id: number }).id;
+              if (typeof val === "string" && /^\d+$/.test(val.trim())) return val.trim();
+            }
+            if (Array.isArray(j.contacts)) {
+              const approver = j.contacts.find((c: any) => {
+                const t = String(c?.type ?? c?.contact_type ?? "").toLowerCase();
+                return t.includes("timecard") || t.includes("approver");
+              });
+              const id = approver?.id ?? approver?.hiring_manager_id ?? approver?.contact_id;
+              if (id != null) return id;
+            }
+            return null;
+          };
+
+          const jobData = {
+            id: j.id,
+            job_title: j.job_title ?? j.title,
+            owner: j.owner ?? j.record_owner,
+            address: j.address ?? j.location,
+            customFields: customFieldsObj,
+            billing_contact_id: j.billing_contact_id ?? j.billingContactId,
+            timecard_approver_id: j.timecard_approver_id ?? j.timecardApproverId,
+            hiring_manager_id: j.hiring_manager_id ?? j.hiringManagerId,
+          };
+          setJob(jobData);
+
+          const billingId = resolveBillingContactId() ?? jobData.billing_contact_id ?? jobData.hiring_manager_id;
+          const timecardId = resolveTimecardApproverId() ?? jobData.timecard_approver_id ?? jobData.hiring_manager_id;
+
+          const parseHm = (d: any) => {
+            const hm = d.hiringManager ?? d.hiring_manager ?? d;
+            return {
+              id: hm.id,
+              full_name: (hm.full_name ?? [hm.first_name, hm.last_name].filter(Boolean).join(" ")) || "—",
+              status: hm.status,
+              address: hm.address,
+              company_phone: hm.company_phone ?? hm.phone,
+              customFields: typeof hm.custom_fields === "string" ? (() => { try { return JSON.parse(hm.custom_fields); } catch { return {}; } })() : (hm.custom_fields || {}),
+            };
+          };
+
+          if (billingId || timecardId) {
+            const toFetch = Array.from(new Set([billingId, timecardId].filter(Boolean).map(String)));
+            const hmResults = await Promise.all(
+              toFetch.map(async (id) => {
+                try {
+                  const r = await fetch(`/api/hiring-managers/${id}`, { headers });
+                  if (!r.ok) return null;
+                  const d = await r.json();
+                  return parseHm(d);
+                } catch {
+                  return null;
+                }
+              })
+            );
+            const byId: Record<string, any> = {};
+            toFetch.forEach((id, i) => { if (hmResults[i]) byId[id] = hmResults[i]; });
+            setBillingContact(billingId ? (byId[String(billingId)] ?? null) : null);
+            setTimesheetApprover(timecardId ? (byId[String(timecardId)] ?? (billingId === timecardId ? byId[String(billingId)] : null)) : null);
+          } else {
+            setBillingContact(null);
+            setTimesheetApprover(null);
+          }
+
+          // Fallback: when no billing contact id was resolved, show display name from job custom_fields if present (e.g. "Billing contacts" = "Doura, Gregory")
+          if (!billingId) {
+            for (const [key, val] of Object.entries(customFieldsObj)) {
+              if (!/billing\s*contact/i.test(key)) continue;
+              if (typeof val === "string" && val.trim() !== "") {
+                setBillingContact({ id: null, full_name: val.trim(), status: "", address: "", company_phone: "", customFields: {} });
+                break;
+              }
+            }
+          }
+        } else {
+          setJob(null);
+          setBillingContact(null);
+          setTimesheetApprover(null);
+        }
+      } catch (err) {
+        console.error("Error fetching related entities:", err);
+      } finally {
+        setIsLoadingRelated(false);
+      }
+    })();
+  }, [placement?.id, placement?.jobSeekerId, placement?.organizationId, placement?.jobId]);
 
   // Fetch available fields from modify page (custom fields)
   const fetchAvailableFields = async () => {
@@ -894,18 +1126,87 @@ export default function PlacementView() {
     return [...fromApi];
   }, [availableFields]);
 
-  // Details panel field catalog: from admin field definitions + record customFields only
-  const detailsFieldCatalog = useMemo(() => {
-    const fromApi = (availableFields || [])
+  // Field catalogs for each summary panel (from admin field-management)
+  const candidateFieldCatalog = useMemo(() => {
+    return (candidateAvailableFields || [])
       .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
       .map((f: any) => ({
         key: String(f.field_name || f.field_key || f.api_name || f.id),
         label: String(f.field_label || f.field_name || f.field_key || f.id),
       }));
-    return [...fromApi];
-  }, [availableFields]);
+  }, [candidateAvailableFields]);
 
-  // When catalog loads, if placementDetails/details visible list is empty, default to all catalog keys
+  const companyFieldCatalog = useMemo(() => {
+    return (companyAvailableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+  }, [companyAvailableFields]);
+
+  const hiringManagerFieldCatalog = useMemo(() => {
+    return (hiringManagerAvailableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+  }, [hiringManagerAvailableFields]);
+
+  const jobDetailsFieldCatalog = useMemo(() => {
+    return (jobAvailableFields || [])
+      .filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden)
+      .map((f: any) => ({
+        key: String(f.field_name || f.field_key || f.api_name || f.id),
+        label: String(f.field_label || f.field_name || f.field_key || f.id),
+      }));
+  }, [jobAvailableFields]);
+
+  // When catalog loads, if panel visible list is empty, default to all catalog keys
+  useEffect(() => {
+    const keys = candidateFieldCatalog.map((f) => f.key);
+    if (keys.length > 0) {
+      setVisibleFields((prev) => {
+        const current = prev.candidateDetails || [];
+        if (current.length > 0) return prev;
+        return { ...prev, candidateDetails: keys };
+      });
+    }
+  }, [candidateFieldCatalog]);
+  useEffect(() => {
+    const keys = companyFieldCatalog.map((f) => f.key);
+    if (keys.length > 0) {
+      setVisibleFields((prev) => {
+        const current = prev.companyDetails || [];
+        if (current.length > 0) return prev;
+        return { ...prev, companyDetails: keys };
+      });
+    }
+  }, [companyFieldCatalog]);
+  useEffect(() => {
+    const keys = hiringManagerFieldCatalog.map((f) => f.key);
+    if (keys.length > 0) {
+      setVisibleFields((prev) => {
+        const bc = prev.billingContactDetails || [];
+        const ta = prev.timesheetApproverDetails || [];
+        let next = prev;
+        if (bc.length === 0) next = { ...next, billingContactDetails: keys };
+        if (ta.length === 0) next = { ...next, timesheetApproverDetails: keys };
+        return next;
+      });
+    }
+  }, [hiringManagerFieldCatalog]);
+  useEffect(() => {
+    const keys = jobDetailsFieldCatalog.map((f) => f.key);
+    if (keys.length > 0) {
+      setVisibleFields((prev) => {
+        const current = prev.jobDetails || [];
+        if (current.length > 0) return prev;
+        return { ...prev, jobDetails: keys };
+      });
+    }
+  }, [jobDetailsFieldCatalog]);
   useEffect(() => {
     const keys = placementDetailsFieldCatalog.map((f) => f.key);
     if (keys.length > 0) {
@@ -917,67 +1218,94 @@ export default function PlacementView() {
     }
   }, [placementDetailsFieldCatalog]);
 
+  // Sync modal state when opening edit for each panel
+  const syncModalFor = (panelId: string, catalog: { key: string }[], current: string[]) => {
+    const catalogKeys = Array.from(new Set(catalog.map((f) => f.key)));
+    const order = [...current.filter((k) => catalogKeys.includes(k))];
+    catalogKeys.forEach((k) => { if (!order.includes(k)) order.push(k); });
+    const visible = catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>);
+    return { order, visible };
+  };
   useEffect(() => {
-    const keys = detailsFieldCatalog.map((f) => f.key);
-    if (keys.length > 0) {
-      setVisibleFields((prev) => {
-        const current = prev.details || [];
-        if (current.length > 0) return prev;
-        return { ...prev, details: keys };
-      });
-    }
-  }, [detailsFieldCatalog]);
-
-  // Sync Placement Details modal state when opening edit for placementDetails
+    if (editingPanel !== "candidateDetails") return;
+    const { order, visible } = syncModalFor("candidateDetails", candidateFieldCatalog, visibleFields.candidateDetails || []);
+    setModalCandidateOrder(order);
+    setModalCandidateVisible(visible);
+  }, [editingPanel, visibleFields.candidateDetails, candidateFieldCatalog]);
+  useEffect(() => {
+    if (editingPanel !== "companyDetails") return;
+    const { order, visible } = syncModalFor("companyDetails", companyFieldCatalog, visibleFields.companyDetails || []);
+    setModalCompanyOrder(order);
+    setModalCompanyVisible(visible);
+  }, [editingPanel, visibleFields.companyDetails, companyFieldCatalog]);
+  useEffect(() => {
+    if (editingPanel !== "billingContactDetails") return;
+    const { order, visible } = syncModalFor("billingContactDetails", hiringManagerFieldCatalog, visibleFields.billingContactDetails || []);
+    setModalBillingContactOrder(order);
+    setModalBillingContactVisible(visible);
+  }, [editingPanel, visibleFields.billingContactDetails, hiringManagerFieldCatalog]);
+  useEffect(() => {
+    if (editingPanel !== "timesheetApproverDetails") return;
+    const { order, visible } = syncModalFor("timesheetApproverDetails", hiringManagerFieldCatalog, visibleFields.timesheetApproverDetails || []);
+    setModalTimesheetApproverOrder(order);
+    setModalTimesheetApproverVisible(visible);
+  }, [editingPanel, visibleFields.timesheetApproverDetails, hiringManagerFieldCatalog]);
+  useEffect(() => {
+    if (editingPanel !== "jobDetails") return;
+    const { order, visible } = syncModalFor("jobDetails", jobDetailsFieldCatalog, visibleFields.jobDetails || []);
+    setModalJobDetailsOrder(order);
+    setModalJobDetailsVisible(visible);
+  }, [editingPanel, visibleFields.jobDetails, jobDetailsFieldCatalog]);
   useEffect(() => {
     if (editingPanel !== "placementDetails") return;
     const current = visibleFields.placementDetails || [];
     const catalogKeys = placementDetailsFieldCatalog.map((f) => f.key);
     const uniqueCatalogKeys = Array.from(new Set(catalogKeys));
     const order = [...current.filter((k) => uniqueCatalogKeys.includes(k))];
-    uniqueCatalogKeys.forEach((k) => {
-      if (!order.includes(k)) order.push(k);
-    });
-    const uniqueOrder = Array.from(new Set(order));
-    setModalPlacementDetailsOrder(uniqueOrder);
+    uniqueCatalogKeys.forEach((k) => { if (!order.includes(k)) order.push(k); });
+    setModalPlacementDetailsOrder(Array.from(new Set(order)));
     setModalPlacementDetailsVisible(
       uniqueCatalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
     );
   }, [editingPanel, visibleFields.placementDetails, placementDetailsFieldCatalog]);
 
-  useEffect(() => {
-    if (editingPanel !== "details") return;
-    const current = visibleFields.details || [];
-    const catalogKeys = detailsFieldCatalog.map((f) => f.key);
-    const order = [...current.filter((k) => catalogKeys.includes(k))];
-    catalogKeys.forEach((k) => {
-      if (!order.includes(k)) order.push(k);
-    });
-    setModalDetailsOrder(order);
-    setModalDetailsVisible(
-      catalogKeys.reduce((acc, k) => ({ ...acc, [k]: current.includes(k) }), {} as Record<string, boolean>)
-    );
-  }, [editingPanel, visibleFields.details, detailsFieldCatalog]);
-
-  // Placement Details modal: drag end (reorder)
-  // Placement Details modal: save order/visibility and persist for all records
+  // Save handlers for each panel (persist to localStorage, update visibleFields)
+  const handleSaveCandidateDetailsFields = useCallback(() => {
+    const newOrder = modalCandidateOrder.filter((k) => modalCandidateVisible[k]);
+    if (typeof window !== "undefined") localStorage.setItem(CANDIDATE_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
+    setVisibleFields((prev) => ({ ...prev, candidateDetails: newOrder }));
+    setEditingPanel(null);
+  }, [modalCandidateOrder, modalCandidateVisible]);
+  const handleSaveCompanyDetailsFields = useCallback(() => {
+    const newOrder = modalCompanyOrder.filter((k) => modalCompanyVisible[k]);
+    if (typeof window !== "undefined") localStorage.setItem(COMPANY_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
+    setVisibleFields((prev) => ({ ...prev, companyDetails: newOrder }));
+    setEditingPanel(null);
+  }, [modalCompanyOrder, modalCompanyVisible]);
+  const handleSaveBillingContactFields = useCallback(() => {
+    const newOrder = modalBillingContactOrder.filter((k) => modalBillingContactVisible[k]);
+    if (typeof window !== "undefined") localStorage.setItem(BILLING_CONTACT_STORAGE_KEY, JSON.stringify(newOrder));
+    setVisibleFields((prev) => ({ ...prev, billingContactDetails: newOrder }));
+    setEditingPanel(null);
+  }, [modalBillingContactOrder, modalBillingContactVisible]);
+  const handleSaveTimesheetApproverFields = useCallback(() => {
+    const newOrder = modalTimesheetApproverOrder.filter((k) => modalTimesheetApproverVisible[k]);
+    if (typeof window !== "undefined") localStorage.setItem(TIMESHEET_APPROVER_STORAGE_KEY, JSON.stringify(newOrder));
+    setVisibleFields((prev) => ({ ...prev, timesheetApproverDetails: newOrder }));
+    setEditingPanel(null);
+  }, [modalTimesheetApproverOrder, modalTimesheetApproverVisible]);
+  const handleSaveJobDetailsFields = useCallback(() => {
+    const newOrder = modalJobDetailsOrder.filter((k) => modalJobDetailsVisible[k]);
+    if (typeof window !== "undefined") localStorage.setItem(JOB_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
+    setVisibleFields((prev) => ({ ...prev, jobDetails: newOrder }));
+    setEditingPanel(null);
+  }, [modalJobDetailsOrder, modalJobDetailsVisible]);
   const handleSavePlacementDetailsFields = useCallback(() => {
-    const newOrder = Array.from(new Set(modalPlacementDetailsOrder.filter((k) => modalPlacementDetailsVisible[k])));
-    if (typeof window !== "undefined") {
-      localStorage.setItem(PLACEMENT_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
-    }
+    const newOrder = modalPlacementDetailsOrder.filter((k) => modalPlacementDetailsVisible[k]);
+    if (typeof window !== "undefined") localStorage.setItem(PLACEMENT_DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
     setVisibleFields((prev) => ({ ...prev, placementDetails: newOrder }));
     setEditingPanel(null);
   }, [modalPlacementDetailsOrder, modalPlacementDetailsVisible]);
-
-  const handleSaveDetailsFields = useCallback(() => {
-    const newOrder = modalDetailsOrder.filter((k) => modalDetailsVisible[k]);
-    if (typeof window !== "undefined") {
-      localStorage.setItem(DETAILS_STORAGE_KEY, JSON.stringify(newOrder));
-    }
-    setVisibleFields((prev) => ({ ...prev, details: newOrder }));
-    setEditingPanel(null);
-  }, [modalDetailsOrder, modalDetailsVisible]);
 
   // Handle edit panel click
   const handleEditPanel = (panelId: string) => {
@@ -3446,155 +3774,211 @@ export default function PlacementView() {
     );
   };
 
-  const renderPlacementDetailsPanel = () => {
-    const renderPlacementDetailsRow = (key: string, index: number) => {
-      switch (key) {
-        // case "candidate":
-        //   return (
-        //     <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Candidate:</div>
-        //       <div className="flex-1 p-2 text-blue-600">{placement.jobSeekerName}</div>
-        //     </div>
-        //   );
-        // case "job":
-        //   return (
-        //     <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Job:</div>
-        //       <div className="flex-1 p-2 text-blue-600">{placement.jobTitle}</div>
-        //     </div>
-        //   );
-        // case "organization":
-        //   return (
-        //     <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Organization:</div>
-        //       <div className="flex-1 p-2">{placement.organizationName || "—"}</div>
-        //     </div>
-        //   );
-        // case "status":
-        //   return (
-        //     <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Status:</div>
-        //       <div className="flex-1 p-2">
-        //         <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded text-sm">
-        //           {placement.status}
-        //         </span>
-        //       </div>
-        //     </div>
-        //   );
-        // case "startDate":
-        //   return (
-        //     <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Start Date:</div>
-        //       <div className="flex-1 p-2">{placement.startDate || "-"}</div>
-        //     </div>
-        //   );
-        // case "endDate":
-        //   return (
-        //     <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">End Date:</div>
-        //       <div className="flex-1 p-2">{placement.endDate || "-"}</div>
-        //     </div>
-        //   );
-        // case "salary":
-        //   return (
-        //     <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Salary:</div>
-        //       <div className="flex-1 p-2">{placement.salary || "-"}</div>
-        //     </div>
-        //   );
-        default:
-          // Custom field
-          const field = availableFields.find(
-            (f: any) => (f.field_name || f.field_label || f.id) === key
-          );
-          const fieldLabel = field?.field_label || field?.field_name || key;
-          const fieldValue = placement.customFields?.[fieldLabel] || "-";
-          const lookupType = (field as any)?.lookup_type ?? (field as any)?.lookupType ?? (fieldLabel.toLowerCase() === "candidate" || fieldLabel.toLowerCase() === "job seeker" ? "jobSeeker" : fieldLabel.toLowerCase() === "job" ? "job" : fieldLabel.toLowerCase() === "organization" ? "organization" : "");
-          const fieldInfo = { key, label: fieldLabel, fieldType: (field as any)?.field_type ?? (field as any)?.fieldType, lookupType, multiSelectLookupType: (field as any)?.multi_select_lookup_type ?? (field as any)?.multiSelectLookupType };
-          return (
-            <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
-              <div className="flex-1 p-2">
-                <FieldValueRenderer
-                  value={fieldValue}
-                  fieldInfo={fieldInfo}
-                  allFields={availableFields as any}
-                  valuesRecord={placement.customFields as any}
-                  emptyPlaceholder="-"
-                  clickable
-                />
-              </div>
-            </div>
-          );
-      }
-    };
+  // Helper: render a panel row (label + value) using FieldValueRenderer for all field types (lookup, date, picklist, text, etc.)
+  const renderSummaryRow = (
+    panelPrefix: string,
+    key: string,
+    index: number,
+    label: string,
+    value: any,
+    fieldDef: any,
+    allFields: any[],
+    valuesRecord: Record<string, unknown>
+  ) => {
+    const fieldInfo = fieldDef ? {
+      key,
+      label: fieldDef.field_label || fieldDef.field_name || key,
+      fieldType: fieldDef.field_type ?? fieldDef.fieldType,
+      lookupType: fieldDef.lookup_type ?? fieldDef.lookupType,
+      multiSelectLookupType: fieldDef.multi_select_lookup_type ?? fieldDef.multiSelectLookupType,
+    } : { key, label };
+    return (
+      <div key={`${panelPrefix}-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+        <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{label}:</div>
+        <div className="flex-1 p-2">
+          <FieldValueRenderer
+            value={value}
+            fieldInfo={fieldInfo}
+            allFields={allFields as any}
+            valuesRecord={valuesRecord as any}
+            emptyPlaceholder="-"
+            clickable
+          />
+        </div>
+      </div>
+    );
+  };
 
+  const renderCandidateDetailsPanel = () => {
+    const keys = Array.from(new Set(visibleFields.candidateDetails || []));
+    const catalog = candidateFieldCatalog;
+    const allFields = candidateAvailableFields || [];
     return (
       <PanelWithHeader
-        title="Placement Details:"
-        onEdit={() => handleEditPanel("placementDetails")}
+        title="Candidate - Details"
+        onEdit={() => handleEditPanel("candidateDetails")}
       >
         <div className="space-y-0 border border-gray-200 rounded">
-          {Array.from(new Set(visibleFields.placementDetails || [])).map((key, index) => renderPlacementDetailsRow(key, index))}
+          {!candidate ? (
+            <div className="p-4 text-gray-500 text-sm">No candidate linked to this placement.</div>
+          ) : keys.length === 0 ? (
+            <div className="p-4 text-gray-500 text-sm">No fields visible. Use the edit icon to show fields.</div>
+          ) : (
+            keys.map((key, index) => {
+              const field = allFields.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
+              const label = field?.field_label || field?.field_name || key;
+              let value: any = (candidate as any)[key === "name" ? "full_name" : key] ?? (candidate as any)[key] ?? candidate.customFields?.[label] ?? candidate.customFields?.[key];
+              return renderSummaryRow("candidateDetails", key, index, label, value, field, allFields, candidate.customFields || {});
+            })
+          )}
         </div>
       </PanelWithHeader>
     );
   };
 
-  const renderDetailsPanel = () => {
-    if (!placement) return null;
-    const customFieldDefs = (availableFields || []).filter((f: any) => !f?.is_hidden && !f?.hidden && !f?.isHidden);
-    const renderDetailsRow = (key: string, index: number) => {
-      switch (key) {
-        // case "owner":
-        //   return (
-        //     <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Owner:</div>
-        //       <div className="flex-1 p-2">{placement.owner || "-"}</div>
-        //     </div>
-        //   );
-        // case "dateAdded":
-        //   return (
-        //     <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Date Added:</div>
-        //       <div className="flex-1 p-2">{placement.dateAdded || "-"}</div>
-        //     </div>
-        //   );
-        // case "lastContactDate":
-        //   return (
-        //     <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-        //       <div className="w-32 font-medium p-2 border-r border-gray-200 bg-gray-50">Last Contact:</div>
-        //       <div className="flex-1 p-2">{placement.lastContactDate ?? "-"}</div>
-        //     </div>
-        //   );
-        default: {
-          const field = customFieldDefs.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
-          const fieldLabel = field?.field_label || field?.field_name || key;
-          const fieldValue = placement.customFields?.[fieldLabel] ?? "-";
-          const lookupType = (field as any)?.lookup_type ?? (field as any)?.lookupType ?? (fieldLabel.toLowerCase() === "candidate" || fieldLabel.toLowerCase() === "job seeker" ? "jobSeeker" : fieldLabel.toLowerCase() === "job" ? "job" : fieldLabel.toLowerCase() === "organization" ? "organization" : "");
-          const fieldInfo = { key, label: fieldLabel, fieldType: (field as any)?.field_type ?? (field as any)?.fieldType, lookupType, multiSelectLookupType: (field as any)?.multi_select_lookup_type ?? (field as any)?.multiSelectLookupType };
-          return (
-            <div key={`details-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
-              <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
-              <div className="flex-1 p-2">
-                <FieldValueRenderer
-                  value={fieldValue}
-                  fieldInfo={fieldInfo}
-                  allFields={customFieldDefs as any}
-                  valuesRecord={placement.customFields as any}
-                  emptyPlaceholder="-"
-                  clickable
-                />
-              </div>
-            </div>
-          );
-        }
-      }
-    };
+  const renderCompanyDetailsPanel = () => {
+    const keys = Array.from(new Set(visibleFields.companyDetails || []));
+    const allFields = companyAvailableFields || [];
     return (
-      <PanelWithHeader title="Details:" onEdit={() => handleEditPanel("details")}>
+      <PanelWithHeader
+        title="Company - Details"
+        onEdit={() => handleEditPanel("companyDetails")}
+      >
         <div className="space-y-0 border border-gray-200 rounded">
-          {Array.from(new Set(visibleFields.details || [])).map((key, index) => renderDetailsRow(key, index))}
+          {!company ? (
+            <div className="p-4 text-gray-500 text-sm">No company/organization linked.</div>
+          ) : keys.length === 0 ? (
+            <div className="p-4 text-gray-500 text-sm">No fields visible. Use the edit icon to show fields.</div>
+          ) : (
+            keys.map((key, index) => {
+              const field = allFields.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
+              const label = field?.field_label || field?.field_name || key;
+              const value = (company as any)[key] ?? company.customFields?.[label] ?? company.customFields?.[key];
+              return renderSummaryRow("companyDetails", key, index, label, value, field, allFields, company.customFields || {});
+            })
+          )}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderBillingContactDetailsPanel = () => {
+    const keys = Array.from(new Set(visibleFields.billingContactDetails || []));
+    const allFields = hiringManagerAvailableFields || [];
+    return (
+      <PanelWithHeader
+        title="Contact - Details (Billing Contact)"
+        onEdit={() => handleEditPanel("billingContactDetails")}
+      >
+        <div className="space-y-0 border border-gray-200 rounded">
+          {!billingContact ? (
+            <div className="p-4 text-gray-500 text-sm">No billing contact linked.</div>
+          ) : keys.length === 0 ? (
+            <div className="p-4 text-gray-500 text-sm">No fields visible. Use the edit icon to show fields.</div>
+          ) : (
+            keys.map((key, index) => {
+              const field = allFields.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
+              const label = field?.field_label || field?.field_name || key;
+              const value = (billingContact as any)[key === "name" ? "full_name" : key] ?? billingContact.customFields?.[label] ?? billingContact.customFields?.[key];
+              return renderSummaryRow("billingContactDetails", key, index, label, value, field, allFields, billingContact.customFields || {});
+            })
+          )}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderTimesheetApproverDetailsPanel = () => {
+    const keys = Array.from(new Set(visibleFields.timesheetApproverDetails || []));
+    const allFields = hiringManagerAvailableFields || [];
+    return (
+      <PanelWithHeader
+        title="Contact - Details (Timesheet Approver)"
+        onEdit={() => handleEditPanel("timesheetApproverDetails")}
+      >
+        <div className="space-y-0 border border-gray-200 rounded">
+          {!timesheetApprover ? (
+            <div className="p-4 text-gray-500 text-sm">No timesheet approver linked.</div>
+          ) : keys.length === 0 ? (
+            <div className="p-4 text-gray-500 text-sm">No fields visible. Use the edit icon to show fields.</div>
+          ) : (
+            keys.map((key, index) => {
+              const field = allFields.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
+              const label = field?.field_label || field?.field_name || key;
+              const value = (timesheetApprover as any)[key === "name" ? "full_name" : key] ?? timesheetApprover.customFields?.[label] ?? timesheetApprover.customFields?.[key];
+              return renderSummaryRow("timesheetApproverDetails", key, index, label, value, field, allFields, timesheetApprover.customFields || {});
+            })
+          )}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderJobDetailsPanel = () => {
+    const keys = Array.from(new Set(visibleFields.jobDetails || []));
+    const allFields = jobAvailableFields || [];
+    return (
+      <PanelWithHeader
+        title="Job - Details"
+        onEdit={() => handleEditPanel("jobDetails")}
+      >
+        <div className="space-y-0 border border-gray-200 rounded">
+          {!job ? (
+            <div className="p-4 text-gray-500 text-sm">No job linked.</div>
+          ) : keys.length === 0 ? (
+            <div className="p-4 text-gray-500 text-sm">No fields visible. Use the edit icon to show fields.</div>
+          ) : (
+            keys.map((key, index) => {
+              const field = allFields.find((f: any) => (f.field_name || f.field_key || f.field_label || f.id) === key);
+              const label = field?.field_label || field?.field_name || key;
+              const value = (job as any)[key] ?? job.customFields?.[label] ?? job.customFields?.[key];
+              return renderSummaryRow("jobDetails", key, index, label, value, field, allFields, job.customFields || {});
+            })
+          )}
+        </div>
+      </PanelWithHeader>
+    );
+  };
+
+  const renderPlacementDetailsPanel = () => {
+    if (!placement) return null;
+    const keys = Array.from(new Set(visibleFields.placementDetails || []));
+    const renderPlacementDetailsRow = (key: string, index: number) => {
+      const field = availableFields.find(
+        (f: any) => (f.field_name || f.field_label || f.id) === key
+      );
+      const fieldLabel = field?.field_label || field?.field_name || key;
+      const fieldValue = placement.customFields?.[fieldLabel] ?? (placement as any)[key] ?? "-";
+      const lookupType = (field as any)?.lookup_type ?? (field as any)?.lookupType ?? (fieldLabel.toLowerCase() === "candidate" || fieldLabel.toLowerCase() === "job seeker" ? "jobSeeker" : fieldLabel.toLowerCase() === "job" ? "job" : fieldLabel.toLowerCase() === "organization" ? "organization" : "");
+      const fieldInfo = { key, label: fieldLabel, fieldType: (field as any)?.field_type ?? (field as any)?.fieldType, lookupType, multiSelectLookupType: (field as any)?.multi_select_lookup_type ?? (field as any)?.multiSelectLookupType };
+      return (
+        <div key={`placementDetails-${key}-${index}`} className="flex border-b border-gray-200 last:border-b-0">
+          <div className="w-44 min-w-52 font-medium p-2 border-r border-gray-200 bg-gray-50">{fieldLabel}:</div>
+          <div className="flex-1 p-2">
+            <FieldValueRenderer
+              value={fieldValue}
+              fieldInfo={fieldInfo}
+              allFields={availableFields as any}
+              valuesRecord={placement.customFields as any}
+              emptyPlaceholder="-"
+              clickable
+            />
+          </div>
+        </div>
+      );
+    };
+
+    return (
+      <PanelWithHeader
+        title="Details (Placement)"
+        onEdit={() => handleEditPanel("placementDetails")}
+      >
+        <div className="space-y-0 border border-gray-200 rounded">
+          {keys.length === 0 ? (
+            <div className="p-4 text-gray-500 text-sm">No fields visible. Use the edit icon to show fields.</div>
+          ) : (
+            keys.map((key, index) => renderPlacementDetailsRow(key, index))
+          )}
         </div>
       </PanelWithHeader>
     );
@@ -3648,17 +4032,45 @@ export default function PlacementView() {
 
   const renderPanel = useCallback(
     (panelId: string, isOverlay = false) => {
+      if (panelId === "candidateDetails") {
+        return (
+          <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
+            {renderCandidateDetailsPanel()}
+          </SortablePanel>
+        );
+      }
+      if (panelId === "companyDetails") {
+        return (
+          <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
+            {renderCompanyDetailsPanel()}
+          </SortablePanel>
+        );
+      }
+      if (panelId === "billingContactDetails") {
+        return (
+          <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
+            {renderBillingContactDetailsPanel()}
+          </SortablePanel>
+        );
+      }
+      if (panelId === "timesheetApproverDetails") {
+        return (
+          <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
+            {renderTimesheetApproverDetailsPanel()}
+          </SortablePanel>
+        );
+      }
+      if (panelId === "jobDetails") {
+        return (
+          <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
+            {renderJobDetailsPanel()}
+          </SortablePanel>
+        );
+      }
       if (panelId === "placementDetails") {
         return (
           <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
             {renderPlacementDetailsPanel()}
-          </SortablePanel>
-        );
-      }
-      if (panelId === "details") {
-        return (
-          <SortablePanel key={panelId} id={panelId} isOverlay={isOverlay}>
-            {renderDetailsPanel()}
           </SortablePanel>
         );
       }
@@ -3731,7 +4143,7 @@ export default function PlacementView() {
       }
       return null;
     },
-    [availableFields, notes, placement, visibleFields, tasks, isLoadingTasks, tasksError]
+    [availableFields, notes, placement, visibleFields, tasks, isLoadingTasks, tasksError, candidate, company, job, billingContact, timesheetApprover, candidateAvailableFields, companyAvailableFields, hiringManagerAvailableFields, jobAvailableFields]
   );
 
   // Render history tab content
@@ -4241,13 +4653,133 @@ export default function PlacementView() {
         zIndex={100}
       />
 
-      {/* Edit Fields Modal - placementDetails and details use SortableFieldsEditModal */}
+      {/* Edit Fields Modal - all 6 summary panels use SortableFieldsEditModal */}
+      {editingPanel === "candidateDetails" && (
+        <SortableFieldsEditModal
+          open={true}
+          onClose={handleCloseEditModal}
+          title="Edit Fields - Candidate Details"
+          description="Drag to reorder, check/uncheck to show or hide fields. Fields are driven from Admin center (Job Seekers)."
+          order={modalCandidateOrder}
+          visible={modalCandidateVisible}
+          fieldCatalog={candidateFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
+          onToggle={(key) => setModalCandidateVisible((prev) => ({ ...prev, [key]: !prev[key] }))}
+          onDragEnd={(event) => {
+            const { active, over } = event;
+            if (!over || active.id === over.id) return;
+            setModalCandidateOrder((prev) => {
+              const o = prev.indexOf(active.id as string);
+              const n = prev.indexOf(over.id as string);
+              return o === -1 || n === -1 ? prev : arrayMove(prev, o, n);
+            });
+          }}
+          onSave={handleSaveCandidateDetailsFields}
+          saveButtonText="Save"
+          listMaxHeight="60vh"
+        />
+      )}
+      {editingPanel === "companyDetails" && (
+        <SortableFieldsEditModal
+          open={true}
+          onClose={handleCloseEditModal}
+          title="Edit Fields - Company Details"
+          description="Drag to reorder, check/uncheck to show or hide fields. Fields are driven from Admin center (Organizations)."
+          order={modalCompanyOrder}
+          visible={modalCompanyVisible}
+          fieldCatalog={companyFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
+          onToggle={(key) => setModalCompanyVisible((prev) => ({ ...prev, [key]: !prev[key] }))}
+          onDragEnd={(event) => {
+            const { active, over } = event;
+            if (!over || active.id === over.id) return;
+            setModalCompanyOrder((prev) => {
+              const o = prev.indexOf(active.id as string);
+              const n = prev.indexOf(over.id as string);
+              return o === -1 || n === -1 ? prev : arrayMove(prev, o, n);
+            });
+          }}
+          onSave={handleSaveCompanyDetailsFields}
+          saveButtonText="Save"
+          listMaxHeight="60vh"
+        />
+      )}
+      {editingPanel === "billingContactDetails" && (
+        <SortableFieldsEditModal
+          open={true}
+          onClose={handleCloseEditModal}
+          title="Edit Fields - Billing Contact"
+          description="Drag to reorder, check/uncheck to show or hide fields. Fields are driven from Admin center (Hiring Managers)."
+          order={modalBillingContactOrder}
+          visible={modalBillingContactVisible}
+          fieldCatalog={hiringManagerFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
+          onToggle={(key) => setModalBillingContactVisible((prev) => ({ ...prev, [key]: !prev[key] }))}
+          onDragEnd={(event) => {
+            const { active, over } = event;
+            if (!over || active.id === over.id) return;
+            setModalBillingContactOrder((prev) => {
+              const o = prev.indexOf(active.id as string);
+              const n = prev.indexOf(over.id as string);
+              return o === -1 || n === -1 ? prev : arrayMove(prev, o, n);
+            });
+          }}
+          onSave={handleSaveBillingContactFields}
+          saveButtonText="Save"
+          listMaxHeight="60vh"
+        />
+      )}
+      {editingPanel === "timesheetApproverDetails" && (
+        <SortableFieldsEditModal
+          open={true}
+          onClose={handleCloseEditModal}
+          title="Edit Fields - Timesheet Approver"
+          description="Drag to reorder, check/uncheck to show or hide fields. Fields are driven from Admin center (Hiring Managers)."
+          order={modalTimesheetApproverOrder}
+          visible={modalTimesheetApproverVisible}
+          fieldCatalog={hiringManagerFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
+          onToggle={(key) => setModalTimesheetApproverVisible((prev) => ({ ...prev, [key]: !prev[key] }))}
+          onDragEnd={(event) => {
+            const { active, over } = event;
+            if (!over || active.id === over.id) return;
+            setModalTimesheetApproverOrder((prev) => {
+              const o = prev.indexOf(active.id as string);
+              const n = prev.indexOf(over.id as string);
+              return o === -1 || n === -1 ? prev : arrayMove(prev, o, n);
+            });
+          }}
+          onSave={handleSaveTimesheetApproverFields}
+          saveButtonText="Save"
+          listMaxHeight="60vh"
+        />
+      )}
+      {editingPanel === "jobDetails" && (
+        <SortableFieldsEditModal
+          open={true}
+          onClose={handleCloseEditModal}
+          title="Edit Fields - Job Details"
+          description="Drag to reorder, check/uncheck to show or hide fields. Fields are driven from Admin center (Jobs)."
+          order={modalJobDetailsOrder}
+          visible={modalJobDetailsVisible}
+          fieldCatalog={jobDetailsFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
+          onToggle={(key) => setModalJobDetailsVisible((prev) => ({ ...prev, [key]: !prev[key] }))}
+          onDragEnd={(event) => {
+            const { active, over } = event;
+            if (!over || active.id === over.id) return;
+            setModalJobDetailsOrder((prev) => {
+              const o = prev.indexOf(active.id as string);
+              const n = prev.indexOf(over.id as string);
+              return o === -1 || n === -1 ? prev : arrayMove(prev, o, n);
+            });
+          }}
+          onSave={handleSaveJobDetailsFields}
+          saveButtonText="Save"
+          listMaxHeight="60vh"
+        />
+      )}
       {editingPanel === "placementDetails" && (
         <SortableFieldsEditModal
           open={true}
           onClose={handleCloseEditModal}
           title="Edit Fields - Placement Details"
-          description="Drag to reorder, check/uncheck to show or hide fields."
+          description="Drag to reorder, check/uncheck to show or hide fields. Fields are driven from Admin center (Placements)."
           order={modalPlacementDetailsOrder}
           visible={modalPlacementDetailsVisible}
           fieldCatalog={placementDetailsFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
@@ -4269,34 +4801,7 @@ export default function PlacementView() {
           listMaxHeight="60vh"
         />
       )}
-      {editingPanel === "details" && (
-        <SortableFieldsEditModal
-          open={true}
-          onClose={handleCloseEditModal}
-          title="Edit Fields - Details"
-          description="Drag to reorder, check/uncheck to show or hide fields."
-          order={modalDetailsOrder}
-          visible={modalDetailsVisible}
-          fieldCatalog={detailsFieldCatalog.map((f) => ({ key: f.key, label: f.label }))}
-          onToggle={(key) =>
-            setModalDetailsVisible((prev) => ({ ...prev, [key]: !prev[key] }))
-          }
-          onDragEnd={(event) => {
-            const { active, over } = event;
-            if (!over || active.id === over.id) return;
-            setModalDetailsOrder((prev) => {
-              const oldIndex = prev.indexOf(active.id as string);
-              const newIndex = prev.indexOf(over.id as string);
-              if (oldIndex === -1 || newIndex === -1) return prev;
-              return arrayMove(prev, oldIndex, newIndex);
-            });
-          }}
-          onSave={handleSaveDetailsFields}
-          saveButtonText="Save"
-          listMaxHeight="60vh"
-        />
-      )}
-      {editingPanel && editingPanel !== "placementDetails" && editingPanel !== "details" && (
+      {editingPanel && !["candidateDetails", "companyDetails", "billingContactDetails", "timesheetApproverDetails", "jobDetails", "placementDetails"].includes(editingPanel) && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded shadow-xl max-w-2xl w-full mx-4 my-8 max-h-[90vh] overflow-y-auto">
             <div className="bg-gray-100 p-4 border-b flex justify-between items-center">

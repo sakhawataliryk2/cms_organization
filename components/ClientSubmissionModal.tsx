@@ -550,6 +550,7 @@ export default function ClientSubmissionModal({
       toast.success("Client submission created successfully.");
 
       // If user chose Compose Email, open their email client with selected attachments listed in body
+      // If user chose Compose Email, open Gmail compose with details
       if (mode === "compose" && typeof window !== "undefined") {
         const toEmails = Array.from(selectedHiringManagerIds)
           .map((id: string) => {
@@ -562,24 +563,31 @@ export default function ClientSubmissionModal({
 
         if (toEmails.length > 0) {
           const candidateName = getCandidateName(selectedCandidate);
-          const subject = encodeURIComponent(
-            `Candidate submission for ${displayJob} - ${candidateName}`,
-          );
+          const subjectText = `Candidate submission for ${displayJob} - ${candidateName}`;
+
           const selectedDocNames = documents
             .filter((d) => d.id && selectedDocumentIds.has(String(d.id)))
             .map((d) => d.document_name || d.name || "Untitled");
+
           const attachmentList =
             selectedDocNames.length > 0
-              ? `\n\nDocuments to attach (included in this submission):\n${selectedDocNames.map((n) => `• ${n}`).join("\n")}`
+              ? `\n\nDocuments to attach (included in this submission):\n${selectedDocNames
+                  .map((n) => `• ${n}`)
+                  .join("\n")}`
               : "";
+
           const bodyText =
             (comments ||
               `Please see attached documents for ${candidateName} submitted to ${displayJob}.`) +
             attachmentList;
-          const body = encodeURIComponent(bodyText);
-          window.location.href = `mailto:${toEmails.join(
-            ",",
-          )}?subject=${subject}&body=${body}`;
+
+          const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
+            toEmails.join(","),
+          )}&su=${encodeURIComponent(subjectText)}&body=${encodeURIComponent(
+            bodyText,
+          )}`;
+
+          window.open(gmailUrl, "_blank", "noopener,noreferrer");
         }
       }
 
@@ -620,7 +628,8 @@ export default function ClientSubmissionModal({
           {/* Candidate lookup */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Candidate {initialCandidate ? (
+              Candidate{" "}
+              {initialCandidate ? (
                 <span className="text-green-500">✓</span>
               ) : (
                 <span className="text-red-500">*</span>
