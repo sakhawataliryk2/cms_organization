@@ -20,7 +20,20 @@ type PlacementRecord = {
   jobSeekerEmail?: string | null;
   jobSeekerPhone?: string | null;
   jobTitle?: string | null;
+  organizationId?: number | null;
   organizationName?: string | null;
+  recordNumber?: number | null;
+  jobStatus?: string | null;
+  salary?: number | null;
+  placementFeePercent?: number | null;
+  placementFeeFlat?: number | null;
+  daysGuaranteed?: number | null;
+  hoursPerDay?: string | null;
+  hoursOfOperation?: string | null;
+  payRate?: number | null;
+  effectiveDate?: string | null;
+  customFields?: Record<string, unknown> | null;
+  custom_fields?: Record<string, unknown> | null;
   [key: string]: unknown;
 };
 import { DndContext, closestCenter, type DragEndEvent } from "@dnd-kit/core";
@@ -63,6 +76,23 @@ type TimesheetRow = {
   [key: string]: string | number | undefined;
 };
 
+type GenericRow = {
+  id: number;
+  [key: string]: string | number | undefined;
+};
+
+function getFromPlacementCustomFields(p: PlacementRecord, keys: string[]): string {
+  const cf = (p.customFields ?? p.custom_fields) as Record<string, unknown> | null | undefined;
+  if (!cf || typeof cf !== "object") return "";
+  for (const key of keys) {
+    const v = cf[key];
+    if (v !== undefined && v !== null && String(v).trim() !== "") {
+      return String(v);
+    }
+  }
+  return "";
+}
+
 function placementToTimesheetRow(p: PlacementRecord): TimesheetRow {
   const row: TimesheetRow = {
     id: p.id,
@@ -96,6 +126,79 @@ function placementToTimesheetRow(p: PlacementRecord): TimesheetRow {
     "Score Card": "",
   };
   return row;
+}
+
+function placementToHiringManagerRow(p: PlacementRecord): GenericRow {
+  return {
+    id: p.id,
+    Name: p.jobSeekerName ?? "",
+    Organization: p.organizationName ?? "",
+    Email: p.jobSeekerEmail ?? "",
+    "Status": p.status ?? "",
+    "ID Number": p.jobSeekerId != null ? String(p.jobSeekerId) : String(p.id),
+  };
+}
+
+function placementToJobSeekerRow(p: PlacementRecord): GenericRow {
+  return {
+    id: p.id,
+    Name: p.jobSeekerName ?? "",
+    Submitted: "",
+    Approved: (p.status || "").toLowerCase() === "approved" ? "Yes" : "",
+    "ID Number": p.jobSeekerId != null ? String(p.jobSeekerId) : String(p.id),
+    "Payroll Type": getFromPlacementCustomFields(p, ["Payroll Type"]),
+    State: getFromPlacementCustomFields(p, ["State"]),
+    Status: p.status ?? "",
+  };
+}
+
+function placementToPlacementsSectionRow(p: PlacementRecord): GenericRow {
+  const timesheetWeekStart =
+    p.startDate != null ? new Date(p.startDate as string) : p.endDate != null ? getMonday(new Date(p.endDate as string)) : null;
+
+  return {
+    id: p.id,
+    "Timesheet week start": timesheetWeekStart ? timesheetWeekStart.toISOString().slice(0, 10) : "",
+    "Job Seeker": p.jobSeekerName ?? "",
+    Organization: p.organizationName ?? "",
+    "Status of Placement": p.status ?? "",
+    "Worker Comp Code": getFromPlacementCustomFields(p, ["Worker Comp Code"]),
+    "Placement ID": String(p.id),
+    "Start Date": p.startDate ?? "",
+    "End Date": p.endDate ?? "",
+    "Job Title": p.jobTitle ?? "",
+    "Timesheet Hour entry": "",
+    State: getFromPlacementCustomFields(p, ["State"]),
+    "Pay Rate": p.payRate != null ? String(p.payRate) : getFromPlacementCustomFields(p, ["Pay Rate"]),
+    "Bill Rate": getFromPlacementCustomFields(p, ["Bill Rate"]),
+    "Primary Approver": getFromPlacementCustomFields(p, ["Primary Approver", "Time Card Approver(s)"]),
+    "Job Seeker Email": p.jobSeekerEmail ?? "",
+  };
+}
+
+function placementToExportsRow(p: PlacementRecord): GenericRow {
+  return {
+    id: p.id,
+    Documents: "",
+    "ID Number": String(p.id),
+    "Date Exported": "",
+    "Report Name": p.jobTitle ?? "",
+    Status: p.status ?? "",
+  };
+}
+
+function placementToInvoicesRow(p: PlacementRecord): GenericRow {
+  return {
+    id: p.id,
+    "Invoice #": p.recordNumber != null ? String(p.recordNumber) : String(p.id),
+    Organization: p.organizationName ?? "",
+    Amount: "",
+    "Due Date": "",
+    Status: p.status ?? "",
+    "Paid Date": "",
+    Notes: "",
+    "Invoice Type": getFromPlacementCustomFields(p, ["Invoice Type"]),
+  };
 }
 
 const TIMESHEETS_TABLE_COLUMNS_LIST = [
@@ -631,15 +734,28 @@ export default function TbiPage() {
   const [timesheetsColumnSorts, setTimesheetsColumnSorts] = useState<Record<string, ColumnSortState>>({});
   const [timesheetsColumnFilters, setTimesheetsColumnFilters] = useState<Record<string, ColumnFilterState>>({});
 
+  const isPlacementDrivenView =
+    selectedRow === "TimeSheets" ||
+    selectedRow === "Hiring Manager" ||
+    selectedRow === "Job Seeker" ||
+    selectedRow === "Placements" ||
+    selectedRow === "Exports" ||
+    selectedRow === "Invoices";
+
+  const approvedPlacements = useMemo(
+    () =>
+      timesheetsPlacements.filter(
+        (p) => (p.status || "").toLowerCase() === "approved"
+      ),
+    [timesheetsPlacements]
+  );
+
   // Each row = one approved contract placement whose schedule end date is on or before the selected calendar range
   const timesheetsRows = useMemo(() => {
-    const approved = timesheetsPlacements.filter(
-      (p) => (p.status || "").toLowerCase() === "approved"
-    );
-    let byDate: PlacementRecord[] = approved;
+    let byDate: PlacementRecord[] = approvedPlacements;
     if (timePeriod === "week") {
       const rangeEnd = timesheetsWeekEnd.getTime();
-      byDate = approved.filter((p) => {
+      byDate = approvedPlacements.filter((p) => {
         const end = p.endDate;
         if (!end) return true; // no end date = include (e.g. ongoing)
         const endTime = new Date(end).getTime();
@@ -648,7 +764,7 @@ export default function TbiPage() {
     }
     if (timePeriod === "customRange") {
       const rangeEnd = timesheetsWeekEnd.getTime();
-      byDate = approved.filter((p) => {
+      byDate = approvedPlacements.filter((p) => {
         const end = p.endDate;
         if (!end) return true;
         return new Date(end).getTime() <= rangeEnd;
@@ -701,7 +817,7 @@ export default function TbiPage() {
     }
 
     return result.map(placementToTimesheetRow);
-  }, [timesheetsPlacements, timePeriod, timesheetsWeekEnd, timesheetsSearchTerm, timesheetsColumnFilters, timesheetsColumnSorts]);
+  }, [approvedPlacements, timePeriod, timesheetsWeekEnd, timesheetsSearchTerm, timesheetsColumnFilters, timesheetsColumnSorts]);
 
   const timesheetsCalendarDays = useMemo(() => {
     const year = timesheetsCalendarMonth.getFullYear();
@@ -815,7 +931,7 @@ export default function TbiPage() {
   }, [selectedRow, tbiOrganizationsCache]);
 
   useEffect(() => {
-    if (selectedRow !== "TimeSheets") {
+    if (!isPlacementDrivenView) {
       setTimesheetsPlacements([]);
       return;
     }
@@ -855,7 +971,7 @@ export default function TbiPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedRow]);
+  }, [selectedRow, isPlacementDrivenView]);
 
   function getOrgCellValue(org: OrganizationRecord, header: string): string {
     const cf = org.custom_fields as Record<string, string> | undefined;
@@ -993,6 +1109,22 @@ export default function TbiPage() {
 
   // Use all column headers (including empty ones) - don't filter out empty columns
   // Empty columns will just show empty cells
+  const placementSectionRows = useMemo<GenericRow[]>(() => {
+    switch (selectedRow) {
+      case "Hiring Manager":
+        return approvedPlacements.map(placementToHiringManagerRow);
+      case "Job Seeker":
+        return approvedPlacements.map(placementToJobSeekerRow);
+      case "Placements":
+        return approvedPlacements.map(placementToPlacementsSectionRow);
+      case "Exports":
+        return approvedPlacements.map(placementToExportsRow);
+      case "Invoices":
+        return approvedPlacements.map(placementToInvoicesRow);
+      default:
+        return [];
+    }
+  }, [selectedRow, approvedPlacements]);
 
   const exportSelectedAsCsv = useCallback(() => {
     const headers = columnHeaders;
@@ -1004,6 +1136,13 @@ export default function TbiPage() {
         if (org) {
           return headers
             .map((h) => escapeCsvValue(getOrgCellValue(org, h)))
+            .join(",");
+        }
+      } else if (placementSectionRows.length > 0) {
+        const row = placementSectionRows[rowIndex];
+        if (row) {
+          return headers
+            .map((h) => escapeCsvValue(String(row[h] ?? "")))
             .join(",");
         }
       }
@@ -1018,7 +1157,7 @@ export default function TbiPage() {
     a.click();
     URL.revokeObjectURL(url);
     setShowExportMenu(false);
-  }, [columnHeaders, selectedRows, selectedRow, filteredAndSortedOrgs]);
+  }, [columnHeaders, selectedRows, selectedRow, filteredAndSortedOrgs, placementSectionRows]);
 
   const containerWidth = typeof window !== "undefined" ? window.innerWidth : 1200;
   const totalColumns = columnHeaders.length;
@@ -1410,12 +1549,24 @@ export default function TbiPage() {
 
               {!tbiOrgsLoading && (() => {
                 const displayOrgs = selectedRow === "Organization" ? filteredAndSortedOrgs : [];
-                // Always show DATA_ROW_COUNT rows, even if empty
-                const rowCount = DATA_ROW_COUNT;
+                const displayPlacementRows = selectedRow === "Organization" ? [] : placementSectionRows;
+                const dynamicRowCount =
+                  selectedRow === "Organization"
+                    ? displayOrgs.length
+                    : displayPlacementRows.length;
+                const rowCount = Math.max(DATA_ROW_COUNT, dynamicRowCount);
 
                 return Array.from({ length: rowCount }, (_, rowIndex) => {
                   const isRowSelected = selectedRows.has(rowIndex);
-                  const org = selectedRow === "Organization" && rowIndex < displayOrgs.length ? displayOrgs[rowIndex] : null;
+                  const org =
+                    selectedRow === "Organization" && rowIndex < displayOrgs.length
+                      ? displayOrgs[rowIndex]
+                      : null;
+                  const placementRow =
+                    selectedRow !== "Organization" && rowIndex < displayPlacementRows.length
+                      ? displayPlacementRows[rowIndex]
+                      : null;
+
                   return (
                     <div key={rowIndex} className="flex">
                       <div className="shrink-0 bg-teal-500 text-white px-3 py-2 border-r border-b border-black flex items-center justify-center font-medium text-sm  shadow-sm gap-1 transition-transform duration-200 ease-out" style={{ width: 30, minWidth: 30, height: ROW_HEIGHT }}>
@@ -1450,8 +1601,11 @@ export default function TbiPage() {
                         />
                       </div>
                       {columnHeaders.map((header, colIndex) => {
-                        const cellValue = org ? getOrgCellValue(org, header) : "";
                         const colW = getColumnWidth(header, viewKey);
+                        const cellValue =
+                          selectedRow === "Organization"
+                            ? (org ? getOrgCellValue(org, header) : "")
+                            : (placementRow ? String(placementRow[header] ?? "") : "");
                         return (
                           <div
                             key={colIndex}

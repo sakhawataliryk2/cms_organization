@@ -197,6 +197,67 @@ export async function POST(request: NextRequest) {
                 // Convert field_name keys to backend-expected keys; custom fields stored by field_label
                 const payload = recordToBackendPayload(entityType, record, fieldNameToLabel);
 
+                // ----- Entity-specific normalization (mirrors organization robustness) -----
+                // Jobs: ensure we always have some jobTitle value if possible
+                if (entityType === 'jobs') {
+                    const rawTitle =
+                        payload.jobTitle ??
+                        record.job_title ??
+                        record.title ??
+                        record.JobTitle ??
+                        record.Title;
+                    if (typeof rawTitle === 'string' && rawTitle.trim() !== '') {
+                        payload.jobTitle = rawTitle.trim();
+                    }
+                }
+
+                // Job seekers: enforce firstName/lastName like organizations enforce "name"
+                if (entityType === 'job-seekers') {
+                    // Try to derive from full name if mapping didn't give us both
+                    const existingFirst = typeof payload.firstName === 'string' ? payload.firstName.trim() : '';
+                    const existingLast = typeof payload.lastName === 'string' ? payload.lastName.trim() : '';
+
+                    if (!existingFirst || !existingLast) {
+                        const fullNameSource =
+                            record.full_name ??
+                            record.FullName ??
+                            record.name ??
+                            record.Name ??
+                            '';
+                        if (typeof fullNameSource === 'string' && fullNameSource.trim() !== '') {
+                            const parts = fullNameSource.trim().split(/\s+/);
+                            if (!existingFirst && parts[0]) {
+                                payload.firstName = parts[0];
+                            }
+                            if (!existingLast && parts.length > 1) {
+                                payload.lastName = parts.slice(1).join(' ') || existingLast;
+                            }
+                        }
+                    }
+
+                    // If we still don't have both names, fail this row with a clear, per-row error
+                    const finalFirst = typeof payload.firstName === 'string' ? payload.firstName.trim() : '';
+                    const finalLast = typeof payload.lastName === 'string' ? payload.lastName.trim() : '';
+                    if (!finalFirst || !finalLast) {
+                        errors.push('First name and last name are required for job seekers');
+                        summary.failed++;
+                        summary.errors.push({ row: rowNumber, errors });
+                        continue;
+                    }
+                }
+
+                // Normalize custom_fields for all entity types: CSV may send a JSON string
+                if (payload.custom_fields && typeof payload.custom_fields === 'string') {
+                    try {
+                        const parsed = JSON.parse(payload.custom_fields);
+                        payload.custom_fields =
+                            parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+                    } catch {
+                        // If the string isn't valid JSON, drop it so backend models don't throw
+                        payload.custom_fields = {};
+                    }
+                }
+
                 // Determine unique identifier field (backend key) for find-existing
                 let uniqueField = 'email';
                 if (entityType === 'organizations') {
