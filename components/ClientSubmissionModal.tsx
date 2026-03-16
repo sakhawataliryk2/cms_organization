@@ -40,6 +40,8 @@ interface JobSeekerDocument {
   created_at?: string;
   created_by_name?: string;
   distribution?: string;
+  url?: string;
+  download_url?: string;
 }
 
 interface HiringManager {
@@ -565,9 +567,17 @@ export default function ClientSubmissionModal({
           const candidateName = getCandidateName(selectedCandidate);
           const subjectText = `Candidate submission for ${displayJob} - ${candidateName}`;
 
-          const selectedDocNames = documents
-            .filter((d) => d.id && selectedDocumentIds.has(String(d.id)))
-            .map((d) => d.document_name || d.name || "Untitled");
+          const selectedDocs = documents.filter(
+            (d) => d.id && selectedDocumentIds.has(String(d.id)),
+          );
+
+          const selectedDocNames = selectedDocs.map(
+            (d) => d.document_name || d.name || "Untitled",
+          );
+
+          const selectedDocUrls = selectedDocs
+            .map((d) => d.url || d.download_url)
+            .filter(Boolean) as string[];
 
           const attachmentList =
             selectedDocNames.length > 0
@@ -576,10 +586,18 @@ export default function ClientSubmissionModal({
                   .join("\n")}`
               : "";
 
+          const attachmentUrlList =
+            selectedDocUrls.length > 0
+              ? `\n\nDocument links:\n${selectedDocUrls
+                  .map((u) => `• ${u}`)
+                  .join("\n")}`
+              : "";
+
           const bodyText =
             (comments ||
               `Please see attached documents for ${candidateName} submitted to ${displayJob}.`) +
-            attachmentList;
+            attachmentList +
+            attachmentUrlList;
 
           const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(
             toEmails.join(","),
